@@ -116,11 +116,17 @@ Handoff (2026-10-06, after Stage 3B): independently re-verified the frozen hashe
 
 ## Stage 4 production import stopped (2026-10-07)
 
+> The Stage 4, timeout-investigation and Stage 4B handoffs below are kept as
+> written at the time. Their "uncommitted", "not deployed", "no merge" and
+> "Next boundary" statements are superseded: the validator fix was deployed
+> and merged to web `main`, the publication completed in Stage 4C, and the
+> evidence was committed as recorded in *Post-merge review and closeout*.
+
 - **Verdict: STOP_PRODUCTION_MISMATCH.** Freeze `a86e3585…fd14e` and exact preserved Stage 3 SQL `cc9a1ddfc4c5f56fa553935b79fb40a2eda01588f0c6d2781e243cddda84852e` verified; no artifacts regenerated.
 - Read-only production preflight passed on `zkpjklzfwzefhjluvhfw`: sole active `tax-2026.09.30-01`, 52,917 concepts / 13,760 vernacular rows; target absent; schema/history compatible including the documented deferred migration. Full frozen-candidate comparison found zero taxon/scientific-name/external-ID/red-list deltas.
 - Exact approved containerized psql import attempted 14:08:28–14:11:11 Europe/Oslo. Load/count checks passed inside its transaction; pre-activation `taxonomy_v2_validate_release` dangling-parent check hit production `statement_timeout=2min` (`import.sql:233209`, function line 68). psql exited 3; activation/COMMIT not reached.
 - Automatic rollback independently verified: target release/run/data absent; previous sole active and counts unchanged; all checked identity/registry/mapping/scientific-name/external-ID/red-list and taxonomy-v3 audit fingerprints unchanged. No further production writes or retry. Sequence allocation may leave an ordinary import-run ID gap.
-- Operational report/logs/baselines: `~/sporely-scratch/vernacular-2026-10-07-stage4/report.md` and adjacent JSON/log files. New-release search probes deferred because activation did not occur.
+- Operational report/logs: committed in `database/taxonomy/evidence/taxonomy-v3/vernacular-production-publication-2026-10-07/stage4-attempt1/` (report, preflight, import execution, rollback state and verification, scripts). The raw per-table baseline JSON was not committed; its digests are in the committed preflight. New-release search probes deferred because activation did not occur.
 - Safest next action: keep previous active release; separately review validator timeout/execution-plan mitigation and authorize a new bounded attempt using the same frozen SQL. No data repair, artifact regeneration, migration-history repair or merge. Handoff remains uncommitted under the live-production verification tier; no commit/push of a failed partial stage.
 
 
@@ -131,7 +137,7 @@ Handoff (2026-10-06, after Stage 3B): independently re-verified the frozen hashe
 - Read-only alternative (`OFFSET 0` within correlated NOT EXISTS) preserves missing-parent semantics, gives both-key indexed parent lookup even for absent target; active 52,917-probe execution measured 190 ms. Proposed only: requires separate reviewed validator/validation-execution fix and fresh-release cold-statistics testing, not an applied-migration edit or frozen SQL rewrite.
 - Production 2min timeout is server configuration-file default; no applicable role/database/function timeout override. Read-only SET LOCAL scope proof reverts on rollback. No justified timeout-only retry value/procedure.
 - Reconfirmed sole active `tax-2026.09.30-01`, concepts 52,917 / vernaculars 13,760, no target rows in any release table or import runs. Exact SQL `cc9a1ddf…` and freeze `a86e3585…` unchanged; verify_frozen passes. No regeneration required.
-- Detailed read-only plans/settings/measured results: `~/sporely-scratch/vernacular-2026-10-07-stage4/timeout-investigation/report.md`. Report-only handoff uncommitted; stop before validator edits or another publication attempt.
+- Detailed read-only plans/settings/measured results: committed report `.../vernacular-production-publication-2026-10-07/stage4-attempt1/timeout-investigation-report.md`. The raw query and plan files it summarizes were not committed. Report-only handoff; stop before validator edits or another publication attempt.
 
 ### Stage 4B validator fix prepared (2026-10-07)
 
@@ -139,7 +145,7 @@ Handoff (2026-10-06, after Stage 3B): independently re-verified the frozen hashe
 - Independent reviewer found no defects and reran focused integration: 2 pass / 0 fail or skip, 4.535s. Cases cover valid/null/one/multiple dangling, cross-release-only parent, same ID elsewhere, empty/absent/populated/fresh release, result equality and both-key indexed plans.
 - Entire exact frozen import locally with proposed function, original checks and ROLLBACK: 4.506s, unchanged 2min timeout; fixed parent query 41.346ms and full validator 230.157ms. Candidate counts match all frozen expectations; no frozen artifact regenerated or modified.
 - Node taxonomy suite 52 pass / 23 optional skips / 0 fail; 5 taxonomy SQL suites pass. Security suite deferred: local PG17.6 signal-11 crash reproduces baseline denied activation call without migration; reviewer classifies it as an existing engine limitation. Catalog/ACL checks pass. No global/session production timeout changes.
-- Report in web `docs/deployments/2026-10-07-taxonomy-validator-parent-reference.md`; operational evidence `~/sporely-scratch/vernacular-2026-10-07-stage4b/`. Migration/test/report remain uncommitted for stage review; no deployment, main merge or publication retry. Production remains sole active 2026.09.30-01, 52,917 concepts / 13,760 vernaculars, target release/run absent, old function unchanged. Freeze/import digests and verify_frozen pass.
+- Report in web `docs/deployments/2026-10-07-taxonomy-validator-parent-reference.md`; operational evidence committed as `.../vernacular-production-publication-2026-10-07/stage4b-prepare/` (byte-identical copy of the former scratch folder). Migration/test/report remain uncommitted for stage review; no deployment, main merge or publication retry. Production remains sole active 2026.09.30-01, 52,917 concepts / 13,760 vernaculars, target release/run absent, old function unchanged. Freeze/import digests and verify_frozen pass.
 - Next boundary: review/commit minimal validator migration, then separately authorize guarded deploy-tree deployment and read-only verification; publication retry remains separate.
 
 ### Stage 4B production validator deployed (2026-10-07)
@@ -148,7 +154,7 @@ Handoff (2026-10-06, after Stage 3B): independently re-verified the frozen hashe
 - Guarded deploy-tree check/dry-run allowed exactly `20261007123912`; production push applied only that forward validator-function migration. Post-verify confirms remote history/deferred snapshot exception correct. Temporary deploy tree removed after all verification.
 - Exact reviewed function body read back; owner/ACL/OID/security/search_path preserved. Active 2026.09.30-01 validator JSON exactly matches baseline (ok=true/errors=[]). Production correlated parent lookup uses both key dimensions, no release-only join filter: 511.612ms; full validator 2375.4ms.
 - All taxonomy-v2/taxonomy-v3 registry/mapping/identity/audit content fingerprints, counts, release states and indexes unchanged. Sole active 2026.09.30-01; concepts 52,917, vernaculars 13,760, target release/run absent; timeout still 2min. Frozen SQL and freeze digests unchanged; no import or activation attempted.
-- Evidence `~/sporely-scratch/vernacular-2026-10-07-stage4b-deploy/`; committed web report `docs/deployments/2026-10-07-taxonomy-validator-parent-reference.md`. This cross-repository active-plan note remains uncommitted alongside earlier handoffs. Next boundary is separately authorized exact frozen publication retry.
+- Evidence committed as `.../vernacular-production-publication-2026-10-07/stage4b-deploy/` (before/after state, validator timing, production check, verdict; the raw deploy plan, dry-run and migration-list outputs were not committed); committed web report `docs/deployments/2026-10-07-taxonomy-validator-parent-reference.md`. This cross-repository active-plan note remains uncommitted alongside earlier handoffs. Next boundary is separately authorized exact frozen publication retry.
 
 ### Stage 4C production publication (2026-10-07) — COMPLETED
 
@@ -157,9 +163,21 @@ Handoff (2026-10-06, after Stage 3B): independently re-verified the frozen hashe
 - The single-transaction import (load → validate → activate) committed 13:34:31–13:35:34 UTC.
 - Post-commit verification:
   - Concepts 52,917 (unchanged); vernacular rows 13,760 → 59,884 (frozen metadata).
-  - The new release equals the frozen set row for row. Every pre-existing row is unchanged; only release status and the +1 import run differ.
-  - Identity, registry, aliases, supersessions, external IDs, scientific names and red list are unchanged.
-  - Validator ok in 840 ms on a warm rerun (2,207 ms first run); parent check about 170 ms; timeout 2min.
+  - The new release equals the frozen set row for row.
+  - Pre-existing rows: 14 of the 16 fingerprinted tables are unchanged outside the new release (`taxonomy_v2_taxa`, `_concepts`, `_scientific_names`, `_external_ids`, `_legacy_external_ids`, `_redlist`, `_vernacular_names`, and taxonomy_v3 `registry_concept`, `external_mapping`, `identification_snapshot`, `resolution_link`, `release_installation`, `supplement_installation`, `reconciliation_manifest_audit`). `taxonomy_v2_releases` and `taxonomy_v2_import_runs` were allowed to change and were checked only for +1 row each; their old rows were recorded but not compared.
+  - So taxonomy identity (taxa, concepts, taxonomy_v3 registry, mappings, identification snapshots and resolution links), external IDs, scientific names and red list are unchanged.
+  - Validator ok in 840 ms (the retained, warm rerun); parent check about 170 ms; timeout 2min. A first-run timing of 2,207 ms was reported, but that run's output was overwritten and is not retained.
 - Search and data checks: no `[GAMMELT]`/`[UTGÅTT]`; 357 spelling replacements correct; the 96276/19080/58651/58832/58815/58814 isolation holds; all 33 Stage 3 search probes identical.
 - Nonblocking, owner-accepted finding: the declared `dangling_parent_count` = 1, solely Fungi 152331 → parent 150361 outside the release scope, identical in all prior releases. The verification asserts exactly that row.
-- Evidence: `database/taxonomy/evidence/taxonomy-v3/vernacular-production-publication-2026-10-07/` (report, preflight, import execution, production verification, scripts, logs, the first-attempt rollback and the Stage 4B deploy records). The validator fix lives on web `feature/taxonomy-validator-parent-reference` (`3f57439`, `d10e5c0`).
+- Evidence: `database/taxonomy/evidence/taxonomy-v3/vernacular-production-publication-2026-10-07/` (report, preflight, import execution, production verification, scripts, logs, the first-attempt rollback and the Stage 4B deploy records). The validator fix (`3f57439`) and its deployment report (`d10e5c0`) are on web `main`.
+
+### Post-merge review and closeout (2026-10-08)
+
+- **Retrospective review of `c9d655f`: APPROVED_WITH_NOTES, nothing blocking.** Hashes, sizes, release ids, row counts, timestamps and the verdict agree across the evidence, the commit message and this plan. The verification scripts run read-only (`BEGIN READ ONLY … ROLLBACK`, production project ref checked first) and cannot pass on empty results. No credentials are committed.
+- The committed `report.md` and `production-verification.json` are historical evidence and stay as written. Read them with these corrections:
+  - `report.md` line 20 ("every pre-existing row is unchanged") holds for the 14 fully compared tables listed under Stage 4C; `taxonomy_v2_releases` and `taxonomy_v2_import_runs` were checked only for +1 row each.
+  - `report.md` line 19's first-run timing of 2,207 ms has no retained record; the retained figure is the 840 ms warm rerun.
+  - `writes_occurred: true` in `production-verification.json` describes the stage, which included the import; the verification script itself only reads. (`preflight.json`, written before the import, records `false`.)
+- Main-branch workflows: nothing failed or outstanding. sporely-py `main` triggered no workflow (`build-release` runs on tags only). sporely-web `main` (`d10e5c0`) deployed to Cloudflare Pages successfully; the scheduled Supabase heartbeat kept succeeding.
+- Retained and reverified: the frozen release `~/sporely-scratch/vernacular-2026-10-07-f1/final/` against `final.sha256` (freeze `a86e3585…`), the exact import SQL `vernacular-2026-10-07-f1/run1/import.sql` (`cc9a1ddf…`, 76,193,662 bytes), the Stage 4C working folder, and the R2 evidence archive (fresh read-only download matched `e2d1dfca…`, 53,372,637 bytes).
+- The Stage 4B preparation evidence was committed as `stage4b-prepare/` before its scratch folder was removed. The other approved scratch folders (superseded frozen sets, rebuilds, Stage 3C, the earlier R2 retrieval copy, and the F1 rebuild/promotion/run2 intermediates) were deleted on 2026-10-08.
