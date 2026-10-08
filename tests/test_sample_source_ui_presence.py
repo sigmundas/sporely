@@ -116,7 +116,7 @@ def test_live_lab_side_panel_splits_microscope_and_slide_prep_into_separate_grou
     assert _is_descendant(tab.sample_source_combo, tab.slide_prep_group)
 
 
-def test_live_lab_slide_prep_group_appears_below_microscope_group(qapp, scratch_db):
+def test_live_lab_slide_prep_group_appears_above_microscope_group(qapp, scratch_db):
     tab = _live_lab(scratch_db)
 
     tab.resize(720, 900)
@@ -125,8 +125,8 @@ def test_live_lab_slide_prep_group_appears_below_microscope_group(qapp, scratch_
 
     micro_top = tab.microscope_group.mapTo(tab, tab.microscope_group.rect().topLeft()).y()
     prep_top = tab.slide_prep_group.mapTo(tab, tab.slide_prep_group.rect().topLeft()).y()
-    assert prep_top > micro_top, (
-        f"SLIDE / PREP must sit below MICROSCOPE; got micro_top={micro_top}, prep_top={prep_top}"
+    assert prep_top < micro_top, (
+        f"SLIDE / PREP must sit above MICROSCOPE; got micro_top={micro_top}, prep_top={prep_top}"
     )
 
 
