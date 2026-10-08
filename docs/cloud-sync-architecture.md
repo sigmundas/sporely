@@ -307,7 +307,7 @@ get_conflict_detail()               (L16687)
 | Image metadata push | `SporelyCloudClient.push_image_metadata` (L15176) | PATCH-or-POST one `observation_images` row | Raw `_patch`/`_post` | Understands metadata-only semantics (`storage_path IS NULL AND image_type='microscope'`, see L15209) |
 | Original upload | `upload_original_image_file` (L15566) + `utils/original_sync_policy.py` | Companion original bytes, policy-gated | — | Parent image must be desired |
 | Remote image application / materialization | `_apply_remote_image_metadata_only_to_local` (L10168), `_ensure_local_metadata_only_microscope_anchor` (L10272), localization helpers ~L10493 | Apply remote rows locally; download bytes into recovery cache | Direct `ImageDB` writes from pull loops | Downloaded copy only replaces local file when local is not larger (L10502); larger local original kept as-is |
-| Remote snapshot storage | `_store_remote_snapshot` (L10927), `_store_cloud_observation_snapshot` (L5236), `_load_cloud_observation_snapshot` (L5226), `_parse_cloud_observation_snapshot` (L3312), `_clear_cloud_observation_snapshot` (L6465) | Persist/read the known-good baseline | Ad-hoc settings writes | May only run after complete, successful remote reads (section F) and after required child work succeeds |
+| Remote snapshot storage | `_store_remote_snapshot` (L10927), `_store_cloud_observation_snapshot` (L5236), `_load_cloud_observation_snapshot` (L5226), `_parse_cloud_observation_snapshot` (L3312), `_clear_cloud_observation_snapshot` (L6465) | Persist/read the known-good baseline | Ad-hoc settings writes | May only run after complete, successful remote reads (section F). **Current code does not wait for required child work**: `push_all` and `materialize_cloud_media_for_observation` store it after a child failure. The target model is in `docs/cloud-sync-orchestration-design.md` |
 | Three-way conflict analysis | `_analyze_observation_push_conflicts` (L4112), `ObservationPushConflictReport` (L4097), `build_conflict_plan_baseline` (L11459) | Compare local vs cloud vs baseline; block writes on both-changed | Push loops writing without preflight | "Needs review" marker: `_set_observation_conflict_review_pending` (L4273) / `_clear_…` (L4290) |
 | Local-vs-cloud change analysis | `_local_has_real_changes_since_snapshot` (L4318), `_remote_snapshot_has_meaningful_changes` (L9111), `_clear_observation_dirty_if_no_real_changes` (L4360) | Distinguish real edits from no-op noise | — | Feeds the no-op fast path |
 | Observation push identity resolution | `SporelyCloudClient._resolve_existing_observation_for_push` (L14839), `_find_cloud_observation` (L14818), `ObservationIdentityConflictError` (L2268) | Decide which existing cloud observation a push targets: verified local `cloud_id` is primary; remote `desktop_id` is recovery; disagreement/ambiguity raises | Callers doing their own `cloud_id`/`desktop_id` fallback logic | See "Observation identity model" below. A missing remote `desktop_id` must never cause a duplicate POST when the local `cloud_id` verifies |
@@ -320,7 +320,7 @@ get_conflict_detail()               (L16687)
 | Bulk PostgREST pagination | `SporelyCloudClient._get_paginated` (L14703) | Exhaustively page past the server `db-max-rows` cap | Any bulk `_get` without paging | Callers MUST pass a deterministic `order=` with `id.asc` tie-breaker; page failure propagates; **partial results are never returned** |
 | Bulk readers (must stay on `_get_paginated`) | `list_remote_observations`, `list_remote_calibrations`, `pull_web_observations` (L15749), `pull_measurements_for_images` (L15812), `pull_bulk_image_metadata` (L15865) | Complete remote collections | Single-shot `_get` for unbounded sets | See section F |
 | Metadata-only microscope anchors | `_is_metadata_only_microscope_cloud_image` (L4979), `_is_local_metadata_only_microscope_anchor` (L4999), `_ensure_metadata_only_microscope_image_for_public_spores` (L19518), `_metadata_only_microscope_image_payload` (L19408), `_set_cloud_image_metadata_only_state` (L5279) | Anchor lifecycle, separate from byte storage | Byte predicate; publication logic | `storage_path IS NULL` + `image_type='microscope'` = deliberate anchor, not breakage |
-| sync_status transitions | `_stamp_observation_synced` (L9143), `mark_observation_dirty` (L7368), `mark_observation_media_dirty` (L7384), `_clear_observation_dirty_if_no_real_changes` (L4360) | The only paths that flip dirty/synced | Direct SQL updates on `sync_status` | Stamp only after ALL required child ops succeeded and the snapshot stored |
+| sync_status transitions | `_stamp_observation_synced` (L9143), `mark_observation_dirty` (L7368), `mark_observation_media_dirty` (L7384), `_clear_observation_dirty_if_no_real_changes` (L4360) | Common helpers that flip dirty/synced. They are **not** the only writers: see the inventory in `docs/cloud-sync-orchestration-design.md` section 1 | Direct SQL updates on `sync_status` | Current code stamps `synced` **before** the snapshot on push, pull and keep-local/keep-cloud/merge, and before child work on push (compensated by `mark_observation_dirty`). Only `resolve_conflict_plan` stores the snapshot first. The target (required work, then snapshot, then `synced`) is in the design document |
 | Cloud deletion (soft) | `SporelyCloudClient.soft_delete_image` (L15952) | PATCH `deleted_at` on one image row; **no storage removal** | Hard delete during routine sync | Contract rule 5 |
 | Cloud deletion (hard) | `delete_cloud_observation` (L16067), `delete_cloud_measurements_for_image` (L16063) | Full observation teardown: Worker storage remove first (abort-on-partial keeps it retryable), then DELETE image rows, then observation row | Routine sync loops | Only explicit user deletion flows |
 | Media deletion | `_storage_remove` (L14796) | Worker-owned dual-bucket delete + quota accounting | Direct S3 deletion (legacy-only, never lifecycle cleanup) | |
@@ -592,11 +592,14 @@ under a key from `_cloud_observation_snapshot_key` (L4856).
   `_parse_cloud_observation_snapshot` (L3312); consumed by the pull
   candidate loop (L22327) and push preflight.
 - **Written**: `_store_cloud_observation_snapshot` (L5236) via
-  `_store_remote_snapshot` (L10927) — after successful push/pull of an
-  observation *and all required children*, and by conflict-plan
-  finalization (`finalize_sync_candidates` L10825 stores the snapshot
-  **before** stamping synced; a snapshot failure leaves the conflict
-  unsealed — see `test_cloud_conflict_plan_execution.py`).
+  `_store_remote_snapshot` (L10927). On push and pull it is written after
+  the observation is stamped, and on push even after a required child failed.
+  On pull, a snapshot failure leaves the row `synced`. Conflict-plan
+  execution (`resolve_conflict_plan`) stores the snapshot **before** stamping
+  synced, so a snapshot failure leaves the conflict unsealed (see
+  `test_cloud_conflict_plan_execution.py`). `finalize_sync_candidates`
+  stores nothing itself. See `docs/cloud-sync-orchestration-design.md`
+  section 1.
 - **Cleared**: `_clear_cloud_observation_snapshot` (L6465),
   `unlink_local_observation_from_cloud`.
 
@@ -639,12 +642,21 @@ The governing rule (contract rule 8): **do not mark an observation fully
 synced if required image, measurement, calibration, summary, or deletion
 work failed.**
 
-- `_stamp_observation_synced` (L9143) may only run after all required child
-  operations succeeded *and* the snapshot stored. Failures leave
-  `sync_status` dirty so the next sync retries.
+- **Current behaviour differs from that rule** (see
+  `docs/cloud-sync-orchestration-design.md` sections 1 and 2):
+  `push_all` stamps `synced` right after the observation PATCH/POST, before
+  child work and the snapshot. Pull, keep-local, keep-cloud and merge also
+  stamp before storing the snapshot. Only `resolve_conflict_plan` stores the
+  snapshot first.
 - **Child-operation failure**: per-observation push catches child errors,
-  records them in the result's `errors`, and skips the synced stamp for
-  that observation; other observations continue.
+  records them in the result's `errors`, and compensates with
+  `mark_observation_dirty` after the stamp. Other observations continue. The
+  snapshot is still stored afterwards. Mosaic failures are only logged. The
+  summary-failure and measurement-reconciliation compensation calls
+  `mark_observation_sync_dirty` with one argument. The resulting `TypeError`
+  is swallowed, so those observations stay `synced`. The target model, in
+  which required work, then the snapshot, then `synced` are written by one
+  owner, is in the design document.
 - **Partial uploads**: the retry-safe upload sequence (contract) is
   row → bytes → `storage_path` PATCH → local `cloud_id` → snapshot. An
   interruption after any step must be recoverable by repeating sync;
@@ -674,8 +686,9 @@ work failed.**
 1. Tombstone flush happens **before** dirty-observation pruning in
    `push_all` (~L17704) — reordering would delay deletions a full cycle or
    resurrect pruned intent.
-2. `finalize_sync_candidates` stores the snapshot **before** stamping
-   synced — inverting this can seal a conflict without a baseline.
+2. `resolve_conflict_plan` (the executor `finalize_sync_candidates` uses)
+   stores the snapshot **before** stamping synced. Inverting this can seal a
+   conflict without a baseline.
 3. The desired-state initializer runs at the top of
    `_push_images_for_observation`, after tombstone push, before candidate
    filtering — moving it later can let an uninitialized observation upload
