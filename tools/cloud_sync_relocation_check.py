@@ -478,7 +478,40 @@ def origin(module_name, name):
                 targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target] if isinstance(stmt, (ast.AnnAssign, ast.AugAssign)) else []
                 if any(isinstance(n, ast.Name) and n.id == name for t in targets for n in ast.walk(t)):
                     inits.append(dump_hash(stmt))
-        result["init_hash"] = inits[0] if len(inits) == 1 else None
+        # Every import-time statement that touches the state (directly or via
+        # an import alias) anywhere in the facade or owners, outside function
+        # bodies: a post-initialization mutation or alias changes this proof.
+        touches = []
+        for m in internal_modules():
+            path = getattr(m, "__file__", None)
+            if not path:
+                continue
+            if path not in _trees:
+                with open(path, encoding="utf-8") as fh:
+                    _trees[path] = ast.parse(fh.read())
+            tree = _trees[path]
+            names = {name}
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom):
+                    names.update(a.asname for a in node.names if a.name == name and a.asname)
+            for stmt in tree.body:
+                if isinstance(stmt, (ast.Import, ast.ImportFrom, ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                stack = [stmt]
+                hit = False
+                while stack and not hit:
+                    node = stack.pop()
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                        continue
+                    if isinstance(node, ast.Name) and node.id in names:
+                        hit = True
+                    stack.extend(ast.iter_child_nodes(node))
+                if hit:
+                    touches.append(dump_hash(stmt))
+        if len(inits) == 1:
+            result["init_hash"] = dump_hash(ast.parse(repr(sorted(touches)))) if touches else None
+        else:
+            result["init_hash"] = None
         result["holders"] = holders
         result["conflicting"] = conflicting
         if isinstance(obj, __import__("logging").Logger):
@@ -575,6 +608,38 @@ def _source_diff(base: ast.stmt, cand: ast.stmt) -> str:
     return diff or "(AST differs only in node structure; unparsed source is equal)\n" + "\n".join(
         difflib.unified_diff(_dump(base).split(", "), _dump(cand).split(", "), "base", "candidate", lineterm="")
     )
+
+
+def _is_literal(node: ast.AST | None) -> bool:
+    try:
+        ast.literal_eval(node)
+    except Exception:
+        return False
+    return True
+
+
+def _inert_owner_statement(stmt: ast.stmt) -> bool:
+    """Statements that cannot mutate state at import time."""
+    if isinstance(stmt, (ast.Import, ast.ImportFrom)):
+        return True
+    if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant):
+        return True  # docstring
+    if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return not stmt.decorator_list and not any(
+            d is not None and not _is_literal(d) for d in [*stmt.args.defaults, *stmt.args.kw_defaults]
+        )
+    if isinstance(stmt, ast.ClassDef):
+        return not stmt.decorator_list and not stmt.keywords \
+            and all(isinstance(b, ast.Name) for b in stmt.bases) \
+            and all(_inert_owner_statement(item) for item in stmt.body)
+    if isinstance(stmt, ast.Assign):
+        return all(isinstance(t, ast.Name) for t in stmt.targets) and _is_literal(stmt.value)
+    if isinstance(stmt, ast.AnnAssign):
+        return isinstance(stmt.target, ast.Name) and (stmt.value is None or _is_literal(stmt.value))
+    if isinstance(stmt, ast.If) and isinstance(stmt.test, (ast.Name, ast.Attribute)) \
+            and getattr(stmt.test, "id", getattr(stmt.test, "attr", None)) == "TYPE_CHECKING":
+        return not stmt.orelse and all(isinstance(i, (ast.Import, ast.ImportFrom)) for i in stmt.body)
+    return False
 
 
 _PLACEHOLDER_HASHES = {None, "unhashable", "nosource"}
@@ -780,6 +845,13 @@ def run_check(
                     f"module-level state `{bound}` is not one shared instance "
                     f"(holders {cand_origin.get('holders')}, conflicting {cand_origin.get('conflicting')})"
                 )
+            if cand_origin.get("kind") == "state" and (
+                base_origin.get("init_hash") is None or base_origin.get("init_hash") != cand_origin.get("init_hash")
+            ):
+                entry.verdict = NEEDS_REVIEW if entry.verdict == IDENTICAL else entry.verdict
+                entry.reasons.append(
+                    f"module-level state `{bound}`: initializer and import-time uses are not proven unchanged"
+                )
             if base_origin.get("kind") != cand_origin.get("kind"):
                 entry.verdict = NEEDS_REVIEW if entry.verdict == IDENTICAL else entry.verdict
                 entry.reasons.append(f"`{bound}` kind changed: {base_origin} -> {cand_origin}")
@@ -837,6 +909,21 @@ def run_check(
                     entry = entries[f"method:{c}.{attr}"]
                     entry.verdict = NEEDS_REVIEW if entry.verdict == IDENTICAL else entry.verdict
                     entry.reasons.append(f"`{cls_name}` attribute resolution changed: " + "; ".join(problems))
+
+    # New import-time statements in owners (not relocations, not present in
+    # the base version of that owner) can mutate state; they are not proven.
+    located_nodes = {id(node) for _o, _q, node in located.values()}
+    for owner in cand_owners:
+        base_owner = _load_module(base_root, owner.name)
+        base_dumps = {_dump(stmt) for stmt in base_owner.tree.body} if base_owner else set()
+        for stmt in owner.tree.body:
+            if id(stmt) in located_nodes or _dump(stmt) in base_dumps or _inert_owner_statement(stmt):
+                continue
+            key = f"owner-stmt:{owner.name}:{stmt.lineno}"
+            entries[key] = Entry(key, NEEDS_REVIEW, owner.name, owner.name, None, [
+                "new module-level statement in an owner runs at import time; cannot be proven: "
+                + ast.unparse(stmt).splitlines()[0]
+            ])
 
     if probe_errors:
         for entry in entries.values():

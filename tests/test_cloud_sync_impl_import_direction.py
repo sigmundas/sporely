@@ -227,3 +227,20 @@ def test_typing_attribute_guard_is_trusted_only_unmodified(tmp_path):
         "base.py": source.format(extra="typing.TYPE_CHECKING = True"), "upper.py": "",
     })
     assert any("imports the facade" in v for v in violations)
+
+
+def test_wildcard_import_voids_type_checking_guard(tmp_path):
+    violations = _check(tmp_path, {
+        "base.py": textwrap.dedent("""
+            from __future__ import annotations
+            from typing import TYPE_CHECKING
+            from json import *
+            if TYPE_CHECKING:
+                from utils.cloud_sync import SporelyCloudClient
+
+            def f(client: SporelyCloudClient) -> SporelyCloudClient:
+                return client
+            """),
+        "upper.py": "",
+    })
+    assert any("imports the facade" in v for v in violations)

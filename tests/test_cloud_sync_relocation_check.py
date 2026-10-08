@@ -340,3 +340,26 @@ def test_placeholder_source_hashes_never_prove_origin():
         assert check._same_origin(origin, dict(origin), {}) == (False, None)
     origin = {"kind": "def", "module": "m", "qualname": "f", "hash": "abc"}
     assert check._same_origin(origin, dict(origin), {}) == (True, None)
+
+
+def test_post_initialization_state_mutation_is_not_identical(tmp_path):
+    base = FUTURE + "CACHE = {}\n\ndef read():\n    return CACHE\n"
+    entries = _run(tmp_path, {"pkg/facade.py": base}, {
+        "pkg/facade.py": FUTURE + "from pkg.impl.a import CACHE, read\n",
+        **_owner(FUTURE + "CACHE = {}\nCACHE.update({'changed': 1})\n\ndef read():\n    return CACHE\n"),
+    })
+    assert entries["def:read"].verdict != check.IDENTICAL, entries["def:read"].reasons
+    assert entries["assign:CACHE"].verdict != check.IDENTICAL
+    assert any(key.startswith("owner-stmt:pkg.impl.a") for key in entries)
+
+
+def test_state_mutated_through_alias_in_another_owner_is_not_identical(tmp_path):
+    base = FUTURE + "CACHE = {}\n\ndef read():\n    return CACHE\n"
+    entries = _run(tmp_path, {"pkg/facade.py": base}, {
+        "pkg/facade.py": FUTURE + "from pkg.impl.a import CACHE, read\nimport pkg.impl.b\n",
+        "pkg/impl/__init__.py": "",
+        "pkg/impl/a.py": FUTURE + "CACHE = {}\n\ndef read():\n    return CACHE\n",
+        "pkg/impl/b.py": FUTURE + "from pkg.impl.a import CACHE as C\nC['changed'] = 1\n",
+    })
+    assert entries["def:read"].verdict != check.IDENTICAL, entries["def:read"].reasons
+    assert entries["assign:CACHE"].verdict != check.IDENTICAL

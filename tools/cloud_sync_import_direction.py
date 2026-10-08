@@ -77,8 +77,14 @@ def _is_type_checking_test(test: ast.expr, tree: ast.Module) -> bool:
 
     Anything else -- a local ``TYPE_CHECKING = True``, an alias, a rebinding of
     ``typing`` or a write to ``typing.TYPE_CHECKING`` -- is not proven, so the
-    imports under it count as runtime imports.
+    imports under it count as runtime imports. A wildcard import anywhere in
+    the module could rebind either name, so it also voids the proof.
     """
+    if any(
+        isinstance(node, ast.ImportFrom) and any(a.name == "*" for a in node.names)
+        for node in ast.walk(tree)
+    ):
+        return False
     if isinstance(test, ast.Name) and test.id == "TYPE_CHECKING":
         return _top_level_import(tree, "typing", "TYPE_CHECKING") and _binding_count(tree, "TYPE_CHECKING") == 1
     if isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING" \
