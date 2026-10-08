@@ -385,6 +385,37 @@ def internal_hash(module, qualname):
         body = node.body
     return dump_hash(node)
 
+def import_time_nodes(node, future):
+    """Every AST node evaluated when ``node`` executes at import time.
+
+    Function bodies are skipped, but their decorators and defaults are not,
+    and neither are annotations unless ``from __future__ import annotations``
+    defers them. Class bodies run, so they are walked.
+    """
+    stack = [node]
+    while stack:
+        cur = stack.pop()
+        yield cur
+        if isinstance(cur, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            stack.extend(cur.decorator_list)
+            stack.extend(d for d in [*cur.args.defaults, *cur.args.kw_defaults] if d is not None)
+            if not future:
+                args = [*cur.args.posonlyargs, *cur.args.args, *cur.args.kwonlyargs,
+                        *([cur.args.vararg] if cur.args.vararg else []),
+                        *([cur.args.kwarg] if cur.args.kwarg else [])]
+                stack.extend(a.annotation for a in args if a.annotation is not None)
+                if cur.returns is not None:
+                    stack.append(cur.returns)
+            stack.extend(getattr(cur, "type_params", []) or [])
+        elif isinstance(cur, ast.Lambda):
+            stack.extend(d for d in [*cur.args.defaults, *cur.args.kw_defaults] if d is not None)
+        elif isinstance(cur, ast.AnnAssign) and future:
+            stack.append(cur.target)
+            if cur.value is not None:
+                stack.append(cur.value)
+        else:
+            stack.extend(ast.iter_child_nodes(cur))
+
 modules = {}
 errors = []
 for name in request["import"]:
@@ -494,22 +525,21 @@ def origin(module_name, name):
             for node in ast.walk(tree):
                 if isinstance(node, ast.ImportFrom):
                     names.update(a.asname for a in node.names if a.name == name and a.asname)
+            future = any(
+                isinstance(st, ast.ImportFrom) and st.module == "__future__"
+                and any(a.name == "annotations" for a in st.names)
+                for st in tree.body
+            )
             for stmt in tree.body:
-                if isinstance(stmt, (ast.Import, ast.ImportFrom, ast.FunctionDef, ast.AsyncFunctionDef)):
+                if isinstance(stmt, (ast.Import, ast.ImportFrom)):
                     continue
-                stack = [stmt]
-                hit = False
-                while stack and not hit:
-                    node = stack.pop()
-                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-                        continue
-                    if isinstance(node, ast.Name) and node.id in names:
-                        hit = True
-                    stack.extend(ast.iter_child_nodes(node))
-                if hit:
+                if any(isinstance(n, ast.Name) and n.id in names for n in import_time_nodes(stmt, future)):
                     touches.append(dump_hash(stmt))
-        if len(inits) == 1:
-            result["init_hash"] = dump_hash(ast.parse(repr(sorted(touches)))) if touches else None
+        # Fail closed: the initializer must be the only import-time statement
+        # touching the state, so neither execution order nor later mutation
+        # (anywhere in the facade or owners) can change it.
+        if len(inits) == 1 and touches == [inits[0]]:
+            result["init_hash"] = inits[0]
         else:
             result["init_hash"] = None
         result["holders"] = holders
@@ -618,24 +648,41 @@ def _is_literal(node: ast.AST | None) -> bool:
     return True
 
 
-def _inert_owner_statement(stmt: ast.stmt) -> bool:
-    """Statements that cannot mutate state at import time."""
+def _simple_annotation(node: ast.AST | None) -> bool:
+    """An annotation whose evaluation is a plain name/attribute lookup or literal."""
+    if node is None or isinstance(node, (ast.Name, ast.Constant)):
+        return True
+    return isinstance(node, ast.Attribute) and _simple_annotation(node.value)
+
+
+def _inert_owner_statement(stmt: ast.stmt, future: bool) -> bool:
+    """Statements that cannot mutate state at import time.
+
+    Without ``from __future__ import annotations`` annotations execute at
+    definition time, so they must be plain lookups or literals.
+    """
     if isinstance(stmt, (ast.Import, ast.ImportFrom)):
         return True
     if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant):
         return True  # docstring
     if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        return not stmt.decorator_list and not any(
-            d is not None and not _is_literal(d) for d in [*stmt.args.defaults, *stmt.args.kw_defaults]
+        args = [*stmt.args.posonlyargs, *stmt.args.args, *stmt.args.kwonlyargs,
+                *([stmt.args.vararg] if stmt.args.vararg else []),
+                *([stmt.args.kwarg] if stmt.args.kwarg else [])]
+        annotations_ok = future or (
+            all(_simple_annotation(a.annotation) for a in args) and _simple_annotation(stmt.returns)
         )
+        return not stmt.decorator_list and annotations_ok and not getattr(stmt, "type_params", None) \
+            and not any(d is not None and not _is_literal(d) for d in [*stmt.args.defaults, *stmt.args.kw_defaults])
     if isinstance(stmt, ast.ClassDef):
-        return not stmt.decorator_list and not stmt.keywords \
+        return not stmt.decorator_list and not stmt.keywords and not getattr(stmt, "type_params", None) \
             and all(isinstance(b, ast.Name) for b in stmt.bases) \
-            and all(_inert_owner_statement(item) for item in stmt.body)
+            and all(_inert_owner_statement(item, future) for item in stmt.body)
     if isinstance(stmt, ast.Assign):
         return all(isinstance(t, ast.Name) for t in stmt.targets) and _is_literal(stmt.value)
     if isinstance(stmt, ast.AnnAssign):
-        return isinstance(stmt.target, ast.Name) and (stmt.value is None or _is_literal(stmt.value))
+        return isinstance(stmt.target, ast.Name) and (future or _simple_annotation(stmt.annotation)) \
+            and (stmt.value is None or _is_literal(stmt.value))
     if isinstance(stmt, ast.If) and isinstance(stmt.test, (ast.Name, ast.Attribute)) \
             and getattr(stmt.test, "id", getattr(stmt.test, "attr", None)) == "TYPE_CHECKING":
         return not stmt.orelse and all(isinstance(i, (ast.Import, ast.ImportFrom)) for i in stmt.body)
@@ -917,7 +964,7 @@ def run_check(
         base_owner = _load_module(base_root, owner.name)
         base_dumps = {_dump(stmt) for stmt in base_owner.tree.body} if base_owner else set()
         for stmt in owner.tree.body:
-            if id(stmt) in located_nodes or _dump(stmt) in base_dumps or _inert_owner_statement(stmt):
+            if id(stmt) in located_nodes or _dump(stmt) in base_dumps or _inert_owner_statement(stmt, owner.future_annotations):
                 continue
             key = f"owner-stmt:{owner.name}:{stmt.lineno}"
             entries[key] = Entry(key, NEEDS_REVIEW, owner.name, owner.name, None, [

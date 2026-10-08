@@ -363,3 +363,36 @@ def test_state_mutated_through_alias_in_another_owner_is_not_identical(tmp_path)
     })
     assert entries["def:read"].verdict != check.IDENTICAL, entries["def:read"].reasons
     assert entries["assign:CACHE"].verdict != check.IDENTICAL
+
+
+def test_reordered_state_mutations_are_not_identical(tmp_path):
+    base = FUTURE + "CACHE = {}\nCACHE.update({'x': 1})\nCACHE.update({'x': 2})\n\ndef read():\n    return CACHE\n"
+    entries = _run(tmp_path, {"pkg/facade.py": base}, {
+        "pkg/facade.py": FUTURE + "from pkg.impl.a import CACHE, read\n",
+        **_owner(FUTURE + "CACHE = {}\nCACHE.update({'x': 2})\nCACHE.update({'x': 1})\n\ndef read():\n    return CACHE\n"),
+    })
+    assert entries["assign:CACHE"].verdict != check.IDENTICAL
+    assert entries["def:read"].verdict != check.IDENTICAL
+
+
+def test_executable_annotation_mutating_state_is_not_identical(tmp_path):
+    base = FUTURE + "CACHE = {}\n\ndef read():\n    return CACHE\n"
+    entries = _run(tmp_path, {"pkg/facade.py": base}, {
+        "pkg/facade.py": FUTURE + "from pkg.impl.a import CACHE, read\n",
+        # No future import: the annotation runs when ``extra`` is defined.
+        **_owner("CACHE = {}\n\ndef read():\n    return CACHE\n\n"
+                 "def extra(x: CACHE.update({'changed': 1})):\n    pass\n"),
+    })
+    assert entries["assign:CACHE"].verdict != check.IDENTICAL
+    assert entries["def:read"].verdict != check.IDENTICAL
+    assert any(key.startswith("owner-stmt:pkg.impl.a") for key in entries)
+
+
+def test_mutating_default_or_decorator_in_owner_is_not_identical(tmp_path):
+    base = FUTURE + "CACHE = {}\n\ndef read():\n    return CACHE\n"
+    entries = _run(tmp_path, {"pkg/facade.py": base}, {
+        "pkg/facade.py": FUTURE + "from pkg.impl.a import CACHE, read\n",
+        **_owner(FUTURE + "CACHE = {}\n\ndef read():\n    return CACHE\n\n"
+                 "def extra(x=CACHE.setdefault('k', 1)):\n    pass\n"),
+    })
+    assert entries["def:read"].verdict != check.IDENTICAL
