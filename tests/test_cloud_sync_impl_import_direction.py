@@ -16,7 +16,20 @@ from tools.cloud_sync_import_direction import check_import_direction
 ROOT = Path(__file__).resolve().parents[1]
 
 #: Owner module -> layer. An owner may import only owners on a strictly lower layer.
-OWNER_LAYERS: dict[str, int] = {}
+OWNER_LAYERS: dict[str, int] = {
+    # Stage S3: leaf and boundary owners.
+    "utils.cloud_sync_impl": 0,
+    "utils.cloud_sync_impl.common": 0,
+    "utils.cloud_sync_impl.capabilities": 0,
+    "utils.cloud_sync_impl.errors": 1,
+    "utils.cloud_sync_impl.sync_state": 1,
+    "utils.cloud_sync_impl.remote_reads": 1,
+    "utils.cloud_sync_impl.progress": 2,
+    "utils.cloud_sync_impl.pull_only": 2,
+    "utils.cloud_sync_impl.transport": 2,
+    "utils.cloud_sync_impl.image_policy": 2,
+    "utils.cloud_sync_impl.tombstones": 3,
+}
 
 #: Owner modules allowed to import the facade at runtime (transitional; each
 #: entry needs a justification comment). Empty unless a later stage justifies one.

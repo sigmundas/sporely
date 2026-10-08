@@ -284,8 +284,8 @@ get_conflict_detail()               (L16687)
 - `set_image_cloud_selected(image_id, selected)` (L7402) — THE entry point
   for the "Keep image in Sporely Cloud" checkbox; owns the
   excluded-set + tombstone-queue/cancel lifecycle.
-- `remember_explicit_image_restore_source` (L7484).
-- `mark_observation_dirty` (L7368), `mark_observation_media_dirty` (L7384).
+- `remember_explicit_image_restore_source` (`utils/cloud_sync_impl/sync_state.py`).
+- `mark_observation_dirty` (`utils/cloud_sync_impl/sync_state.py`), `mark_observation_media_dirty` (`utils/cloud_sync_impl/sync_state.py`).
 - `unlink_local_observation_from_cloud` (L7322).
 
 ---
@@ -296,13 +296,13 @@ get_conflict_detail()               (L16687)
 
 | Concern | Canonical function(s) | Responsibility | Must not be bypassed by | Notes / invariants |
 | --- | --- | --- | --- | --- |
-| Cloud image byte desired-state decision | `cloud_image_bytes_desired` (L5364) | Single predicate over `sporely_cloud_image_storage_excluded_ids_<obs>`; bytes only | Any upload path, prepared-list logic, UI shortcuts | Fails closed on invalid ids. Anchor lifecycle is explicitly NOT governed by this predicate |
-| Byte-upload enforcement | `SporelyCloudClient.upload_image_file` (L15314), `upload_original_image_file` (L15566) | Refuse bytes when predicate is false; raise `CloudImageBytesNotDesiredError` (L5384) | Direct `_post`/Worker calls | `recovery_authorized=True` is the only opt-out, reserved for recovery flows |
+| Cloud image byte desired-state decision | `cloud_image_bytes_desired` (`utils/cloud_sync_impl/image_policy.py`) | Single predicate over `sporely_cloud_image_storage_excluded_ids_<obs>`; bytes only | Any upload path, prepared-list logic, UI shortcuts | Fails closed on invalid ids. Anchor lifecycle is explicitly NOT governed by this predicate |
+| Byte-upload enforcement | `SporelyCloudClient.upload_image_file` (L15314), `upload_original_image_file` (L15566) | Refuse bytes when predicate is false; raise `CloudImageBytesNotDesiredError` (`utils/cloud_sync_impl/errors.py`) | Direct `_post`/Worker calls | `recovery_authorized=True` is the only opt-out, reserved for recovery flows |
 | Desired-state initialization | `_initialize_cloud_image_storage_desired_state_for_observation` (L5441) | Thin alias of `_ensure_cloud_image_storage_intent_initialized` — the canonical entry is the row below. Retained as an alias for callers. | Gallery-open-time ad-hoc seeding | Ledger-based (see next row); the retired observation-level sentinel and the group-freeze per-magnification default are gone |
 | Per-image storage-intent ledger | `_ensure_cloud_image_storage_intent_initialized` | Canonical owner of the per-image storage-intent ledger (`sporely_cloud_image_storage_intent_ids_<obs>`). Seeds defaults incrementally (tombstoned→excluded; field→desired; new members of an initialized magnification group→excluded, never a silent keeper; genuinely new/legacy groups→one deterministic keeper, byte-backed members never excluded by default). Zero cloud I/O. Runs before the pending-media dirty scan so uninitialized rows are never treated as "pending" | Callers reading/writing intent bitmaps directly | Only ledger membership proves a decision exists. Explicit checkbox choices write the ledger and are never reseeded. Fail closed |
 | Anchor promotion (metadata-only → byte-backed) | `SporelyCloudClient.reserve_image_storage_path_for_promotion` / `release_image_storage_path_reservation` (+ local pending marker `sporely_cloud_image_promotion_pending_<obs>_<img>`) | Canonical owner of promoting a linked metadata-only anchor to a byte-backed row on its existing `cloud_id`. Reserve via owner-scoped conditional PATCH `storage_path=is.null`; release via `storage_path=eq.<exact key>`. Rollback on upload failure removes partial R2 objects and releases the key | Callers PATCHing `storage_path` unconditionally or creating a new row for the same anchor | Local pending marker is written BEFORE the reservation PATCH. A non-NULL `storage_path` combined with a live marker is UNCONFIRMED and never trusted as proof of bytes. Both writers are `PullOnlyCloudClient`-blocked |
-| Checkbox lifecycle | `set_image_cloud_selected` (L7402) | Uncheck queues tombstone + excludes; recheck cancels tombstone / triggers explicit restore | UI writing settings keys directly | Shares lifecycle with context-menu removal |
-| Tombstone processing | `_push_pending_image_tombstones` (L5814), `_record_remote_image_tombstones` (L5651), `_cancel_microscope_anchor_tombstones` (L19458), `_local_tombstoned_cloud_image_ids` (L5630) | Push explicit deletions; record remote deletions locally; cancel anchor tombstones | Ad-hoc `soft_delete_image` calls | Flushed **before** pruning in `push_all` so an uncheck this session deletes this session |
+| Checkbox lifecycle | `set_image_cloud_selected` (`utils/cloud_sync_impl/image_policy.py`) | Uncheck queues tombstone + excludes; recheck cancels tombstone / triggers explicit restore | UI writing settings keys directly | Shares lifecycle with context-menu removal |
+| Tombstone processing | `_push_pending_image_tombstones` (`utils/cloud_sync_impl/tombstones.py`), `_record_remote_image_tombstones` (`utils/cloud_sync_impl/tombstones.py`), `_cancel_microscope_anchor_tombstones` (L19458), `_local_tombstoned_cloud_image_ids` (`utils/cloud_sync_impl/tombstones.py`) | Push explicit deletions; record remote deletions locally; cancel anchor tombstones | Ad-hoc `soft_delete_image` calls | Flushed **before** pruning in `push_all` so an uncheck this session deletes this session |
 | Image identity repair | `_reconcile_local_image_cloud_id` (L5585) (contract name: `_associate_persisted_cloud_images` path) | Restore lost `cloud_id` from unambiguous `desktop_id` match | Upload paths inventing new rows | Checkbox-independent (contract rule 12). Ambiguous match → warn and skip, never auto-pick |
 | Image metadata push | `SporelyCloudClient.push_image_metadata` (L15176) | PATCH-or-POST one `observation_images` row | Raw `_patch`/`_post` | Understands metadata-only semantics (`storage_path IS NULL AND image_type='microscope'`, see L15209) |
 | Original upload | `upload_original_image_file` (L15566) + `utils/original_sync_policy.py` | Companion original bytes, policy-gated | — | Parent image must be desired |
@@ -310,7 +310,7 @@ get_conflict_detail()               (L16687)
 | Remote snapshot storage | `_store_remote_snapshot` (L10927), `_store_cloud_observation_snapshot` (L5236), `_load_cloud_observation_snapshot` (L5226), `_parse_cloud_observation_snapshot` (L3312), `_clear_cloud_observation_snapshot` (L6465) | Persist/read the known-good baseline | Ad-hoc settings writes | May only run after complete, successful remote reads (section F). **Current code does not wait for required child work**: `push_all` and `materialize_cloud_media_for_observation` store it after a child failure. The target model is in `docs/cloud-sync-orchestration-design.md` |
 | Three-way conflict analysis | `_analyze_observation_push_conflicts` (L4112), `ObservationPushConflictReport` (L4097), `build_conflict_plan_baseline` (L11459) | Compare local vs cloud vs baseline; block writes on both-changed | Push loops writing without preflight | "Needs review" marker: `_set_observation_conflict_review_pending` (L4273) / `_clear_…` (L4290) |
 | Local-vs-cloud change analysis | `_local_has_real_changes_since_snapshot` (L4318), `_remote_snapshot_has_meaningful_changes` (L9111), `_clear_observation_dirty_if_no_real_changes` (L4360) | Distinguish real edits from no-op noise | — | Feeds the no-op fast path |
-| Observation push identity resolution | `SporelyCloudClient._resolve_existing_observation_for_push` (L14839), `_find_cloud_observation` (L14818), `ObservationIdentityConflictError` (L2268) | Decide which existing cloud observation a push targets: verified local `cloud_id` is primary; remote `desktop_id` is recovery; disagreement/ambiguity raises | Callers doing their own `cloud_id`/`desktop_id` fallback logic | See "Observation identity model" below. A missing remote `desktop_id` must never cause a duplicate POST when the local `cloud_id` verifies |
+| Observation push identity resolution | `SporelyCloudClient._resolve_existing_observation_for_push` (L14839), `_find_cloud_observation` (L14818), `ObservationIdentityConflictError` (`utils/cloud_sync_impl/errors.py`) | Decide which existing cloud observation a push targets: verified local `cloud_id` is primary; remote `desktop_id` is recovery; disagreement/ambiguity raises | Callers doing their own `cloud_id`/`desktop_id` fallback logic | See "Observation identity model" below. A missing remote `desktop_id` must never cause a duplicate POST when the local `cloud_id` verifies |
 | Image push identity resolution | `SporelyCloudClient._resolve_existing_image_for_push`, `_find_cloud_image`, `ImageIdentityConflictError` | Decide which existing cloud image a push targets: verified local `images.cloud_id` is primary (direct); remote `desktop_id` scoped to the observation is recovery; disagreement raises `ImageIdentityConflictError` (no PATCH/POST, stays dirty) | Callers doing their own `cloud_id`/`desktop_id` fallback logic | Pull-only imports with `cloud_id` set and NULL remote `desktop_id` must not trigger duplicate POSTs; mirrors the two-leg observation identity model |
 | Observation push | `SporelyCloudClient.push_observation` (L15120) | PATCH existing / POST new observation row | Raw transport | Identity via `_resolve_existing_observation_for_push`; POST only when it returns no target |
 | Observation pull | `pull_all` per-candidate loop (L22251+) | Apply remote updates to clean local rows; import new | — | Conflicted rows are skipped, not overwritten |
@@ -319,12 +319,12 @@ get_conflict_detail()               (L16687)
 | Calibration push/pull | `push_calibrations` (L6890), `pull_calibrations` (L7030), `push_calibration_metadata` (L15086), `push_calibration_reference_image` (L14955) | Calibration identity, data, reference image | — | Local-wins repair: `repair_calibrations_local_wins` (L7212) |
 | Bulk PostgREST pagination | `SporelyCloudClient._get_paginated` (L14703) | Exhaustively page past the server `db-max-rows` cap | Any bulk `_get` without paging | Callers MUST pass a deterministic `order=` with `id.asc` tie-breaker; page failure propagates; **partial results are never returned** |
 | Bulk readers (must stay on `_get_paginated`) | `list_remote_observations`, `list_remote_calibrations`, `pull_web_observations` (L15749), `pull_measurements_for_images` (L15812), `pull_bulk_image_metadata` (L15865) | Complete remote collections | Single-shot `_get` for unbounded sets | See section F |
-| Metadata-only microscope anchors | `_is_metadata_only_microscope_cloud_image` (L4979), `_is_local_metadata_only_microscope_anchor` (L4999), `_ensure_metadata_only_microscope_image_for_public_spores` (L19518), `_metadata_only_microscope_image_payload` (L19408), `_set_cloud_image_metadata_only_state` (L5279) | Anchor lifecycle, separate from byte storage | Byte predicate; publication logic | `storage_path IS NULL` + `image_type='microscope'` = deliberate anchor, not breakage |
-| sync_status transitions | `_stamp_observation_synced` (L9143), `mark_observation_dirty` (L7368), `mark_observation_media_dirty` (L7384), `_clear_observation_dirty_if_no_real_changes` (L4360) | Common helpers that flip dirty/synced. They are **not** the only writers: see the inventory in `docs/cloud-sync-orchestration-design.md` section 1 | Direct SQL updates on `sync_status` | Current code stamps `synced` **before** the snapshot on push, pull and keep-local/keep-cloud/merge, and before child work on push (compensated by `mark_observation_dirty`). Only `resolve_conflict_plan` stores the snapshot first. The target (required work, then snapshot, then `synced`) is in the design document |
+| Metadata-only microscope anchors | `_is_metadata_only_microscope_cloud_image` (`utils/cloud_sync_impl/image_policy.py`), `_is_local_metadata_only_microscope_anchor` (`utils/cloud_sync_impl/image_policy.py`), `_ensure_metadata_only_microscope_image_for_public_spores` (L19518), `_metadata_only_microscope_image_payload` (L19408), `_set_cloud_image_metadata_only_state` (`utils/cloud_sync_impl/sync_state.py`) | Anchor lifecycle, separate from byte storage | Byte predicate; publication logic | `storage_path IS NULL` + `image_type='microscope'` = deliberate anchor, not breakage |
+| sync_status transitions | `_stamp_observation_synced` (L9143), `mark_observation_dirty` (`utils/cloud_sync_impl/sync_state.py`), `mark_observation_media_dirty` (`utils/cloud_sync_impl/sync_state.py`), `_clear_observation_dirty_if_no_real_changes` (L4360) | Common helpers that flip dirty/synced. They are **not** the only writers: see the inventory in `docs/cloud-sync-orchestration-design.md` section 1 | Direct SQL updates on `sync_status` | Current code stamps `synced` **before** the snapshot on push, pull and keep-local/keep-cloud/merge, and before child work on push (compensated by `mark_observation_dirty`). Only `resolve_conflict_plan` stores the snapshot first. The target (required work, then snapshot, then `synced`) is in the design document |
 | Cloud deletion (soft) | `SporelyCloudClient.soft_delete_image` (L15952) | PATCH `deleted_at` on one image row; **no storage removal** | Hard delete during routine sync | Contract rule 5 |
 | Cloud deletion (hard) | `delete_cloud_observation` (L16067), `delete_cloud_measurements_for_image` (L16063) | Full observation teardown: Worker storage remove first (abort-on-partial keeps it retryable), then DELETE image rows, then observation row | Routine sync loops | Only explicit user deletion flows |
 | Media deletion | `_storage_remove` (L14796) | Worker-owned dual-bucket delete + quota accounting | Direct S3 deletion (legacy-only, never lifecycle cleanup) | |
-| Pull-only enforcement | `PullOnlyCloudClient` (L2170), `_PULL_ONLY_BLOCKED_CLIENT_METHODS` (L2117), `_PULL_ONLY_ALLOWED_READ_METHODS` (L2134) | Fail-closed allowlist proxy; records `write_attempts` | Any Download-from-Cloud path using a raw client | Unrecognized callables are blocked too — an allowlist, not a denylist |
+| Pull-only enforcement | `PullOnlyCloudClient` (`utils/cloud_sync_impl/pull_only.py`), `_PULL_ONLY_BLOCKED_CLIENT_METHODS` (`utils/cloud_sync_impl/pull_only.py`), `_PULL_ONLY_ALLOWED_READ_METHODS` (`utils/cloud_sync_impl/pull_only.py`) | Fail-closed allowlist proxy; records `write_attempts` | Any Download-from-Cloud path using a raw client | Unrecognized callables are blocked too — an allowlist, not a denylist |
 
 ### Observation identity model (`cloud_id` vs `desktop_id`)
 
@@ -440,12 +440,12 @@ cloud_writes_completed == 0
 write_attempts == []
 ```
 
-`PullOnlyCloudClient` (L2170) is a **fail-closed allowlist proxy**:
+`PullOnlyCloudClient` (`utils/cloud_sync_impl/pull_only.py`) is a **fail-closed allowlist proxy**:
 
 - Non-callable attributes forward verbatim.
-- Callables on `_PULL_ONLY_ALLOWED_READ_METHODS` (L2134) forward verbatim.
-- Every method on `_PULL_ONLY_BLOCKED_CLIENT_METHODS` (L2117) raises
-  `PullOnlyModeError` (L2106) and is recorded on `write_attempts`.
+- Callables on `_PULL_ONLY_ALLOWED_READ_METHODS` (`utils/cloud_sync_impl/pull_only.py`) forward verbatim.
+- Every method on `_PULL_ONLY_BLOCKED_CLIENT_METHODS` (`utils/cloud_sync_impl/pull_only.py`) raises
+  `PullOnlyModeError` (`utils/cloud_sync_impl/errors.py`) and is recorded on `write_attempts`.
 - **Any other callable is also blocked.** Under a plain denylist a future
   writer whose internals call `self._patch` would execute on the wrapped
   client and bypass the wrapper; the allowlist closes that class of leak.
@@ -467,8 +467,8 @@ added to the allowlist only as an explicit, reviewed choice.
 ### Normal (reversible / bookkeeping) local mutations
 
 - Dirty/synced stamps: `_stamp_observation_synced` (L9143, delegates to
-  `_set_observation_sync_state`), `mark_observation_dirty` (L7368),
-  `mark_observation_media_dirty` (L7384),
+  `_set_observation_sync_state`), `mark_observation_dirty` (`utils/cloud_sync_impl/sync_state.py`),
+  `mark_observation_media_dirty` (`utils/cloud_sync_impl/sync_state.py`),
   `_clear_observation_dirty_if_no_real_changes` (L4360), dirty-scan markers
   (L8465/L8477/L8845).
 - Snapshot persistence: `_store_cloud_observation_snapshot` (L5236),
@@ -478,12 +478,12 @@ added to the allowlist only as an explicit, reviewed choice.
   `cloud_id`; `unlink_local_observation_from_cloud` (L7322) clears
   observation-level linkage (explicit user action).
 - Desired-state bookkeeping: excluded-set updates via
-  `set_image_cloud_selected` (L7402),
-  `_remove_cloud_image_storage_excluded_image_id` (L5349),
-  `_set_cloud_image_metadata_only_state` (L5279),
-  `_clear_cloud_image_file_signature` (L5264).
+  `set_image_cloud_selected` (`utils/cloud_sync_impl/image_policy.py`),
+  `_remove_cloud_image_storage_excluded_image_id` (`utils/cloud_sync_impl/image_policy.py`),
+  `_set_cloud_image_metadata_only_state` (`utils/cloud_sync_impl/sync_state.py`),
+  `_clear_cloud_image_file_signature` (`utils/cloud_sync_impl/sync_state.py`).
 - Tombstone create/cancel: `set_image_cloud_selected`,
-  `_record_remote_image_tombstones` (L5651),
+  `_record_remote_image_tombstones` (`utils/cloud_sync_impl/tombstones.py`),
   `_cancel_microscope_anchor_tombstones` (L19458).
 - Creating local observations/image rows during pull (import of new remote
   observations, anchor creation via
@@ -525,7 +525,7 @@ live in `tests/test_cloud_download_only.py` (see section K).
 
 Rules, as implemented:
 
-- `_get_paginated` (L14703) is the canonical bulk reader. It loops
+- `_get_paginated` (`utils/cloud_sync_impl/transport.py`) is the canonical bulk reader. It loops
   `limit/offset` pages until a short page arrives, and **raises on any page
   failure — a partial accumulation is never returned.**
 - Callers MUST include a deterministic `order=` clause with `id.asc` as
@@ -677,7 +677,7 @@ work failed.**
   aborts while everything is still discoverable and retryable (L16099).
 - **Media worker failures**: surface as errors; quota accounting and
   dual-bucket targeting are Worker-owned, so client-side retries are safe.
-- **Conflict-plan failures**: `PartialConflictPlanError` (L2255) carries the
+- **Conflict-plan failures**: `PartialConflictPlanError` (`utils/cloud_sync_impl/errors.py`) carries the
   partial operation log; retry with `prior_result` skips completed
   operations; snapshot failure leaves the conflict unsealed.
 
@@ -822,6 +822,39 @@ High-value safety tests by invariant (not an exhaustive listing):
 | Calibrations | `tests/test_cloud_calibration_sync.py` |
 | Media recovery / audit | `tests/test_cloud_media_recovery.py`, `tests/test_cloud_media_audit.py`, `tests/test_cloud_original_sync_recovery.py`, `tests/test_cloud_media_pull_retry.py` |
 | Taxonomy identity representation unchanged by extraction | `tests/test_cloud_sync_taxonomy_identity_golden.py` against the frozen `tests/fixtures/cloud_sync_taxonomy_identity_golden.json` |
+
+### Owner package `utils/cloud_sync_impl/` (Stage S3: leaf and boundary owners)
+
+`utils/cloud_sync.py` stays the compatibility facade: it re-exports every
+moved name as the same object, and `SporelyCloudClient` stays defined there.
+Owners never import the facade. Layers (enforced by
+`tests/test_cloud_sync_impl_import_direction.py`) are in brackets.
+
+| Owner | Responsibility | Main symbols |
+|---|---|---|
+| `common.py` [0] | Pure shared helpers | `_safe_int`, `_normalize_cloud_media_key` |
+| `capabilities.py` [0] | Remote capability probes | `_owner_sync_parents_supported`, `_remote_metadata_purpose`, `METADATA_PURPOSE_*` |
+| `errors.py` [1] | Error classes; issue classification and formatting | `CloudSyncError` and subclasses, `CloudImageBytesNotDesiredError`, `is_identity_clear_verification_failed_error`, `_collect_sync_error_details`, image-too-large and privacy-slot helpers |
+| `sync_state.py` [1] | Local sync-state settings keys and stores; dirty markers | metadata-only ids, pending promotion keys, explicit restore source, file/media signature stores, `mark_observation_dirty`, `mark_observation_media_dirty` |
+| `remote_reads.py` [1] | Shared remote reads | `_pull_remote_images_for_sync`, `_pull_remote_measurements_for_images`, `_group_remote_measurements_by_observation` |
+| `progress.py` [2] | Profiling, progress, sync summary | `CloudSyncProfiler`, summary/profiler `ContextVar` accessors, `_emit_progress`, `summarize_sync_issues`, `partition_download_from_cloud_issues` |
+| `pull_only.py` [2] | Pull-only boundary | `_PULL_ONLY_BLOCKED_CLIENT_METHODS`, `_PULL_ONLY_ALLOWED_READ_METHODS`, `PullOnlyCloudClient` |
+| `transport.py` [2] | REST helpers mixed into the client | `CloudSyncTransportMixin._get_paginated` |
+| `image_policy.py` [2] | Image byte policy (canonical) | `cloud_image_bytes_desired`, `should_pull_cloud_image_to_desktop`, storage-intent ledger, `set_image_cloud_selected`, `_cloud_explicit_media_upload_selection`, anchor predicates |
+| `tombstones.py` [3] | Image tombstones and the pending flush | `_push_pending_image_tombstones`, `_record_remote_image_tombstones`, `_local_tombstoned_*` |
+
+Kept in the facade although their responsibility is listed here:
+`SporelyCloudClient._patch_with_precondition` reads the module global
+`SUPABASE_URL`, which `tests/local_supabase/device.py` rebinds on the facade;
+moving the method would split that binding.
+
+Tests that patch a facade name reach relocated code through
+`tests/cloud_sync_owner_patching.py` (test-only): the autouse `conftest.py`
+fixture makes `monkeypatch.setattr` on the facade also patch owner bindings that
+are the same object, and `patch_facade_object` does the same for
+`unittest.mock.patch.object`. `tests/test_cloud_sync_facade_identity.py`
+checks facade identity for every owner name and pull-only classification of
+every client method, including methods from owner mixins.
 
 ### Extraction relocation-safety checks (accepted in Stage S2)
 

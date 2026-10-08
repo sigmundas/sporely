@@ -275,7 +275,8 @@ def test_default_on_sharing_rpcs_match_desktop_wrappers_and_allowlist() -> None:
     for name in ("stop_sharing_reference_set", "share_reference_set_again"):
         assert _method_rpc_keys(desktop, name) == ("p_source_measurement_set_id",)
         assert _sql_signature(migration, name) == (("p_source_measurement_set_id", "uuid"),)
-    blocked = desktop.split("_PULL_ONLY_BLOCKED_CLIENT_METHODS = frozenset({", 1)[1].split("})", 1)[0]
+    pull_only = (ROOT / "utils/cloud_sync_impl/pull_only.py").read_text()
+    blocked = pull_only.split("_PULL_ONLY_BLOCKED_CLIENT_METHODS = frozenset({", 1)[1].split("})", 1)[0]
     for name in (
         "list_my_reference_sharing",
         "stop_sharing_reference_set",

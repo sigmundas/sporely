@@ -14,11 +14,12 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from database import models
+from tests.cloud_sync_owner_patching import patch_facade_object
 from utils import cloud_sync
 from utils.cloud_sync import (
     ImageIdentityConflictError,
@@ -52,9 +53,9 @@ def test_anchor_helper_records_failure_message():
         'sort_order': 0,
     }
 
-    with patch.object(cloud_sync, 'get_connection') as mock_conn, \
-         patch.object(cloud_sync, '_cloud_explicit_media_upload_selection', return_value=set()), \
-         patch.object(
+    with patch_facade_object(cloud_sync, 'get_connection') as mock_conn, \
+         patch_facade_object(cloud_sync, '_cloud_explicit_media_upload_selection', return_value=set()), \
+         patch_facade_object(
              cloud_sync,
              '_ensure_metadata_only_microscope_image_for_public_spores',
              side_effect=ImageIdentityConflictError('conflict!'),
@@ -93,7 +94,7 @@ def test_anchor_wrapper_propagates_failures():
         'metadata_only_cloud_ids': [],
     }
 
-    with patch.object(
+    with patch_facade_object(
         cloud_sync,
         '_ensure_metadata_only_microscope_images_for_observation',
         return_value=inner_result,
@@ -111,7 +112,7 @@ def test_anchor_wrapper_outer_exception_returns_failures():
     client = _make_simple_client()
     obs = {'id': 1, 'spore_data_visibility': 'public', 'cloud_id': 'cloud-1'}
 
-    with patch.object(
+    with patch_facade_object(
         cloud_sync,
         '_ensure_metadata_only_microscope_images_for_observation',
         side_effect=RuntimeError('unexpected boom'),
@@ -159,35 +160,35 @@ def test_per_image_upload_failure_recorded_in_summary_warnings():
     }
     prepared_items = [{'image_row': img_row, 'upload_path': '/tmp/img.jpg'}]
 
-    with patch.object(
+    with patch_facade_object(
         cloud_sync, '_ensure_metadata_anchors_for_public_spore_observation',
         return_value={
             'considered': 0, 'ensured': 0, 'skipped': 0, 'failed': 0,
             'failures': [], 'cloud_ids': [], 'metadata_only_cloud_ids': [],
         },
-    ), patch.object(
+    ), patch_facade_object(
         cloud_sync, '_push_pending_image_tombstones', return_value=[],
-    ), patch.object(
+    ), patch_facade_object(
         cloud_sync, '_ensure_cloud_image_storage_intent_initialized', return_value=None,
-    ), patch.object(
+    ), patch_facade_object(
         cloud_sync, 'cloud_image_bytes_desired', return_value=True,
-    ), patch.object(
+    ), patch_facade_object(
         cloud_sync, '_local_tombstoned_cloud_image_ids', return_value=set(),
-    ), patch.object(
+    ), patch_facade_object(
         cloud_sync, '_cloud_sync_current_summary', return_value={},
-    ), patch.object(
+    ), patch_facade_object(
         cloud_sync, '_increment_sync_summary', return_value=None,
-    ), patch.object(
+    ), patch_facade_object(
         cloud_sync, '_associate_persisted_cloud_images', return_value=set(),
-    ), patch.object(
+    ), patch_facade_object(
         cloud_sync, '_reconcile_metadata_only_linked_images', return_value=set(),
-    ), patch.object(
+    ), patch_facade_object(
         cloud_sync, '_cloud_sync_current_profiler', return_value=None,
-    ), patch.object(
+    ), patch_facade_object(
         cloud_sync, '_advance_progress', return_value=None,
-    ), patch.object(
+    ), patch_facade_object(
         cloud_sync, '_emit_progress', return_value=None,
-    ), patch.object(
+    ), patch_facade_object(
         cloud_sync, 'is_full_resolution_original_sync_enabled', return_value=True,
     ):
         # Build a minimal prepared_items path: patch prepare_images_cb to return our item
@@ -221,21 +222,21 @@ def test_gap_c_mark_obs_dirty_called_in_generic_cloud_sync_error_branch():
     checking it is called when a generic CloudSyncError escapes."""
     dirty_calls: list[int] = []
 
-    with patch.object(
+    with patch_facade_object(
         cloud_sync, '_push_images_for_observation',
         side_effect=CloudSyncError('generic boom'),
-    ), patch.object(
+    ), patch_facade_object(
         cloud_sync, 'mark_observation_dirty',
         side_effect=lambda obs_id: dirty_calls.append(obs_id),
-    ), patch.object(
+    ), patch_facade_object(
         cloud_sync, 'is_cloud_auth_error', return_value=False,
-    ), patch.object(
+    ), patch_facade_object(
         cloud_sync, 'is_cloud_temporary_unavailable_error', return_value=False,
-    ), patch.object(
+    ), patch_facade_object(
         cloud_sync, 'is_privacy_slot_limit_error', return_value=False,
-    ), patch.object(
+    ), patch_facade_object(
         cloud_sync, 'is_image_too_large_for_plan_error', return_value=False,
-    ), patch.object(
+    ), patch_facade_object(
         cloud_sync, 'is_webp_support_required_for_cloud_media_upload_error', return_value=False,
     ):
         errors: list[str] = []

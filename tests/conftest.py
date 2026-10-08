@@ -46,6 +46,17 @@ def _isolated_reference_device_id(monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def _facade_patches_reach_cloud_sync_owners(monkeypatch):
+    """A facade monkeypatch also patches same-object owner bindings.
+
+    See ``tests/cloud_sync_owner_patching.py`` (cloud-sync extraction).
+    """
+    from tests.cloud_sync_owner_patching import install_facade_owner_patching
+
+    install_facade_owner_patching(monkeypatch)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _initialized_isolated_app_data():
     """Fresh schema in the isolated app data dir.

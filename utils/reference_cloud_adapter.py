@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
-from utils.cloud_sync import (
+from utils.cloud_sync_impl.errors import (
     AccountMismatchError,
     CloudReauthRequiredError,
     CloudSyncError,

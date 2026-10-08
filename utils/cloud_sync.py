@@ -104,6 +104,168 @@ from utils.spore_summary_sync import (
     sync_observation_spore_summaries,
 )
 
+from utils.cloud_sync_impl.errors import (  # noqa: F401  (facade re-export)
+    AccountMismatchError,
+    CloudImageBytesNotDesiredError,
+    CloudReauthRequiredError,
+    CloudSessionAccountMismatchError,
+    CloudSyncError,
+    CloudTemporarilyUnavailableError,
+    IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE,
+    ImageIdentityConflictError,
+    ObservationIdentityConflictError,
+    PRIVACY_SLOT_LIMIT_USER_MESSAGE,
+    PartialConflictPlanError,
+    PullOnlyModeError,
+    _IDENTITY_CLEAR_VERIFICATION_FAILED_MARKER,
+    _IMAGE_TOO_LARGE_FOR_PLAN_HINTS,
+    _IMAGE_TOO_LARGE_FOR_PLAN_REASONS,
+    _IMAGE_TOO_LARGE_FOR_PLAN_REASON_LINE_RE,
+    _MEASUREMENT_CONFLICT_RE,
+    _PRIVACY_SLOT_LIMIT_HINTS,
+    _PULL_CONFLICT_RE,
+    _PUSH_CONFLICT_RE,
+    _REVIEW_CONFLICT_RE,
+    _collect_sync_error_details,
+    _extract_label_value,
+    _image_too_large_reason_message,
+    _image_too_large_summary_message,
+    _infer_image_too_large_reason_from_text,
+    _normalize_image_too_large_reason,
+    _parse_dimension_pair,
+    _parse_human_size,
+    _parse_int_text,
+    format_cloud_sync_error_details,
+    format_image_too_large_for_plan_reason,
+    infer_image_too_large_for_plan_reason,
+    is_identity_clear_verification_failed_error,
+    is_image_too_large_for_plan_error,
+    is_privacy_slot_limit_error,
+    is_webp_support_required_for_cloud_media_upload_error,
+    privacy_slot_limit_user_message,
+    sanitize_image_too_large_for_plan_error_message,
+    summarize_image_too_large_for_plan_error,
+)
+from utils.cloud_sync_impl.common import (  # noqa: F401  (facade re-export)
+    _normalize_cloud_media_key,
+    _safe_int,
+)
+from utils.cloud_sync_impl.progress import (  # noqa: F401  (facade re-export)
+    CloudSyncProfiler,
+    ProgressCallback,
+    _CLOUD_SYNC_DEBUG_ENV,
+    _CLOUD_SYNC_PROFILE_CONTEXT,
+    _CLOUD_SYNC_PROFILE_ENV,
+    _CLOUD_SYNC_PROGRESS_TRACE_CONTEXT,
+    _CLOUD_SYNC_SLOW_STEP_SECONDS,
+    _CLOUD_SYNC_SUMMARY_CONTEXT,
+    _SYNC_PROGRESS_PHASES,
+    _SYNC_PROGRESS_PHASE_RANGES,
+    _SYNC_PROGRESS_TOTAL_UNITS,
+    _SYNC_SUMMARY_KEYS,
+    _advance_progress,
+    _cloud_sync_current_profiler,
+    _cloud_sync_current_summary,
+    _cloud_sync_debug_enabled,
+    _cloud_sync_perf_counter,
+    _cloud_sync_phase_scope,
+    _cloud_sync_profile_enabled,
+    _cloud_sync_profile_print,
+    _cloud_sync_profile_scope,
+    _cloud_sync_progress_trace,
+    _cloud_sync_summary_scope,
+    _current_progress_phase,
+    _emit_progress,
+    _extend_progress_total,
+    _increment_sync_summary,
+    _new_sync_summary,
+    _progress_done,
+    _progress_total,
+    _set_progress_phase,
+    _sync_progress_percent,
+    _sync_summary_value,
+    _trace_progress_gap,
+    partition_download_from_cloud_issues,
+    summarize_blocked_write_attempts,
+    summarize_sync_issues,
+)
+from utils.cloud_sync_impl.pull_only import (  # noqa: F401  (facade re-export)
+    PullOnlyCloudClient,
+    _PULL_ONLY_ALLOWED_READ_METHODS,
+    _PULL_ONLY_ALLOWED_RPC_NAMES,
+    _PULL_ONLY_BLOCKED_CLIENT_METHODS,
+)
+from utils.cloud_sync_impl.transport import (  # noqa: F401  (facade re-export)
+    CloudSyncTransportMixin,
+    _CLOUD_SYNC_MAX_ROWS_PER_PAGE,
+)
+from utils.cloud_sync_impl.sync_state import (  # noqa: F401  (facade re-export)
+    CLOUD_IMAGE_STORAGE_EXCLUDED_SETTING_PREFIX,
+    _CLOUD_IMAGE_STORAGE_INTENT_LEDGER_PREFIX,
+    _SETTING_CLOUD_IMAGE_FILE_SIG_PREFIX,
+    _SETTING_CLOUD_IMAGE_PROMOTION_PENDING_PREFIX,
+    _SETTING_CLOUD_LOCAL_MEDIA_SIG_PREFIX,
+    _clear_cloud_image_file_signature,
+    _clear_pending_image_promotion_key,
+    _cloud_image_file_signature_key,
+    _cloud_image_promotion_pending_key,
+    _cloud_image_storage_excluded_ids_key,
+    _cloud_image_storage_intent_ledger_key,
+    _cloud_local_media_signature_key,
+    _cloud_metadata_only_image_ids,
+    _cloud_metadata_only_image_ids_key,
+    _explicit_image_restore_source,
+    _explicit_image_restore_source_key,
+    _load_local_cloud_media_signature,
+    _load_pending_image_promotion_key,
+    _set_cloud_image_metadata_only_state,
+    _store_local_cloud_media_signature,
+    _store_pending_image_promotion_key,
+    mark_observation_dirty,
+    mark_observation_media_dirty,
+    remember_explicit_image_restore_source,
+)
+from utils.cloud_sync_impl.image_policy import (  # noqa: F401  (facade re-export)
+    _add_cloud_image_storage_excluded_image_id,
+    _cloud_explicit_media_upload_selection,
+    _cloud_image_storage_excluded_image_ids,
+    _cloud_image_storage_intent_initialized_ids,
+    _ensure_cloud_image_storage_intent_initialized,
+    _is_generated_cloud_image,
+    _is_local_metadata_only_microscope_anchor,
+    _is_metadata_only_microscope_cloud_image,
+    _mark_cloud_image_storage_intent_initialized,
+    _microscope_group_key_from_row,
+    _remove_cloud_image_storage_excluded_image_id,
+    _set_cloud_image_storage_excluded_image_ids,
+    _set_cloud_image_storage_intent_initialized_ids,
+    cloud_image_bytes_desired,
+    cloud_image_storage_intent_initialized,
+    measurement_qualifies_for_public_spore_anchor,
+    microscope_image_requires_owner_sync_anchor,
+    microscope_image_requires_public_spore_anchor,
+    set_image_cloud_selected,
+    should_pull_cloud_image_to_desktop,
+)
+from utils.cloud_sync_impl.capabilities import (  # noqa: F401  (facade re-export)
+    METADATA_PURPOSE_OWNER_SYNC,
+    METADATA_PURPOSE_PUBLIC_MICROSCOPY,
+    _owner_sync_parents_supported,
+    _remote_metadata_purpose,
+)
+from utils.cloud_sync_impl.remote_reads import (  # noqa: F401  (facade re-export)
+    _group_remote_measurements_by_observation,
+    _pull_remote_images_for_sync,
+    _pull_remote_measurements_for_images,
+)
+from utils.cloud_sync_impl.tombstones import (  # noqa: F401  (facade re-export)
+    _local_tombstoned_cloud_image_ids,
+    _local_tombstoned_local_image_ids,
+    _push_pending_image_tombstones,
+    _record_remote_image_tombstones,
+    _tombstoned_cloud_image_warning,
+)
+
 logger = logging.getLogger(__name__)
 
 # Sporely-py's source_app_version for public.observation_spore_summaries
@@ -523,11 +685,6 @@ def _encode_postgrest_filter_value(value: str | None) -> str:
     inside a URL query or they can be parsed incorrectly.
     """
     return quote(str(value or '').strip(), safe='')
-
-
-def _normalize_cloud_media_key(value: str | None) -> str:
-    """Normalize cloud media references to the stored relative key form."""
-    return normalize_media_key(value)
 
 
 def _join_select_columns(*columns: str) -> str:
@@ -1680,14 +1837,6 @@ _MEAS_PUSH_COLS = [
 
 _SETTING_CLOUD_MEDIA_SIGNATURE = "sporely_cloud_media_signature_v1"
 _SETTING_CLOUD_OBS_SNAPSHOT_PREFIX = "sporely_cloud_snapshot_obs_"
-_SETTING_CLOUD_IMAGE_FILE_SIG_PREFIX = "sporely_cloud_image_file_sig_"
-_SETTING_CLOUD_LOCAL_MEDIA_SIG_PREFIX = "sporely_cloud_local_media_sig_obs_"
-# Anchor-promotion pending marker: written when a byte-upload key is reserved
-# on an existing metadata-only cloud image row, cleared only after the byte
-# upload is confirmed (or the reservation is released). While present, a
-# non-NULL remote storage_path equal to the marker must be treated as
-# unconfirmed — bytes may never have reached storage.
-_SETTING_CLOUD_IMAGE_PROMOTION_PENDING_PREFIX = "sporely_cloud_image_promotion_pending_"
 _SETTING_LINKED_CLOUD_USER_ID = "linked_cloud_user_id"
 _CLOUD_LOCAL_MEDIA_RENDER_VERSION = "2"
 _CLEAN_CLOUD_IMAGE_CONVERTER_VERSION = "1"
@@ -1847,658 +1996,7 @@ _CONFLICT_FIELD_LABELS = {
     'taxon_identity': 'Taxon identity',
 }
 
-ProgressCallback = Callable[[str, int, int], None]
 PreparedImagesCallback = Callable[[dict, ProgressCallback | None], tuple[list[dict], object | None, list[str]]]
-
-_CLOUD_SYNC_PROFILE_ENV = 'SPORELY_CLOUD_SYNC_PROFILE'
-_CLOUD_SYNC_DEBUG_ENV = 'SPORELY_DEBUG_CLOUD_SYNC'
-_CLOUD_SYNC_PROFILE_CONTEXT: ContextVar['CloudSyncProfiler | None'] = ContextVar(
-    'cloud_sync_profiler',
-    default=None,
-)
-_CLOUD_SYNC_SUMMARY_CONTEXT: ContextVar[dict[str, int] | None] = ContextVar(
-    'cloud_sync_summary',
-    default=None,
-)
-
-# A single sync sub-step taking longer than this is logged so a silent UI pause
-# can be traced to the exact calibration / step responsible.
-_CLOUD_SYNC_SLOW_STEP_SECONDS = 1.0
-
-# Per-sync progress trace. When set, every progress message emission records its
-# monotonic timestamp so a gap between two UI updates (i.e. a backend step that
-# produced no progress text) can be logged and traced to whatever was running.
-_CLOUD_SYNC_PROGRESS_TRACE_CONTEXT: ContextVar[dict | None] = ContextVar(
-    'cloud_sync_progress_trace',
-    default=None,
-)
-
-
-def _cloud_sync_progress_trace() -> dict | None:
-    try:
-        return _CLOUD_SYNC_PROGRESS_TRACE_CONTEXT.get()
-    except Exception:
-        return None
-
-
-def _cloud_sync_profile_enabled() -> bool:
-    return str(os.getenv(_CLOUD_SYNC_PROFILE_ENV) or '').strip().lower() in {'1', 'true', 'yes', 'on'}
-
-
-def _cloud_sync_debug_enabled() -> bool:
-    return str(os.getenv(_CLOUD_SYNC_DEBUG_ENV) or '').strip().lower() in {'1', 'true', 'yes', 'on'}
-
-
-def _cloud_sync_current_profiler() -> 'CloudSyncProfiler | None':
-    try:
-        return _CLOUD_SYNC_PROFILE_CONTEXT.get()
-    except Exception:
-        return None
-
-
-def _cloud_sync_current_summary() -> dict[str, int] | None:
-    try:
-        return _CLOUD_SYNC_SUMMARY_CONTEXT.get()
-    except Exception:
-        return None
-
-
-@contextmanager
-def _cloud_sync_profile_scope(profiler: 'CloudSyncProfiler'):
-    token = _CLOUD_SYNC_PROFILE_CONTEXT.set(profiler)
-    try:
-        yield profiler
-    finally:
-        try:
-            _CLOUD_SYNC_PROFILE_CONTEXT.reset(token)
-        except Exception:
-            pass
-
-
-@contextmanager
-def _cloud_sync_summary_scope(sync_summary: dict[str, int]):
-    token = _CLOUD_SYNC_SUMMARY_CONTEXT.set(sync_summary)
-    try:
-        yield sync_summary
-    finally:
-        try:
-            _CLOUD_SYNC_SUMMARY_CONTEXT.reset(token)
-        except Exception:
-            pass
-
-
-def _cloud_sync_phase_scope(profiler: 'CloudSyncProfiler | None', phase_name: str):
-    if profiler is None:
-        return nullcontext()
-    return profiler.phase(phase_name)
-
-
-def _cloud_sync_perf_counter() -> float:
-    try:
-        return time.perf_counter()
-    except Exception:
-        return 0.0
-
-
-def _cloud_sync_profile_print(payload: dict) -> None:
-    try:
-        print(
-            f"[cloud_sync_profile] {json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':'))}",
-            flush=True,
-        )
-    except Exception:
-        pass
-
-
-@dataclass
-class CloudSyncProfiler:
-    sync_id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
-    started_at: float = field(default_factory=_cloud_sync_perf_counter)
-    phase_durations_ms: dict[str, float] = field(default_factory=dict)
-    download_image_file_calls: int = 0
-    download_image_file_duration_ms: float = 0.0
-    download_image_file_bytes: int = 0
-    generate_all_sizes_calls: int = 0
-    generate_all_sizes_duration_ms: float = 0.0
-    pull_bulk_image_metadata_calls: int = 0
-    pull_bulk_image_metadata_rows: int = 0
-    pull_measurements_for_images_calls: int = 0
-    pull_measurements_for_images_rows: int = 0
-    store_remote_snapshot_fetch_images_count: int = 0
-    store_remote_snapshot_fetch_measurements_count: int = 0
-    retry_missing_cloud_media_branch_runs: int = 0
-    original_upload_calls: int = 0
-    original_upload_bytes: int = 0
-    original_upload_skipped_disabled: int = 0
-    original_upload_skipped_ineligible: int = 0
-    original_upload_skipped_too_large: int = 0
-    original_upload_failed_uploads: int = 0
-    original_download_calls: int = 0
-    original_download_bytes: int = 0
-    original_download_skipped_disabled: int = 0
-    original_download_skipped_missing_key: int = 0
-    original_download_skipped_existing_local_original: int = 0
-    original_download_skipped_existing_cache: int = 0
-    original_download_failed_downloads: int = 0
-
-    def _emit(self, payload: dict) -> None:
-        payload = dict(payload or {})
-        payload.setdefault('sync_id', self.sync_id)
-        _cloud_sync_profile_print(payload)
-
-    def phase(self, phase_name: str):
-        @contextmanager
-        def _phase_scope():
-            start = _cloud_sync_perf_counter()
-            try:
-                yield
-            finally:
-                try:
-                    elapsed_ms = max(0.0, (_cloud_sync_perf_counter() - start) * 1000.0)
-                    key = str(phase_name or '').strip() or 'unknown'
-                    self.phase_durations_ms[key] = self.phase_durations_ms.get(key, 0.0) + elapsed_ms
-                    self._emit({
-                        'event': 'phase',
-                        'phase': key,
-                        'duration_ms': round(elapsed_ms, 3),
-                    })
-                except Exception:
-                    pass
-
-        return _phase_scope()
-
-    def record_download_image_file(self, duration_ms: float, bytes_downloaded: int = 0) -> None:
-        try:
-            self.download_image_file_calls += 1
-            self.download_image_file_duration_ms += max(0.0, float(duration_ms))
-            self.download_image_file_bytes += max(0, int(bytes_downloaded))
-        except Exception:
-            pass
-
-    def record_generate_all_sizes(self, duration_ms: float) -> None:
-        try:
-            self.generate_all_sizes_calls += 1
-            self.generate_all_sizes_duration_ms += max(0.0, float(duration_ms))
-        except Exception:
-            pass
-
-    def record_pull_bulk_image_metadata(self, row_count: int) -> None:
-        try:
-            self.pull_bulk_image_metadata_calls += 1
-            self.pull_bulk_image_metadata_rows += max(0, int(row_count))
-        except Exception:
-            pass
-
-    def record_pull_measurements_for_images(self, row_count: int) -> None:
-        try:
-            self.pull_measurements_for_images_calls += 1
-            self.pull_measurements_for_images_rows += max(0, int(row_count))
-        except Exception:
-            pass
-
-    def record_store_remote_snapshot_fetch(self, *, images: bool = False, measurements: bool = False) -> None:
-        try:
-            if images:
-                self.store_remote_snapshot_fetch_images_count += 1
-            if measurements:
-                self.store_remote_snapshot_fetch_measurements_count += 1
-        except Exception:
-            pass
-
-    def record_retry_missing_cloud_media_branch(self) -> None:
-        try:
-            self.retry_missing_cloud_media_branch_runs += 1
-        except Exception:
-            pass
-
-    def record_original_upload_success(self, bytes_uploaded: int = 0) -> None:
-        try:
-            self.original_upload_calls += 1
-            self.original_upload_bytes += max(0, int(bytes_uploaded))
-        except Exception:
-            pass
-
-    def record_original_upload_skipped_disabled(self) -> None:
-        try:
-            self.original_upload_skipped_disabled += 1
-        except Exception:
-            pass
-
-    def record_original_upload_skipped_ineligible(self) -> None:
-        try:
-            self.original_upload_skipped_ineligible += 1
-        except Exception:
-            pass
-
-    def record_original_upload_skipped_too_large(self) -> None:
-        try:
-            self.original_upload_skipped_too_large += 1
-        except Exception:
-            pass
-
-    def record_original_upload_failed(self) -> None:
-        try:
-            self.original_upload_failed_uploads += 1
-        except Exception:
-            pass
-
-    def record_original_download_success(self, bytes_downloaded: int = 0) -> None:
-        try:
-            self.original_download_calls += 1
-            self.original_download_bytes += max(0, int(bytes_downloaded))
-        except Exception:
-            pass
-
-    def record_original_download_skipped_disabled(self) -> None:
-        try:
-            self.original_download_skipped_disabled += 1
-        except Exception:
-            pass
-
-    def record_original_download_skipped_missing_key(self) -> None:
-        try:
-            self.original_download_skipped_missing_key += 1
-        except Exception:
-            pass
-
-    def record_original_download_skipped_existing_local_original(self) -> None:
-        try:
-            self.original_download_skipped_existing_local_original += 1
-        except Exception:
-            pass
-
-    def record_original_download_skipped_existing_cache(self) -> None:
-        try:
-            self.original_download_skipped_existing_cache += 1
-        except Exception:
-            pass
-
-    def record_original_download_failed(self) -> None:
-        try:
-            self.original_download_failed_downloads += 1
-        except Exception:
-            pass
-
-    def summary_payload(self, result: dict | None = None, error: Exception | None = None) -> dict:
-        try:
-            now = _cloud_sync_perf_counter()
-            payload = {
-                'event': 'summary',
-                'status': 'error' if error else 'ok',
-                'duration_ms': round(max(0.0, (now - self.started_at) * 1000.0), 3),
-                'phases_ms': {
-                    key: round(value, 3)
-                    for key, value in sorted(self.phase_durations_ms.items(), key=lambda item: item[0])
-                },
-                'metrics': {
-                    'download_image_file': {
-                        'calls': self.download_image_file_calls,
-                        'duration_ms': round(self.download_image_file_duration_ms, 3),
-                        'bytes': self.download_image_file_bytes,
-                    },
-                    'generate_all_sizes': {
-                        'calls': self.generate_all_sizes_calls,
-                        'duration_ms': round(self.generate_all_sizes_duration_ms, 3),
-                    },
-                    'pull_bulk_image_metadata': {
-                        'calls': self.pull_bulk_image_metadata_calls,
-                        'rows': self.pull_bulk_image_metadata_rows,
-                    },
-                    'pull_measurements_for_images': {
-                        'calls': self.pull_measurements_for_images_calls,
-                        'rows': self.pull_measurements_for_images_rows,
-                    },
-                    'store_remote_snapshot': {
-                        'fetched_images': self.store_remote_snapshot_fetch_images_count,
-                        'fetched_measurements': self.store_remote_snapshot_fetch_measurements_count,
-                    },
-                    'retry_missing_cloud_media': {
-                        'branch_runs': self.retry_missing_cloud_media_branch_runs,
-                    },
-                    'original_upload': {
-                        'calls': self.original_upload_calls,
-                        'bytes': self.original_upload_bytes,
-                        'skipped_disabled': self.original_upload_skipped_disabled,
-                        'skipped_ineligible': self.original_upload_skipped_ineligible,
-                        'skipped_too_large': self.original_upload_skipped_too_large,
-                        'failed_uploads': self.original_upload_failed_uploads,
-                    },
-                    'original_download': {
-                        'calls': self.original_download_calls,
-                        'bytes': self.original_download_bytes,
-                        'skipped_disabled': self.original_download_skipped_disabled,
-                        'skipped_missing_key': self.original_download_skipped_missing_key,
-                        'skipped_existing_local_original': self.original_download_skipped_existing_local_original,
-                        'skipped_existing_cache': self.original_download_skipped_existing_cache,
-                        'failed_downloads': self.original_download_failed_downloads,
-                    },
-                },
-            }
-            if result is not None:
-                payload['result'] = {
-                    'pushed': int(result.get('pushed', 0) or 0),
-                    'pulled': int(result.get('pulled', 0) or 0),
-                    'calibrations_pushed': int(result.get('calibrations_pushed', 0) or 0),
-                    'calibrations_pulled': int(result.get('calibrations_pulled', 0) or 0),
-                    'deleted_remote': len(result.get('deleted_remote') or []),
-                    'error_count': len(result.get('errors') or []),
-                }
-                sync_summary = result.get('sync_summary')
-                if isinstance(sync_summary, dict):
-                    payload['result']['sync_summary'] = {
-                        str(key): _safe_int(value)
-                        for key, value in sync_summary.items()
-                    }
-            if error is not None:
-                error_text = str(error or '').strip()
-                if error_text:
-                    payload['error'] = error_text[:300]
-                payload['error_type'] = error.__class__.__name__
-            return payload
-        except Exception:
-            return {
-                'event': 'summary',
-                'status': 'error' if error else 'ok',
-                'duration_ms': 0.0,
-                'phases_ms': {},
-                'metrics': {},
-            }
-
-    def finish(self, result: dict | None = None, error: Exception | None = None) -> None:
-        try:
-            self._emit(self.summary_payload(result=result, error=error))
-        except Exception:
-            pass
-
-_PUSH_CONFLICT_RE = re.compile(
-    r"^obs\s+(?P<local_id>\d+):\s+skipped desktop push because the linked cloud observation changed on the web$"
-)
-_PULL_CONFLICT_RE = re.compile(
-    r"^cloud\s+(?P<cloud_id>[^:]+):\s+skipped remote update because local observation\s+(?P<local_id>\d+)\s+has unsynced desktop edits$"
-)
-_REVIEW_CONFLICT_RE = re.compile(
-    r"^cloud\s+(?P<cloud_id>[^:]+):\s+needs review before applying remaining cloud changes to local observation\s+(?P<local_id>\d+)(?:\s+\((?P<reason>.*)\))?$"
-)
-_MEASUREMENT_CONFLICT_RE = re.compile(
-    r"^obs\s+(?P<local_id>\d+):\s+skipped cloud measurement\s+"
-    r"(?P<measurement_id>\S+)\s+because the local copy changed$"
-)
-
-
-class CloudSyncError(Exception):
-    pass
-
-
-class AccountMismatchError(CloudSyncError):
-    pass
-
-
-class CloudTemporarilyUnavailableError(CloudSyncError):
-    pass
-
-
-class CloudReauthRequiredError(CloudSyncError):
-    """Raised when the refresh endpoint proves the refresh token is dead.
-
-    Distinct from CloudTemporarilyUnavailableError (Supabase glitch, retry
-    likely fine) and from generic CloudSyncError (transport-level noise).
-    Reaching this state means the current session cannot be resumed and the
-    user must sign in again — but callers still must not wipe stored tokens
-    unless the user explicitly signs out.
-    """
-
-
-class PullOnlyModeError(CloudSyncError):
-    """Raised when a cloud-write is attempted during a Download-from-Cloud run.
-
-    Download from Cloud is strictly cloud → desktop. Any code path that
-    reaches an upload, PATCH/POST/DELETE, storage removal, or write-back
-    identity call while the pull-only client is active raises this error.
-    The wrapper counts every attempt on ``write_attempts`` so tests can
-    prove zero cloud writes reached the network.
-    """
-
-
-_PULL_ONLY_BLOCKED_CLIENT_METHODS = frozenset({
-    '_patch', '_post', '_delete', '_storage_remove',
-    'push_observation', 'push_image_metadata', 'push_measurement',
-    'upload_image_file', 'upload_original_image_file',
-    'set_image_storage_path', 'set_image_desktop_id', 'set_desktop_id',
-    'set_observation_selected_taxon', 'clear_observation_selected_taxon',
-    'set_measurement_desktop_id', 'set_image_original_storage_path',
-    'reserve_image_storage_path_for_promotion',
-    'release_image_storage_path_reservation',
-    'soft_delete_image', 'delete_cloud_observation',
-    'delete_cloud_measurements_for_image',
-    'push_calibration_reference_image', 'push_calibration_metadata',
-    'sync_reference_work', 'sync_reference_taxon_treatment',
-    'sync_reference_measurement_set', 'sync_observation_reference_use',
-    'submit_private_reference_for_curation', 'share_reference_contribution',
-    'withdraw_reference_contribution', 'sync_reference_curated_fork',
-    # Stage M device report: refreshes the owner's device record.
-    'record_reference_client_capabilities',
-    # Default-on reference sharing (owner set list, stop, share again).
-    # The two writes are owner writes; the list is owner-only, rate-limited
-    # and never needed by a download, so it is blocked too rather than added
-    # to the read allowlist.
-    'list_my_reference_sharing',
-    'stop_sharing_reference_set',
-    'share_reference_set_again',
-})
-
-
-# Callable methods on the wrapped client that Download-from-Cloud is
-# permitted to invoke. Anything not on this allowlist is treated as
-# potentially write-touching and blocked at the wrapper. Adding a new
-# read method here is an explicit choice; a new writer method is never
-# safe to add.
-_PULL_ONLY_ALLOWED_READ_METHODS = frozenset({
-    # Session / identity — read side of auth, never mutate cloud state.
-    'fetch_current_user_id',
-    'fetch_cloud_plan_profile',
-    'save_credentials',            # writes local settings, no cloud write
-    '_refresh_session_if_possible', # refresh token, no cloud data mutation
-    # Observation reads
-    'list_remote_observations',
-    'get_observation',
-    # Calibration reads
-    'list_remote_calibrations',
-    'find_remote_calibration',
-    'list_reference_works',
-    'list_reference_taxon_treatments',
-    'list_reference_measurement_sets',
-    'list_observation_reference_uses',
-    'search_public_curated_reference_sets',
-    'get_public_curated_reference_set',
-    'search_public_reference_contributions_v2',
-    'get_public_reference_contribution_v2',
-    'list_reference_curated_forks',
-    'list_reference_client_devices',
-    '_list_reference_library_feed',
-    # Image / measurement metadata reads
-    'pull_bulk_image_metadata',
-    'pull_image_metadata',
-    'pull_measurements_for_images',
-    'pull_observation_identifications',
-    # Media byte reads
-    'download_image_file',
-    'download_image_file_read_only',
-    # Low-level GET helpers. RPC calls are gated by function name below.
-    '_get',
-    'get_read_only',
-    # Client-internal probes and path builders — pure read/compute.
-    '_find_cloud_image',
-    '_get_media_worker',
-    '_build_original_storage_path',
-    '_observation_images_support_ai_crop',
-    '_observation_images_support_ai_crop_custom',
-    '_observation_images_support_sample_source',
-    '_observation_images_support_upload_metadata',
-    '_using_default_r',
-    'list_image_changes_since',
-    'list_measurement_changes_since',
-})
-
-_PULL_ONLY_ALLOWED_RPC_NAMES = frozenset({
-    'search_community_spore_datasets',
-    'get_community_spore_dataset',
-    'community_spore_taxon_summary',
-    'search_public_reference_values',
-    'get_public_observation',
-    'search_public_curated_reference_sets',
-    'get_public_curated_reference_set',
-    'search_public_reference_contributions_v2',
-    'get_public_reference_contribution_v2',
-    # Stage M owner feed: read-only, does not refresh the device record.
-    'list_reference_library_feed',
-})
-
-
-class PullOnlyCloudClient:
-    """Fail-closed proxy over ``SporelyCloudClient`` for Download from Cloud.
-
-    Delegation rules:
-
-    * Non-callable attributes on the wrapped client (``user_id``,
-      ``access_token``, …) forward verbatim.
-    * Callable methods on the read allowlist forward verbatim.
-    * Every named writer method raises :class:`PullOnlyModeError` and
-      records the attempt on ``write_attempts``.
-    * **Any other callable** on the wrapped client — including methods
-      not yet named on either list — also raises. Under a plain
-      denylist, a future or unrecognized method whose internals call
-      ``self._patch`` would execute on the wrapped client and bypass
-      the wrapper; the allowlist prevents that class of leak entirely.
-    """
-
-    is_pull_only = True
-
-    def __init__(self, wrapped) -> None:
-        self._wrapped = wrapped
-        self.write_attempts: list[str] = []
-
-    def _block(self, name: str, reason: str):
-        def _blocked(*_args, **_kwargs):
-            self.write_attempts.append(name)
-            raise PullOnlyModeError(
-                f"{reason} '{name}' is not allowed during Download from Cloud"
-            )
-        return _blocked
-
-    def _rpc(self, function_name: str, payload: dict | None = None):
-        rpc_name = str(function_name or '').strip()
-        if rpc_name not in _PULL_ONLY_ALLOWED_RPC_NAMES:
-            attempt = f'_rpc:{rpc_name or "<missing>"}'
-            self.write_attempts.append(attempt)
-            raise PullOnlyModeError(
-                f"Unrecognized or write-capable RPC '{rpc_name}' is not allowed "
-                "during Download from Cloud"
-            )
-        return self._wrapped._rpc(rpc_name, payload)
-
-    def __getattr__(self, name: str):
-        # __getattr__ only fires for attributes not found on ``self``; the
-        # explicit ``is_pull_only`` / ``_wrapped`` / ``write_attempts``
-        # attributes shadow this path.
-        if name in _PULL_ONLY_BLOCKED_CLIENT_METHODS:
-            return self._block(name, "Cloud write")
-        attr = getattr(self._wrapped, name)
-        if not callable(attr):
-            return attr
-        if name in _PULL_ONLY_ALLOWED_READ_METHODS:
-            return attr
-        return self._block(name, "Unrecognized client method")
-
-
-def summarize_blocked_write_attempts(attempts) -> str:
-    """Compress a raw list of blocked writer names into ``name ×N`` groups.
-
-    A single leaky path (e.g. ``set_image_desktop_id``) can fire hundreds of
-    times per run; printing the name once with a count is what the user
-    actually reads.
-    """
-    from collections import Counter as _Counter
-    if not attempts:
-        return ""
-    counts = _Counter(str(n) for n in attempts if n)
-    return ", ".join(f"{name} ×{count}" for name, count in counts.most_common())
-
-
-def partition_download_from_cloud_issues(errors) -> tuple[list[str], list[str]]:
-    """Split pull-only messages into (review_items, real_errors).
-
-    Tombstone-skip and needs-review lines are informational — the pull did
-    the safe thing (skipped write, kept local state, flagged a conflict).
-    They belong in an expandable review list, not the top-level error banner.
-    """
-    review_items: list[str] = []
-    real_errors: list[str] = []
-    for raw in errors or []:
-        text = str(raw or '').strip()
-        if not text:
-            continue
-        if _REVIEW_CONFLICT_RE.match(text):
-            review_items.append(text)
-            continue
-        if 'has a local tombstone' in text or 'tombstoned' in text.lower():
-            review_items.append(text)
-            continue
-        if _PULL_CONFLICT_RE.match(text) or _MEASUREMENT_CONFLICT_RE.match(text):
-            review_items.append(text)
-            continue
-        real_errors.append(text)
-    return review_items, real_errors
-
-
-class PartialConflictPlanError(CloudSyncError):
-    """Raised when a conflict plan fails mid-execution.
-
-    Carries the partial operation log so the caller (typically the in-dialog
-    apply worker) can present per-item statuses, keep the conflict visible,
-    and offer a safe retry using ``prior_result`` on the next call.
-    """
-
-    def __init__(self, message: str, *, partial_result: dict):
-        super().__init__(message)
-        self.partial_result = dict(partial_result or {})
-
-
-class ObservationIdentityConflictError(CloudSyncError):
-    """Raised when observation push identity cannot be resolved safely.
-
-    Two links tie a local observation to a cloud row: the direct link
-    (local ``observations.cloud_id``) and the reverse link (remote
-    ``observations.desktop_id``). This error is raised when they resolve to
-    different cloud rows, or when the reverse-link recovery lookup matches
-    more than one cloud row. PATCHing either candidate could overwrite the
-    wrong row and POSTing would create a duplicate, so the push must fail
-    and leave the observation dirty/retryable for review.
-    """
-
-
-class ImageIdentityConflictError(CloudSyncError):
-    """Raised when image push identity is ambiguous or contradictory.
-
-    The caller must not PATCH or POST. Leave the image dirty/retryable.
-    """
-
-
-class CloudSessionAccountMismatchError(AccountMismatchError):
-    """Raised when a stale SporelyCloudClient sees on-disk session tokens
-    that belong to a different Sporely Cloud user than the one this
-    client is bound to.
-
-    Usually happens when the user signed out and signed back in as a
-    different account while an old worker/thread was still alive: the
-    worker's in-memory ``user_id`` still points at the previous
-    account, but the on-disk tokens now belong to the new one.  We
-    refuse to adopt the new account's tokens or call the refresh
-    endpoint with them — the worker should surface this and stop.
-    Inherits from :class:`AccountMismatchError` so existing handlers
-    that only catch that base class keep working; catch this subclass
-    to distinguish "stale worker" from "database linked to a different
-    account".
-    """
 
 
 ACCOUNT_MISMATCH_MESSAGE = (
@@ -2506,291 +2004,10 @@ ACCOUNT_MISMATCH_MESSAGE = (
     "Please switch to the correct OS user profile, or use the 'Reset Cloud Sync' "
     "tool in Settings to migrate your data to a new account."
 )
-PRIVACY_SLOT_LIMIT_USER_MESSAGE = (
-    "Free accounts can have up to 20 private or fuzzed-location cloud observations. "
-    "Make one public, delete one, or upgrade to Pro."
-)
-IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE = (
-    "Image upload was rejected by the worker."
-)
 FREE_TIER_PRIVACY_SLOT_LIMIT = 20
-_PRIVACY_SLOT_LIMIT_HINTS = (
-    "Free Sporely accounts",
-    "20 privacy slot",
-    "privacy slot observations",
-)
-_IMAGE_TOO_LARGE_FOR_PLAN_HINTS = (
-    "image too large for plan",
-    "too large for your plan",
-)
-_IMAGE_TOO_LARGE_FOR_PLAN_REASONS = {"byte_cap", "pixel_cap", "edge_cap", "unknown"}
 _IMAGE_TOO_LARGE_FOR_PLAN_FIRST_LINE_RE = re.compile(
     r"(?i)^\s*(?:Image(?:\s+is)?\s+too\s+large(?:\s+for\s+your\s+plan)?(?:\.\s*Make it smaller or upgrade to Pro\.)?|Image\s+too\s+large\s+for\s+plan)\s*$"
 )
-_IMAGE_TOO_LARGE_FOR_PLAN_REASON_LINE_RE = re.compile(
-    r"(?im)^\s*(?:Worker\s+)?Reason:\s*(?P<reason>[A-Za-z_]+)\s*$"
-)
-
-
-def _normalize_image_too_large_reason(reason: str | None) -> str:
-    text = str(reason or "").strip().lower().replace("-", "_")
-    return text if text in _IMAGE_TOO_LARGE_FOR_PLAN_REASONS else ""
-
-
-def _parse_human_size(text: str | None) -> int | None:
-    cleaned = str(text or "").strip()
-    if not cleaned:
-        return None
-    match = re.search(r"(?i)(\d+(?:\.\d+)?)\s*(b|kb|mb|gb|tb)\b", cleaned)
-    if not match:
-        return None
-    value = float(match.group(1))
-    unit = match.group(2).upper()
-    scale = {
-        "B": 1,
-        "KB": 1024,
-        "MB": 1024 * 1024,
-        "GB": 1024 * 1024 * 1024,
-        "TB": 1024 * 1024 * 1024 * 1024,
-    }.get(unit, 1)
-    return int(value * scale)
-
-
-def _parse_dimension_pair(text: str | None) -> tuple[int, int] | None:
-    cleaned = str(text or "").strip()
-    if not cleaned:
-        return None
-    match = re.search(r"(?i)(\d+)\s*[×x]\s*(\d+)\s*px\b", cleaned)
-    if not match:
-        return None
-    return int(match.group(1)), int(match.group(2))
-
-
-def _parse_int_text(text: str | None) -> int | None:
-    cleaned = str(text or "").strip().replace(",", "")
-    if not cleaned:
-        return None
-    match = re.search(r"(-?\d+)", cleaned)
-    if not match:
-        return None
-    try:
-        return int(match.group(1))
-    except Exception:
-        return None
-
-
-def _extract_label_value(text: str, label: str) -> str:
-    pattern = re.compile(rf"(?im)^\s*{re.escape(label)}\s*:\s*(?P<value>.+?)\s*$")
-    match = pattern.search(str(text or ""))
-    return str(match.group("value") or "").strip() if match else ""
-
-
-def _image_too_large_reason_message(reason: str | None) -> str:
-    normalized = _normalize_image_too_large_reason(reason)
-    if normalized == "byte_cap":
-        return "Image exceeds the byte cap for this upload policy."
-    if normalized == "pixel_cap":
-        return "Image exceeds the pixel cap for this upload policy."
-    if normalized == "edge_cap":
-        return "Image exceeds the longest-edge cap for this upload policy."
-    return IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE
-
-
-def _image_too_large_summary_message(reason: str | None) -> str:
-    normalized = _normalize_image_too_large_reason(reason)
-    if normalized == "byte_cap":
-        return "Cloud sync failed while uploading an image that exceeded the byte cap."
-    if normalized == "pixel_cap":
-        return "Cloud sync failed while uploading an image that exceeded the pixel cap."
-    if normalized == "edge_cap":
-        return "Cloud sync failed while uploading an image that exceeded the longest-edge cap."
-    return "Cloud sync failed while uploading an image that was rejected by the worker."
-
-
-def _infer_image_too_large_reason_from_text(text: str) -> str:
-    cleaned = str(text or "").strip()
-    if not cleaned:
-        return ""
-
-    reason_match = _IMAGE_TOO_LARGE_FOR_PLAN_REASON_LINE_RE.search(cleaned)
-    if reason_match:
-        normalized = _normalize_image_too_large_reason(reason_match.group("reason"))
-        if normalized:
-            return normalized
-
-    worker_body_bytes = _parse_human_size(_extract_label_value(cleaned, "Worker body size"))
-    worker_plan_cap = _parse_human_size(_extract_label_value(cleaned, "Worker plan cap"))
-    prepared_bytes = _parse_human_size(_extract_label_value(cleaned, "Prepared upload size"))
-    plan_cap = _parse_human_size(_extract_label_value(cleaned, "Plan cap"))
-    if worker_body_bytes and worker_plan_cap and worker_body_bytes > worker_plan_cap:
-        return "byte_cap"
-    if prepared_bytes and plan_cap and prepared_bytes > plan_cap:
-        return "byte_cap"
-
-    worker_stored_pixels = _parse_int_text(_extract_label_value(cleaned, "Worker stored pixels"))
-    worker_stored_pixel_cap = _parse_int_text(_extract_label_value(cleaned, "Worker stored pixel cap"))
-    if worker_stored_pixels and worker_stored_pixel_cap and worker_stored_pixels > worker_stored_pixel_cap:
-        return "pixel_cap"
-
-    worker_resize_max_edge = _parse_int_text(_extract_label_value(cleaned, "Worker resize max edge"))
-    stored_dimensions = _parse_dimension_pair(
-        _extract_label_value(cleaned, "Worker stored dimensions") or _extract_label_value(cleaned, "Prepared dimensions")
-    )
-    if stored_dimensions and worker_resize_max_edge and max(stored_dimensions) > worker_resize_max_edge:
-        return "edge_cap"
-
-    return "unknown"
-
-
-def infer_image_too_large_for_plan_reason(error) -> str:
-    code, texts = _collect_sync_error_details(error)
-    haystack = " ".join(dict.fromkeys(texts)).lower()
-    if not (
-        code.strip().lower() == "image_too_large_for_plan"
-        or "image_too_large_for_plan" in haystack
-        or "too large for your plan" in haystack
-    ):
-        return ""
-
-    payload = {}
-    if isinstance(error, dict):
-        payload = dict(error)
-    else:
-        for attr in ("payload", "response_payload", "response", "body"):
-            try:
-                candidate = getattr(error, attr)
-            except Exception:
-                candidate = None
-            if isinstance(candidate, dict):
-                payload = dict(candidate)
-                break
-
-    details = payload.get("details") if isinstance(payload.get("details"), dict) else {}
-    reason = _normalize_image_too_large_reason(
-        details.get("reason")
-        or payload.get("reason")
-        or details.get("errorReason")
-        or payload.get("errorReason")
-    )
-    if reason:
-        return reason
-
-    worker_body_bytes = _safe_int(
-        details.get("bodyBytes")
-        or details.get("body_bytes")
-        or payload.get("bodyBytes")
-        or payload.get("body_bytes")
-    )
-    worker_plan_cap = _safe_int(
-        details.get("planByteCap")
-        or details.get("plan_byte_cap")
-        or details.get("planCap")
-        or details.get("plan_cap")
-        or payload.get("planByteCap")
-        or payload.get("plan_byte_cap")
-        or payload.get("planCap")
-        or payload.get("plan_cap")
-    )
-    if worker_body_bytes > 0 and worker_plan_cap > 0 and worker_body_bytes > worker_plan_cap:
-        return "byte_cap"
-
-    prepared_bytes = _safe_int(
-        details.get("preparedBytes")
-        or details.get("prepared_bytes")
-        or payload.get("preparedBytes")
-        or payload.get("prepared_bytes")
-    )
-    prepared_plan_cap = _safe_int(
-        details.get("planCap")
-        or details.get("plan_cap")
-        or payload.get("planCap")
-        or payload.get("plan_cap")
-        or worker_plan_cap
-    )
-    if prepared_bytes > 0 and prepared_plan_cap > 0 and prepared_bytes > prepared_plan_cap:
-        return "byte_cap"
-
-    worker_stored_pixels = _safe_int(
-        details.get("storedPixels")
-        or details.get("stored_pixels")
-        or payload.get("storedPixels")
-        or payload.get("stored_pixels")
-    )
-    worker_stored_pixel_cap = _safe_int(
-        details.get("storedPixelCap")
-        or details.get("stored_pixel_cap")
-        or payload.get("storedPixelCap")
-        or payload.get("stored_pixel_cap")
-    )
-    if worker_stored_pixels > 0 and worker_stored_pixel_cap > 0 and worker_stored_pixels > worker_stored_pixel_cap:
-        return "pixel_cap"
-
-    worker_stored_width = _safe_int(
-        details.get("storedWidth")
-        or details.get("stored_width")
-        or payload.get("storedWidth")
-        or payload.get("stored_width")
-        or details.get("preparedWidth")
-        or details.get("prepared_width")
-        or payload.get("preparedWidth")
-        or payload.get("prepared_width")
-    )
-    worker_stored_height = _safe_int(
-        details.get("storedHeight")
-        or details.get("stored_height")
-        or payload.get("storedHeight")
-        or payload.get("stored_height")
-        or details.get("preparedHeight")
-        or details.get("prepared_height")
-        or payload.get("preparedHeight")
-        or payload.get("prepared_height")
-    )
-    worker_resize_max_edge = _safe_int(
-        details.get("resizeMaxEdge")
-        or details.get("resize_max_edge")
-        or payload.get("resizeMaxEdge")
-        or payload.get("resize_max_edge")
-    )
-    if worker_stored_width > 0 and worker_stored_height > 0 and worker_resize_max_edge > 0 and max(worker_stored_width, worker_stored_height) > worker_resize_max_edge:
-        return "edge_cap"
-
-    return _infer_image_too_large_reason_from_text("\n".join(dict.fromkeys(texts)))
-
-
-def format_image_too_large_for_plan_reason(reason_or_error) -> str:
-    if isinstance(reason_or_error, str):
-        reason = _normalize_image_too_large_reason(reason_or_error)
-        if not reason:
-            reason = infer_image_too_large_for_plan_reason(reason_or_error)
-    else:
-        reason = infer_image_too_large_for_plan_reason(reason_or_error)
-    return _image_too_large_reason_message(reason)
-
-
-def summarize_image_too_large_for_plan_error(reason_or_error) -> str:
-    if isinstance(reason_or_error, str):
-        reason = _normalize_image_too_large_reason(reason_or_error)
-        if not reason:
-            reason = infer_image_too_large_for_plan_reason(reason_or_error)
-    else:
-        reason = infer_image_too_large_for_plan_reason(reason_or_error)
-    return _image_too_large_summary_message(reason)
-
-
-def sanitize_image_too_large_for_plan_error_message(error) -> str:
-    text = str(error or "").strip()
-    if not text or not is_image_too_large_for_plan_error(text):
-        return text
-    lines = [line.rstrip() for line in text.splitlines()]
-    reason_message = format_image_too_large_for_plan_reason(text)
-    if not lines:
-        return reason_message
-    lines[0] = reason_message
-    return "\n".join(lines)
-
-
-def privacy_slot_limit_user_message() -> str:
-    return PRIVACY_SLOT_LIMIT_USER_MESSAGE
 
 
 def cloud_observation_uses_privacy_slot(observation: dict | None) -> bool:
@@ -2901,165 +2118,6 @@ def fetch_cloud_usage_summary(client) -> dict:
         'cloudUsageErrorMessages': error_messages,
     })
     return summary
-
-
-def _collect_sync_error_details(value, seen: set[int] | None = None) -> tuple[str, list[str]]:
-    if seen is None:
-        seen = set()
-    try:
-        marker = id(value)
-    except Exception:
-        marker = None
-    if marker is not None and marker in seen:
-        return '', []
-    if marker is not None:
-        seen.add(marker)
-
-    code = ''
-    texts: list[str] = []
-    if value is None:
-        return code, texts
-
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return code, texts
-        texts.append(text)
-        if text[:1] in {'{', '['}:
-            try:
-                parsed = json.loads(text)
-            except Exception:
-                return code, texts
-            parsed_code, parsed_texts = _collect_sync_error_details(parsed, seen)
-            if parsed_code and not code:
-                code = parsed_code
-            texts.extend(parsed_texts)
-        if not code:
-            lowered = text.lower()
-            if '23514' in text:
-                code = '23514'
-            elif 'check_violation' in lowered:
-                code = 'check_violation'
-        return code, texts
-
-    if isinstance(value, dict):
-        for key in ('code', 'sqlstate', 'status_code', 'statusCode', 'status'):
-            raw_code = value.get(key)
-            if raw_code not in (None, ''):
-                candidate = str(raw_code).strip()
-                if candidate and not code:
-                    code = candidate
-        for key in ('message', 'details', 'hint', 'error', 'body', 'text', 'reason', 'response'):
-            if key not in value:
-                continue
-            sub_code, sub_texts = _collect_sync_error_details(value.get(key), seen)
-            if sub_code and not code:
-                code = sub_code
-            texts.extend(sub_texts)
-        return code, texts
-
-    for attr in ('code', 'sqlstate', 'status_code', 'statusCode', 'status'):
-        try:
-            raw_code = getattr(value, attr)
-        except Exception:
-            raw_code = None
-        if raw_code not in (None, ''):
-            candidate = str(raw_code).strip()
-            if candidate and not code:
-                code = candidate
-    for attr in ('message', 'details', 'hint', 'error', 'body', 'text', 'reason', 'response', 'payload', 'response_payload'):
-        try:
-            raw_value = getattr(value, attr)
-        except Exception:
-            raw_value = None
-        if raw_value is None:
-            continue
-        sub_code, sub_texts = _collect_sync_error_details(raw_value, seen)
-        if sub_code and not code:
-            code = sub_code
-        texts.extend(sub_texts)
-    for attr in ('__cause__', '__context__'):
-        try:
-            chained_value = getattr(value, attr)
-        except Exception:
-            chained_value = None
-        if chained_value is None:
-            continue
-        sub_code, sub_texts = _collect_sync_error_details(chained_value, seen)
-        if sub_code and not code:
-            code = sub_code
-        texts.extend(sub_texts)
-    text = str(value).strip()
-    if text:
-        texts.append(text)
-        if not code:
-            lowered = text.lower()
-            if '23514' in text:
-                code = '23514'
-            elif 'check_violation' in lowered:
-                code = 'check_violation'
-    return code, texts
-
-
-def format_cloud_sync_error_details(error) -> str:
-    code, texts = _collect_sync_error_details(error)
-    parts: list[str] = []
-    code_text = str(code or '').strip()
-    if code_text:
-        parts.append(f"code={code_text}")
-    for text in dict.fromkeys(texts):
-        cleaned = str(text or '').strip()
-        if cleaned and cleaned not in parts:
-            parts.append(cleaned)
-    if not parts:
-        fallback = str(error or '').strip()
-        if fallback:
-            parts.append(fallback)
-    return " | ".join(parts)
-
-
-#: Distinguishing marker in the CloudSyncError message raised by
-#: `_verify_identity_clear_landed` — see `is_identity_clear_verification_failed_error`.
-_IDENTITY_CLEAR_VERIFICATION_FAILED_MARKER = 'identity clear did not take effect'
-
-
-def is_identity_clear_verification_failed_error(error) -> bool:
-    """Whether *error* is the read-back verification failure raised when a
-    rate-limit (or similar) row-suppression trigger cancelled an identity
-    clear while the RPC call itself did not raise (Stage C review round 2,
-    item 3)."""
-    _code, texts = _collect_sync_error_details(error)
-    haystack = ' '.join(dict.fromkeys(texts)).lower()
-    return _IDENTITY_CLEAR_VERIFICATION_FAILED_MARKER in haystack
-
-
-def is_privacy_slot_limit_error(error) -> bool:
-    code, texts = _collect_sync_error_details(error)
-    haystack = ' '.join(dict.fromkeys(texts)).lower()
-    has_privacy_phrase = any(hint.lower() in haystack for hint in _PRIVACY_SLOT_LIMIT_HINTS)
-    has_constraint_code = (
-        code.strip() == '23514'
-        or code.strip().lower() == 'check_violation'
-        or '23514' in haystack
-        or 'check_violation' in haystack
-    )
-    return has_privacy_phrase and has_constraint_code
-
-
-def is_image_too_large_for_plan_error(error) -> bool:
-    code, texts = _collect_sync_error_details(error)
-    haystack = ' '.join(dict.fromkeys(texts)).lower()
-    has_phrase = any(hint in haystack for hint in _IMAGE_TOO_LARGE_FOR_PLAN_HINTS)
-    has_code = (
-        code.strip().lower() == 'image_too_large_for_plan'
-        or 'image_too_large_for_plan' in haystack
-        or 'payload_too_large' in haystack
-    )
-    return has_phrase or has_code
-
-
-def is_webp_support_required_for_cloud_media_upload_error(error) -> bool:
-    return WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE.lower() in str(error or '').lower()
 
 
 _CLOUD_AUTH_ERROR_HINTS = (
@@ -3459,97 +2517,6 @@ def ensure_database_linked_to_cloud_user(client: "SporelyCloudClient") -> str:
     if linked_user_id != current_user_id:
         raise AccountMismatchError(ACCOUNT_MISMATCH_MESSAGE)
     return current_user_id
-
-
-def summarize_sync_issues(errors: list[str] | tuple[str, ...] | None) -> dict:
-    conflict_entries: dict[str, dict] = {}
-    blocked_errors: list[dict] = []
-    retryable_errors: list[dict] = []
-    other_errors: list[str] = []
-
-    for raw_error in list(errors or []):
-        text = str(raw_error or '').strip()
-        if not text:
-            continue
-        if is_privacy_slot_limit_error(text):
-            blocked_errors.append({
-                'error': text,
-                'message': privacy_slot_limit_user_message(),
-            })
-            continue
-        if is_image_too_large_for_plan_error(text):
-            reason = infer_image_too_large_for_plan_reason(text)
-            retryable_errors.append({
-                'error': text,
-                'reason': reason,
-                'message': summarize_image_too_large_for_plan_error(reason),
-            })
-            continue
-        push_match = _PUSH_CONFLICT_RE.match(text)
-        if push_match:
-            local_id = int(push_match.group('local_id'))
-            entry = conflict_entries.setdefault(
-                str(local_id),
-                {'local_id': local_id, 'cloud_id': None, 'push_skipped': False, 'pull_skipped': False},
-            )
-            entry['push_skipped'] = True
-            continue
-        pull_match = _PULL_CONFLICT_RE.match(text)
-        if pull_match:
-            local_id = int(pull_match.group('local_id'))
-            entry = conflict_entries.setdefault(
-                str(local_id),
-                {'local_id': local_id, 'cloud_id': None, 'push_skipped': False, 'pull_skipped': False},
-            )
-            entry['cloud_id'] = str(pull_match.group('cloud_id') or '').strip() or None
-            entry['pull_skipped'] = True
-            continue
-        review_match = _REVIEW_CONFLICT_RE.match(text)
-        if review_match:
-            local_id = int(review_match.group('local_id'))
-            entry = conflict_entries.setdefault(
-                str(local_id),
-                {'local_id': local_id, 'cloud_id': None, 'push_skipped': False, 'pull_skipped': False},
-            )
-            entry['cloud_id'] = str(review_match.group('cloud_id') or '').strip() or None
-            entry['pull_skipped'] = True
-            if 'push_blocked' in str(review_match.group('reason') or ''):
-                entry['push_skipped'] = True
-            continue
-        measurement_match = _MEASUREMENT_CONFLICT_RE.match(text)
-        if measurement_match:
-            local_id = int(measurement_match.group('local_id'))
-            entry = conflict_entries.setdefault(
-                str(local_id),
-                {'local_id': local_id, 'cloud_id': None, 'push_skipped': False, 'pull_skipped': False},
-            )
-            entry['pull_skipped'] = True
-            entry['measurement_conflict'] = True
-            measurement_ids = entry.setdefault('measurement_ids', [])
-            measurement_id = str(measurement_match.group('measurement_id') or '').strip()
-            if measurement_id and measurement_id not in measurement_ids:
-                measurement_ids.append(measurement_id)
-            continue
-        other_errors.append(text)
-
-    conflicts = sorted(
-        conflict_entries.values(),
-        key=lambda row: (
-            int(row.get('local_id') or 0),
-            str(row.get('cloud_id') or ''),
-        ),
-    )
-    return {
-        'conflicts': conflicts,
-        'conflict_count': len(conflicts),
-        'blocked_errors': blocked_errors,
-        'blocked_count': len(blocked_errors),
-        'retryable_errors': retryable_errors,
-        'retryable_count': len(retryable_errors),
-        'other_errors': other_errors,
-        'other_count': len(other_errors),
-        'display_count': len(conflicts) + len(blocked_errors) + len(retryable_errors) + len(other_errors),
-    }
 
 
 def _parse_cloud_observation_snapshot(snapshot: str | None) -> dict:
@@ -4815,227 +3782,6 @@ def _clear_observation_dirty_if_no_real_changes(local_id: int, cloud_id: str) ->
     return True
 
 
-def _progress_done(progress_state: dict | None) -> int:
-    try:
-        return max(0, int((progress_state or {}).get('done', 0) or 0))
-    except Exception:
-        return 0
-
-
-def _progress_total(progress_state: dict | None) -> int:
-    try:
-        return max(0, int((progress_state or {}).get('total', 0) or 0))
-    except Exception:
-        return 0
-
-
-def _trace_progress_gap(message: str) -> None:
-    """Log when a long backend step elapsed between two UI progress updates.
-
-    The UI only shows the *last* emitted message. If a slow step runs while that
-    message stays on screen (e.g. the bar appears frozen on "Checking
-    calibration 4/8"), the gap is logged here naming both messages so the pause
-    can be traced to the actual backend work, even when that work emits no
-    progress text of its own.
-    """
-    trace = _cloud_sync_progress_trace()
-    if not isinstance(trace, dict):
-        return
-    now = _cloud_sync_perf_counter()
-    last_t = trace.get('last_t')
-    last_msg = trace.get('last_msg')
-    start = trace.get('start', now)
-    if last_t is not None:
-        gap = now - last_t
-        if gap >= _CLOUD_SYNC_SLOW_STEP_SECONDS:
-            print(
-                f"[cloud_sync] progress gap: {gap * 1000:.0f}ms with no UI update "
-                f"(stuck showing \"{last_msg}\") before \"{message}\" "
-                f"at +{(now - start):.1f}s into sync",
-                flush=True,
-            )
-    trace['last_t'] = now
-    trace['last_msg'] = message
-
-
-# Weighted global progress model for cloud sync.
-#
-# The UI shows a single progress bar; each sync phase maps onto a fixed
-# percentage range. Per-phase (done, total) counters are turned into a global
-# 0–100 value by _sync_progress_percent so the bar advances monotonically at
-# roughly the pace of real work — never jumping to 99% while phases like
-# "Loading cloud measurements" or "Checking cloud observation N/M" are still
-# running.
-#
-# Ordered by execution — the tuple is (name, start_percent, end_percent).
-_SYNC_PROGRESS_PHASES: tuple[tuple[str, int, int], ...] = (
-    ('auth', 0, 5),
-    ('calibration_push', 5, 12),
-    ('observation_preflight', 12, 18),
-    ('push_observations', 18, 45),
-    ('refresh_remote', 45, 50),
-    ('pull_preflight', 50, 65),
-    ('pull_measurements', 65, 75),
-    ('pull_observations', 75, 92),
-    ('calibration_pull', 92, 97),
-    ('finalize', 97, 100),
-)
-_SYNC_PROGRESS_PHASE_RANGES: dict[str, tuple[int, int]] = {
-    name: (start, end) for name, start, end in _SYNC_PROGRESS_PHASES
-}
-_SYNC_PROGRESS_TOTAL_UNITS = 100
-
-
-def _sync_progress_percent(phase: str | None, done: int, total: int) -> int:
-    """Map per-phase (done, total) onto the global 0–100 progress scale.
-
-    Unknown or missing phases resolve to 0 so a bug in phase wiring can never
-    silently pin the bar to 99%.
-    """
-    start, end = _SYNC_PROGRESS_PHASE_RANGES.get(str(phase or ''), (0, 0))
-    try:
-        done_int = max(0, int(done))
-        total_int = max(0, int(total))
-    except Exception:
-        done_int, total_int = 0, 0
-    if total_int <= 0:
-        return int(start)
-    frac = min(1.0, done_int / total_int)
-    return int(round(start + frac * (end - start)))
-
-
-def _set_progress_phase(
-    progress_state: dict | None,
-    phase_name: str,
-    phase_total: int = 0,
-) -> None:
-    """Enter a named sync phase and reset the per-phase (done, total) counter.
-
-    Progress is tracked *per phase*, not globally: each phase gets a fresh
-    ``done``/``total`` pair which the ``_emit_progress`` mapper then squeezes
-    into that phase's slice of the global 0–100 range. The finalize phase is
-    the only one allowed to reach 100%; other phases cap at their configured
-    end percentage even if more work than expected turns out to be needed.
-    """
-    if not isinstance(progress_state, dict):
-        return
-    if phase_name not in _SYNC_PROGRESS_PHASE_RANGES:
-        # Silently ignore unknown phases so tests that seed a raw
-        # {done, total} dict without wiring phases keep working.
-        return
-    progress_state['phase'] = phase_name
-    progress_state['done'] = 0
-    try:
-        progress_state['total'] = max(0, int(phase_total or 0))
-    except Exception:
-        progress_state['total'] = 0
-
-
-def _current_progress_phase(progress_state: dict | None) -> str | None:
-    if not isinstance(progress_state, dict):
-        return None
-    phase = progress_state.get('phase')
-    if isinstance(phase, str) and phase in _SYNC_PROGRESS_PHASE_RANGES:
-        return phase
-    return None
-
-
-def _emit_progress(
-    progress_cb: ProgressCallback | None,
-    message: str,
-    progress_state: dict | None,
-) -> None:
-    _trace_progress_gap(message)
-    if not callable(progress_cb):
-        return
-    phase = _current_progress_phase(progress_state)
-    if phase is not None:
-        phase_done = _progress_done(progress_state)
-        phase_total = _progress_total(progress_state)
-        percent = _sync_progress_percent(phase, phase_done, phase_total)
-        progress_cb(message, percent, _SYNC_PROGRESS_TOTAL_UNITS)
-    else:
-        progress_cb(message, _progress_done(progress_state), max(1, _progress_total(progress_state)))
-
-
-def _advance_progress(
-    progress_state: dict | None,
-    amount: int = 1,
-) -> tuple[int, int]:
-    state = progress_state or {}
-    try:
-        increment = max(0, int(amount))
-    except Exception:
-        increment = 0
-    state['done'] = _progress_done(state) + increment
-    state['total'] = _progress_total(state)
-    return _progress_done(state), _progress_total(state)
-
-
-def _extend_progress_total(
-    progress_state: dict | None,
-    amount: int,
-) -> tuple[int, int]:
-    state = progress_state or {}
-    try:
-        increment = max(0, int(amount))
-    except Exception:
-        increment = 0
-    state['done'] = _progress_done(state)
-    state['total'] = _progress_total(state) + increment
-    return _progress_done(state), _progress_total(state)
-
-
-_SYNC_SUMMARY_KEYS = (
-    'observations_checked',
-    'observations_redirtied_pending_local_images',
-    'observations_patched',
-    'observations_skipped_noop',
-    'observations_deleted_remote',
-    'images_checked',
-    'images_prepared_local',
-    'images_uploaded',
-    'images_skipped_already_synced',
-    'images_cloud_id_repaired',
-    'images_deleted_remote',
-    'measurements_checked',
-    'measurements_patched',
-    'measurements_skipped_noop',
-    'calibrations_pushed',
-    'calibrations_pulled',
-    'calibrations_skipped_noop',
-    'calibrations_conflicts',
-    'calibration_reference_images_uploaded',
-    'calibration_remote_lookups',
-    'storage_quota_delta_rpc_calls',
-    'remote_media_downloads',
-    'remote_media_materializations',
-)
-
-
-def _new_sync_summary() -> dict[str, int]:
-    return {key: 0 for key in _SYNC_SUMMARY_KEYS}
-
-
-def _sync_summary_value(sync_summary: dict | None, key: str) -> int:
-    try:
-        return max(0, int((sync_summary or {}).get(key, 0) or 0))
-    except Exception:
-        return 0
-
-
-def _increment_sync_summary(sync_summary: dict | None, key: str, amount: int = 1) -> None:
-    if not isinstance(sync_summary, dict):
-        return
-    try:
-        increment = max(0, int(amount))
-    except Exception:
-        increment = 0
-    if increment <= 0:
-        return
-    sync_summary[key] = _sync_summary_value(sync_summary, key) + increment
-
-
 def format_sync_summary(sync_summary: dict | None) -> str | None:
     summary = dict(sync_summary or {})
     if not summary:
@@ -5326,29 +4072,6 @@ def _cloud_observation_snapshot_key(cloud_id: str) -> str:
     return f"{_SETTING_CLOUD_OBS_SNAPSHOT_PREFIX}{str(cloud_id or '').strip()}"
 
 
-def _cloud_image_file_signature_key(observation_id: int | str, image_id: int | str) -> str:
-    return (
-        f"{_SETTING_CLOUD_IMAGE_FILE_SIG_PREFIX}"
-        f"{str(observation_id or '').strip()}_{str(image_id or '').strip()}"
-    )
-
-
-def _cloud_metadata_only_image_ids_key(observation_id: int | str) -> str:
-    return f"sporely_cloud_metadata_only_image_ids_{str(observation_id or '').strip()}"
-
-
-def _cloud_image_promotion_pending_key(observation_id: int | str, image_id: int | str) -> str:
-    return (
-        f"{_SETTING_CLOUD_IMAGE_PROMOTION_PENDING_PREFIX}"
-        f"{str(observation_id or '').strip()}_{str(image_id or '').strip()}"
-    )
-
-
-# Stage 1: cloud image-storage desired state lives under its own setting so it
-# is fully independent of the Artsobs/iNaturalist publication exclusion set.
-# The old ``artsobs_publish_excluded_image_ids_<obs>`` key remains a
-# publication-only concern and must not be read to infer cloud deletion intent.
-CLOUD_IMAGE_STORAGE_EXCLUDED_SETTING_PREFIX = "sporely_cloud_image_storage_excluded_ids_"
 # RETIRED (2026-08-19 mass microscope upload): the observation-level
 # initialization sentinel. Once set, images imported later never received a
 # default and — being absent from the excluded set — looked explicitly
@@ -5356,23 +4079,6 @@ CLOUD_IMAGE_STORAGE_EXCLUDED_SETTING_PREFIX = "sporely_cloud_image_storage_exclu
 # databases are inert. Storage intent initialization is now recorded per
 # image in the ledger key below.
 _CLOUD_IMAGE_STORAGE_LEGACY_SENTINEL_PREFIX = "sporely_cloud_image_storage_initialized_"
-# Per-image storage-intent ledger: JSON list of local image ids for which a
-# default (or explicit) cloud byte-storage decision has been recorded. An
-# image id absent from this ledger has NO storage intent yet — its absence
-# from the excluded set proves nothing.
-_CLOUD_IMAGE_STORAGE_INTENT_LEDGER_PREFIX = "sporely_cloud_image_storage_intent_ids_"
-
-
-def _cloud_image_storage_excluded_ids_key(observation_id: int | str) -> str:
-    return f"{CLOUD_IMAGE_STORAGE_EXCLUDED_SETTING_PREFIX}{str(observation_id or '').strip()}"
-
-
-def _cloud_image_storage_intent_ledger_key(observation_id: int | str) -> str:
-    return f"{_CLOUD_IMAGE_STORAGE_INTENT_LEDGER_PREFIX}{str(observation_id or '').strip()}"
-
-
-def _cloud_local_media_signature_key(observation_id: int | str) -> str:
-    return f"{_SETTING_CLOUD_LOCAL_MEDIA_SIG_PREFIX}{str(observation_id or '').strip()}"
 
 
 def _normalize_snapshot_value(value):
@@ -5424,20 +4130,6 @@ def _cloud_image_captured_at_to_local(value) -> str | None:
     return parsed.astimezone().replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
 
 
-def _is_generated_cloud_image(image_row: dict | None) -> bool:
-    row = dict(image_row or {})
-    notes = str(row.get('notes') or '').strip().lower()
-    filename = str(row.get('original_filename') or '').strip().lower()
-    desktop_id = _safe_int(row.get('desktop_id'))
-    if notes.startswith('generated media'):
-        return True
-    if filename.startswith('cloud_extra_'):
-        return True
-    if desktop_id < 0:
-        return True
-    return False
-
-
 def should_push_local_image_to_cloud(image_row: dict | None) -> bool:
     row = dict(image_row or {})
     if _is_generated_cloud_image(row):
@@ -5452,26 +4144,6 @@ def should_push_local_image_to_cloud(image_row: dict | None) -> bool:
     return True
 
 
-def should_pull_cloud_image_to_desktop(image_row: dict | None) -> bool:
-    row = dict(image_row or {})
-    if _is_generated_cloud_image(row):
-        return False
-    if str(row.get('deleted_at') or '').strip():
-        return False
-    if str(row.get('purged_at') or '').strip():
-        return False
-    return True
-
-
-def _is_metadata_only_microscope_cloud_image(image_row: dict | None) -> bool:
-    row = dict(image_row or {})
-    if not should_pull_cloud_image_to_desktop(row):
-        return False
-    if str(row.get('image_type') or '').strip().lower() != 'microscope':
-        return False
-    return not _normalize_cloud_media_key(row.get('storage_path'))
-
-
 def _is_spore_measurement_source_image(image_row: dict | None) -> bool:
     row = dict(image_row or {})
     if not should_pull_cloud_image_to_desktop(row):
@@ -5481,15 +4153,6 @@ def _is_spore_measurement_source_image(image_row: dict | None) -> bool:
     if _normalize_cloud_media_key(row.get('storage_path')):
         return True
     return _resolve_existing_local_image_asset_path(str(row.get('filepath') or '')) is not None
-
-
-def _is_local_metadata_only_microscope_anchor(image_row: dict | None) -> bool:
-    row = dict(image_row or {})
-    if not should_pull_cloud_image_to_desktop(row):
-        return False
-    if str(row.get('image_type') or '').strip().lower() != 'microscope':
-        return False
-    return bool(str(row.get('cloud_id') or '').strip())
 
 
 def _update_image_columns_without_touching_observation(
@@ -5751,224 +4414,6 @@ def _store_cloud_image_file_signature(
     )
 
 
-def _clear_cloud_image_file_signature(observation_id: int | str, image_id: int | str) -> None:
-    SettingsDB.set_setting(_cloud_image_file_signature_key(observation_id, image_id), '')
-
-
-def _load_pending_image_promotion_key(observation_id: int | str, image_id: int | str) -> str:
-    return _normalize_cloud_media_key(
-        SettingsDB.get_setting(
-            _cloud_image_promotion_pending_key(observation_id, image_id), ''
-        ) or ''
-    )
-
-
-def _store_pending_image_promotion_key(
-    observation_id: int | str,
-    image_id: int | str,
-    storage_path: str,
-) -> None:
-    SettingsDB.set_setting(
-        _cloud_image_promotion_pending_key(observation_id, image_id),
-        _normalize_cloud_media_key(storage_path),
-    )
-
-
-def _clear_pending_image_promotion_key(observation_id: int | str, image_id: int | str) -> None:
-    SettingsDB.set_setting(_cloud_image_promotion_pending_key(observation_id, image_id), '')
-
-
-def _cloud_metadata_only_image_ids(observation_id: int | str) -> set[int]:
-    raw = SettingsDB.get_setting(_cloud_metadata_only_image_ids_key(observation_id), '[]')
-    try:
-        values = json.loads(raw or '[]')
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return set()
-    if not isinstance(values, list):
-        return set()
-    return {_safe_int(value) for value in values if _safe_int(value) > 0}
-
-
-def _set_cloud_image_metadata_only_state(
-    observation_id: int | str,
-    image_id: int | str,
-    metadata_only: bool,
-) -> None:
-    obs_id = _safe_int(observation_id)
-    local_image_id = _safe_int(image_id)
-    if obs_id <= 0 or local_image_id <= 0:
-        return
-    image_ids = _cloud_metadata_only_image_ids(obs_id)
-    if metadata_only:
-        image_ids.add(local_image_id)
-    else:
-        image_ids.discard(local_image_id)
-    SettingsDB.set_setting(
-        _cloud_metadata_only_image_ids_key(obs_id),
-        json.dumps(sorted(image_ids)),
-    )
-
-
-def _cloud_image_storage_excluded_image_ids(observation_id: int | str) -> set[int]:
-    """Return the local image ids the user has excluded from cloud image storage.
-
-    Stage 1 canonical persistence for the gallery "Keep image in Sporely Cloud"
-    checkbox. Separate from the Artsobs/iNat publication-exclusion set.
-    """
-    raw = SettingsDB.get_setting(
-        _cloud_image_storage_excluded_ids_key(observation_id), '[]'
-    )
-    try:
-        values = json.loads(raw or '[]')
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return set()
-    if not isinstance(values, list):
-        return set()
-    return {_safe_int(value) for value in values if _safe_int(value) > 0}
-
-
-def _set_cloud_image_storage_excluded_image_ids(
-    observation_id: int | str,
-    excluded_ids: set[int] | list[int] | tuple[int, ...] | None,
-) -> None:
-    """Persist the full cloud image-storage excluded id set for one observation."""
-    obs_id = _safe_int(observation_id)
-    if obs_id <= 0:
-        return
-    normalized = sorted({
-        _safe_int(value) for value in (excluded_ids or set()) if _safe_int(value) > 0
-    })
-    SettingsDB.set_setting(
-        _cloud_image_storage_excluded_ids_key(obs_id),
-        json.dumps(normalized),
-    )
-
-
-def _add_cloud_image_storage_excluded_image_id(
-    observation_id: int | str,
-    image_id: int | str,
-) -> None:
-    obs_id = _safe_int(observation_id)
-    local_image_id = _safe_int(image_id)
-    if obs_id <= 0 or local_image_id <= 0:
-        return
-    excluded = _cloud_image_storage_excluded_image_ids(obs_id)
-    if local_image_id in excluded:
-        return
-    excluded.add(local_image_id)
-    _set_cloud_image_storage_excluded_image_ids(obs_id, excluded)
-
-
-def _remove_cloud_image_storage_excluded_image_id(
-    observation_id: int | str,
-    image_id: int | str,
-) -> None:
-    obs_id = _safe_int(observation_id)
-    local_image_id = _safe_int(image_id)
-    if obs_id <= 0 or local_image_id <= 0:
-        return
-    excluded = _cloud_image_storage_excluded_image_ids(obs_id)
-    if local_image_id not in excluded:
-        return
-    excluded.discard(local_image_id)
-    _set_cloud_image_storage_excluded_image_ids(obs_id, excluded)
-
-
-def _cloud_image_storage_intent_initialized_ids(observation_id: int | str) -> set[int]:
-    """Local image ids whose cloud byte-storage intent has been recorded.
-
-    Canonical answer to "has default cloud-storage intent already been
-    assigned to this local image?". Membership here — never mere absence
-    from the excluded set — is what proves a decision exists.
-    """
-    raw = SettingsDB.get_setting(
-        _cloud_image_storage_intent_ledger_key(observation_id), '[]'
-    )
-    try:
-        values = json.loads(raw or '[]')
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return set()
-    if not isinstance(values, list):
-        return set()
-    return {_safe_int(value) for value in values if _safe_int(value) > 0}
-
-
-def _set_cloud_image_storage_intent_initialized_ids(
-    observation_id: int | str,
-    image_ids: set[int] | list[int] | tuple[int, ...] | None,
-) -> None:
-    obs_id = _safe_int(observation_id)
-    if obs_id <= 0:
-        return
-    normalized = sorted({
-        _safe_int(value) for value in (image_ids or set()) if _safe_int(value) > 0
-    })
-    SettingsDB.set_setting(
-        _cloud_image_storage_intent_ledger_key(obs_id),
-        json.dumps(normalized),
-    )
-
-
-def _mark_cloud_image_storage_intent_initialized(
-    observation_id: int | str,
-    image_ids: set[int] | list[int] | tuple[int, ...],
-) -> None:
-    """Record that storage intent now exists for these images.
-
-    Called for explicit checkbox interactions and by the initializer itself.
-    Once an image is in the ledger, default seeding never touches it again.
-    """
-    obs_id = _safe_int(observation_id)
-    normalized = {_safe_int(value) for value in (image_ids or ()) if _safe_int(value) > 0}
-    if obs_id <= 0 or not normalized:
-        return
-    ledger = _cloud_image_storage_intent_initialized_ids(obs_id)
-    if normalized <= ledger:
-        return
-    _set_cloud_image_storage_intent_initialized_ids(obs_id, ledger | normalized)
-
-
-def cloud_image_storage_intent_initialized(
-    observation_id: int | str,
-    image_id: int | str,
-) -> bool:
-    """Pure read: has a storage-intent decision been recorded for this image?"""
-    obs_id = _safe_int(observation_id)
-    local_image_id = _safe_int(image_id)
-    if obs_id <= 0 or local_image_id <= 0:
-        return False
-    return local_image_id in _cloud_image_storage_intent_initialized_ids(obs_id)
-
-
-def cloud_image_bytes_desired(
-    observation_id: int | str,
-    image_id: int | str,
-    image_row: dict | None = None,
-) -> bool:
-    """Return whether cloud image *bytes* are desired for this local image.
-
-    Byte-storage intent only. Anchors are separate — metadata-only microscope
-    anchor lifecycle is managed by
-    ``_ensure_metadata_only_microscope_image_for_public_spores`` and is not
-    affected by this predicate.
-    """
-    obs_id = _safe_int(observation_id)
-    local_image_id = _safe_int(image_id)
-    if obs_id <= 0 or local_image_id <= 0:
-        return False
-    excluded = _cloud_image_storage_excluded_image_ids(obs_id)
-    return local_image_id not in excluded
-
-
-class CloudImageBytesNotDesiredError(CloudSyncError):
-    """Raised when a byte upload is attempted for an image the user unchecked.
-
-    The cloud-storage-desired predicate rejects the upload at the client
-    boundary. Recovery flows may opt in explicitly by passing
-    ``recovery_authorized=True`` to the upload method.
-    """
-
-
 def _cloud_image_storage_initialized(observation_id: int | str) -> bool:
     """Derived: every current image row of this observation is in the ledger.
 
@@ -5994,237 +4439,6 @@ def _cloud_image_storage_initialized(observation_id: int | str) -> bool:
     if not image_ids:
         return True
     return image_ids <= _cloud_image_storage_intent_initialized_ids(obs_id)
-
-
-def _microscope_group_key_from_row(row: dict) -> str:
-    """Coarse magnification-group key used by the storage-desired initializer.
-
-    Kept local so ``utils.cloud_sync`` does not import Qt UI code. The heuristic
-    mirrors :func:`ui.observations_tab._image_microscope_publish_group_key` for
-    the fields available on ImageDB rows: use ``objective_name`` and fall back
-    to a magnification number scraped from it. This is only used for the
-    initializer's sparse-default rule; UI still uses its own resolver.
-    """
-    if not isinstance(row, dict):
-        return "__unknown__"
-    objective_name = str(row.get('objective_name') or '').strip()
-    if not objective_name:
-        lab_metadata = row.get('lab_metadata')
-        if isinstance(lab_metadata, dict):
-            objective_name = str(lab_metadata.get('objective_name') or '').strip()
-            if not objective_name:
-                microscope_metadata = lab_metadata.get('microscope')
-                if isinstance(microscope_metadata, dict):
-                    objective_name = str(
-                        microscope_metadata.get('objective_name') or ''
-                    ).strip()
-    if not objective_name:
-        return "__unknown__"
-    import re as _re
-    match = _re.search(r"(\d+(?:\.\d+)?)\s*[xX]", objective_name)
-    if match:
-        return f"{match.group(1)}x".casefold()
-    match = _re.search(r"(\d+(?:\.\d+)?)", objective_name)
-    if match:
-        return f"{match.group(1)}x".casefold()
-    return objective_name.casefold() or "__unknown__"
-
-
-def _ensure_cloud_image_storage_intent_initialized(
-    observation_id: int | str,
-) -> dict:
-    """Canonical per-image cloud-storage intent initializer (incremental).
-
-    Records, in the persistent per-image ledger
-    (``sporely_cloud_image_storage_intent_ids_<obs>``), that a default (or
-    explicit) byte-storage decision exists for each local image. Only ledger
-    membership proves a decision — absence from the excluded set proves
-    nothing. This replaces the retired observation-level sentinel, which let
-    images imported after first initialization masquerade as explicitly
-    checked (2026-08-19 mass microscope upload incident).
-
-    Rules applied to images NOT yet in the ledger (images already in the
-    ledger are never rewritten):
-
-    * Active tombstone (DELETE_PENDING / DELETED) → excluded + initialized.
-      Tombstone lifecycle itself is untouched.
-    * Field (and any non-microscope) image → desired by default (left out of
-      the excluded set) + initialized. A pre-existing explicit exclusion is
-      preserved.
-    * Microscope image whose magnification group already contains ANY
-      initialized member → excluded + initialized. No replacement keeper is
-      chosen: the user may have deliberately unchecked every member of that
-      group, and a silent re-enable is exactly the failure being fixed.
-    * Microscope image in a group with NO initialized member (a genuinely
-      new group, or legacy pre-ledger rows):
-        - Legacy inference (explicit "checked" history was never stored
-          before the ledger existed): a member that is cloud-identified,
-          NOT a registered metadata-only anchor, and NOT tombstoned is
-          treated as byte-backed / previously selected — it stays desired.
-        - If no such member exists, one deterministic keeper is chosen: the
-          first member by (sort_order NULLS LAST, id) that is neither
-          explicitly excluded nor tombstoned.
-        - Every other uninitialized member is excluded.
-      Registered metadata-only anchors are never inferred as byte-backed;
-      unless chosen as the deterministic keeper they default local-only,
-      and their anchor identity/measurements are untouched either way.
-    * In every branch, a cloud-identified non-anchor member without a
-      tombstone is never defaulted into the excluded set — its bytes (or
-      its explicit selection) already exist; only an explicit user action
-      may exclude it.
-
-    Idempotent, mutates local settings only (never cloud I/O, never image
-    rows, never tombstones). Returns a small summary dict for diagnostics:
-    ``{"seeded_desired": int, "seeded_excluded": int}``.
-    """
-    summary = {"seeded_desired": 0, "seeded_excluded": 0}
-    obs_id = _safe_int(observation_id)
-    if obs_id <= 0:
-        return summary
-
-    conn = get_connection()
-    try:
-        conn.row_factory = sqlite3.Row
-        existing_cols = {
-            str(info["name"])
-            for info in conn.execute("PRAGMA table_info(images)").fetchall()
-        }
-        if "id" not in existing_cols:
-            return summary
-        wanted = [
-            col
-            for col in (
-                "id", "image_type", "cloud_id", "synced_at",
-                "objective_name",
-                "sort_order",
-            )
-            if col in existing_cols
-        ]
-        order_bits: list[str] = []
-        if "sort_order" in existing_cols:
-            order_bits.append("CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END")
-            order_bits.append("sort_order")
-        order_bits.append("id")
-        rows = [
-            dict(row)
-            for row in conn.execute(
-                f"SELECT {', '.join(wanted)} FROM images WHERE observation_id = ? "
-                f"ORDER BY {', '.join(order_bits)}",
-                (obs_id,),
-            ).fetchall()
-        ]
-    finally:
-        conn.close()
-
-    if not rows:
-        return summary
-
-    ledger = _cloud_image_storage_intent_initialized_ids(obs_id)
-    uninitialized_ids = {
-        _safe_int(row.get("id"))
-        for row in rows
-        if _safe_int(row.get("id")) > 0 and _safe_int(row.get("id")) not in ledger
-    }
-    if not uninitialized_ids:
-        return summary
-
-    excluded = _cloud_image_storage_excluded_image_ids(obs_id)
-    anchor_ids = _cloud_metadata_only_image_ids(obs_id)
-    new_excluded: set[int] = set(excluded)
-    new_ledger: set[int] = set(ledger)
-
-    tombstone_cache: dict[str, bool] = {}
-
-    def _has_active_tombstone(row: dict) -> bool:
-        cloud_id = str(row.get("cloud_id") or '').strip()
-        if not cloud_id:
-            return False
-        if cloud_id not in tombstone_cache:
-            tombstone_cache[cloud_id] = bool(
-                ImageDB.get_image_tombstone_by_deleted_cloud_id(cloud_id)
-            )
-        return tombstone_cache[cloud_id]
-
-    def _inferred_byte_backed(row: dict) -> bool:
-        # Legacy inference documented in the docstring: before the ledger,
-        # cloud identity (minus registered anchors and tombstones) is the
-        # only durable evidence of a prior byte upload / explicit selection.
-        image_id = _safe_int(row.get("id"))
-        return (
-            bool(str(row.get("cloud_id") or '').strip())
-            and image_id not in anchor_ids
-            and not _has_active_tombstone(row)
-        )
-
-    microscope_groups: dict[str, list[dict]] = {}
-    for row in rows:
-        image_id = _safe_int(row.get("id"))
-        if image_id <= 0:
-            continue
-        image_type = str(row.get("image_type") or '').strip().lower()
-        if image_type == "microscope":
-            microscope_groups.setdefault(
-                _microscope_group_key_from_row(row), []
-            ).append(row)
-            continue
-        if image_id not in uninitialized_ids:
-            continue
-        if _has_active_tombstone(row):
-            new_excluded.add(image_id)
-        new_ledger.add(image_id)
-
-    for group_rows in microscope_groups.values():
-        pending_members = [
-            row for row in group_rows
-            if _safe_int(row.get("id")) in uninitialized_ids
-        ]
-        if not pending_members:
-            continue
-        group_has_initialized_member = any(
-            _safe_int(row.get("id")) in ledger for row in group_rows
-        )
-        keeper_ids: set[int] = set()
-        if not group_has_initialized_member:
-            keeper_ids = {
-                _safe_int(row.get("id"))
-                for row in group_rows
-                if _inferred_byte_backed(row)
-                and _safe_int(row.get("id")) not in excluded
-            }
-            if not keeper_ids:
-                for row in group_rows:
-                    image_id = _safe_int(row.get("id"))
-                    if image_id <= 0 or image_id in excluded:
-                        continue
-                    if _has_active_tombstone(row):
-                        continue
-                    keeper_ids = {image_id}
-                    break
-        for row in pending_members:
-            image_id = _safe_int(row.get("id"))
-            if image_id <= 0:
-                continue
-            new_ledger.add(image_id)
-            if image_id in keeper_ids:
-                continue
-            if _has_active_tombstone(row):
-                new_excluded.add(image_id)
-                continue
-            if _inferred_byte_backed(row):
-                # Bytes/selection already exist on cloud — never default an
-                # uploaded image into the excluded set.
-                continue
-            new_excluded.add(image_id)
-
-    if new_excluded != excluded:
-        _set_cloud_image_storage_excluded_image_ids(obs_id, new_excluded)
-    if new_ledger != ledger:
-        _set_cloud_image_storage_intent_initialized_ids(obs_id, new_ledger)
-
-    seeded = new_ledger - ledger
-    summary["seeded_excluded"] = len([i for i in seeded if i in new_excluded])
-    summary["seeded_desired"] = len(seeded) - summary["seeded_excluded"]
-    return summary
 
 
 def _initialize_cloud_image_storage_desired_state_for_observation(
@@ -6284,148 +4498,6 @@ def _reconcile_local_image_cloud_id(
         conn.close()
 
 
-def _local_tombstoned_cloud_image_ids(cloud_image_ids: list[str] | tuple[str, ...] | set[str] | None = None) -> set[str]:
-    tombstones = get_image_tombstones_by_deleted_cloud_id(cloud_image_ids)
-    return set(tombstones.keys())
-
-
-def _local_tombstoned_local_image_ids(local_image_ids: list[int] | tuple[int, ...] | set[int] | None = None) -> set[int]:
-    tombstones = get_image_tombstones_by_local_image_id(local_image_ids)
-    return set(tombstones.keys())
-
-
-def _pull_remote_images_for_sync(client: "SporelyCloudClient", cloud_id: str) -> list[dict]:
-    """Fetch cloud image rows including deleted ones so tombstones can be recorded."""
-    cloud_value = str(cloud_id or '').strip()
-    if not cloud_value:
-        return []
-    return [
-        dict(row or {})
-        for row in (client.pull_image_metadata(cloud_value, include_deleted_for_sync=True) or [])
-    ]
-
-
-def _record_remote_image_tombstones(
-    remote_images,
-    *,
-    local_observation_id: int | None = None,
-    cloud_observation_id: str | None = None,
-) -> set[str]:
-    # Option A: keep the local active image row visible for now.
-    # Recording the tombstone is enough to block reupload/recreation; local
-    # hiding/deletion and any explicit confirmation flow stay deferred.
-    rows = [dict(row or {}) for row in (remote_images or [])]
-    tombstone_rows = [
-        row
-        for row in rows
-        if str(row.get("id") or "").strip() and str(row.get("deleted_at") or "").strip()
-    ]
-    if not tombstone_rows:
-        return set()
-
-    tombstone_cloud_ids = [
-        str(row.get("id") or "").strip()
-        for row in tombstone_rows
-        if str(row.get("id") or "").strip()
-    ]
-    existing_tombstones = get_image_tombstones_by_deleted_cloud_id(tombstone_cloud_ids)
-    new_tombstone_cloud_ids = [
-        cloud_id
-        for cloud_id in dict.fromkeys(tombstone_cloud_ids)
-        if cloud_id not in existing_tombstones
-    ]
-    _increment_sync_summary(_cloud_sync_current_summary(), 'images_deleted_remote', len(new_tombstone_cloud_ids))
-    deleted_cloud_ids: set[str] = set()
-    conn = get_connection()
-    try:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        try:
-            cursor.execute("PRAGMA table_info(images)")
-            image_columns = {str(row[1] or "") for row in cursor.fetchall()}
-        except Exception:
-            image_columns = set()
-
-        has_cloud_id = "cloud_id" in image_columns
-        select_columns = ["id"]
-        for column in ("observation_id", "image_type", "filepath", "original_filepath"):
-            if column in image_columns:
-                select_columns.append(column)
-
-        local_image_sql = (
-            f"SELECT {', '.join(select_columns)} FROM images WHERE cloud_id = ? LIMIT 1"
-            if has_cloud_id
-            else None
-        )
-        local_desktop_image_sql = (
-            f"SELECT {', '.join(select_columns)} FROM images WHERE id = ? LIMIT 1"
-        )
-
-        for remote_image in tombstone_rows:
-            cloud_image_id = str(remote_image.get("id") or "").strip()
-            deleted_at = str(remote_image.get("deleted_at") or "").strip()
-            resolved_local_observation_id = None
-            if local_observation_id is not None:
-                local_observation_id_value = _safe_int(local_observation_id)
-                if local_observation_id_value > 0:
-                    resolved_local_observation_id = local_observation_id_value
-            local_image_row = None
-            if local_image_sql:
-                local_image_row = cursor.execute(local_image_sql, (cloud_image_id,)).fetchone()
-            if local_image_row is None:
-                desktop_image_id = _safe_int(remote_image.get("desktop_id"))
-                if desktop_image_id > 0:
-                    local_image_row = cursor.execute(
-                        local_desktop_image_sql,
-                        (desktop_image_id,),
-                    ).fetchone()
-
-            image_type = None
-            filepath = None
-            original_filepath = None
-            if local_image_row:
-                local_image_data = dict(local_image_row)
-                if resolved_local_observation_id is None and "observation_id" in local_image_data:
-                    local_observation_id_value = _safe_int(local_image_data.get("observation_id"))
-                    if local_observation_id_value > 0:
-                        resolved_local_observation_id = local_observation_id_value
-                image_type = str(local_image_data.get("image_type") or "").strip() or None
-                filepath = str(local_image_data.get("filepath") or "").strip() or None
-                original_filepath = str(local_image_data.get("original_filepath") or "").strip() or None
-
-            _upsert_image_tombstone(
-                cursor,
-                deleted_cloud_id=cloud_image_id,
-                deleted_at=deleted_at,
-                deleted_storage_path=_normalize_cloud_media_key(remote_image.get("storage_path")) or None,
-                deleted_observation_cloud_id=(
-                    str(cloud_observation_id or remote_image.get("observation_id") or "").strip() or None
-                ),
-                local_observation_id=resolved_local_observation_id,
-                # A remote deletion must not classify a matching active image
-                # as locally deleted.  The upsert keeps any pre-existing ID
-                # from a genuine local deletion via COALESCE.
-                local_image_id=None,
-                image_type=image_type,
-                filepath=filepath,
-                original_filepath=original_filepath,
-            )
-            deleted_cloud_ids.add(cloud_image_id)
-
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-
-    return deleted_cloud_ids
-
-
-def _tombstoned_cloud_image_warning(local_id: int | None, cloud_image_id: str) -> str:
-    return f"obs {int(local_id or 0)}: skipped cloud image {cloud_image_id} because it has a local tombstone"
-
-
 def _remote_images_missing_locally(local_id: int, remote_images: list[dict] | None) -> list[dict]:
     """Return cloud images that should exist locally but are missing or unreadable."""
     pullable_remote_images = [
@@ -6466,144 +4538,6 @@ def _remote_images_missing_locally(local_id: int, remote_images: list[dict] | No
         if _resolve_existing_local_image_asset_path(local_image.get('filepath')) is None:
             missing_remote_images.append(remote_image)
     return missing_remote_images
-
-
-def _push_pending_image_tombstones(client: "SporelyCloudClient") -> list[str]:
-    warnings: list[str] = []
-    # Compatibility repair: older versions may have queued a cloud deletion
-    # merely because an external-publish checkbox was unchecked.
-    repaired = reconcile_legacy_publish_exclusion_tombstones()
-    repaired_pending = int(repaired.get("pending") or 0)
-    repaired_synced = int(repaired.get("synced") or 0)
-    if repaired_pending or repaired_synced:
-        print(
-            "[cloud_sync] Reconciled legacy external-publish tombstones: "
-            f"{repaired_pending} pending, {repaired_synced} previously synced"
-        )
-    pending = list_pending_image_tombstones()
-    if pending:
-        print(f"[cloud_sync] Image tombstones pending push: {len(pending)}", flush=True)
-    protected_count = 0
-    soft_deleted: list[str] = []
-    for tombstone in pending:
-        cloud_image_id = str(tombstone.get('deleted_cloud_id') or '').strip()
-        if not cloud_image_id:
-            continue
-        local_image_id = _safe_int(tombstone.get('local_image_id'))
-        if local_image_id > 0 and (
-            microscope_image_requires_public_spore_anchor(local_image_id)
-            or (
-                microscope_image_requires_owner_sync_anchor(local_image_id)
-                and _owner_sync_parents_supported(client)
-            )
-        ):
-            try:
-                ImageDB.clear_image_tombstone_by_deleted_cloud_id(cloud_image_id)
-            except Exception as exc:
-                warning = (
-                    f"obs {int(tombstone.get('local_observation_id') or 0)}: "
-                    f"could not cancel protected microscope anchor tombstone "
-                    f"{cloud_image_id}: {exc}"
-                )
-                warnings.append(warning)
-                print(f'[cloud_sync] Warning: {warning}')
-            else:
-                protected_count += 1
-                print(
-                    f'[cloud_sync] Cancelled tombstone for microscope image '
-                    f'{local_image_id}: public spore metadata anchor required',
-                    flush=True,
-                )
-            continue
-        deleted_at = str(tombstone.get('deleted_at') or '').strip() or datetime.now(timezone.utc).isoformat()
-        try:
-            client.soft_delete_image(cloud_image_id, deleted_at)
-        except Exception as exc:
-            warning = (
-                f"obs {int(tombstone.get('local_observation_id') or 0)}: "
-                f"could not sync cloud image tombstone {cloud_image_id}: {exc}"
-            )
-            warnings.append(warning)
-            print(f'[cloud_sync] Warning: {warning}')
-            continue
-        try:
-            mark_image_tombstone_synced(cloud_image_id)
-        except Exception as exc:
-            warning = (
-                f"obs {int(tombstone.get('local_observation_id') or 0)}: "
-                f"synced cloud image tombstone {cloud_image_id} but could not mark it locally: {exc}"
-            )
-            warnings.append(warning)
-            print(f'[cloud_sync] Warning: {warning}')
-            continue
-        soft_deleted.append(cloud_image_id)
-    if pending:
-        # One summary line makes the delete flow diagnosable from logs
-        # without dumping cloud IDs into normal-path noise.
-        print(
-            "[cloud_sync] Image tombstone push complete: "
-            f"soft_deleted={len(soft_deleted)}, "
-            f"protected_microscope={protected_count}, "
-            f"failed={len(warnings)}",
-            flush=True,
-        )
-        if soft_deleted:
-            print(
-                "[cloud_sync] Soft-deleted cloud image ids: "
-                + ", ".join(soft_deleted),
-                flush=True,
-            )
-    return warnings
-
-
-def _load_local_cloud_media_signature(observation_id: int | str) -> str:
-    return str(SettingsDB.get_setting(_cloud_local_media_signature_key(observation_id), '') or '').strip()
-
-
-def _store_local_cloud_media_signature(observation_id: int | str, signature: str) -> None:
-    SettingsDB.set_setting(
-        _cloud_local_media_signature_key(observation_id),
-        str(signature or '').strip(),
-    )
-
-
-def _pull_remote_measurements_for_images(
-    client: "SporelyCloudClient",
-    image_cloud_ids: list[str],
-) -> list[dict]:
-    fetcher = getattr(client, 'pull_measurements_for_images', None)
-    if not callable(fetcher):
-        return []
-    rows = fetcher(image_cloud_ids)
-    return [dict(row or {}) for row in (rows or [])]
-
-
-def _group_remote_measurements_by_observation(
-    remote_images: list[dict] | None,
-    remote_measurements: list[dict] | None,
-) -> dict[str, list[dict]]:
-    image_to_obs: dict[str, str] = {}
-    for image_row in (remote_images or []):
-        cloud_image_id = str(image_row.get('id') or '').strip()
-        cloud_obs_id = str(image_row.get('observation_id') or '').strip()
-        if cloud_image_id and cloud_obs_id:
-            image_to_obs[cloud_image_id] = cloud_obs_id
-    grouped: dict[str, list[dict]] = {}
-    for measurement_row in (remote_measurements or []):
-        cloud_image_id = str(measurement_row.get('image_id') or '').strip()
-        cloud_obs_id = image_to_obs.get(cloud_image_id)
-        if not cloud_obs_id:
-            continue
-        grouped.setdefault(cloud_obs_id, []).append(dict(measurement_row or {}))
-    for rows in grouped.values():
-        rows.sort(
-            key=lambda row: (
-                str(row.get('image_id') or ''),
-                _safe_int(row.get('desktop_id')),
-                str(row.get('id') or ''),
-            )
-        )
-    return grouped
 
 
 def _cloud_child_safety_pull_due(now: datetime | None = None) -> tuple[bool, str | None]:
@@ -8269,153 +6203,10 @@ def unlink_local_observation_from_cloud(local_id: int) -> dict:
     return {'local_id': int(local_id), 'cloud_id': cloud_id}
 
 
-def mark_observation_dirty(local_id: int) -> None:
-    try:
-        obs_id = int(local_id or 0)
-    except (TypeError, ValueError):
-        return
-    if obs_id <= 0:
-        return
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        mark_observation_sync_dirty(cursor, obs_id)
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def mark_observation_media_dirty(local_id: int) -> None:
-    """Schedule a user-selected media change for the next cloud sync.
-
-    Checkbox changes are event-driven sync work, so they must not depend on
-    the periodic pending-image repair scan. The image-specific cloud-id detach
-    and explicit restore marker identify the pending upload; retaining the
-    observation media signature lets the pre-encode pass prove that unrelated
-    linked images are unchanged.
-    """
-    try:
-        obs_id = int(local_id or 0)
-    except (TypeError, ValueError):
-        return
-    if obs_id <= 0:
-        return
-    mark_observation_dirty(obs_id)
-
-
-def set_image_cloud_selected(image_id: int, selected: bool) -> dict | None:
-    """Apply one checkbox change to the image's canonical cloud lifecycle.
-
-    Stage 1: also mirrors the checkbox into the cloud-storage-desired
-    excluded set (``sporely_cloud_image_storage_excluded_ids_<obs>``) so the
-    boundary byte gate sees a consistent view without depending on any UI
-    layer. Tombstone / delete-pending / restore transitions continue to run
-    as before.
-    """
-    image_id = _safe_int(image_id)
-    if image_id <= 0:
-        return None
-    image = ImageDB.get_image(image_id)
-    if not image:
-        return None
-
-    cloud_id = str(image.get("cloud_id") or "").strip()
-    tombstone = (
-        ImageDB.get_image_tombstone_by_deleted_cloud_id(cloud_id)
-        if cloud_id
-        else None
-    )
-    previous_state = derive_image_cloud_state(
-        cloud_id,
-        tombstone,
-        metadata_only=(
-            image_id in _cloud_metadata_only_image_ids(image.get("observation_id"))
-        ),
-    )
-    next_state = previous_state
-    next_cloud_id = cloud_id or None
-    action = "none"
-    observation_id = _safe_int(image.get("observation_id"))
-
-    if not selected and previous_state == CLOUD_IMAGE_STATE_UPLOADED:
-        queued_cloud_id = ImageDB.queue_image_tombstone_for_local_image(image_id)
-        if queued_cloud_id:
-            next_state = CLOUD_IMAGE_STATE_DELETE_PENDING
-            next_cloud_id = str(queued_cloud_id)
-            action = "delete_queued"
-    elif selected and previous_state == CLOUD_IMAGE_STATE_DELETE_PENDING:
-        if ImageDB.clear_image_tombstone_by_deleted_cloud_id(cloud_id):
-            next_state = CLOUD_IMAGE_STATE_UPLOADED
-            action = "delete_cancelled"
-    elif selected and previous_state == CLOUD_IMAGE_STATE_DELETED:
-        remember_explicit_image_restore_source(image_id, cloud_id)
-        if ImageDB.clear_image_cloud_sync_state(image_id):
-            next_state = CLOUD_IMAGE_STATE_NONE
-            next_cloud_id = None
-            action = "restore_queued"
-            mark_observation_media_dirty(observation_id)
-    elif selected and previous_state == CLOUD_IMAGE_STATE_NONE:
-        mark_observation_media_dirty(observation_id)
-        action = "upload_queued"
-    elif selected and previous_state == CLOUD_IMAGE_STATE_METADATA_ONLY:
-        mark_observation_media_dirty(observation_id)
-        action = "upload_queued"
-
-    # Stage 1: keep the cloud-storage-desired excluded set aligned with the
-    # checkbox. Only mutate when the observation is known; a checkbox without
-    # an observation cannot affect the byte gate anyway.
-    if observation_id > 0:
-        if selected:
-            _remove_cloud_image_storage_excluded_image_id(observation_id, image_id)
-        else:
-            _add_cloud_image_storage_excluded_image_id(observation_id, image_id)
-        # An explicit user decision IS storage intent — record it in the
-        # per-image ledger so default seeding can never override it.
-        _mark_cloud_image_storage_intent_initialized(observation_id, [image_id])
-
-    return {
-        "image_id": image_id,
-        "observation_id": observation_id or None,
-        "selected": bool(selected),
-        "previous_state": previous_state,
-        "cloud_state": next_state,
-        "cloud_id": next_cloud_id,
-        "action": action,
-    }
-
-
-def _explicit_image_restore_source_key(image_id: int | str) -> str:
-    return f"sporely_cloud_explicit_image_restore_source_{int(image_id)}"
-
-
-def remember_explicit_image_restore_source(image_id: int, deleted_cloud_id: str) -> None:
-    """Remember the tombstoned cloud row that an explicit restore must not reuse."""
-    image_id = _safe_int(image_id)
-    cloud_id = str(deleted_cloud_id or "").strip()
-    if image_id > 0 and cloud_id:
-        SettingsDB.set_setting(_explicit_image_restore_source_key(image_id), cloud_id)
-
-
-def _explicit_image_restore_source(image_id: int | str) -> str:
-    image_id = _safe_int(image_id)
-    if image_id <= 0:
-        return ""
-    return str(
-        SettingsDB.get_setting(_explicit_image_restore_source_key(image_id), "") or ""
-    ).strip()
-
-
 def _clear_explicit_image_restore_source(image_id: int | str) -> None:
     image_id = _safe_int(image_id)
     if image_id > 0:
         SettingsDB.set_setting(_explicit_image_restore_source_key(image_id), "")
-
-
-def _safe_int(value, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
 
 
 def _observation_sync_species_label(obs: dict | None) -> str:
@@ -9062,13 +6853,6 @@ _SPORE_MEASUREMENT_SELECT_COLUMNS = _join_select_columns(
 # re-checking the proxy URL limit for the longest realistic ID list.
 _CLOUD_SYNC_IN_BATCH_SIZE = 100
 
-# PostgREST silently truncates every response body to ``db-max-rows`` — Supabase's
-# default is 1000. Callers of ``_get_paginated`` MUST include a deterministic
-# ``order=`` clause; the helper pages with ``limit=1000&offset=N`` and stops when a
-# page comes back shorter than this cap. Never treat a cap-sized response as
-# complete without paging past it.
-_CLOUD_SYNC_MAX_ROWS_PER_PAGE = 1000
-
 
 def _normalize_measurement_type_value(value) -> str:
     text = str(value or 'manual').strip().lower()
@@ -9441,168 +7225,6 @@ def _mark_cloud_observations_dirty_for_image_capture_time_changes() -> int:
         mark_observation_dirty(observation_id)
         marked += 1
     return marked
-
-
-def microscope_image_requires_public_spore_anchor(image_id: int | None) -> bool:
-    """Return whether one local image must retain a public metadata anchor.
-
-    This is the shared local eligibility predicate used by checkbox/tombstone
-    handling, normal sync, and the explicit mosaic backfill. It intentionally
-    mirrors the established public mosaic measurement gate: the observation's
-    spore data is public, the parent is a microscope image, both dimensions are
-    present, and the measurement category is a spore category.
-    """
-    local_image_id = _safe_int(image_id)
-    if local_image_id <= 0:
-        return False
-    conn = get_connection()
-    try:
-        cursor = conn.execute(
-            """
-            SELECT i.image_type, o.spore_data_visibility,
-                   m.length_um, m.width_um, m.measurement_type
-            FROM images i
-            JOIN observations o ON o.id = i.observation_id
-            LEFT JOIN spore_measurements m ON m.image_id = i.id
-            WHERE i.id = ?
-            """,
-            (local_image_id,),
-        )
-        rows = cursor.fetchall()
-        if not rows:
-            return False
-        if str(rows[0][0] or '') != 'microscope':
-            return False
-        if str(rows[0][1] or 'public').lower() != 'public':
-            return False
-        return any(
-            measurement_qualifies_for_public_spore_anchor({
-                'length_um': row[2],
-                'width_um': row[3],
-                'measurement_type': row[4],
-            })
-            for row in rows
-        )
-    finally:
-        conn.close()
-
-
-def microscope_image_requires_owner_sync_anchor(image_id: int | None) -> bool:
-    """Whether one local microscope image must have a cloud parent for its
-    owner's own measurements to sync between the owner's devices.
-
-    Deliberately independent of `microscope_image_requires_public_spore_anchor`:
-    it ignores observation visibility and measurement type, because
-    cross-device sync of the owner's data is not publication. It mirrors the
-    measurement pusher's own eligibility — every measurement row on a
-    microscope image with a cloud parent is pushed — so no measurement is
-    left without a parent. Whether such a parent may ever be public is decided
-    by the server (`metadata_purpose` + verified public child data), never by
-    this predicate.
-    """
-    local_image_id = _safe_int(image_id)
-    if local_image_id <= 0:
-        return False
-    conn = get_connection()
-    try:
-        row = conn.execute(
-            """
-            SELECT i.image_type,
-                   EXISTS (SELECT 1 FROM spore_measurements m WHERE m.image_id = i.id)
-            FROM images i
-            WHERE i.id = ?
-            """,
-            (local_image_id,),
-        ).fetchone()
-    except sqlite3.OperationalError:
-        row = None
-    finally:
-        conn.close()
-    return bool(row) and str(row[0] or '') == 'microscope' and bool(row[1])
-
-
-def _owner_sync_parents_supported(client) -> bool:
-    """True only when the server confirms the owner-sync parent capability.
-
-    Fails closed: a client without the probe, or any probe failure, means no
-    owner-sync parent is created, so an older server can never receive a
-    metadata-only row its public RPCs would expose.
-    """
-    probe = getattr(client, '_observation_images_support_metadata_purpose', None)
-    if not callable(probe):
-        return False
-    try:
-        return bool(probe())
-    except Exception:
-        return False
-
-
-def _remote_metadata_purpose(client, remote_row: dict) -> str | None:
-    """A parent's stored purpose: from the row if read, else a targeted read."""
-    if 'metadata_purpose' in remote_row:
-        return str(remote_row.get('metadata_purpose') or '') or None
-    fetch = getattr(client, 'fetch_image_metadata_purpose', None)
-    cloud_image_id = str(remote_row.get('id') or '').strip()
-    if not callable(fetch) or not cloud_image_id:
-        return None
-    purpose = fetch(cloud_image_id)
-    remote_row['metadata_purpose'] = purpose
-    return purpose
-
-
-METADATA_PURPOSE_OWNER_SYNC = 'owner_sync'
-METADATA_PURPOSE_PUBLIC_MICROSCOPY = 'public_microscopy'
-
-
-def measurement_qualifies_for_public_spore_anchor(measurement: dict | None) -> bool:
-    """Pure eligibility predicate shared by sync and read-only incident audit."""
-    row = dict(measurement or {})
-    if row.get('length_um') is None or row.get('width_um') is None:
-        return False
-    measurement_type = str(row.get('measurement_type') or '').lower()
-    return measurement_type in {'', 'manual', 'spore', 'spores'}
-
-
-def _cloud_explicit_media_upload_selection(observation_id: int | None) -> set[int]:
-    """Return image ids the user has kept in Sporely Cloud image storage.
-
-    Stage 1: this is now the cloud-storage desired selection, read from the
-    dedicated ``sporely_cloud_image_storage_excluded_ids_<obs>`` setting.
-    Legacy ``artsobs_publish_excluded_image_ids_<obs>`` values are ignored
-    here — that key is publication-only.
-    """
-    local_observation_id = _safe_int(observation_id)
-    if local_observation_id <= 0:
-        return set()
-    conn = get_connection()
-    try:
-        all_ids = {
-            _safe_int(row[0])
-            for row in conn.execute(
-                "SELECT id FROM images WHERE observation_id = ?",
-                (local_observation_id,),
-            ).fetchall()
-            if _safe_int(row[0]) > 0
-        }
-        setting_key = _cloud_image_storage_excluded_ids_key(local_observation_id)
-        try:
-            setting_row = conn.execute(
-                "SELECT value FROM settings WHERE key = ?",
-                (setting_key,),
-            ).fetchone()
-        except sqlite3.OperationalError:
-            setting_row = None
-        excluded: set[int] = set()
-        if setting_row:
-            try:
-                values = json.loads(setting_row[0] or "[]")
-                if isinstance(values, list):
-                    excluded = {_safe_int(value) for value in values}
-            except (TypeError, ValueError, json.JSONDecodeError):
-                excluded = set()
-        return all_ids - excluded
-    finally:
-        conn.close()
 
 
 def _cloud_publish_path_key(path: str | None) -> str:
@@ -15864,7 +13486,7 @@ def has_saved_cloud_password() -> bool:
     return bool(email and password)
 
 
-class SporelyCloudClient:
+class SporelyCloudClient(CloudSyncTransportMixin):
     """Thin wrapper around Supabase REST API."""
 
     def __init__(self, access_token: str, user_id: str, refresh_token: str | None = None):
@@ -16446,50 +14068,6 @@ class SporelyCloudClient:
             raise CloudSyncError(f'GET {path}: {resp.text}')
         return resp.json()
 
-    def _get_paginated(
-        self,
-        path: str,
-        *,
-        page_size: int = _CLOUD_SYNC_MAX_ROWS_PER_PAGE,
-        max_rows: int | None = None,
-        max_response_bytes: int | None = None,
-    ) -> list:
-        """Fully page a PostgREST GET past the server ``db-max-rows`` cap.
-
-        Callers MUST include a deterministic ``order=`` clause (with ``id.asc``
-        as tie-breaker) in ``path``; otherwise offset-based paging can skip or
-        duplicate rows across pages. On any page failure the exception from
-        ``_get`` propagates — partial results are never returned, so callers
-        must not treat truncation as an authoritative empty result.
-        """
-        if (page_size <= 0 or (max_rows is not None and max_rows <= 0)
-                or (max_response_bytes is not None and max_response_bytes <= 0)):
-            raise CloudSyncError(f'GET {path}: invalid page_size {page_size}')
-        all_rows: list = []
-        response_bytes = 0
-        offset = 0
-        sep = '&' if '?' in path else '?'
-        while True:
-            page_path = f'{path}{sep}limit={page_size}&offset={offset}'
-            rows = self._get(page_path)
-            if not isinstance(rows, list):
-                raise CloudSyncError(
-                    f'GET {path}: expected list response for paginated fetch, '
-                    f'got {type(rows).__name__}'
-                )
-            response_bytes += len(json.dumps(
-                rows, ensure_ascii=False, separators=(',', ':'),
-            ).encode('utf-8'))
-            if max_response_bytes is not None and response_bytes > max_response_bytes:
-                raise CloudSyncError(
-                    f'GET {path}: response exceeds {max_response_bytes} bytes'
-                )
-            all_rows.extend(rows)
-            if max_rows is not None and len(all_rows) > max_rows:
-                raise CloudSyncError(f'GET {path}: response exceeds {max_rows} rows')
-            if len(rows) < page_size:
-                return all_rows
-            offset += len(rows)
 
     def get_read_only(self, path: str) -> list:
         """Perform one REST GET without token refresh or credential writes."""
