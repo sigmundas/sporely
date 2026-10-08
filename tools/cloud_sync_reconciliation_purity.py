@@ -11,8 +11,9 @@ checked on the AST, so they hold for code paths no test executes:
   stateful owner -- is a violation. Function-local imports count.
 * Calls: ``get_connection``, ``SettingsDB``, ``get_app_settings``,
   ``update_app_settings``, ``open`` and dynamic machinery are rejected by name.
-  Any ``*DB`` name may be used only as an allowlisted attribute (only
-  ``ObservationDB._normalize_location_precision``). A call of any attribute
+  Any ``*DB`` name, and any name bound from a ``database`` module (aliases
+  included), may be used only as an allowlisted attribute of its imported name
+  (only ``ObservationDB._normalize_location_precision``). A call of any attribute
   named like a ``SporelyCloudClient`` method, or of a SQLite/settings method, is
   rejected whatever its receiver.
 
@@ -78,12 +79,23 @@ def check_purity(
             violations.append(f"{module}: pure module not found")
             continue
         tree = ast.parse(file.read_text(encoding="utf-8"), filename=str(file))
-        # ``X`` inside an allowlisted ``X.attr`` is not a bare ``*DB`` use.
+        db_names = _database_bindings(tree, module, is_package)
+
+        def _real(name: str) -> str:
+            return db_names.get(name, name)
+
+        def _is_db(name: str) -> bool:
+            return name in db_names or name.endswith("DB")
+
+        # ``X`` inside an allowlisted ``X.attr`` is not a bare database use. The
+        # allowlist is matched on the imported (real) name, so an alias such as
+        # ``from database.models import ObservationDB as Obs`` gains nothing.
         allowlisted_receivers = {
             id(node.value)
             for node in ast.walk(tree)
             if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
-            and f"{node.value.id}.{node.attr}" in allowed_db_attributes
+            and _is_db(node.value.id)
+            and f"{_real(node.value.id)}.{node.attr}" in allowed_db_attributes
         }
         for node in ast.walk(tree):
             where = f"{module}:{getattr(node, 'lineno', 0)}"
@@ -113,10 +125,29 @@ def check_purity(
                     elif func.attr in client_methods:
                         violations.append(f"{where}: calls client method `.{func.attr}`")
             elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) \
-                    and node.value.id.endswith("DB") and id(node.value) not in allowlisted_receivers:
-                violations.append(f"{where}: uses `{node.value.id}.{node.attr}`")
-            elif isinstance(node, ast.Name) and node.id.endswith("DB") \
+                    and _is_db(node.value.id) and id(node.value) not in allowlisted_receivers:
+                violations.append(f"{where}: uses `{_real(node.value.id)}.{node.attr}`")
+            elif isinstance(node, ast.Name) and _is_db(node.id) \
                     and id(node) not in allowlisted_receivers:
-                violations.append(f"{where}: uses `{node.id}`")
+                violations.append(f"{where}: uses `{_real(node.id)}`")
     return violations
 
+
+def _database_bindings(tree: ast.Module, module: str, is_package: bool) -> dict[str, str]:
+    """Local name -> imported name for every name bound from a ``database`` module.
+
+    Covers aliases and function-local imports, so a renamed database class is
+    still recognised as one.
+    """
+    bindings: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            target = _resolve(module, is_package, node)
+            if target.split(".")[0] == "database":
+                for alias in node.names:
+                    bindings[alias.asname or alias.name] = alias.name
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split(".")[0] == "database":
+                    bindings[alias.asname or alias.name.split(".")[0]] = alias.name
+    return bindings

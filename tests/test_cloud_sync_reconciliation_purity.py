@@ -196,3 +196,53 @@ def test_cursor_and_file_io_fail(tmp_path):
         """)
     for needle in ("calls `.execute`", "calls `open`", "calls `.read_text`"):
         assert any(needle in v for v in violations), needle
+
+
+def test_aliased_database_class_read_fails(tmp_path):
+    """An alias does not hide a database read (S4 review: ``ObservationDB as Obs``)."""
+    violations = _synthetic(tmp_path, """
+        from database.models import ObservationDB as Obs
+
+        def f():
+            return Obs.get_all_observations()
+        """)
+    assert any("uses `ObservationDB.get_all_observations`" in v for v in violations)
+
+
+def test_aliased_allowlisted_normalizer_passes(tmp_path):
+    assert _synthetic(tmp_path, """
+        from database.models import ObservationDB as Obs
+
+        def f(value):
+            return Obs._normalize_location_precision(value)
+        """) == []
+
+
+def test_function_local_aliased_database_read_fails(tmp_path):
+    violations = _synthetic(tmp_path, """
+        def f():
+            from database.models import ObservationDB as O
+            return O.get_observation(1)
+        """)
+    assert any("uses `ObservationDB.get_observation`" in v for v in violations)
+
+
+def test_aliased_database_class_passed_around_fails(tmp_path):
+    violations = _synthetic(tmp_path, """
+        from database.models import ObservationDB as Obs
+
+        def f(g):
+            return g(Obs)
+        """)
+    assert any("uses `ObservationDB`" in v for v in violations)
+
+
+def test_database_module_alias_fails(tmp_path):
+    violations = _synthetic(tmp_path, """
+        import database.models as models
+
+        def f():
+            return models.ObservationDB.get_all_observations()
+        """)
+    assert any("imports `database.models`" in v for v in violations)
+    assert any("uses `database.models.ObservationDB`" in v for v in violations)
