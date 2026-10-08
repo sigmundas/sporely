@@ -92,6 +92,12 @@ def test_relocated_client_methods_resolve_to_the_mixin():
 #: these stay unclassified; ``PullOnlyCloudClient`` blocks them fail-closed as
 #: "Unrecognized client method". This set may only shrink: a new client method
 #: must join one of the two registries.
+#:
+#: This is NOT exhaustive two-list classification. The S3 brief asks for both
+#: "every method in exactly one pull-only list" and "registries are those of the
+#: base"; at the base these methods are in neither list, so both cannot hold.
+#: Extraction keeps the base registries; classifying these methods (plan
+#: invariant 10) is a registry change for a later, explicitly scoped stage.
 UNCLASSIFIED_AT_EXTRACTION_BASE = frozenset({
     "_adopt_session_from_values",
     "_build_storage_path",

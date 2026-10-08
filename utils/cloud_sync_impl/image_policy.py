@@ -228,6 +228,33 @@ def cloud_image_bytes_desired(
     return local_image_id not in excluded
 
 
+def _cloud_image_storage_initialized(observation_id: int | str) -> bool:
+    """Derived: every current image row of this observation is in the ledger.
+
+    Kept as a convenience predicate for tests and diagnostics. The legacy
+    observation-level sentinel setting is retired and no longer consulted —
+    an observation only counts as initialized when each of its images has a
+    per-image intent record.
+    """
+    obs_id = _safe_int(observation_id)
+    if obs_id <= 0:
+        return False
+    conn = get_connection()
+    try:
+        image_ids = {
+            _safe_int(row[0])
+            for row in conn.execute(
+                "SELECT id FROM images WHERE observation_id = ?", (obs_id,)
+            ).fetchall()
+        }
+    finally:
+        conn.close()
+    image_ids = {image_id for image_id in image_ids if image_id > 0}
+    if not image_ids:
+        return True
+    return image_ids <= _cloud_image_storage_intent_initialized_ids(obs_id)
+
+
 def _microscope_group_key_from_row(row: dict) -> str:
     """Coarse magnification-group key used by the storage-desired initializer.
 
@@ -457,6 +484,18 @@ def _ensure_cloud_image_storage_intent_initialized(
     summary["seeded_excluded"] = len([i for i in seeded if i in new_excluded])
     summary["seeded_desired"] = len(seeded) - summary["seeded_excluded"]
     return summary
+
+
+def _initialize_cloud_image_storage_desired_state_for_observation(
+    observation_id: int | str,
+) -> None:
+    """Back-compat alias for the canonical per-image intent initializer.
+
+    Existing call sites (gallery load, measure gallery load, sync-time
+    prerequisite) keep this name; all semantics live in
+    :func:`_ensure_cloud_image_storage_intent_initialized`.
+    """
+    _ensure_cloud_image_storage_intent_initialized(observation_id)
 
 
 def set_image_cloud_selected(image_id: int, selected: bool) -> dict | None:

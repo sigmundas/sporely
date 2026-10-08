@@ -762,3 +762,260 @@ def _increment_sync_summary(sync_summary: dict | None, key: str, amount: int = 1
     if increment <= 0:
         return
     sync_summary[key] = _sync_summary_value(sync_summary, key) + increment
+
+
+def format_sync_summary(sync_summary: dict | None) -> str | None:
+    summary = dict(sync_summary or {})
+    if not summary:
+        return None
+
+    lines: list[str] = []
+
+    observation_bits = []
+    observations_checked = _sync_summary_value(summary, 'observations_checked')
+    if observations_checked:
+        observation_bits.append(f'{observations_checked} checked')
+    observations_redirtied = _sync_summary_value(summary, 'observations_redirtied_pending_local_images')
+    if observations_redirtied:
+        observation_bits.append(f'{observations_redirtied} re-dirtied due to pending local images')
+    observations_patched = _sync_summary_value(summary, 'observations_patched')
+    if observations_patched:
+        observation_bits.append(f'{observations_patched} patched')
+    observations_noop = _sync_summary_value(summary, 'observations_skipped_noop')
+    if observations_noop:
+        observation_bits.append(f'{observations_noop} skipped as no-op')
+    observations_deleted = _sync_summary_value(summary, 'observations_deleted_remote')
+    if observations_deleted:
+        observation_bits.append(f'{observations_deleted} deleted remotely')
+    if observation_bits:
+        lines.append(f"Observations: {'; '.join(observation_bits)}.")
+
+    image_bits = []
+    images_checked = _sync_summary_value(summary, 'images_checked')
+    if images_checked:
+        image_bits.append(f'{images_checked} checked')
+    images_prepared = _sync_summary_value(summary, 'images_prepared_local')
+    if images_prepared:
+        image_bits.append(f'{images_prepared} prepared for upload')
+    images_uploaded = _sync_summary_value(summary, 'images_uploaded')
+    if images_uploaded:
+        image_bits.append(f'{images_uploaded} uploaded')
+    images_skipped = _sync_summary_value(summary, 'images_skipped_already_synced')
+    if images_skipped:
+        image_bits.append(f'{images_skipped} skipped as already synced')
+    images_repaired = _sync_summary_value(summary, 'images_cloud_id_repaired')
+    if images_repaired:
+        image_bits.append(f'{images_repaired} cloud_id associations repaired')
+    images_deleted = _sync_summary_value(summary, 'images_deleted_remote')
+    if images_deleted:
+        image_bits.append(f'{images_deleted} deleted remotely')
+    if image_bits:
+        lines.append(f"Images: {'; '.join(image_bits)}.")
+
+    measurement_bits = []
+    measurements_checked = _sync_summary_value(summary, 'measurements_checked')
+    if measurements_checked:
+        measurement_bits.append(f'{measurements_checked} checked')
+    measurements_patched = _sync_summary_value(summary, 'measurements_patched')
+    if measurements_patched:
+        measurement_bits.append(f'{measurements_patched} patched')
+    measurements_noop = _sync_summary_value(summary, 'measurements_skipped_noop')
+    if measurements_noop:
+        measurement_bits.append(f'{measurements_noop} skipped as no-op')
+    if measurement_bits:
+        lines.append(f"Measurements: {'; '.join(measurement_bits)}.")
+
+    calibration_bits = []
+    calibrations_pushed = _sync_summary_value(summary, 'calibrations_pushed')
+    if calibrations_pushed:
+        calibration_bits.append(f'{calibrations_pushed} pushed')
+    calibrations_pulled = _sync_summary_value(summary, 'calibrations_pulled')
+    if calibrations_pulled:
+        calibration_bits.append(f'{calibrations_pulled} pulled')
+    calibrations_noop = _sync_summary_value(summary, 'calibrations_skipped_noop')
+    if calibrations_noop:
+        calibration_bits.append(f'{calibrations_noop} skipped as no-op')
+    calibrations_conflicts = _sync_summary_value(summary, 'calibrations_conflicts')
+    if calibrations_conflicts:
+        calibration_bits.append(f'{calibrations_conflicts} conflicts')
+    calibration_reference_uploads = _sync_summary_value(summary, 'calibration_reference_images_uploaded')
+    if calibration_reference_uploads:
+        calibration_bits.append(f'{calibration_reference_uploads} reference image(s) uploaded')
+    if calibration_bits:
+        lines.append(f"Calibrations: {'; '.join(calibration_bits)}.")
+
+    storage_quota_delta_calls = _sync_summary_value(summary, 'storage_quota_delta_rpc_calls')
+    if storage_quota_delta_calls:
+        lines.append(f'Storage quota delta RPC calls: {storage_quota_delta_calls}.')
+
+    remote_downloads = _sync_summary_value(summary, 'remote_media_downloads')
+    remote_materializations = _sync_summary_value(summary, 'remote_media_materializations')
+    if remote_downloads or remote_materializations:
+        lines.append(
+            'Remote media downloads/materializations: '
+            f'{remote_downloads} downloads; {remote_materializations} materializations.'
+        )
+
+    return '\n'.join(lines) if lines else None
+
+
+def summarize_sync_change_activity(result: dict | None) -> dict:
+    """Classify a sync result into real changes vs. checked/no-op/local-only work.
+
+    The push phase walks every observation whose row is dirty or has no cloud_id
+    and counts each as "pushed" even when the upsert was a no-op (e.g. an
+    observation re-dirtied only because a local image row was re-associated to an
+    existing cloud image). The user-facing notification must reflect *real*
+    remote-facing or local changes, not the raw dirty-scan count, otherwise a
+    no-change sync wrongly reports that an observation was synced.
+
+    Returns a dict with explicit counters plus ``any_real_change``:
+      - real remote change: observation/measurement metadata written, image bytes
+        uploaded or deleted remotely, calibration pushed / reference image uploaded.
+      - real local change: observation/calibration pulled, remote media downloaded
+        or materialized locally.
+    Local-only cloud_id repairs (``images_cloud_id_repaired``) and pure no-op /
+    checked counts are reported but excluded from ``any_real_change``.
+    """
+    data = dict(result or {})
+    summary = data.get('sync_summary') or {}
+
+    def _value(key: str) -> int:
+        return _sync_summary_value(summary, key)
+
+    def _result_int(key: str) -> int:
+        try:
+            return max(0, int(data.get(key, 0) or 0))
+        except Exception:
+            return 0
+
+    observations_metadata_patched = _value('observations_patched')
+    observations_checked = _value('observations_checked')
+    observations_checked_noop = _value('observations_skipped_noop')
+    observations_deleted_remote = _value('observations_deleted_remote')
+    images_uploaded = _value('images_uploaded')
+    images_deleted_remote = _value('images_deleted_remote')
+    images_repaired_local_only = _value('images_cloud_id_repaired')
+    measurements_patched = _value('measurements_patched')
+    calibrations_pushed = _value('calibrations_pushed')
+    calibration_reference_images_uploaded = _value('calibration_reference_images_uploaded')
+    calibrations_pulled = _value('calibrations_pulled')
+    remote_media_downloads = _value('remote_media_downloads')
+    remote_media_materializations = _value('remote_media_materializations')
+    # ``pulled`` is the count of observations pulled into the local DB; fall back
+    # to the summary count is not tracked separately, so use the result value.
+    observations_pulled = _result_int('pulled')
+    deleted_remote_rows = len(data.get('deleted_remote') or [])
+    reference_sync = data.get('reference_sync')
+    if not isinstance(reference_sync, dict):
+        reference_sync = {}
+
+    def _reference_int(key: str) -> int:
+        try:
+            return max(0, int(reference_sync.get(key, 0) or 0))
+        except Exception:
+            return 0
+
+    reference_pushed = _reference_int('pushed')
+    reference_pulled = _reference_int('pulled')
+
+    real_remote_change = (
+        observations_metadata_patched
+        + images_uploaded
+        + images_deleted_remote
+        + measurements_patched
+        + calibrations_pushed
+        + calibration_reference_images_uploaded
+        + observations_deleted_remote
+        + reference_pushed
+    )
+    real_local_change = (
+        observations_pulled
+        + calibrations_pulled
+        + remote_media_downloads
+        + remote_media_materializations
+        + reference_pulled
+    )
+    # ``deleted_remote_rows`` (cloud observations deleted elsewhere, awaiting local
+    # review) is surfaced by its own notification branch, so it is reported here
+    # but not folded into ``any_real_change``.
+    any_real_change = bool(real_remote_change or real_local_change)
+
+    return {
+        'observations_metadata_patched': observations_metadata_patched,
+        'observations_checked': observations_checked,
+        'observations_checked_noop': observations_checked_noop,
+        'observations_images_repaired_local_only': images_repaired_local_only,
+        'observations_pulled': observations_pulled,
+        'images_uploaded': images_uploaded,
+        'images_deleted_remote': images_deleted_remote,
+        'measurements_patched': measurements_patched,
+        'calibrations_pushed': calibrations_pushed,
+        'calibrations_pulled': calibrations_pulled,
+        'calibration_reference_images_uploaded': calibration_reference_images_uploaded,
+        'remote_media_downloads': remote_media_downloads,
+        'remote_media_materializations': remote_media_materializations,
+        'deleted_remote_rows': deleted_remote_rows,
+        'reference_pushed': reference_pushed,
+        'reference_pulled': reference_pulled,
+        'real_remote_change': real_remote_change,
+        'real_local_change': real_local_change,
+        'any_real_change': any_real_change,
+    }
+
+
+_SYNC_SUMMARY_OBSERVATION_REFRESH_KEYS = (
+    'observations_redirtied_pending_local_images',
+    'observations_patched',
+    'observations_deleted_remote',
+    'images_uploaded',
+    'images_cloud_id_repaired',
+    'images_deleted_remote',
+    'measurements_patched',
+    'calibrations_pushed',
+    'calibrations_pulled',
+    'calibrations_conflicts',
+    'calibration_reference_images_uploaded',
+    'remote_media_downloads',
+    'remote_media_materializations',
+)
+
+
+def sync_result_requires_observation_refresh(result: dict | None) -> bool:
+    """Return False only when a complete sync result proves a UI no-op."""
+    data = dict(result or {})
+    summary = data.get('sync_summary')
+    if not isinstance(summary, dict):
+        return True
+    if data.get('cancelled') or data.get('skipped'):
+        return True
+    if data.get('errors') or data.get('deleted_remote'):
+        return True
+
+    reference_sync = data.get('reference_sync')
+    if isinstance(reference_sync, dict):
+        if any(
+            reference_sync.get(key)
+            for key in (
+                'pushed',
+                'pulled',
+                'errors',
+                'retryable_errors',
+                'terminal_errors',
+                'conflicts',
+                'blocked',
+            )
+        ):
+            return True
+
+    for key in ('pushed', 'pulled'):
+        try:
+            if int(data.get(key, 0) or 0) != 0:
+                return True
+        except Exception:
+            return True
+
+    return any(
+        _sync_summary_value(summary, key) > 0
+        for key in _SYNC_SUMMARY_OBSERVATION_REFRESH_KEYS
+    )

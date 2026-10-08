@@ -78,6 +78,23 @@ def _cloud_local_media_signature_key(observation_id: int | str) -> str:
     return f"{_SETTING_CLOUD_LOCAL_MEDIA_SIG_PREFIX}{str(observation_id or '').strip()}"
 
 
+def _load_cloud_image_file_signature(observation_id: int | str, image_id: int | str) -> str:
+    return str(
+        SettingsDB.get_setting(_cloud_image_file_signature_key(observation_id, image_id), '') or ''
+    ).strip()
+
+
+def _store_cloud_image_file_signature(
+    observation_id: int | str,
+    image_id: int | str,
+    signature: str,
+) -> None:
+    SettingsDB.set_setting(
+        _cloud_image_file_signature_key(observation_id, image_id),
+        str(signature or '').strip(),
+    )
+
+
 def _clear_cloud_image_file_signature(observation_id: int | str, image_id: int | str) -> None:
     SettingsDB.set_setting(_cloud_image_file_signature_key(observation_id, image_id), '')
 
@@ -145,6 +162,10 @@ def _store_local_cloud_media_signature(observation_id: int | str, signature: str
         _cloud_local_media_signature_key(observation_id),
         str(signature or '').strip(),
     )
+
+
+def _clear_local_cloud_media_signature(observation_id: int | str) -> None:
+    SettingsDB.set_setting(_cloud_local_media_signature_key(observation_id), '')
 
 
 def mark_observation_dirty(local_id: int) -> None:
