@@ -366,9 +366,24 @@ Rules applied by `complete_observation`:
    explicit and tested
    (`test_cloud_identity_fail_closed.py::test_snapshot_after_a_no_baseline_conflict_keeps_the_disagreement_detectable`).
    No other `review` issue writes a snapshot.
+   **Rule 6 applies only when the outcome has no `required` issue and every
+   read the snapshot is built from completed successfully.** If any required
+   work failed (for example `image_upload_failed`, `measurement_push_failed`
+   or `summary_failed` alongside `identity_review_no_baseline`; this can
+   happen today, because `push_all` continues child and summary work after
+   setting `identity_review_pending`), the old baseline is kept (or no
+   baseline, if none existed), the review marker is still set, and the row
+   stays `dirty`. If persisting the identity-less snapshot raises, the owner
+   adds a `snapshot_failed` issue, keeps the review marker and `dirty`
+   status, and records the failure through the error-detail columns only
+   (the `_set_observation_sync_error_detail_only` pattern), so the review
+   marker is never cleared by the failure report.
 
-Precedence: rule 3 (`blocked`), then rules 2 and 6 (review), then rule 1
-(required), then rule 4.
+Precedence: rule 3 (`blocked`) first. Then any `required` issue (rule 1)
+forbids every snapshot write, including rule 6. Then `review` issues set the
+marker (rule 2), and rule 6 may write the identity-less snapshot only when no
+required issue exists. Rule 4 applies only when there is no issue other than
+`best_effort`.
 
 Domain helpers (`_push_images_for_observation`, measurement push/import,
 summary, mosaic, `_apply_remote_*`) **return issues**. They no longer call
@@ -637,7 +652,13 @@ on the pre-change code):
    keys and the `errors` strings in order, plus
    `summarize_sync_issues(errors)` and `partition_download_from_cloud_issues(errors)`.
    The follow-up must match this golden except for the documented items in 3.6.
-4. **State-transition table** (real SQLite, fake client): the final
+4. **Combined-outcome cases** in the state-transition table: no-baseline
+   identity review together with each of image upload, measurement push and
+   summary failure (expected: review marker, `dirty`, no snapshot change);
+   the same review with all required work succeeding (expected: identity-less
+   snapshot, marker, `dirty`); and the same review with a snapshot write
+   failure (expected: marker kept, `dirty`, `snapshot_failed` detail).
+5. **State-transition table** (real SQLite, fake client): the final
    `sync_status`, review marker, snapshot presence and snapshot hash per
    failure branch. The follow-up updates it deliberately row by row.
 
