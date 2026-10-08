@@ -1,0 +1,68 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Aggregate",
+      "Strategy": "Plain",
+      "Partial Mode": "Simple",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Startup Cost": 3.09,
+      "Total Cost": 3.10,
+      "Plan Rows": 1,
+      "Plan Width": 8,
+      "Output": ["count(*)"],
+      "Plans": [
+        {
+          "Node Type": "Nested Loop",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Join Type": "Anti",
+          "Startup Cost": 0.84,
+          "Total Cost": 3.09,
+          "Plan Rows": 1,
+          "Plan Width": 0,
+          "Inner Unique": false,
+          "Join Filter": "(p.sporely_taxon_id = t.parent_sporely_taxon_id)",
+          "Plans": [
+            {
+              "Node Type": "Index Only Scan",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Scan Direction": "Forward",
+              "Index Name": "taxonomy_v2_taxa_parent_idx",
+              "Relation Name": "taxonomy_v2_taxa",
+              "Schema": "public",
+              "Alias": "t",
+              "Startup Cost": 0.42,
+              "Total Cost": 1.54,
+              "Plan Rows": 1,
+              "Plan Width": 26,
+              "Output": ["t.release_id", "t.parent_sporely_taxon_id"],
+              "Index Cond": "((t.release_id = 'tax-2026.10.07-01'::text) AND (t.parent_sporely_taxon_id IS NOT NULL))"
+            },
+            {
+              "Node Type": "Index Only Scan",
+              "Parent Relationship": "Inner",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Scan Direction": "Forward",
+              "Index Name": "taxonomy_v2_taxa_pkey",
+              "Relation Name": "taxonomy_v2_taxa",
+              "Schema": "public",
+              "Alias": "p",
+              "Startup Cost": 0.42,
+              "Total Cost": 1.54,
+              "Plan Rows": 1,
+              "Plan Width": 26,
+              "Output": ["p.release_id", "p.sporely_taxon_id"],
+              "Index Cond": "(p.release_id = 'tax-2026.10.07-01'::text)"
+            }
+          ]
+        }
+      ]
+    },
+    "Query Identifier": 7840081157164526219
+  }
+]

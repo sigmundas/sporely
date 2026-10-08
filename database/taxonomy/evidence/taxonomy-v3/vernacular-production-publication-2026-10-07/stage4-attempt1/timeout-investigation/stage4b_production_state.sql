@@ -1,0 +1,3 @@
+BEGIN READ ONLY;
+SELECT jsonb_build_object('time',clock_timestamp(),'active',(SELECT jsonb_agg(release_id) FROM public.taxonomy_v2_releases WHERE status='active'),'concepts',(SELECT count(*) FROM public.taxonomy_v2_concepts),'vernaculars',(SELECT count(*) FROM public.taxonomy_v2_vernacular_names WHERE release_id='tax-2026.09.30-01'),'target',(SELECT count(*) FROM public.taxonomy_v2_releases WHERE release_id='tax-2026.10.07-01'),'target_runs',(SELECT count(*) FROM public.taxonomy_v2_import_runs WHERE release_id='tax-2026.10.07-01'),'validator_contains_offset',strpos(pg_get_functiondef('public.taxonomy_v2_validate_release(text)'::regprocedure),'offset 0')>0,'timeout',current_setting('statement_timeout'));
+ROLLBACK;

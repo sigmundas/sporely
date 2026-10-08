@@ -1,0 +1,101 @@
+{
+  "format": "sporely-evidence-location-v1",
+  "content_release_id": "tax-2026.10.07-01",
+  "description": "Raw pre-import production baselines captured read-only by the Stage 4 attempt-1 preflight (2026-10-07). Their digests are in stage4-attempt1/preflight.json; the raw JSON is archived here because it is too large for git.",
+  "storage": {
+    "provider": "cloudflare-r2",
+    "access": "private",
+    "bucket": "sporely-release-evidence",
+    "endpoint": "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+    "immutability": "bucket lock rule 'taxonomy' on prefix taxonomy/evidence/sha256/, retention indefinite; uploaded with If-None-Match: *",
+    "credentials": "R2 S3-client access key scoped to this bucket, read from ~/.config/sporely/r2-release-evidence.env (R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY); never committed"
+  },
+  "archives": [
+    {
+      "artifact": "tax-2026.10.07-01-stage4-baselines.tar.gz",
+      "sha256": "4af0ffcf188b0f2f4f24c84ed0744729c112b13be473c6f2879269b7a3276ac8",
+      "bytes": 1415917,
+      "object_key": "taxonomy/evidence/sha256/4af0ffcf188b0f2f4f24c84ed0744729c112b13be473c6f2879269b7a3276ac8.tar.gz",
+      "uploaded_at": "2026-10-08T09:34:49Z",
+      "members": [
+        {
+          "name": "external_mapping-baseline.json",
+          "bytes": 21752,
+          "sha256": "24a41ed2f7c95b6224ba19ce755e1b63cd53ad943315dc134a143b1079433f31"
+        },
+        {
+          "name": "reconciliation_manifest_audit-baseline.json",
+          "bytes": 389,
+          "sha256": "0d622c9ae0e8843d922b12cf7dd003745c9e1ab723d4d5886bc5e8b0c51e7ab0"
+        },
+        {
+          "name": "release_installation-baseline.json",
+          "bytes": 1510,
+          "sha256": "d2e4652c607f51920b619f5dbe4fb93ca7324d130a3f158dcec27a9ed4d3592b"
+        },
+        {
+          "name": "taxonomy_v2_redlist-baseline.json",
+          "bytes": 1615317,
+          "sha256": "af95f760b7bee235572a2ee50623b1290b3b1e215a7985b75834d73eee84e8ae"
+        },
+        {
+          "name": "taxonomy_v2_taxa-baseline.json",
+          "bytes": 38799708,
+          "sha256": "e8be238b8f6fc315a784715a8376e9fec2e6124d5bbcd6374e99b6244eee310c"
+        }
+      ],
+      "retrieval_verified": {
+        "at": "2026-10-08",
+        "downloaded_sha256": "4af0ffcf188b0f2f4f24c84ed0744729c112b13be473c6f2879269b7a3276ac8",
+        "downloaded_bytes": 1415917,
+        "members_identical_to_source": true,
+        "overwrite_attempt": "refused (HTTP 409); object unchanged"
+      }
+    },
+    {
+      "artifact": "tax-2026.10.07-01-stage4-baselines-part2.tar.gz",
+      "sha256": "3979b148f026f5afc81f228793bef0ba67c8703eb4937a47f921a9424ba6bc19",
+      "bytes": 1446060,
+      "object_key": "taxonomy/evidence/sha256/3979b148f026f5afc81f228793bef0ba67c8703eb4937a47f921a9424ba6bc19.tar.gz",
+      "uploaded_at": "2026-10-08T09:39:10Z",
+      "members": [
+        {
+          "name": "registry_concept-baseline.json",
+          "bytes": 41313,
+          "sha256": "a861736d34b4d44881552dbbfdbe2c9a6541839634c13d351bf10c3080f9bcd9"
+        },
+        {
+          "name": "supplement_installation-baseline.json",
+          "bytes": 94,
+          "sha256": "2f7651d98ff1adfccd882409ed6100761ad4a7f0b194c7c326fbd94744524b48"
+        },
+        {
+          "name": "taxonomy_v2_external_ids-baseline.json",
+          "bytes": 12145082,
+          "sha256": "8fcb758f993f988fbf03f3e3e725be5fb7cd3c78fdec6fd687bcbef0eebf72c8"
+        },
+        {
+          "name": "taxonomy_v2_scientific_names-baseline.json",
+          "bytes": 10210832,
+          "sha256": "ccd18f2b877b5ffced2f98241929c234388c844e929555b0b15324b51b46bdba"
+        }
+      ],
+      "retrieval_verified": {
+        "at": "2026-10-08",
+        "downloaded_sha256": "3979b148f026f5afc81f228793bef0ba67c8703eb4937a47f921a9424ba6bc19",
+        "downloaded_bytes": 1446060,
+        "members_identical_to_source": true,
+        "overwrite_attempt": "refused (HTTP 409); object unchanged"
+      }
+    }
+  ],
+  "retrieve": "set -a; . ~/.config/sporely/r2-release-evidence.env; set +a; curl -sSf --aws-sigv4 aws:amz:auto:s3 --user \"$R2_ACCESS_KEY_ID:$R2_SECRET_ACCESS_KEY\" -o <artifact> \"https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com/$R2_BUCKET/<object_key>\"",
+  "verify": "Check sha256 and bytes above; each archive contains MANIFEST.json listing every member's sha256 and size.",
+  "not_archived": {
+    "files": [
+      "identification_snapshot-baseline.json",
+      "resolution_link-baseline.json"
+    ],
+    "reason": "Observation-linked (369 observation ids with user-entered names and AI selections each); withheld from indefinite-retention storage pending an owner decision on personal data. Their digests remain in stage4-attempt1/preflight.json."
+  }
+}

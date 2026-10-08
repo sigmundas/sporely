@@ -1,0 +1,3 @@
+BEGIN READ ONLY;
+EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) SELECT public.taxonomy_v2_validate_release('tax-2026.09.30-01');
+ROLLBACK;

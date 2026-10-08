@@ -1,0 +1,3 @@
+{"phase": "before", "source": "configuration file", "timeout": "2min"}
+{"phase": "local_probe", "source": "session", "timeout": "121s"}
+{"phase": "after_rollback", "source": "configuration file", "timeout": "2min"}

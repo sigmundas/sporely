@@ -1,0 +1,7 @@
+{
+  "candidate_taxa": 52917,
+  "nonnull_parents": 52917,
+  "missing_parents": 1,
+  "comparisons_if_repeated_release_only_ascending_index_scan": 1309731581,
+  "note": "Structural estimate for observed custom plan, not a measured execution time or captured failed-session plan."
+}
