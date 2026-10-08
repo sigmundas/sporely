@@ -153,13 +153,13 @@ sync_all()
   -> push_all()                               (L17631)
        -> _mark_cloud_observations_dirty_for_media_changes()            (L8465)
        -> _mark_cloud_observations_dirty_for_image_capture_time_changes() (L8477)
-       -> _mark_cloud_observations_dirty_for_pending_local_images()     (L8845, gated scan)
+       -> _mark_cloud_observations_dirty_for_pending_local_images()     (pending_images.py, gated scan)
        -> _push_pending_image_tombstones()    (L5814, flushed BEFORE pruning)
        -> per dirty observation:
             _analyze_observation_push_conflicts()  (preflight.py)
             client.push_observation()              (L15120)
-            _push_images_for_observation()         (incl. desired-state init, identity repair, uploads)
-            measurement / summary push
+            _push_images_for_observation()         (image_push.py: desired-state init, identity repair, uploads)
+            measurement (measurements.py) / summary push
             _store_remote_snapshot() then _stamp_observation_synced()
   -> child-change probe                       # (updated_at,id) keyset over
        list_image_changes_since()             #   observation_images +
@@ -235,7 +235,7 @@ Runs inside observation push/pull, not as a separate top-level mode:
 
 - Pull: `client.pull_measurements_for_images()` (L15812, paginated + batched),
   applied per observation; identity prefetch via
-  `fetch_remote_measurement_identity_cache` (L9062).
+  `fetch_remote_measurement_identity_cache` (`utils/cloud_sync_impl/measurements.py`).
 - Push: `client.push_measurement()` (L15968, upsert with no-op detection),
   `client.set_measurement_desktop_id()` (L15805),
   `client.delete_cloud_measurements_for_image()` (L16063).
@@ -244,28 +244,30 @@ Runs inside observation push/pull, not as a separate top-level mode:
 
 Inside `push_all` / `pull_all`:
 
-- Push: `_push_images_for_observation` (desired-state init → identity repair
+- Push: `_push_images_for_observation` (`utils/cloud_sync_impl/image_push.py`; desired-state init → identity repair
   → tombstone-safe candidate filtering → `upload_image_file` /
   `upload_original_image_file` → `push_image_metadata`).
 - Push fast-path gate (in `push_all`, `sync_images=True` only): storage-intent
-  init + `_pending_cloud_pushable_image_ids` decide *upload completeness*,
+  init + `_pending_cloud_pushable_image_ids` (`utils/cloud_sync_impl/pending_images.py`) decide *upload completeness*,
   which is separate from render-signature equality and vetoes the
   `image_render_unchanged` / tombstone-only / metadata-only image-prep
   branches. See "Image-prep fast paths require upload completeness" in
   `docs/supabase-sync-contract.md`.
 - Pull/materialize: bulk metadata via `pull_bulk_image_metadata` (L15865),
   byte download via `download_image_file` (L16127), local application /
-  materialization helpers around L10168–L10513.
+  materialization helpers in `utils/cloud_sync_impl/image_pull.py`; the
+  default-client entry point `materialize_cloud_media_for_observation` stays
+  in the facade.
 
 ### Recovery / audit / migration paths
 
-- `recover_full_original_for_image` (L1250) — explicit, user-driven original
+- `recover_full_original_for_image` (`utils/cloud_sync_impl/original_recovery.py`) — explicit, user-driven original
   recovery (uses `recovery_authorized=True` upload opt-in where applicable).
 - `utils/cloud_media_recovery.py` — plan/apply repair of broken cloud rows.
 - `utils/cloud_media_audit.py` + `scripts/audit_cloud_media.py` — read-only
   audit (see `docs/cloud-media-incident-audit.md`).
-- `backfill_public_spore_mosaics` (L21839),
-  `diagnose_public_spore_mosaic_gates` (L20992).
+- `backfill_public_spore_mosaics`,
+  `diagnose_public_spore_mosaic_gates` (`utils/cloud_sync_impl/spore_mosaic.py`).
 
 ### Conflict resolution surface
 
@@ -306,7 +308,7 @@ get_conflict_detail()               (L16687)
 | Image identity repair | `_reconcile_local_image_cloud_id` (`utils/cloud_sync_impl/image_identity.py`) (contract name: `_associate_persisted_cloud_images` path) | Restore lost `cloud_id` from unambiguous `desktop_id` match | Upload paths inventing new rows | Checkbox-independent (contract rule 12). Ambiguous match → warn and skip, never auto-pick |
 | Image metadata push | `SporelyCloudClient.push_image_metadata` (L15176) | PATCH-or-POST one `observation_images` row | Raw `_patch`/`_post` | Understands metadata-only semantics (`storage_path IS NULL AND image_type='microscope'`, see L15209) |
 | Original upload | `upload_original_image_file` (L15566) + `utils/original_sync_policy.py` | Companion original bytes, policy-gated | — | Parent image must be desired |
-| Remote image application / materialization | `_apply_remote_image_metadata_only_to_local` (L10168), `_ensure_local_metadata_only_microscope_anchor` (L10272), localization helpers ~L10493 | Apply remote rows locally; download bytes into recovery cache | Direct `ImageDB` writes from pull loops | Downloaded copy only replaces local file when local is not larger (L10502); larger local original kept as-is |
+| Remote image application / materialization | `_apply_remote_image_metadata_only_to_local`, `_ensure_local_metadata_only_microscope_anchor`, `_sync_existing_remote_image_to_local` (`utils/cloud_sync_impl/image_pull.py`) | Apply remote rows locally; download bytes into recovery cache | Direct `ImageDB` writes from pull loops | Downloaded copy only replaces local file when local is not larger (L10502); larger local original kept as-is |
 | Remote snapshot storage | `_store_remote_snapshot` (`utils/cloud_sync_impl/baseline.py`), `_store_cloud_observation_snapshot` (`utils/cloud_sync_impl/baseline.py`), `_load_cloud_observation_snapshot` (`utils/cloud_sync_impl/baseline.py`), `_parse_cloud_observation_snapshot` (`utils/cloud_sync_impl/baseline.py`), `_clear_cloud_observation_snapshot` (`utils/cloud_sync_impl/baseline.py`) | Persist/read the known-good baseline | Ad-hoc settings writes | May only run after complete, successful remote reads (section F). **Current code does not wait for required child work**: `push_all` and `materialize_cloud_media_for_observation` store it after a child failure. The target model is in `docs/cloud-sync-orchestration-design.md` |
 | Three-way conflict analysis | `_analyze_observation_push_conflicts` (`utils/cloud_sync_impl/preflight.py`), `ObservationPushConflictReport` (`utils/cloud_sync_impl/reconciliation/report.py`), `build_conflict_plan_baseline` (L11459) | Compare local vs cloud vs baseline; block writes on both-changed | Push loops writing without preflight | "Needs review" marker: `_set_observation_conflict_review_pending` (L4273) / `_clear_…` (L4290) |
 | Local-vs-cloud change analysis | `_local_has_real_changes_since_snapshot` (`utils/cloud_sync_impl/preflight.py`), `_remote_snapshot_has_meaningful_changes` (L9111), `_clear_observation_dirty_if_no_real_changes` (L4360) | Distinguish real edits from no-op noise | — | Feeds the no-op fast path |
@@ -390,7 +392,7 @@ Every path that can change cloud state funnels through methods on
 | `push_measurement` (PATCH L16021/L16056) | `spore_measurements` | measurement push |
 | `push_calibration_reference_image` (PATCH L15071) | calibration row | calibration push |
 | profile/avatar PATCH (~L14435/L14634) | profile | profile settings |
-| EXIF backfill (`_backfill_missing_exif_on_cloud_images`, called from `pull_all` L22288) | image EXIF fields | **pull-side write** — explicitly skipped when `pull_only` |
+| EXIF backfill (`_backfill_missing_exif_on_cloud_images` in `utils/cloud_sync_impl/exif.py`, called from `pull_all`) | image EXIF fields | **pull-side write** — explicitly skipped when `pull_only` |
 
 ### PostgREST POST (`_post`, L14747)
 
@@ -487,7 +489,7 @@ added to the allowlist only as an explicit, reviewed choice.
   `_cancel_microscope_anchor_tombstones` (`utils/cloud_sync_impl/anchors.py`).
 - Creating local observations/image rows during pull (import of new remote
   observations, anchor creation via
-  `_ensure_local_metadata_only_microscope_anchor` L10272).
+  `_ensure_local_metadata_only_microscope_anchor` in `utils/cloud_sync_impl/image_pull.py`).
 
 ### Destructive local operations (scrutinize every change here)
 
@@ -896,10 +898,36 @@ moving the method would split that binding.
 | `anchors.py` [7] | Remote side of metadata-only microscope anchors: ensure, owner-sync parents (gated by `_owner_sync_parents_supported`), retirement, anchor tombstone cancellation, and the anchor promotion reserve/rollback helpers | `_ensure_metadata_anchors_for_public_spore_observation`, `_ensure_metadata_only_microscope_images_for_observation`, `_ensure_metadata_only_microscope_image_for_public_spores`, `_observation_has_owner_sync_candidates`, `_retire_unneeded_owner_sync_parent`, `_cancel_microscope_anchor_tombstones`, `_remote_image_row_matches_anchor_payload`, `_metadata_only_microscope_image_payload`, `_METADATA_ONLY_IMG_FIELDS`, `_reserve_anchor_promotion_key`, `_rollback_anchor_promotion` |
 
 `SporelyCloudClient._find_cloud_observation` stays on the client (the mixin
-reaches it through `self`). The local pull-side anchor insert
-`_ensure_local_metadata_only_microscope_anchor` stays in the facade; it moves
-with image pull and materialization. Image upload, measurement push and the
-promotion call sites (`_push_images_for_observation`) stay in the facade.
+reaches it through `self`). Stage S6 moved the local pull-side anchor insert
+`_ensure_local_metadata_only_microscope_anchor` with image pull, and the
+promotion call sites (`_push_images_for_observation`) with image push.
+
+### Stage S6 owners: images, measurements and derived products
+
+| Owner | Responsibility | Main symbols |
+|---|---|---|
+| `common.py` [0] (extended) | Pure helpers | `_normalize_slug`, `_join_select_columns`, `_CLOUD_SYNC_IN_BATCH_SIZE`, `_format_size` |
+| `exif.py` [0] | Observation EXIF injection into pulled field images; EXIF backfill | `_inject_obs_exif_into_field_image`, `_load_obs_exif_fallback`, `_backfill_missing_exif_on_cloud_images` |
+| `mosaic_signature.py` [0] | Local spore-mosaic signature (local inputs only; never upload completeness) | `_local_spore_mosaic_signature`, `_current_local_mosaic_signature`, `_local_mosaic_signature_is_current`, `_load_`/`_store_`/`_clear_local_mosaic_signature` |
+| `image_files.py` [1] | Local image file helpers and new Worker keys | `_file_content_signature`, `_detected_image_extension`, `_rename_to_detected_image_extension`, `_build_worker_storage_path`, `_new_image_storage_suffix` |
+| `status_messages.py` [1] | Per-observation status text | `_format_cloud_sync_observation_status`, `_observation_sync_species_label` |
+| `pending_images.py` [3] | Pending-image decisions and the pending-image repair scan | `explain_pending_cloud_image_decision`, `PENDING_REASON_*`, `_pending_cloud_pushable_image_ids`, `_mark_cloud_observations_dirty_for_pending_local_images`, `_CLOUD_PENDING_IMAGE_REPAIR_VERSION`, `_cloud_pending_image_repair_scan_due` |
+| `original_recovery.py` [5] | Full-resolution original recovery and its recovery cache | `recover_full_original_for_image`, `_original_recovery_cache_path`, `_find_remote_original_for_local_image` |
+| `image_pull.py` [8] | Applying and importing remote images, the local pull-side anchor insert, the mosaic signature carry-forward, materialization state | `_apply_remote_images_to_local`, `_import_remote_images`, `_sync_existing_remote_image_to_local`, `_apply_remote_image_metadata_only_to_local`, `_ensure_local_metadata_only_microscope_anchor`, `_promote_temp_imported_image_if_needed`, `_remote_images_missing_locally`, `_remote_image_desktop_id_current`, `_carry_forward_local_mosaic_signature`, `cloud_media_materialization_state_for_observation` |
+| `image_push.py` [8] | Image push for one observation and its helpers | `_push_images_for_observation`, `should_push_local_image_to_cloud`, `_associate_persisted_cloud_images`, `_reconcile_metadata_only_linked_images`, `CLOUD_SYNC_SKIP_PREPARE_IMAGE_IDS_KEY` |
+| `measurements.py` [8] | Remote measurement identity cache, measurement push, verification schedule | `fetch_remote_measurement_identity_cache`, `_push_measurements_for_observation`, `_cloud_measurement_remote_verification_due`, `_SPORE_MEASUREMENT_SELECT_COLUMNS` |
+| `spore_mosaic.py` [9] | Glue around `utils.cloud_spore_mosaic` | `_push_spore_mosaic_for_observation`, `MOSAIC_STATUS_*`, `diagnose_public_spore_mosaic_gates`, `backfill_public_spore_mosaics` |
+| `measurement_reconcile.py` [10] | Missing spore-measurement reconciliation (calls measurement and mosaic push) | `_reconcile_missing_spore_measurements` |
+
+Kept in the facade under the dependency-closure rule:
+`_import_remote_measurements_for_observation` and
+`materialize_cloud_media_for_observation` construct
+`SporelyCloudClient.from_stored_credentials()` when no client is passed. The
+summary glue (`_push_summary_for_current_observation`,
+`_reconcile_missing_spore_summaries`) calls `_current_source_app_version`, which
+reads `_CLOUD_SYNC_SOURCE_APP_VERSION`; `set_cloud_sync_source_app_version`
+rebinds that facade global with `global`, so moving the reader would split the
+binding.
 
 Tests that patch a facade name reach relocated code through
 `tests/cloud_sync_owner_patching.py` (test-only): the autouse `conftest.py`

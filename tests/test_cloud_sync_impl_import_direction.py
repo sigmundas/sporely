@@ -55,6 +55,19 @@ OWNER_LAYERS: dict[str, int] = {
     # Stage S5: image identity and the remote side of metadata-only anchors.
     "utils.cloud_sync_impl.image_identity": 2,
     "utils.cloud_sync_impl.anchors": 7,
+    # Stage S6: images, measurements and derived products. Image owners sit
+    # below measurement owners; measurement reconciliation calls mosaic push.
+    "utils.cloud_sync_impl.exif": 0,
+    "utils.cloud_sync_impl.mosaic_signature": 0,
+    "utils.cloud_sync_impl.image_files": 1,
+    "utils.cloud_sync_impl.status_messages": 1,
+    "utils.cloud_sync_impl.pending_images": 3,
+    "utils.cloud_sync_impl.original_recovery": 5,
+    "utils.cloud_sync_impl.image_pull": 8,
+    "utils.cloud_sync_impl.image_push": 8,
+    "utils.cloud_sync_impl.measurements": 8,
+    "utils.cloud_sync_impl.spore_mosaic": 9,
+    "utils.cloud_sync_impl.measurement_reconcile": 10,
 }
 
 #: Owner modules allowed to import the facade at runtime (transitional; each

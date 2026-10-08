@@ -56,7 +56,9 @@ def test_existing_legacy_key_is_reused_not_rebuilt():
     persisted random key instead of minting a new one."""
     import inspect
 
-    src = inspect.getsource(cloud_sync)
+    # The image push moved to utils/cloud_sync_impl/image_push.py (Stage S6 of
+    # the cloud-sync extraction); inspect the function, not the facade module.
+    src = inspect.getsource(cloud_sync._push_images_for_observation)
     assert "storage_path = existing_storage_path or _build_worker_storage_path(" in src
     legacy = f"{USER}/{OBS}/0_1717227733123.jpg"
     assert cloud_sync._normalize_cloud_media_key(legacy) == legacy

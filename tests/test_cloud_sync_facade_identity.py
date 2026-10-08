@@ -110,6 +110,50 @@ def test_identity_methods_resolve_through_the_mro_to_the_mixin(name):
     assert name not in cloud_sync._PULL_ONLY_BLOCKED_CLIENT_METHODS
 
 
+def test_pending_image_repair_version_lives_with_the_repair_scan():
+    from utils.cloud_sync_impl import pending_images
+
+    assert pending_images._CLOUD_PENDING_IMAGE_REPAIR_VERSION == 2
+    for name in (
+        "_CLOUD_PENDING_IMAGE_REPAIR_VERSION",
+        "_mark_cloud_observations_dirty_for_pending_local_images",
+        "_pending_cloud_pushable_image_ids",
+    ):
+        assert ("utils.cloud_sync_impl.pending_images", name) in OWNED
+
+
+#: Stage S6: definitions kept in the facade under the dependency-closure rule.
+#: The two media entry points construct ``SporelyCloudClient`` when no client
+#: is passed. The summary glue reads ``_CLOUD_SYNC_SOURCE_APP_VERSION``, which
+#: ``set_cloud_sync_source_app_version`` rebinds with ``global``; moving the
+#: reader alone would split that binding.
+S6_KEPT_IN_FACADE = (
+    "_import_remote_measurements_for_observation",
+    "materialize_cloud_media_for_observation",
+    "_reconcile_missing_spore_summaries",
+    "_push_summary_for_current_observation",
+    "_current_source_app_version",
+    "set_cloud_sync_source_app_version",
+    "_CLOUD_SYNC_SOURCE_APP_VERSION",
+)
+
+
+@pytest.mark.parametrize("name", S6_KEPT_IN_FACADE)
+def test_s6_dependency_closure_names_stay_in_the_facade(name):
+    assert name in _facade_defined_names()
+    assert name not in {owned for _module, owned in OWNED}
+
+
+def test_source_app_version_slot_is_read_where_it_is_written():
+    previous = cloud_sync._current_source_app_version()
+    try:
+        cloud_sync.set_cloud_sync_source_app_version("s6-probe")
+        assert cloud_sync._current_source_app_version() == "s6-probe"
+        assert cloud_sync._CLOUD_SYNC_SOURCE_APP_VERSION == "s6-probe"
+    finally:
+        cloud_sync.set_cloud_sync_source_app_version(previous)
+
+
 def test_identity_baseline_unknown_sentinel_exists_once():
     from utils.cloud_sync_impl.reconciliation import identity
 
