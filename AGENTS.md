@@ -17,6 +17,7 @@ Read this file once per session; follow the task-specific reading routes below.
   - Record progress before stopping using the workflow-specific destination under **Context discipline** below. Include verification, commit or manual-test status, and deferred work.
   - **Self-verifiable stages** — the checks are ones you can run: unit tests, syntax checks, renderer screenshots for static layout. Run them, then commit.
   - **Human-gated stages** — verification needs the user: interactive behavior (signal loops, focus, scroll retention, drag/resize), state surviving an app restart, camera/microscope hardware, live Supabase writes, RLS, cross-client sync, performance on real data, or judgment about whether output reads correctly to a mycologist. Do not commit. Leave the work uncommitted, and report a numbered checklist of exactly what the user must do to verify. The commit happens after the user confirms, in the next task.
+    - **Exception — engine-gated verification in an Agent Sparring plan run.** When an approved Agent Sparring plan holds the human check in an engine gate (`gates_before` / `completion_gates`, such as a live-canary gate), the stage may be committed, pushed and accepted on its automated evidence. The gate is then the human check, not an uncommitted working tree: it holds the next stage (or plan completion) until the user records a pass, and a failed check is fixed in a new stage or reverted. Agents still never perform the human check themselves, including any live Supabase write. A stage whose human check is not held by such a gate keeps the rule above.
   - A renderer screenshot proves layout, not behavior. A change to what happens when the user interacts is human-gated even when every screenshot is clean.
   - If verification fails partway, do not commit a partial stage — the failure is the report.
   - Push completed stage work; see **Git policy** below.
@@ -47,7 +48,9 @@ For staged/agent-sparring work:
 
 This permission does not weaken the verification rules under **Working agreements**:
 only work whose verification has actually passed may be committed, and a
-human-gated stage still waits for the user's confirmation before its commit.
+human-gated stage still waits for the user's confirmation before its commit —
+except where an Agent Sparring engine gate holds that confirmation (see the
+engine-gated exception under **Working agreements**).
 
 ## Subsystem rules (read before touching these areas)
 

@@ -15,3 +15,15 @@ must be explicit in the current run; this configuration does not grant it.
 `.sparring/project.toml` and this file are version-controlled project
 configuration. `.sparring/stages/` and `.sparring/plans/` are ignored local
 runtime state owned by Agent Sparring.
+
+## Human-gated verification under plan runs
+
+- A stage whose human check (live Supabase write, cross-client sync, live
+  canary, interactive behavior, …) is held by an engine gate of the approved
+  plan (`gates_before` / `completion_gates`) may be committed, pushed and
+  accepted on its automated evidence. The gate holds the next stage or plan
+  completion until the user records a pass; a failed check is fixed in a new
+  stage or reverted. This is the exception in `AGENTS.md` (Working agreements).
+- Agents never perform the human check themselves, including any live
+  Supabase write. A human check not held by such a gate keeps the
+  `AGENTS.md` rule: leave the work uncommitted until the user confirms.
