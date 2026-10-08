@@ -821,6 +821,48 @@ High-value safety tests by invariant (not an exhaustive listing):
 | Measurements | `tests/test_cloud_measurement_sync_v1.py` |
 | Calibrations | `tests/test_cloud_calibration_sync.py` |
 | Media recovery / audit | `tests/test_cloud_media_recovery.py`, `tests/test_cloud_media_audit.py`, `tests/test_cloud_original_sync_recovery.py`, `tests/test_cloud_media_pull_retry.py` |
+| Taxonomy identity representation unchanged by extraction | `tests/test_cloud_sync_taxonomy_identity_golden.py` against the frozen `tests/fixtures/cloud_sync_taxonomy_identity_golden.json` |
+
+### Extraction relocation-safety checks (accepted in Stage S2)
+
+The extraction stages of
+`docs/plans/active/2026-10-07-cloud-sync-extraction-and-orchestration.md`
+and their reviewers run these checks. A later stage may extend them, but must
+not weaken their fail-closed rules.
+
+- **Relocation equivalence.** For every function, class, method and
+  module-level statement removed from `utils/cloud_sync.py`, it locates the
+  new definition under `utils/cloud_sync_impl/` and reports `identical`,
+  `differs` (with a diff), `needs review` or `missing`. Exit status 0 means
+  every entry is `identical`. An empty range reports nothing:
+
+  ```bash
+  .venv/bin/python tools/cloud_sync_relocation_check.py <base-rev> <candidate-rev>
+  .venv/bin/python tools/cloud_sync_relocation_check.py <base-rev> WORKTREE   # uncommitted candidate
+  ```
+
+  It compares the full AST (comments and whitespace ignored). It compares free
+  names by origin across separate base and candidate processes. It requires
+  moved module-level state to be one instance that the facade rebinds, and it
+  checks `utils.cloud_sync.X is <owner>.X`. Moved client methods must resolve
+  through the MRO without changing any other attribute. Dynamic lookup
+  (`global`, `globals()`, `__name__` loggers, `getattr` on names, late facade
+  imports, zero-argument `super()`, name mangling, metaclasses and
+  descriptors) always reports `needs review`. Its own tests are in
+  `tests/test_cloud_sync_relocation_check.py`.
+- **Import direction.** Run
+  `.venv/bin/pytest -q tests/test_cloud_sync_impl_import_direction.py`.
+  Owners never import the facade at any nesting level. The only exceptions
+  are the enumerated `FACADE_IMPORT_ALLOWLIST`, and `TYPE_CHECKING` imports
+  used only in annotations of a module with
+  `from __future__ import annotations`. Owner-to-owner imports must point
+  strictly downward through `OWNER_LAYERS`, and every owner must be declared
+  there. Both lists are in the test file. The rules are implemented in
+  `tools/cloud_sync_import_direction.py`.
+- **Taxonomy identity golden.** Run
+  `.venv/bin/pytest -q tests/test_cloud_sync_taxonomy_identity_golden.py`.
+  The fixture was captured at the extraction base and must not change while
+  the extraction stages run.
 
 ### Known coverage gaps (documented, not fixed here)
 

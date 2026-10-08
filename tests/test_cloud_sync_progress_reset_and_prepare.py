@@ -304,10 +304,11 @@ def test_reconcile_metadata_only_linked_images_skips_unchanged_siblings(monkeypa
         def _observation_images_support_original_storage_path(self) -> bool:
             return False
 
-        def push_image_metadata(self, img, obs_cloud_id, storage_path):
+        def push_image_metadata(self, img, obs_cloud_id, storage_path, *, remote_row=None):
             record = dict(img)
             record["_obs_cloud_id"] = obs_cloud_id
             record["_storage_path"] = storage_path
+            record["_remote_row"] = remote_row
             self.push_image_metadata_calls.append(record)
             return str(img.get("cloud_id") or "cloud-image-new")
 
@@ -347,6 +348,10 @@ def test_reconcile_metadata_only_linked_images_skips_unchanged_siblings(monkeypa
     assert int(patched["id"]) == 1825
     assert patched.get("notes") == "old note"  # local wins for the local push
     assert patched["_storage_path"] == "user-1/cloud-obs-481/cloud-image-1825.webp"
+    # The drifted remote row was actually supplied to the metadata-patch call,
+    # not silently dropped by the fake's signature.
+    assert patched["_remote_row"] is existing_rows[0]
+    assert patched["_remote_row"]["notes"] == "cloud-updated note"
 
 
 def test_reconcile_metadata_only_linked_images_leaves_changed_bytes_alone(monkeypatch, tmp_path):

@@ -1666,3 +1666,120 @@ def test_cloud_media_materialization_state_without_snapshot_is_conservative(
     assert state["status"] == "needs_materialization"
     assert state["can_auto_start"] is False
     assert state["reason"] == "snapshot_missing_media"
+
+
+def _set_portable_cloud_identity_pending(db_path: Path, observation_id: int, pending: bool) -> None:
+    conn = sqlite3.connect(db_path)
+    try:
+        try:
+            conn.execute(
+                "ALTER TABLE observations ADD COLUMN portable_cloud_identity_pending INTEGER DEFAULT 0"
+            )
+        except sqlite3.OperationalError:
+            pass
+        conn.execute(
+            "UPDATE observations SET portable_cloud_identity_pending=? WHERE id=?",
+            (1 if pending else 0, int(observation_id)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _materialization_state_reverse_recovery_fixture(
+    tmp_path,
+    monkeypatch,
+    *,
+    pending: bool,
+    local_cloud_id: str | None,
+):
+    db_path = tmp_path / "sporely.db"
+    _create_retry_db(db_path)
+    _set_portable_cloud_identity_pending(db_path, 1, pending)
+    images_root = tmp_path / "images" / "obs-1"
+    images_root.mkdir(parents=True, exist_ok=True)
+
+    remote_images = [
+        {
+            "id": "cloud-image-1",
+            "desktop_id": 1,
+            "observation_id": "cloud-obs-1",
+            "storage_path": "8c471394-b274-4933-b830-59805820d93c/617/0_1780071867059.webp",
+            "original_filename": "0_1780071867059.webp",
+            "image_type": "field",
+            "sort_order": 0,
+            "deleted_at": None,
+        }
+    ]
+    _store_snapshot(
+        db_path,
+        "cloud-obs-1",
+        {
+            "observation": {
+                "id": "cloud-obs-1",
+                "desktop_id": 1,
+                "date": "2026-05-01",
+                "genus": "Flammulina",
+                "species": "velutipes",
+            },
+            "images": remote_images,
+            "measurements": [],
+        },
+    )
+
+    image_path = images_root / "already-local.jpg"
+    image_path.write_bytes(b"materialized")
+    _insert_local_image_row(
+        db_path,
+        observation_id=1,
+        filepath=image_path,
+        cloud_id=local_cloud_id,
+    )
+
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+
+    return cloud_sync.cloud_media_materialization_state_for_observation(1)
+
+
+def test_cloud_media_materialization_state_pending_portable_identity_suppresses_reverse_recovery(
+    tmp_path,
+    monkeypatch,
+):
+    # The local image row carries no cloud_id yet; only its desktop id (1) matches the
+    # remote row's desktop_id. While portable identity is pending, that reverse desktop-id
+    # match must not be trusted, so the image is reported missing even though its file exists.
+    state = _materialization_state_reverse_recovery_fixture(
+        tmp_path, monkeypatch, pending=True, local_cloud_id=None
+    )
+    assert state["status"] == "needs_materialization"
+    assert state["local_images_missing_files"] == 1
+    assert state["local_images_ready"] == 0
+
+
+def test_cloud_media_materialization_state_non_pending_permits_reverse_recovery(
+    tmp_path,
+    monkeypatch,
+):
+    # Same reverse desktop-id match, but with no pending portable-identity guard: ordinary
+    # reverse recovery must still resolve the local row and report it as ready.
+    state = _materialization_state_reverse_recovery_fixture(
+        tmp_path, monkeypatch, pending=False, local_cloud_id=None
+    )
+    assert state["status"] == "already_materialized"
+    assert state["local_images_missing_files"] == 0
+    assert state["local_images_ready"] == 1
+
+
+def test_cloud_media_materialization_state_verified_cloud_id_match_survives_pending_portable_identity(
+    tmp_path,
+    monkeypatch,
+):
+    # A verified direct cloud_id match must still succeed even while portable identity is
+    # pending, since it never relies on the suppressed reverse desktop-id path.
+    state = _materialization_state_reverse_recovery_fixture(
+        tmp_path, monkeypatch, pending=True, local_cloud_id="cloud-image-1"
+    )
+    assert state["status"] == "already_materialized"
+    assert state["local_images_missing_files"] == 0
+    assert state["local_images_ready"] == 1

@@ -357,6 +357,7 @@ class _RecordingClient:
         self.user_id = "user-123"
         self.patches: list[tuple[str, dict]] = []
         self.posts: list[tuple[str, dict]] = []
+        self.selected_taxon_syncs: list[str] = []
 
     def _find_cloud_observation(self, _desktop_id):
         return self._existing
@@ -374,6 +375,11 @@ class _RecordingClient:
     def _post(self, path, payload):
         self.posts.append((path, dict(payload)))
         return [{"id": self._existing or "cloud-new"}]
+
+    # Taxonomy identity is forwarded through its own guarded RPC after the
+    # observation PATCH; it is outside these geography payload tests.
+    def _sync_observation_selected_taxon(self, cloud_id, obs, *, remote_obs, baseline_obs=None):
+        self.selected_taxon_syncs.append(str(cloud_id))
 
 
 def _install_snapshot(monkeypatch, cloud_id, remote_baseline):

@@ -1,0 +1,983 @@
+{
+  "cases": {
+    "absent_id_proven_local": {
+      "baseline_identity_key": "",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": "local_only",
+        "identification_locally_owned=True": "local_only"
+      },
+      "compare_payload_identity": {
+        "baseline": "",
+        "local": "sporely:987654321",
+        "remote": ""
+      },
+      "local_identity_sync_key": "sporely:987654321",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": false,
+      "remote_identity_claim": {
+        "cloud_state": null,
+        "external_id": null,
+        "key": "",
+        "kind": "none",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": null
+      },
+      "snapshot_round_trip_baseline_identity_key": ""
+    },
+    "absent_id_remote_only": {
+      "baseline_identity_key": "",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": "remote_only",
+        "identification_locally_owned=True": "conflict"
+      },
+      "compare_payload_identity": {
+        "baseline": "",
+        "local": "",
+        "remote": "sporely:987654321"
+      },
+      "local_identity_sync_key": "",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:987654321\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:987654321\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:987654321\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": true,
+      "remote_identity_claim": {
+        "cloud_state": "sporely_v2",
+        "external_id": null,
+        "key": "sporely:987654321",
+        "kind": "sporely",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": 987654321
+      },
+      "snapshot_round_trip_baseline_identity_key": "sporely:987654321"
+    },
+    "case_whitespace_only_difference": {
+      "baseline_identity_key": "sporely:634856",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": null,
+        "identification_locally_owned=True": null
+      },
+      "compare_payload_identity": {
+        "baseline": "sporely:634856",
+        "local": "sporely:634856",
+        "remote": "sporely:634856"
+      },
+      "local_identity_sync_key": "sporely:634856",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": false,
+      "remote_identity_claim": {
+        "cloud_state": "sporely_v2",
+        "external_id": null,
+        "key": "sporely:634856",
+        "kind": "sporely",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": 634856
+      },
+      "snapshot_round_trip_baseline_identity_key": "sporely:634856"
+    },
+    "cloud_selected_unverified_matches": {
+      "baseline_identity_key": "sporely:634856",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": null,
+        "identification_locally_owned=True": null
+      },
+      "compare_payload_identity": {
+        "baseline": "sporely:634856",
+        "local": "sporely:634856",
+        "remote": "sporely:634856"
+      },
+      "local_identity_sync_key": "sporely:634856",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": false,
+      "remote_identity_claim": {
+        "cloud_state": "sporely_v2",
+        "external_id": null,
+        "key": "sporely:634856",
+        "kind": "sporely",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": 634856
+      },
+      "snapshot_round_trip_baseline_identity_key": "sporely:634856"
+    },
+    "cloud_selected_unverified_remote_change": {
+      "baseline_identity_key": "sporely:634856",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": "remote_only",
+        "identification_locally_owned=True": "conflict"
+      },
+      "compare_payload_identity": {
+        "baseline": "sporely:634856",
+        "local": "sporely:634856",
+        "remote": "sporely:112233"
+      },
+      "local_identity_sync_key": "sporely:634856",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:112233\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:112233\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:112233\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": true,
+      "remote_identity_claim": {
+        "cloud_state": "sporely_v2",
+        "external_id": null,
+        "key": "sporely:112233",
+        "kind": "sporely",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": 112233
+      },
+      "snapshot_round_trip_baseline_identity_key": "sporely:112233"
+    },
+    "external_case_whitespace_only": {
+      "baseline_identity_key": "external:nortaxa:nortaxa_taxon_id:53482",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": null,
+        "identification_locally_owned=True": null
+      },
+      "compare_payload_identity": {
+        "baseline": "external:nortaxa:nortaxa_taxon_id:53482",
+        "local": "external:nortaxa:nortaxa_taxon_id:53482",
+        "remote": "external:nortaxa:nortaxa_taxon_id:53482"
+      },
+      "local_identity_sync_key": "external:nortaxa:nortaxa_taxon_id:53482",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"external:nortaxa:nortaxa_taxon_id:53482\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"external:nortaxa:nortaxa_taxon_id:53482\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"external:nortaxa:nortaxa_taxon_id:53482\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": false,
+      "remote_identity_claim": {
+        "cloud_state": "external_unresolved",
+        "external_id": "53482",
+        "key": "external:nortaxa:nortaxa_taxon_id:53482",
+        "kind": "external",
+        "namespace": "nortaxa_taxon_id",
+        "raw_external_id": null,
+        "source_system": "nortaxa",
+        "sporely_taxon_id": null
+      },
+      "snapshot_round_trip_baseline_identity_key": "external:nortaxa:nortaxa_taxon_id:53482"
+    },
+    "external_integer_collides_remote_side": {
+      "baseline_identity_key": "sporely:634856",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": "remote_only",
+        "identification_locally_owned=True": "conflict"
+      },
+      "compare_payload_identity": {
+        "baseline": "sporely:634856",
+        "local": "sporely:634856",
+        "remote": "external:nortaxa:nortaxa_taxon_id:634856"
+      },
+      "local_identity_sync_key": "sporely:634856",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"external:nortaxa:nortaxa_taxon_id:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"external:nortaxa:nortaxa_taxon_id:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"external:nortaxa:nortaxa_taxon_id:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": true,
+      "remote_identity_claim": {
+        "cloud_state": "external_unresolved",
+        "external_id": "634856",
+        "key": "external:nortaxa:nortaxa_taxon_id:634856",
+        "kind": "external",
+        "namespace": "nortaxa_taxon_id",
+        "raw_external_id": null,
+        "source_system": "nortaxa",
+        "sporely_taxon_id": null
+      },
+      "snapshot_round_trip_baseline_identity_key": "external:nortaxa:nortaxa_taxon_id:634856"
+    },
+    "external_integer_collides_with_sporely_id": {
+      "baseline_identity_key": "",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": "conflict",
+        "identification_locally_owned=True": "conflict"
+      },
+      "compare_payload_identity": {
+        "baseline": "",
+        "local": "external:nortaxa:nortaxa_taxon_id:634856",
+        "remote": "sporely:634856"
+      },
+      "local_identity_sync_key": "external:nortaxa:nortaxa_taxon_id:634856",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": true,
+      "remote_identity_claim": {
+        "cloud_state": "sporely_v2",
+        "external_id": null,
+        "key": "sporely:634856",
+        "kind": "sporely",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": 634856
+      },
+      "snapshot_round_trip_baseline_identity_key": "sporely:634856"
+    },
+    "external_only_local_remote_none": {
+      "baseline_identity_key": "",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": null,
+        "identification_locally_owned=True": null
+      },
+      "compare_payload_identity": {
+        "baseline": "",
+        "local": "external:nortaxa:nortaxa_taxon_id:53482",
+        "remote": ""
+      },
+      "local_identity_sync_key": "external:nortaxa:nortaxa_taxon_id:53482",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": false,
+      "remote_identity_claim": {
+        "cloud_state": null,
+        "external_id": null,
+        "key": "",
+        "kind": "none",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": null
+      },
+      "snapshot_round_trip_baseline_identity_key": ""
+    },
+    "external_remote_incomplete_tuple": {
+      "baseline_identity_key": "",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": null,
+        "identification_locally_owned=True": null
+      },
+      "compare_payload_identity": {
+        "baseline": "",
+        "local": "",
+        "remote": ""
+      },
+      "local_identity_sync_key": "",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": false,
+      "remote_identity_claim": {
+        "cloud_state": "external_unresolved",
+        "external_id": null,
+        "key": "",
+        "kind": "none",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": null
+      },
+      "snapshot_round_trip_baseline_identity_key": ""
+    },
+    "external_unresolved_both_match": {
+      "baseline_identity_key": "external:nortaxa:nortaxa_taxon_id:53482",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": null,
+        "identification_locally_owned=True": null
+      },
+      "compare_payload_identity": {
+        "baseline": "external:nortaxa:nortaxa_taxon_id:53482",
+        "local": "external:nortaxa:nortaxa_taxon_id:53482",
+        "remote": "external:nortaxa:nortaxa_taxon_id:53482"
+      },
+      "local_identity_sync_key": "external:nortaxa:nortaxa_taxon_id:53482",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"external:nortaxa:nortaxa_taxon_id:53482\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"external:nortaxa:nortaxa_taxon_id:53482\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"external:nortaxa:nortaxa_taxon_id:53482\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": false,
+      "remote_identity_claim": {
+        "cloud_state": "external_unresolved",
+        "external_id": "53482",
+        "key": "external:nortaxa:nortaxa_taxon_id:53482",
+        "kind": "external",
+        "namespace": "nortaxa_taxon_id",
+        "raw_external_id": null,
+        "source_system": "nortaxa",
+        "sporely_taxon_id": null
+      },
+      "snapshot_round_trip_baseline_identity_key": "external:nortaxa:nortaxa_taxon_id:53482"
+    },
+    "external_unresolved_remote_local_none": {
+      "baseline_identity_key": "",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": "remote_only",
+        "identification_locally_owned=True": "conflict"
+      },
+      "compare_payload_identity": {
+        "baseline": "",
+        "local": "",
+        "remote": "external:nortaxa:nortaxa_taxon_id:53482"
+      },
+      "local_identity_sync_key": "",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"external:nortaxa:nortaxa_taxon_id:53482\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"external:nortaxa:nortaxa_taxon_id:53482\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"external:nortaxa:nortaxa_taxon_id:53482\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": true,
+      "remote_identity_claim": {
+        "cloud_state": "external_unresolved",
+        "external_id": "53482",
+        "key": "external:nortaxa:nortaxa_taxon_id:53482",
+        "kind": "external",
+        "namespace": "nortaxa_taxon_id",
+        "raw_external_id": "NBIC:53482",
+        "source_system": "nortaxa",
+        "sporely_taxon_id": null
+      },
+      "snapshot_round_trip_baseline_identity_key": "external:nortaxa:nortaxa_taxon_id:53482"
+    },
+    "legacy_unverified_integer": {
+      "baseline_identity_key": "sporely:634856",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": null,
+        "identification_locally_owned=True": null
+      },
+      "compare_payload_identity": {
+        "baseline": "sporely:634856",
+        "local": "legacy:634856",
+        "remote": "sporely:634856"
+      },
+      "local_identity_sync_key": "legacy:634856",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": false,
+      "remote_identity_claim": {
+        "cloud_state": "sporely_v2",
+        "external_id": null,
+        "key": "sporely:634856",
+        "kind": "sporely",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": 634856
+      },
+      "snapshot_round_trip_baseline_identity_key": "sporely:634856"
+    },
+    "manual_text_local": {
+      "baseline_identity_key": "",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": "remote_only",
+        "identification_locally_owned=True": "conflict"
+      },
+      "compare_payload_identity": {
+        "baseline": "",
+        "local": "",
+        "remote": "sporely:634856"
+      },
+      "local_identity_sync_key": "",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": true,
+      "remote_identity_claim": {
+        "cloud_state": "sporely_v2",
+        "external_id": null,
+        "key": "sporely:634856",
+        "kind": "sporely",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": 634856
+      },
+      "snapshot_round_trip_baseline_identity_key": "sporely:634856"
+    },
+    "no_baseline_at_all": {
+      "baseline_identity_key": "<IDENTITY_BASELINE_UNKNOWN>",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": "conflict",
+        "identification_locally_owned=True": "conflict"
+      },
+      "compare_payload_identity": {
+        "baseline": "<IDENTITY_BASELINE_UNKNOWN>",
+        "local": "sporely:634856",
+        "remote": "sporely:112233"
+      },
+      "local_identity_sync_key": "sporely:634856",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:112233\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:112233\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:112233\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": true,
+      "remote_identity_claim": {
+        "cloud_state": "sporely_v2",
+        "external_id": null,
+        "key": "sporely:112233",
+        "kind": "sporely",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": 112233
+      },
+      "snapshot_round_trip_baseline_identity_key": "sporely:112233"
+    },
+    "no_identity_both": {
+      "baseline_identity_key": "",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": null,
+        "identification_locally_owned=True": null
+      },
+      "compare_payload_identity": {
+        "baseline": "",
+        "local": "",
+        "remote": ""
+      },
+      "local_identity_sync_key": "",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": false,
+      "remote_identity_claim": {
+        "cloud_state": null,
+        "external_id": null,
+        "key": "",
+        "kind": "none",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": null
+      },
+      "snapshot_round_trip_baseline_identity_key": ""
+    },
+    "no_identity_remote_without_identity_columns": {
+      "baseline_identity_key": "",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": null,
+        "identification_locally_owned=True": null
+      },
+      "compare_payload_identity": {
+        "baseline": "",
+        "local": "",
+        "remote": null
+      },
+      "local_identity_sync_key": "",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": false,
+      "remote_identity_claim": null,
+      "snapshot_round_trip_baseline_identity_key": "<IDENTITY_BASELINE_UNKNOWN>"
+    },
+    "pre_identity_snapshot_agree": {
+      "baseline_identity_key": "<IDENTITY_BASELINE_UNKNOWN>",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": null,
+        "identification_locally_owned=True": null
+      },
+      "compare_payload_identity": {
+        "baseline": "<IDENTITY_BASELINE_UNKNOWN>",
+        "local": "sporely:634856",
+        "remote": "sporely:634856"
+      },
+      "local_identity_sync_key": "sporely:634856",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": true,
+      "remote_identity_claim": {
+        "cloud_state": "sporely_v2",
+        "external_id": null,
+        "key": "sporely:634856",
+        "kind": "sporely",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": 634856
+      },
+      "snapshot_round_trip_baseline_identity_key": "sporely:634856"
+    },
+    "pre_identity_snapshot_proven_local_remote_none": {
+      "baseline_identity_key": "<IDENTITY_BASELINE_UNKNOWN>",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": "local_only",
+        "identification_locally_owned=True": "local_only"
+      },
+      "compare_payload_identity": {
+        "baseline": "<IDENTITY_BASELINE_UNKNOWN>",
+        "local": "sporely:634856",
+        "remote": ""
+      },
+      "local_identity_sync_key": "sporely:634856",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": false,
+      "remote_identity_claim": {
+        "cloud_state": null,
+        "external_id": null,
+        "key": "",
+        "kind": "none",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": null
+      },
+      "snapshot_round_trip_baseline_identity_key": ""
+    },
+    "pre_identity_snapshot_remote_claim": {
+      "baseline_identity_key": "<IDENTITY_BASELINE_UNKNOWN>",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": "remote_only",
+        "identification_locally_owned=True": null
+      },
+      "compare_payload_identity": {
+        "baseline": "<IDENTITY_BASELINE_UNKNOWN>",
+        "local": "",
+        "remote": "sporely:634856"
+      },
+      "local_identity_sync_key": "",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": true,
+      "remote_identity_claim": {
+        "cloud_state": "sporely_v2",
+        "external_id": null,
+        "key": "sporely:634856",
+        "kind": "sporely",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": 634856
+      },
+      "snapshot_round_trip_baseline_identity_key": "sporely:634856"
+    },
+    "pre_identity_snapshot_two_claims_disagree": {
+      "baseline_identity_key": "<IDENTITY_BASELINE_UNKNOWN>",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": "conflict",
+        "identification_locally_owned=True": "conflict"
+      },
+      "compare_payload_identity": {
+        "baseline": "<IDENTITY_BASELINE_UNKNOWN>",
+        "local": "sporely:112233",
+        "remote": "sporely:634856"
+      },
+      "local_identity_sync_key": "sporely:112233",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": true,
+      "remote_identity_claim": {
+        "cloud_state": "sporely_v2",
+        "external_id": null,
+        "key": "sporely:634856",
+        "kind": "sporely",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": 634856
+      },
+      "snapshot_round_trip_baseline_identity_key": "sporely:634856"
+    },
+    "proven_sporely_local_change": {
+      "baseline_identity_key": "sporely:634856",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": "local_only",
+        "identification_locally_owned=True": "local_only"
+      },
+      "compare_payload_identity": {
+        "baseline": "sporely:634856",
+        "local": "sporely:112233",
+        "remote": "sporely:634856"
+      },
+      "local_identity_sync_key": "sporely:112233",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": false,
+      "remote_identity_claim": {
+        "cloud_state": "sporely_v2",
+        "external_id": null,
+        "key": "sporely:634856",
+        "kind": "sporely",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": 634856
+      },
+      "snapshot_round_trip_baseline_identity_key": "sporely:634856"
+    },
+    "proven_sporely_matches_remote": {
+      "baseline_identity_key": "sporely:634856",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": null,
+        "identification_locally_owned=True": null
+      },
+      "compare_payload_identity": {
+        "baseline": "sporely:634856",
+        "local": "sporely:634856",
+        "remote": "sporely:634856"
+      },
+      "local_identity_sync_key": "sporely:634856",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": false,
+      "remote_identity_claim": {
+        "cloud_state": "sporely_v2",
+        "external_id": null,
+        "key": "sporely:634856",
+        "kind": "sporely",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": 634856
+      },
+      "snapshot_round_trip_baseline_identity_key": "sporely:634856"
+    },
+    "proven_sporely_remote_change_conflict": {
+      "baseline_identity_key": "sporely:634856",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": "conflict",
+        "identification_locally_owned=True": "conflict"
+      },
+      "compare_payload_identity": {
+        "baseline": "sporely:634856",
+        "local": "sporely:112233",
+        "remote": "sporely:555"
+      },
+      "local_identity_sync_key": "sporely:112233",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:555\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:555\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:555\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": true,
+      "remote_identity_claim": {
+        "cloud_state": "sporely_v2",
+        "external_id": null,
+        "key": "sporely:555",
+        "kind": "sporely",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": 555
+      },
+      "snapshot_round_trip_baseline_identity_key": "sporely:555"
+    },
+    "proven_sporely_remote_none": {
+      "baseline_identity_key": "",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": "local_only",
+        "identification_locally_owned=True": "local_only"
+      },
+      "compare_payload_identity": {
+        "baseline": "",
+        "local": "sporely:634856",
+        "remote": ""
+      },
+      "local_identity_sync_key": "sporely:634856",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": false,
+      "remote_identity_claim": {
+        "cloud_state": null,
+        "external_id": null,
+        "key": "",
+        "kind": "none",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": null
+      },
+      "snapshot_round_trip_baseline_identity_key": ""
+    },
+    "proven_sporely_shared_move": {
+      "baseline_identity_key": "sporely:634856",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": "shared",
+        "identification_locally_owned=True": "shared"
+      },
+      "compare_payload_identity": {
+        "baseline": "sporely:634856",
+        "local": "sporely:112233",
+        "remote": "sporely:112233"
+      },
+      "local_identity_sync_key": "sporely:112233",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:112233\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:112233\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:112233\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": true,
+      "remote_identity_claim": {
+        "cloud_state": "sporely_v2",
+        "external_id": null,
+        "key": "sporely:112233",
+        "kind": "sporely",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": 112233
+      },
+      "snapshot_round_trip_baseline_identity_key": "sporely:112233"
+    },
+    "sporely_namespace_external": {
+      "baseline_identity_key": "sporely:634856",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": null,
+        "identification_locally_owned=True": null
+      },
+      "compare_payload_identity": {
+        "baseline": "sporely:634856",
+        "local": "sporely:634856",
+        "remote": "sporely:634856"
+      },
+      "local_identity_sync_key": "sporely:634856",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":null,\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": false,
+      "remote_identity_claim": {
+        "cloud_state": "sporely_v2",
+        "external_id": null,
+        "key": "sporely:634856",
+        "kind": "sporely",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": 634856
+      },
+      "snapshot_round_trip_baseline_identity_key": "sporely:634856"
+    },
+    "text_only_difference": {
+      "baseline_identity_key": "sporely:634856",
+      "classify_identity_sync_change": {
+        "identification_locally_owned=False": null,
+        "identification_locally_owned=True": null
+      },
+      "compare_payload_identity": {
+        "baseline": "sporely:634856",
+        "local": "sporely:634856",
+        "remote": "sporely:634856"
+      },
+      "local_identity_sync_key": "sporely:634856",
+      "observation_snapshot_json": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":\"Flammulina velutipes\",\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+      "persisted_observation_snapshot": {
+        "loaded": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":\"Flammulina velutipes\",\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}",
+        "stored_settings": {
+          "sporely_cloud_snapshot_obs_1184": "{\"observation\":{\"ai_selected_at\":null,\"ai_selected_probability\":null,\"ai_selected_scientific_name\":null,\"ai_selected_service\":null,\"ai_selected_taxon_id\":null,\"artportalen_id\":null,\"artsdata_id\":null,\"author\":null,\"auto_threshold\":null,\"citation\":null,\"common_name\":null,\"country_code\":null,\"data_provider\":null,\"date\":\"2026-05-01\",\"desktop_id\":42,\"determination_method\":null,\"genus\":\"Flammulina\",\"gps_latitude\":null,\"gps_longitude\":null,\"habitat\":null,\"habitat_grows_on_note\":null,\"habitat_host_common_name\":null,\"habitat_host_genus\":null,\"habitat_host_species\":null,\"habitat_nin2_note\":null,\"habitat_nin2_path\":null,\"habitat_substrate_note\":null,\"habitat_substrate_path\":null,\"id\":1184,\"inaturalist_id\":null,\"interesting_comment\":null,\"is_draft\":null,\"location\":null,\"location_precision\":null,\"location_public\":null,\"mushroomobserver_id\":null,\"notes\":null,\"open_comment\":null,\"publish_target\":null,\"red_list_categories_json\":null,\"red_list_category\":null,\"region_id\":null,\"source_type\":null,\"species\":\"velutipes\",\"species_guess\":\"Flammulina velutipes\",\"spore_data_visibility\":null,\"spore_statistics\":null,\"taxon_identity\":\"sporely:634856\",\"uncertain\":null,\"unspontaneous\":null,\"visibility\":null},\"schema_version\":2}"
+        }
+      },
+      "remote_identity_changed_since": false,
+      "remote_identity_claim": {
+        "cloud_state": "sporely_v2",
+        "external_id": null,
+        "key": "sporely:634856",
+        "kind": "sporely",
+        "namespace": null,
+        "raw_external_id": null,
+        "source_system": null,
+        "sporely_taxon_id": 634856
+      },
+      "snapshot_round_trip_baseline_identity_key": "sporely:634856"
+    }
+  },
+  "identity_sync_key": [
+    {
+      "args": [
+        "sporely",
+        634856,
+        null,
+        null,
+        null
+      ],
+      "key": "sporely:634856"
+    },
+    {
+      "args": [
+        "sporely",
+        "634856",
+        "sporely",
+        "sporely_taxon_id",
+        "634856"
+      ],
+      "key": "sporely:634856"
+    },
+    {
+      "args": [
+        "sporely",
+        0,
+        null,
+        null,
+        null
+      ],
+      "key": ""
+    },
+    {
+      "args": [
+        "sporely",
+        null,
+        "sporely",
+        "sporely_taxon_id",
+        "1"
+      ],
+      "key": ""
+    },
+    {
+      "args": [
+        "external",
+        null,
+        "nortaxa",
+        "nortaxa_taxon_id",
+        "53482"
+      ],
+      "key": "external:nortaxa:nortaxa_taxon_id:53482"
+    },
+    {
+      "args": [
+        "external",
+        634856,
+        "nortaxa",
+        "nortaxa_taxon_id",
+        "634856"
+      ],
+      "key": "external:nortaxa:nortaxa_taxon_id:634856"
+    },
+    {
+      "args": [
+        "external",
+        null,
+        "nortaxa",
+        null,
+        "53482"
+      ],
+      "key": ""
+    },
+    {
+      "args": [
+        "none",
+        634856,
+        "nortaxa",
+        "nortaxa_taxon_id",
+        "53482"
+      ],
+      "key": ""
+    },
+    {
+      "args": [
+        "legacy",
+        634856,
+        null,
+        null,
+        null
+      ],
+      "key": ""
+    }
+  ]
+}
