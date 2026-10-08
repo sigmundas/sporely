@@ -241,8 +241,12 @@ open decisions and plan the implementation. The document must contain:
 4. A verified local `cloud_id` is the primary push identity, and remote
    `desktop_id` is recovery only. Disagreement, ambiguity, soft-deleted matches
    and unique-violation races fail closed: never POST, never reparent.
-5. Taxonomy identity participates in change and conflict detection, and a
-   no-baseline contradiction fails closed.
+5. Structured taxonomy identity is authoritative: display, scientific and
+   vernacular text never substitutes for it, and `sporely_taxon_id` with the
+   existing source and namespace semantics is preserved. It participates in
+   change and conflict detection, a no-baseline local/remote contradiction
+   fails closed, and its snapshot and reconciliation representation is
+   semantically unchanged by extraction.
 6. A stale cloud identity is cleared explicitly and its landing is verified
    (`_verify_identity_clear_landed`).
 7. Metadata-only microscope anchors are valid rows. Owner-sync metadata
@@ -365,10 +369,32 @@ evidence. Production code does not change.
    because it never executes; the test confirms the guard and the
    annotation-only use. It also fails on a dependency-direction violation
    between owners. Later stages extend it as owners appear.
-4. **Discoverability.** `docs/cloud-sync-architecture.md` (test map, section K)
-   records how to run the equivalence check and the import-direction test.
-   The extraction stages are briefed only to use "the checks accepted in
-   Stage S2", so they find them there.
+4. **Taxonomy identity golden (new test, captured at the base).** A committed
+   fixture records, for a fixed set of rows, the base outputs of
+   `_identity_sync_key`, `_local_identity_sync_key`, `_remote_identity_claim`,
+   `_baseline_identity_key` (including `_IDENTITY_BASELINE_UNKNOWN` for a
+   snapshot stored before identity joined change detection),
+   `_classify_identity_sync_change`, `_remote_identity_changed_since`, the
+   identity part of `_observation_compare_payload`, and the persisted
+   observation snapshot JSON carrying identity. A test asserts the current code
+   reproduces the fixture exactly. The rows cover at least:
+   - a proven Sporely identity (`sporely_taxon_id` with its source and
+     namespace);
+   - a cloud-selected unverified identity;
+   - external-only evidence, unresolved external evidence, and an external
+     integer that collides numerically with a Sporely id;
+   - no identity;
+   - an id absent from the installed taxonomy;
+   - a pre-identity snapshot;
+   - local and remote rows that differ only in display, scientific or
+     vernacular text, or only in case and whitespace.
+
+   The fixture is evidence for the extraction stages and must not change while
+   they run.
+5. **Discoverability.** `docs/cloud-sync-architecture.md` (test map, section K)
+   records how to run the equivalence check, the import-direction test and the
+   taxonomy identity golden. The extraction stages are briefed only to use "the
+   checks accepted in Stage S2", so they find them there.
 
 **Hard constraints:** nothing under `utils/`, `database/` or `ui/` changes.
 The checks are committed so that the extraction stages and reviewers run the
@@ -394,6 +420,8 @@ also comes with its own tests.
   including a function-local import of the facade and a `TYPE_CHECKING`
   import used outside annotations.
 - The formerly failing test passes.
+- The taxonomy identity golden passes at the base and covers every row class
+  above.
 - Broad gate: every test file importing cloud sync passes:
   `/Users/sigmundas/Documents/Code/sporely/sporely-py/.venv/bin/pytest -q $(grep -rlE "utils\.cloud_sync|from utils import cloud_sync" tests --include='test_*.py')`.
   At `c9d655f` this is 84 files and 1,830 collected tests. The full pass/fail
@@ -588,7 +616,11 @@ is moves into owners, with no behavior change and no import cycle:
   `utils/cloud_sync_impl/reconciliation/`):
   - taxonomy identity classification (`_RemoteIdentityClaim`,
     `_identity_sync_key`, `_remote_identity_claim`, `_local_identity_sync_key`,
-    `_classify_identity_sync_change` and related value-only helpers);
+    `_classify_identity_sync_change`, `_baseline_identity_key` with the
+    `_IDENTITY_BASELINE_UNKNOWN` sentinel, `_local_identity_is_claim`,
+    `_remote_identity_changed_since`, `_identification_key`,
+    `_identification_contradicts_remote`, `_withhold_identity_from_push`,
+    `_remote_row_without_identity` and `_remote_name_snapshot`);
   - observation, image and measurement compare payloads and change analysis
     (`_observation_compare_payload`, `_analyze_image_changes`,
     `_analyze_measurement_changes`, `_remote_image_payload`, the measurement
@@ -615,6 +647,9 @@ is moves into owners, with no behavior change and no import cycle:
   - taxonomy identity state (`_installed_taxon_concept`,
     `_local_identity_columns_for_remote_claim`,
     `_apply_remote_identity_to_local`);
+  - taxonomy identity push and explicit clear, as client methods moved to a
+    mixin of `SporelyCloudClient`: `_sync_observation_selected_taxon`,
+    `_maybe_clear_stale_cloud_identity` and `_verify_identity_clear_landed`;
   - location precision (`record_confirmed_location_precision`,
     `consume_confirmed_location_precision`, `_guard_local_location_precision`,
     `_snapshot_baseline_for_cloud_id`, `repair_legacy_location_precision`);
@@ -642,6 +677,23 @@ is moves into owners, with no behavior change and no import cycle:
   behavior change.
 - `_observation_compare_payload` calls `_local_identity_sync_key` and
   `_remote_identity_claim`.
+- The taxonomy identity helpers above depend only on each other and on
+  value normalizers. `_identification_contradicts_remote`,
+  `_withhold_identity_from_push` and `_remote_row_without_identity` are called
+  only from `push_all` and `pull_all`, which import them downward.
+- `_sync_observation_selected_taxon` (called from the client's
+  `push_observation`) pushes taxonomy identity. When the local identity is
+  none and the baseline proves a previously synced Sporely identity, it calls
+  `_maybe_clear_stale_cloud_identity`, which issues the explicit clear RPC and
+  confirms it through `_verify_identity_clear_landed`. These clear the
+  observation's *taxonomy* identity; they are not image identity. Their other
+  dependencies are client RPC methods reached through `self`
+  (`set_observation_selected_taxon`, `clear_observation_selected_taxon`,
+  `get_observation`), which stay on the client.
+- Red List application stays with observation field apply in the facade:
+  `_remote_observation_extra_values` (pull) and
+  `_merge_cloud_selected_ai_fields` / `_adopt_merge_filled_ai_fields_locally`
+  (push merge). This stage must not change how they read identity.
 - `_analyze_observation_push_conflicts` loads snapshots, reads tombstones and
   reads calibrations, and calls `_is_spore_measurement_source_image`,
   `_analyze_image_changes` and `_remote_image_payload`.
@@ -712,8 +764,20 @@ helper placement within a responsibility (including which value-only compare
 helpers are pure), commit structure, and patch retargeting strategy.
 
 **Invariants at risk:**
-- Taxonomy identity participates in change and conflict detection, and a
-  no-baseline contradiction fails closed.
+- Taxonomy identity contract:
+  - structured taxonomy identity is authoritative; display, scientific and
+    vernacular text never substitutes for it, and identity is never inferred
+    from name text;
+  - `sporely_taxon_id` and the existing source and namespace identity
+    semantics are preserved, including unverified, unresolved-external and
+    not-installed identities that are kept but never bound;
+  - taxonomy identity participates in change and conflict detection;
+  - a stale identity is cleared only explicitly, and the clear is verified to
+    have landed;
+  - a no-baseline local/remote taxonomy contradiction fails closed;
+  - the Red List follows the identification;
+  - the snapshot and reconciliation representation of taxonomy identity is
+    semantically unchanged, including the pre-identity baseline sentinel.
 - The snapshot is the accepted shared baseline, accepted asymmetry included.
   It is never written after truncated reads, unresolved conflicts, incomplete
   required work or ambiguous identity. `_store_remote_snapshot` never treats a
@@ -746,11 +810,28 @@ helpers are pure), commit structure, and patch retargeting strategy.
   carry), still run through the facade's conflict execution, produce
   byte-identical persisted snapshot JSON at base and candidate.
 - A no-baseline taxonomy contradiction still fails closed.
+- The Stage S2 taxonomy identity golden passes, and its fixture is unchanged
+  in `git diff base..candidate`.
+- The equivalence check confirms `_IDENTITY_BASELINE_UNKNOWN` exists exactly
+  once and the facade binds the same object, and that
+  `_sync_observation_selected_taxon`, `_maybe_clear_stale_cloud_identity` and
+  `_verify_identity_clear_landed` resolve through the MRO to the moved
+  functions and stay classified in the pull-only lists.
 - A base-versus-candidate search shows the dirty-marking calls and
   `sync_status` writes unchanged in count and condition.
 - The stage notes list each definition kept in the facade under the
   dependency-closure rule, with its blocking dependency.
 - These pass: `tests/test_cloud_sync_no_baseline_identity_contradiction.py`,
+  `tests/test_cloud_taxonomy_identity_sync.py`,
+  `tests/test_cloud_identity_change_detection.py`,
+  `tests/test_cloud_identity_pull.py`,
+  `tests/test_cloud_identity_fail_closed.py`,
+  `tests/test_cloud_selected_unverified_identity.py`,
+  `tests/test_cloud_sync_identity_clear.py`,
+  `tests/test_red_list_sync.py`,
+  `tests/test_red_list_push_merge_follows_identification.py`,
+  `tests/test_red_list_identity_invariants.py`,
+  `tests/test_taxonomy_identity_boundary.py`,
   `tests/test_image_conflict_normalization.py`,
   `tests/test_cloud_sync_conflict_preflight.py`,
   `tests/test_cloud_conflict_plan_execution.py`,
@@ -762,6 +843,9 @@ helpers are pure), commit structure, and patch retargeting strategy.
   and the broad gate. The broad gate command is
   `/Users/sigmundas/Documents/Code/sporely/sporely-py/.venv/bin/pytest -q $(grep -rlE "utils\.cloud_sync|from utils import cloud_sync" tests --include='test_*.py')`,
   and its pass count must not fall below the previous stage's.
+  `tests/test_red_list_identity_invariants.py` and
+  `tests/test_taxonomy_identity_boundary.py` do not import cloud sync, so the
+  broad gate does not run them; they are named here for that reason.
 
 ## Stage S5 — Image identity and metadata-only anchors
 
@@ -775,9 +859,10 @@ microscope anchors have their own owners, with no behavior change:
 - **Image identity:** `_reconcile_local_image_cloud_id`,
   `_portable_cloud_identity_pending_for_observation`,
   `_finalize_portable_cloud_identity_guard`, and the client methods
-  `_resolve_existing_observation_for_push`, `_resolve_existing_image_for_push`,
-  `_find_cloud_image`, `_maybe_clear_stale_cloud_identity` and
-  `_verify_identity_clear_landed`.
+  `_resolve_existing_observation_for_push`, `_resolve_existing_image_for_push`
+  and `_find_cloud_image`. The taxonomy identity clear
+  (`_maybe_clear_stale_cloud_identity`, `_verify_identity_clear_landed`) was
+  moved by Stage S4 and is not image identity.
 - **Anchors (remote ensure, owner-sync and retire):**
   - `_ensure_metadata_anchors_for_public_spore_observation`,
     `_ensure_metadata_only_microscope_images_for_observation`,
@@ -847,8 +932,8 @@ and patch retargeting strategy.
 - A verified local `cloud_id` is the primary push identity, and remote
   `desktop_id` is recovery only. Disagreement, ambiguity, soft-deleted matches
   and unique-violation races fail closed: never POST, never reparent.
-- A stale cloud identity is cleared explicitly and its landing is verified
-  (`_verify_identity_clear_landed`).
+- Taxonomy identity is untouched by this stage: no moved image-identity or
+  anchor code changes how observation taxonomy identity is read or written.
 - Metadata-only microscope anchors are valid rows. Owner-sync parents exist
   only when `_owner_sync_parents_supported` confirms support (fail closed).
   Byte selection stays independent of measurement and mosaic participation.
@@ -892,10 +977,10 @@ Gate G1, and an agent never performs the canary or any live Supabase write.
 - The stage notes list each definition kept in the facade under the
   dependency-closure rule, with its blocking dependency.
 - The review records the live-canary determination above, with evidence.
+- The Stage S2 taxonomy identity golden passes, and its fixture is unchanged.
 - These pass: `tests/test_image_push_identity.py`,
   `tests/test_observation_push_identity.py`,
   `tests/test_cloud_identity_fail_closed.py`,
-  `tests/test_cloud_sync_identity_clear.py`,
   `tests/test_portable_cloud_identity_guard.py`,
   `tests/test_cloud_sync_no_baseline_identity_contradiction.py`,
   `tests/test_cloud_anchor_promotion.py`,
@@ -1113,8 +1198,12 @@ Supabase write.
 **Prerequisite:** the Stage S3–S6 owners are accepted. Names an accepted
 earlier stage already moved stay where they are.
 
-**Outcome:** read-only conflict detail and the conflict-plan model get their
-own owner, with no behavior change. Conflict *execution* stays in the facade.
+**Outcome:** read-only conflict detail and the conflict-plan model and
+validation get their own owner, with no behavior change. This scope is
+settled and narrow. Conflict *execution* stays in the facade, together with
+every observation-completion writer, every decision to store a snapshot, and
+every conflict-review marker writer. The orchestration implementation moves
+those under the Stage S1 design. This stage moves no writer.
 - **Conflict detail:** `get_conflict_detail` and `_observation_display_name`.
 - **Conflict-plan model:** the baseline (`build_conflict_plan_baseline`,
   `_CONFLICT_PLAN_BASELINE_SCHEMA_VERSION`, the
@@ -1137,6 +1226,17 @@ own owner, with no behavior change. Conflict *execution* stays in the facade.
   they use that write local state or format their results
   (`_capture_local_presentation`, `_restore_local_presentation`,
   `_assign_downloaded_image_order`, `_format_recomputed_spore_statistics`).
+- **Writers that also stay in the facade:** observation completion
+  (`_stamp_observation_synced`, `_set_observation_sync_state`,
+  `_clear_observation_dirty_if_no_real_changes`,
+  `_set_observation_privacy_blocked`, `_apply_remote_observation_fields`,
+  `_merge_cloud_selected_ai_fields`, `_adopt_merge_filled_ai_fields_locally`
+  and the direct `update_observation_sync_state` stamps in `push_all`);
+  conflict-review markers (`_set_observation_conflict_review_pending`,
+  `_clear_observation_conflict_review_pending`). Snapshot storage functions
+  are owned by the Stage S4 baseline owner, but every call that decides to
+  store a snapshot stays in the facade's push, pull, conflict-execution and
+  materialization code.
 
 After this stage the facade holds orchestration (`push_all`, `pull_all`,
 `sync_all` and their coordinator-scale helpers), the observation completion
@@ -1201,8 +1301,12 @@ one module, commit structure, and patch retargeting strategy.
   are idempotent, and media deletion is unreachable from a plan.
 - Plan identity validation fails closed: disagreement or ambiguity never leads
   to a POST or a reparent.
-- Taxonomy identity participates in conflict detection, and a no-baseline
-  contradiction fails closed.
+- Taxonomy identity contract in conflict detail and plans: structured taxonomy
+  identity (`sporely_taxon_id` with its source and namespace semantics) is
+  authoritative, and display, scientific and vernacular text never substitutes
+  for it. Identity participates in conflict detection, and a no-baseline
+  local/remote taxonomy contradiction fails closed. The plan baseline and
+  snapshot represent identity exactly as before.
 - Representation-only differences never conflict, and genuine three-way
   divergence always does.
 - The snapshot and the plan baseline are never accepted from truncated reads,
@@ -1234,6 +1338,10 @@ gate G2, and an agent never performs the canary or any live Supabase write.
   carry) produce byte-identical persisted snapshot and plan JSON at base and
   candidate, and drift still aborts the apply.
 - A no-baseline taxonomy contradiction still fails closed in conflict detail.
+- The Stage S2 taxonomy identity golden passes, and its fixture is unchanged.
+- A base-versus-candidate search shows no observation-completion writer,
+  conflict-review marker writer or snapshot-store call site moved out of the
+  facade.
 - The stage notes trace each `resolve_conflict_*` function and show that its
   calls into the moved model are unchanged in arguments and order.
 - A base-versus-candidate search shows the dirty-marking calls and
@@ -1246,6 +1354,8 @@ gate G2, and an agent never performs the canary or any live Supabase write.
   `tests/test_cloud_sync_conflict_preflight.py`,
   `tests/test_image_conflict_normalization.py`,
   `tests/test_cloud_sync_no_baseline_identity_contradiction.py`,
+  `tests/test_cloud_identity_fail_closed.py`,
+  `tests/test_cloud_identity_change_detection.py`,
   `tests/test_cloud_download_only.py`, `tests/test_cloud_sync_fast_path.py`,
   and the broad gate. Its command is
   `/Users/sigmundas/Documents/Code/sporely/sporely-py/.venv/bin/pytest -q $(grep -rlE "utils\.cloud_sync|from utils import cloud_sync" tests --include='test_*.py')`,
