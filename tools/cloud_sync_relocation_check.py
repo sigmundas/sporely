@@ -431,7 +431,17 @@ def origin(module_name, name):
                 import inspect, textwrap
                 h = dump_hash(ast.parse(textwrap.dedent(inspect.getsource(obj))))
             except Exception:
+                # No Python source: identify compiled code by the interpreter
+                # (built-in modules) or by the extension file's bytes. Anything
+                # else stays an unproven placeholder.
                 h = "nosource"
+                src_mod = sys.modules.get(mod_of or "")
+                src_file = getattr(src_mod, "__file__", None) if src_mod else None
+                if src_mod is not None and not src_file:
+                    h = "interpreter:" + sys.version
+                elif src_file and src_file.endswith((".so", ".pyd")):
+                    with open(src_file, "rb") as fh:
+                        h = "ext:" + hashlib.sha256(fh.read()).hexdigest()[:20]
         return {"kind": "def", "module": mod_of, "qualname": qual, "hash": h}
     # Any other object is state: it must be one shared instance.
     tname = f"{type(obj).__module__}.{type(obj).__qualname__}"
@@ -455,6 +465,20 @@ def origin(module_name, name):
                 (holders if m.__dict__[name] is obj else conflicting).append(m.__name__)
         shared = fac is not None and fac.__dict__.get(name, None) is obj and not conflicting
         result["shared"] = shared
+        # The initializer of the one module-level assignment that created it.
+        inits = []
+        for m in internal_modules():
+            if m.__dict__.get(name, None) is not obj or not getattr(m, "__file__", None):
+                continue
+            path = m.__file__
+            if path not in _trees:
+                with open(path, encoding="utf-8") as fh:
+                    _trees[path] = ast.parse(fh.read())
+            for stmt in _trees[path].body:
+                targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target] if isinstance(stmt, (ast.AnnAssign, ast.AugAssign)) else []
+                if any(isinstance(n, ast.Name) and n.id == name for t in targets for n in ast.walk(t)):
+                    inits.append(dump_hash(stmt))
+        result["init_hash"] = inits[0] if len(inits) == 1 else None
         result["holders"] = holders
         result["conflicting"] = conflicting
         if isinstance(obj, __import__("logging").Logger):
@@ -553,6 +577,9 @@ def _source_diff(base: ast.stmt, cand: ast.stmt) -> str:
     )
 
 
+_PLACEHOLDER_HASHES = {None, "unhashable", "nosource"}
+
+
 def _same_origin(base: dict, cand: dict, relocations: dict[tuple[str, str], tuple[str, str]]) -> tuple[bool, str | None]:
     """Compare free-name origins. Returns (equal, relocation key it depends on)."""
     if base.get("kind") == "error" or cand.get("kind") == "error":
@@ -563,6 +590,8 @@ def _same_origin(base: dict, cand: dict, relocations: dict[tuple[str, str], tupl
     if kind in {"builtin", "module", "literal", "unbound"}:
         return base == cand, None
     if kind == "def":
+        if base["hash"] in _PLACEHOLDER_HASHES or cand["hash"] in _PLACEHOLDER_HASHES:
+            return False, None
         expected = relocations.get((base["module"], base["qualname"]))
         if expected is not None:
             return (cand["module"], cand["qualname"]) == expected and base["hash"] == cand["hash"], \
@@ -574,7 +603,11 @@ def _same_origin(base: dict, cand: dict, relocations: dict[tuple[str, str], tupl
         if base.get("logger_name") != cand.get("logger_name"):
             return False, None
         if cand["home"] == "<internal>":
-            return bool(cand.get("shared")), None
+            # One shared instance created by an unchanged initializer; when the
+            # initializer moved in this range, it must itself verify.
+            proven = bool(cand.get("shared")) and base.get("init_hash") is not None \
+                and base.get("init_hash") == cand.get("init_hash")
+            return proven, f"state:{base['name']}"
         return True, None
     return False, None
 
@@ -651,6 +684,10 @@ def run_check(
         if kind in {"def", "class", "method"}:
             relocations[(facade, name)] = (owner.name, qualname)
             relocation_keys[f"{facade}:{name}"] = key
+    for definition in removed:
+        if definition.key.startswith("assign:"):
+            for bound in definition.names:
+                relocation_keys[f"state:{bound}"] = definition.key
 
     # Free names.
     base_requests: set[tuple[str, str]] = set()
@@ -719,7 +756,7 @@ def run_check(
             base_origin = base_probe["origins"].get(f"{facade}:{name}", {"kind": "error"})
             cand_origin = cand_probe["origins"].get(f"{owner.name}:{name}", {"kind": "error"})
             equal, dependency = _same_origin(base_origin, cand_origin, relocations)
-            if dependency is not None:
+            if dependency is not None and dependency in relocation_keys:
                 entry.depends_on.add(relocation_keys[dependency])
             if not equal:
                 if entry.verdict == IDENTICAL:

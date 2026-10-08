@@ -160,3 +160,70 @@ def test_package_init_importing_owner_fails(tmp_path):
     (root / "utils" / "cloud_sync_impl" / "__init__.py").write_text("from . import base\n")
     violations = check_import_direction(root, layers=LAYERS)
     assert any("package __init__ imports owner" in v for v in violations)
+
+
+def test_aliased_import_module_is_rejected(tmp_path):
+    violations = _check(tmp_path, {
+        "base.py": "from importlib import import_module as load\n\ndef f():\n    return load('utils.cloud_sync')\n",
+        "upper.py": "",
+    })
+    assert any("dynamic import machinery" in v for v in violations)
+
+
+def test_sys_modules_lookup_is_rejected(tmp_path):
+    violations = _check(tmp_path, {
+        "base.py": "import sys\nname = 'utils.' + 'cloud_sync'\n\ndef f():\n    return sys.modules[name]\n",
+        "upper.py": "",
+    })
+    assert any("dynamic import machinery `.modules`" in v for v in violations)
+
+
+def test_locally_defined_type_checking_guard_is_not_trusted(tmp_path):
+    violations = _check(tmp_path, {
+        "base.py": textwrap.dedent("""
+            from __future__ import annotations
+            TYPE_CHECKING = True
+            if TYPE_CHECKING:
+                from utils.cloud_sync import SporelyCloudClient
+
+            def f(client: SporelyCloudClient) -> SporelyCloudClient:
+                return client
+            """),
+        "upper.py": "",
+    })
+    assert any("imports the facade" in v for v in violations)
+
+
+def test_rebound_type_checking_guard_is_not_trusted(tmp_path):
+    violations = _check(tmp_path, {
+        "base.py": textwrap.dedent("""
+            from __future__ import annotations
+            from typing import TYPE_CHECKING
+            TYPE_CHECKING = True
+            if TYPE_CHECKING:
+                from utils.cloud_sync import SporelyCloudClient
+
+            def f(client: SporelyCloudClient) -> SporelyCloudClient:
+                return client
+            """),
+        "upper.py": "",
+    })
+    assert any("imports the facade" in v for v in violations)
+
+
+def test_typing_attribute_guard_is_trusted_only_unmodified(tmp_path):
+    source = textwrap.dedent("""
+        from __future__ import annotations
+        import typing
+        {extra}
+        if typing.TYPE_CHECKING:
+            from utils.cloud_sync import SporelyCloudClient
+
+        def f(client: SporelyCloudClient) -> SporelyCloudClient:
+            return client
+        """)
+    assert _check(tmp_path / "ok", {"base.py": source.format(extra=""), "upper.py": ""}) == []
+    violations = _check(tmp_path / "bad", {
+        "base.py": source.format(extra="typing.TYPE_CHECKING = True"), "upper.py": "",
+    })
+    assert any("imports the facade" in v for v in violations)

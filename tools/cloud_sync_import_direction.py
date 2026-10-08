@@ -40,11 +40,84 @@ def _module_name(root: Path, path: Path) -> str:
     return ".".join(parts)
 
 
-def _is_type_checking_test(test: ast.expr) -> bool:
-    if isinstance(test, ast.Name):
-        return test.id == "TYPE_CHECKING"
-    return isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING" \
-        and isinstance(test.value, ast.Name) and test.value.id == "typing"
+def _binding_count(tree: ast.Module, name: str) -> int:
+    """How many places bind ``name`` anywhere in the module (any scope)."""
+    count = 0
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id == name and isinstance(node.ctx, (ast.Store, ast.Del)):
+            count += 1
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            count += sum(1 for a in node.names if (a.asname or a.name.split(".")[0]) == name)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == name:
+            count += 1
+        elif isinstance(node, ast.arg) and node.arg == name:
+            count += 1
+        elif isinstance(node, (ast.Global, ast.Nonlocal)) and name in node.names:
+            count += 1
+        elif isinstance(node, ast.ExceptHandler) and node.name == name:
+            count += 1
+        elif isinstance(node, ast.MatchAs | ast.MatchStar) and node.name == name:
+            count += 1
+    return count
+
+
+def _top_level_import(tree: ast.Module, module: str, name: str | None) -> bool:
+    for stmt in tree.body:
+        if name is None and isinstance(stmt, ast.Import):
+            if any(a.name == module and a.asname is None for a in stmt.names):
+                return True
+        if name is not None and isinstance(stmt, ast.ImportFrom) and stmt.module == module and not stmt.level:
+            if any(a.name == name and a.asname is None for a in stmt.names):
+                return True
+    return False
+
+
+def _is_type_checking_test(test: ast.expr, tree: ast.Module) -> bool:
+    """A guard proven to be ``typing.TYPE_CHECKING`` and never rebound.
+
+    Anything else -- a local ``TYPE_CHECKING = True``, an alias, a rebinding of
+    ``typing`` or a write to ``typing.TYPE_CHECKING`` -- is not proven, so the
+    imports under it count as runtime imports.
+    """
+    if isinstance(test, ast.Name) and test.id == "TYPE_CHECKING":
+        return _top_level_import(tree, "typing", "TYPE_CHECKING") and _binding_count(tree, "TYPE_CHECKING") == 1
+    if isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING" \
+            and isinstance(test.value, ast.Name) and test.value.id == "typing":
+        attribute_writes = any(
+            isinstance(node, ast.Attribute) and node.attr == "TYPE_CHECKING"
+            and isinstance(node.ctx, (ast.Store, ast.Del))
+            for node in ast.walk(tree)
+        )
+        return _top_level_import(tree, "typing", None) and _binding_count(tree, "typing") == 1 \
+            and not attribute_writes
+    return False
+
+
+#: Dynamic import machinery. Owners never need it, and its targets cannot be
+#: resolved statically, so any use is rejected rather than guessed at.
+_DYNAMIC_IMPORT_MODULES = {"importlib", "builtins", "runpy", "pkgutil", "imp", "zipimport"}
+_DYNAMIC_IMPORT_NAMES = {"__import__", "eval", "exec", "compile", "globals", "__builtins__"}
+_DYNAMIC_IMPORT_ATTRS = {"modules", "import_module", "__import__"}
+
+
+def _dynamic_import_uses(tree: ast.Module) -> list[tuple[str, int]]:
+    uses = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split(".")[0] in _DYNAMIC_IMPORT_MODULES:
+                    uses.append((f"import {alias.name}", node.lineno))
+        elif isinstance(node, ast.ImportFrom) and not node.level and node.module \
+                and node.module.split(".")[0] in _DYNAMIC_IMPORT_MODULES:
+            uses.append((f"from {node.module} import ...", node.lineno))
+        elif isinstance(node, ast.ImportFrom) and node.module == "sys" \
+                and any(a.name == "modules" for a in node.names):
+            uses.append(("from sys import modules", node.lineno))
+        elif isinstance(node, ast.Name) and node.id in _DYNAMIC_IMPORT_NAMES:
+            uses.append((node.id, node.lineno))
+        elif isinstance(node, ast.Attribute) and node.attr in _DYNAMIC_IMPORT_ATTRS:
+            uses.append((f".{node.attr}", node.lineno))
+    return uses
 
 
 def _resolve(module: str, is_package: bool, node: ast.ImportFrom) -> str:
@@ -58,7 +131,7 @@ def _resolve(module: str, is_package: bool, node: ast.ImportFrom) -> str:
 def _imports(module: str, tree: ast.Module, is_package: bool) -> list[ImportRef]:
     guarded: set[int] = set()
     for stmt in tree.body:
-        if isinstance(stmt, ast.If) and _is_type_checking_test(stmt.test):
+        if isinstance(stmt, ast.If) and _is_type_checking_test(stmt.test, tree):
             for inner in stmt.body:
                 if isinstance(inner, (ast.Import, ast.ImportFrom)):
                     guarded.add(id(inner))
@@ -146,6 +219,8 @@ def check_import_direction(
         if module not in layers and not is_package:
             violations.append(f"{module}: owner module is not declared in the layer map")
         refs = _imports(module, tree, is_package)
+        for use, lineno in _dynamic_import_uses(tree):
+            violations.append(f"{module}:{lineno}: dynamic import machinery `{use}` is not allowed in owners")
         guarded_facade_names: set[str] = set()
         for ref in refs:
             facade_import = ref.target == facade or ref.target.startswith(facade + ".")
@@ -188,7 +263,7 @@ def check_import_direction(
             guard_nodes = {
                 id(sub)
                 for stmt in tree.body
-                if isinstance(stmt, ast.If) and _is_type_checking_test(stmt.test)
+                if isinstance(stmt, ast.If) and _is_type_checking_test(stmt.test, tree)
                 for sub in ast.walk(stmt)
             }
             for name, lineno in _runtime_uses(tree, guarded_facade_names, guard_nodes):

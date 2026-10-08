@@ -312,3 +312,31 @@ def test_cli_over_empty_range_reports_nothing(tmp_path, capsys):
     base = _tree(tmp_path / "base", BASE_HELPER)
     assert check.main([str(base), str(base), "--facade", "pkg.facade", "--owners", "pkg.impl"]) == 0
     assert "nothing to check" in capsys.readouterr().out
+
+
+def test_consumer_of_changed_state_initializer_is_not_identical(tmp_path):
+    base = FUTURE + "CACHE = {}\n\ndef read():\n    return CACHE\n"
+    entries = _run(tmp_path, {"pkg/facade.py": base}, {
+        "pkg/facade.py": FUTURE + "from pkg.impl.a import CACHE, read\n",
+        **_owner(FUTURE + "CACHE = {'changed': 1}\n\ndef read():\n    return CACHE\n"),
+    })
+    assert entries["assign:CACHE"].verdict == check.DIFFERS
+    assert entries["def:read"].verdict == check.NEEDS_REVIEW, entries["def:read"].reasons
+
+
+def test_consumer_of_state_with_unproven_initializer_needs_review(tmp_path):
+    # State created by a call is shared, but not by one plain module-level assignment.
+    base = FUTURE + "CACHE = {}\nCACHE['x'] = 1\n\ndef read():\n    return CACHE\n"
+    entries = _run(tmp_path, {"pkg/facade.py": base}, {
+        "pkg/facade.py": FUTURE + "CACHE = {}\nCACHE['x'] = 1\nfrom pkg.impl.a import read\n",
+        **_owner(FUTURE + "from pkg.facade import CACHE\n\ndef read():\n    return CACHE\n"),
+    })
+    assert entries["def:read"].verdict != check.IDENTICAL
+
+
+def test_placeholder_source_hashes_never_prove_origin():
+    for placeholder in ("unhashable", "nosource", None):
+        origin = {"kind": "def", "module": "m", "qualname": "f", "hash": placeholder}
+        assert check._same_origin(origin, dict(origin), {}) == (False, None)
+    origin = {"kind": "def", "module": "m", "qualname": "f", "hash": "abc"}
+    assert check._same_origin(origin, dict(origin), {}) == (True, None)
