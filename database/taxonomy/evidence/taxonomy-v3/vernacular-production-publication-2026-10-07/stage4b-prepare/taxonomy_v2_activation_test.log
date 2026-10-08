@@ -1,0 +1,6 @@
+BEGIN
+CREATE FUNCTION
+DO
+ROLLBACK
+
+psql:<stdin>:248: NOTICE:  taxonomy_v2_activation_test passed

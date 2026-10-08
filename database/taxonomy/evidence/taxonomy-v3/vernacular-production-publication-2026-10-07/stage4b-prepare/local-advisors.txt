@@ -1,0 +1,149 @@
+Connecting to local database...
+[
+  {
+    "name": "function_search_path_mutable",
+    "title": "Function Search Path Mutable",
+    "level": "WARN",
+    "facing": "EXTERNAL",
+    "categories": [
+      "SECURITY"
+    ],
+    "description": "Detects functions where the search_path parameter is not set.",
+    "detail": "Function `public.set_updated_at` has a role mutable search_path",
+    "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable",
+    "metadata": {
+      "name": "set_updated_at",
+      "type": "function",
+      "schema": "public"
+    },
+    "cache_key": "function_search_path_mutable_public_set_updated_at_e48740bd35e2a9e17c5e8ae049421527"
+  },
+  {
+    "name": "function_search_path_mutable",
+    "title": "Function Search Path Mutable",
+    "level": "WARN",
+    "facing": "EXTERNAL",
+    "categories": [
+      "SECURITY"
+    ],
+    "description": "Detects functions where the search_path parameter is not set.",
+    "detail": "Function `public.search_taxa` has a role mutable search_path",
+    "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable",
+    "metadata": {
+      "name": "search_taxa",
+      "type": "function",
+      "schema": "public"
+    },
+    "cache_key": "function_search_path_mutable_public_search_taxa_596305448134cbbeda839f3db6e62f35"
+  },
+  {
+    "name": "function_search_path_mutable",
+    "title": "Function Search Path Mutable",
+    "level": "WARN",
+    "facing": "EXTERNAL",
+    "categories": [
+      "SECURITY"
+    ],
+    "description": "Detects functions where the search_path parameter is not set.",
+    "detail": "Function `public.protect_profile_privileged_fields` has a role mutable search_path",
+    "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable",
+    "metadata": {
+      "name": "protect_profile_privileged_fields",
+      "type": "function",
+      "schema": "public"
+    },
+    "cache_key": "function_search_path_mutable_public_protect_profile_privileged_fields_d0cca6dc9c0ea9505def58c4d6245360"
+  },
+  {
+    "name": "function_search_path_mutable",
+    "title": "Function Search Path Mutable",
+    "level": "WARN",
+    "facing": "EXTERNAL",
+    "categories": [
+      "SECURITY"
+    ],
+    "description": "Detects functions where the search_path parameter is not set.",
+    "detail": "Function `public.public_normalized_specimen_condition` has a role mutable search_path",
+    "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable",
+    "metadata": {
+      "name": "public_normalized_specimen_condition",
+      "type": "function",
+      "schema": "public"
+    },
+    "cache_key": "function_search_path_mutable_public_public_normalized_specimen_condition_6c6d3dfe8bd3ec449240920af60a23f1"
+  },
+  {
+    "name": "function_search_path_mutable",
+    "title": "Function Search Path Mutable",
+    "level": "WARN",
+    "facing": "EXTERNAL",
+    "categories": [
+      "SECURITY"
+    ],
+    "description": "Detects functions where the search_path parameter is not set.",
+    "detail": "Function `public.public_normalized_sample_source` has a role mutable search_path",
+    "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable",
+    "metadata": {
+      "name": "public_normalized_sample_source",
+      "type": "function",
+      "schema": "public"
+    },
+    "cache_key": "function_search_path_mutable_public_public_normalized_sample_source_3e8e37d82094a720b549683f51d51a82"
+  },
+  {
+    "name": "function_search_path_mutable",
+    "title": "Function Search Path Mutable",
+    "level": "WARN",
+    "facing": "EXTERNAL",
+    "categories": [
+      "SECURITY"
+    ],
+    "description": "Detects functions where the search_path parameter is not set.",
+    "detail": "Function `public._w3a_guard_resolved_sporely_taxon_id` has a role mutable search_path",
+    "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable",
+    "metadata": {
+      "name": "_w3a_guard_resolved_sporely_taxon_id",
+      "type": "function",
+      "schema": "public"
+    },
+    "cache_key": "function_search_path_mutable_public__w3a_guard_resolved_sporely_taxon_id_2ce248a6de9a75f96c8c4ead77baa4ad"
+  },
+  {
+    "name": "function_search_path_mutable",
+    "title": "Function Search Path Mutable",
+    "level": "WARN",
+    "facing": "EXTERNAL",
+    "categories": [
+      "SECURITY"
+    ],
+    "description": "Detects functions where the search_path parameter is not set.",
+    "detail": "Function `public.is_public_microscopy_measurement_type` has a role mutable search_path",
+    "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable",
+    "metadata": {
+      "name": "is_public_microscopy_measurement_type",
+      "type": "function",
+      "schema": "public"
+    },
+    "cache_key": "function_search_path_mutable_public_is_public_microscopy_measurement_type_db8701c1067bf761b9310654c5e6c9fe"
+  },
+  {
+    "name": "function_search_path_mutable",
+    "title": "Function Search Path Mutable",
+    "level": "WARN",
+    "facing": "EXTERNAL",
+    "categories": [
+      "SECURITY"
+    ],
+    "description": "Detects functions where the search_path parameter is not set.",
+    "detail": "Function `taxonomy_v3._guard_snapshot_immutability` has a role mutable search_path",
+    "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable",
+    "metadata": {
+      "name": "_guard_snapshot_immutability",
+      "type": "function",
+      "schema": "taxonomy_v3"
+    },
+    "cache_key": "function_search_path_mutable_taxonomy_v3__guard_snapshot_immutability_a4666919d5d1a7d72a23877f8e68fbed"
+  }
+]
+A new version of Supabase CLI is available: v2.120.0 (currently installed v2.98.2)
+We recommend updating regularly for new features and bug fixes: https://supabase.com/docs/guides/cli/getting-started#updating-the-supabase-cli

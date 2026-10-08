@@ -1,0 +1,8 @@
+{
+  "exit_code": 0,
+  "elapsed_seconds": 4.505773291995865,
+  "source_sql_unchanged": true,
+  "timeout": "2min",
+  "target": "local Docker Supabase only",
+  "rollback": true
+}

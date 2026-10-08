@@ -1,0 +1,6 @@
+BEGIN
+CREATE FUNCTION
+DO
+ROLLBACK
+
+psql:<stdin>:337: NOTICE:  taxonomy_v2_search_test passed

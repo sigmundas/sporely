@@ -1,0 +1,7 @@
+BEGIN
+CREATE FUNCTION
+
+psql:<stdin>:263: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+psql:<stdin>:263: error: connection to server was lost

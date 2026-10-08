@@ -1,0 +1,83 @@
+✔ valid fixture preflight preserves control escapes and Unicode (15.194584ms)
+✔ missing required file fails (28.7435ms)
+✔ wrong file order fails (16.225916ms)
+✔ per-file hash mismatch fails (10.007416ms)
+✔ byte-count mismatch fails (13.21125ms)
+✔ row-count mismatch fails (13.88225ms)
+✔ whole-export mismatch fails (17.895167ms)
+✔ wrong release and schema fail (16.176792ms)
+✔ invalid JSON reports filename and line (27.403208ms)
+✔ wrong field type reports field (20.350959ms)
+✔ blank authoritative namespace fails (15.803542ms)
+✔ Stage 3P taxon.jsonl with national name and provenance passes preflight (17.899666ms)
+✔ pre-3P export with names but no provenance fields passes when names are null (36.061791ms)
+✔ national name with partial provenance fails (188.583666ms)
+✔ national name without provenance fields fails (13.516875ms)
+✔ blank national provenance fails (10.846125ms)
+✔ Stage 4P reviewed Dyntaxa bridge row passes preflight (13.989459ms)
+✔ Dyntaxa automatic (non-bridge) Dyntaxa row fails preflight (11.278958ms)
+✔ Dyntaxa automatic-match note fails preflight (10.571417ms)
+✔ Dyntaxa synonym TaxonName LSID fails preflight (10.702583ms)
+✔ Dyntaxa bare Dyntaxa number fails preflight (11.768583ms)
+✔ Dyntaxa other Dyntaxa namespace fails preflight (11.610166ms)
+✔ Dyntaxa Dyntaxa namespace under another system fails preflight (11.624ms)
+✔ Dyntaxa preferred Dyntaxa row fails preflight (23.246291ms)
+✔ Dyntaxa synonym-role Dyntaxa row fails preflight (183.47225ms)
+✔ Dyntaxa LSID on two concepts (ambiguous) fails preflight (25.288083ms)
+✔ two Dyntaxa identities on one concept fail preflight (22.749708ms)
+✔ legacy integer Dyntaxa row fails preflight (23.191583ms)
+﹣ fixture imports atomically, validates, remains ready, and reruns safely (0.4995ms) # SKIP
+﹣ forced failure rolls back release rows and leaves sanitized audit (0.034208ms) # SKIP
+﹣ Stage 3P national names import with provenance; an untraced name aborts (0.026541ms) # SKIP
+✔ forward migration changes only the parent lookup; security and all checks are retained (4.388917ms)
+﹣ local full validator equivalence, cross-release isolation, and fresh-release indexed plan (0.083042ms) # SKIP
+✔ production taxonomy-v2 generator is local-only and uses bulk COPY (5.431041ms)
+✔ the release to import must be named explicitly and match the export (22.712583ms)
+﹣ integration: generated full release payload imports, validates, activates, and protects legacy state (0.098209ms) # SKIP
+✔ Stage 4W: production preparation carries Dyntaxa bridges, Swedish names and a resolver probe (42.824708ms)
+✔ Stage 4W: production preparation refuses an automatic Dyntaxa row (15.882292ms)
+✔ Stage 4W: production preparation refuses an ambiguous Dyntaxa LSID (18.151417ms)
+✔ Stage 4W: production preparation refuses a bare Dyntaxa number (16.342042ms)
+✔ Stage 4W: production preparation refuses a Dyntaxa row on a missing concept (17.316916ms)
+✔ Stage 4W: production preparation of a release without Dyntaxa is unchanged and has no Dyntaxa probe (130.234917ms)
+✔ CSV and SQL encoding preserve arbitrary source values (1.550958ms)
+✔ percentile uses nearest-rank selection (0.181417ms)
+✔ prototype is isolated and encodes complete namespaced uniqueness (5.331625ms)
+✔ search uses escaped literal prefix and ordinary prefix indexes (0.752167ms)
+✔ scope state constrains cache eligibility but not registry concepts (0.751625ms)
+﹣ disposable prototype represents every historical state (0.12825ms) # SKIP
+﹣ exact mapping reuse and same-name separation survive experiment (0.084375ms) # SKIP
+﹣ review-state taxon is registered but excluded from cache (0.044ms) # SKIP
+﹣ cache contains only Phase-A include rows and no review rows (0.036292ms) # SKIP
+﹣ literal metacharacters, minimum length and same-name results are preserved (0.164917ms) # SKIP
+﹣ two cache slots do not mutate persistent state (0.038958ms) # SKIP
+✔ canonicalize sorts object keys recursively (1.164625ms)
+✔ stableStringify emits sorted keys with trailing newline (0.497833ms)
+✔ removeExcludedKeys strips documented non-semantic fields recursively (0.12025ms)
+✔ semantic SHA-256 helper matches the desktop-published hash (41.191125ms)
+✔ loadManifest verifies the sibling .sha256.txt file (1.162958ms)
+✔ every manifest record carries the contract §6 field set (0.461416ms)
+✔ external-mapping derivation emits at most one tuple per exact signal (0.115375ms)
+✔ external-mapping derivation refuses non-exact / incomplete / unresolved signals (0.058792ms)
+✔ sqlLiteral escapes single quotes and coerces null/undefined to SQL null (0.060083ms)
+✔ SQL schema is isolated, immutable-snapshot-enforcing, and never targets public (1.023708ms)
+﹣ integration: applying the fixture manifest yields the expected aggregate counts (0.050459ms) # SKIP
+﹣ integration: exact resolved observation materialises concept + mapping with scope_state preserved (0.02275ms) # SKIP
+﹣ integration: legacy-mapped resolution preserves the chain in resolution_evidence (0.015334ms) # SKIP
+﹣ integration: synonym-relationship fixture is intentionally skipped and lands as manual_unresolved (0.014584ms) # SKIP
+﹣ integration: out-of-cache concept materialises with scope_state=required_ancestor (0.013792ms) # SKIP
+﹣ integration: every unresolved state writes snapshot + resolution_link without registry_concept (0.013167ms) # SKIP
+﹣ integration: conflicting exact evidence writes resolution_link=conflicting and creates no registry row for the ambiguous concept (0.020167ms) # SKIP
+﹣ integration: later exact resolution preserves the original snapshot verbatim (0.013ms) # SKIP
+﹣ integration: idempotency — applying the fixture manifest twice yields identical row counts and snapshot fingerprint (0.011958ms) # SKIP
+﹣ integration: rollback simulation leaves zero orphan rows (0.013041ms) # SKIP
+﹣ integration: snapshot immutability trigger rejects direct UPDATE to original_* (0.012666ms) # SKIP
+﹣ integration: W2E-A2 conflict invariant — reallocating an external_id to a different sporely_taxon_id rolls back with zero partial rows (0.011875ms) # SKIP
+ℹ tests 75
+ℹ suites 0
+ℹ pass 52
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 23
+ℹ todo 0
+ℹ duration_ms 922.609958

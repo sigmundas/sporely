@@ -1,0 +1,6 @@
+BEGIN
+CREATE FUNCTION
+DO
+ROLLBACK
+
+psql:<stdin>:280: NOTICE:  taxonomy_v2_dyntaxa_test passed
