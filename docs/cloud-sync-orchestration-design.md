@@ -290,14 +290,18 @@ contract section. **Unverified** means no test pins the behaviour.
 | P4 | push, `sync_images=True` | spore mosaic | no (logged only) | best-effort (D4) | contract "Public spore mosaic after conflict resolution"; plan-path `best_effort_failed` in `test_cloud_conflict_plan_execution.py`; ordinary push **unverified** |
 | P5 | push, `sync_images=False` | metadata-only image PATCH | yes | required | `test_cloud_sync_dirty_loop_steady_state.py::test_metadata_only_refresh_patches_image_metadata_on_existing_cloud_rows` (success path only; failure **unverified**) |
 | P6 | push, any | spore summary | **no** (broken call, 1.4) | required (contract rule 8 names "summary") | rule 8; masking test `test_spore_summary_sync.py::test_call_site_unexpected_error_recorded_in_errors_list` |
-| P7 | push, any | pending tombstone flush | error only; tombstone stays unsynced and retries | required for the tombstone, not for any observation's `synced` | `test_cloud_sync_fast_path.py::test_push_all_surfaces_image_tombstone_failures`; contract "Retry-safe sequencing" |
+| P7 | push, any | pending tombstone flush | error only; tombstone stays unsynced and retries; the observation's status is not touched | **proposal, in tension with contract rule 8** (which names "deletion" work): keep the durable unsynced tombstone as the retry record, so a failure does not block the observation's `synced` (decision D9) | `test_cloud_sync_fast_path.py::test_push_all_surfaces_image_tombstone_failures`; contract rule 8, "Retry-safe sequencing" |
 | P8 | push, any | measurement / summary backfill | error only (broken call) | required for the affected observation (D5) | `test_spore_summary_sync.py::test_measurement_reconcile_records_per_observation_errors` (fake) |
 | P9 | push, any | calibration push | error only | not observation work. Separate issue type. | `test_cloud_calibration_sync.py`; rule 8 names "calibration" **unverified** per observation |
 | P10 | push, any | snapshot store | `CloudSyncError`: dirty; other exceptions: `synced` and the push aborts | required; failure blocks `synced` (decided) | **unverified** for push |
 | L1 | pull, any | field apply | n/a | required | contract "One side changed" |
-| L2 | pull, `materialize=True` | remote image bytes | yes (dirty) | required (D1) | `test_cloud_sync_fast_path.py` pull tests; contract rule 7; detailed failure **unverified** |
-| L3 | pull, `materialize=False` | remote image bytes | not attempted; existing rows stay `synced`, new rows stay **dirty** (`_create_local_from_remote` incomplete) | D1 | `test_cloud_download_only.py` (pull-only, materialize toggles) |
-| L4 | pull, any | measurement import | dirty on conflict, failure or skipped materialization | required | contract rule 8; **unverified** for failure |
+| L2a | pull, `materialize=True`, existing row, **no baseline** | remote image bytes | yes: `remote_media_pending` includes `_remote_images_missing_locally`, so a failed download makes the row dirty | required (D1) | contract rule 7; failure path **unverified** |
+| L2b | pull, `materialize=True`, existing row, **baseline, remote changed** | remote image bytes | not checked directly: here `remote_media_pending` counts missing local images only when `materialize=False`. A failed download is caught afterwards by the missing-media retry block (stored snapshot + `materialize`), which re-attempts and makes the row dirty if images are still missing | required (D1) | **unverified** |
+| L2c | pull, `materialize=True`, `_create_local_from_remote` | remote image bytes | yes: an incomplete `_import_remote_images` result keeps the row dirty | required (D1) | **unverified** |
+| L3a | pull, `materialize=False`, existing row | remote image bytes | not attempted. Missing bytes do not block `synced`; the row is stamped `synced` if nothing else remains (field, media or measurement conflict, review marker) | D1 | `test_cloud_download_only.py` (materialize toggles); per-branch status **unverified** |
+| L3b | pull, `materialize=False`, `_create_local_from_remote` | remote image bytes | every non-anchor image counts as `skipped_materialization`, so a new row with such images stays **dirty**; a row with only anchors and no failures is stamped `synced` | D1 | **unverified** |
+| L4a | pull, existing row (both branches) | measurement import | a **conflict** always makes the row dirty. A **failure or skipped materialization** only feeds `remote_media_pending`, which blocks completion only when `materialize=True`. With `materialize=False` the row can be stamped `synced` after a measurement failure | required (proposal: in every mode, independent of D1) | contract rule 8; **unverified** |
+| L4b | pull, `_create_local_from_remote` | measurement import | any incomplete or failed result, error or conflict keeps the row dirty, in every mode | required | **unverified** |
 | L5 | pull, any | snapshot store | no: row stays `synced` (push-side ordering) | required; failure blocks `synced` | `_create_local_from_remote` swallows failure, **unverified** |
 | L6 | pull, `full_pull=False` | cheap convergence | stamps before snapshot; snapshot failure swallowed | required order: snapshot → `synced` | `test_cloud_sync_fast_path.py::test_fast_pull_converges_when_remote_updated_at_bumped_but_fields_unchanged` |
 | L7 | pull, `child_safety_pull` due | metadata-only deep pull | as above | same as `full_pull` pull | `test_cloud_sync_fast_path.py::test_child_safety_pull_selects_deep_metadata_reconciliation_without_media` |
@@ -340,11 +344,31 @@ def complete_observation(outcome: ObservationOutcome, client) -> CompletionResul
 Rules applied by `complete_observation`:
 
 1. Any `required` issue → `dirty`, old baseline kept, `synced_at` unchanged.
-2. Any `review` issue → `dirty` plus the review marker, old baseline kept.
+2. Any `review` issue → `dirty` plus the review marker. The old baseline is
+   kept, **except** for `identity_review_no_baseline` (rule 6).
 3. Any `blocked` issue → `blocked` (privacy slot limit), old baseline kept.
 4. Otherwise: persist the snapshot first. If that raises, the outcome becomes
    `dirty` with a `snapshot_failed` issue. If it succeeds, stamp `synced`.
 5. `best_effort` issues never change the status. They are reported.
+6. **Identity-less snapshot exception.** When there is no baseline and the
+   local and remote taxonomy identities disagree (`identity_review_pending`
+   on push; `IDENTITY_APPLY_CONFLICT` in the no-baseline pull branch), the
+   owner persists a `SnapshotIntent(without_identity=True)` *and* sets the
+   review marker. This is required by `docs/supabase-sync-contract.md`,
+   "Identity in change detection": the stored baseline must leave the
+   identity "unknown", so that later pulls and pushes classify the same
+   disagreement as a conflict and not as a one-sided change. It does not write
+   `synced`. **Tension with invariant 12** ("never written after unresolved
+   conflicts"): the snapshot does record the other fields that both sides
+   agreed on while one conflict is unresolved. This is resolved by treating
+   the excluded identity as "baseline unknown" rather than as a written
+   baseline for the conflicting field. The follow-up must keep this exception
+   explicit and tested
+   (`test_cloud_identity_fail_closed.py::test_snapshot_after_a_no_baseline_conflict_keeps_the_disagreement_detectable`).
+   No other `review` issue writes a snapshot.
+
+Precedence: rule 3 (`blocked`), then rules 2 and 6 (review), then rule 1
+(required), then rule 4.
 
 Domain helpers (`_push_images_for_observation`, measurement push/import,
 summary, mosaic, `_apply_remote_*`) **return issues**. They no longer call
@@ -469,6 +493,8 @@ functions in the facade. The follow-up moves them with the owner.
 
 | Item | Target model | Tension |
 | --- | --- | --- |
+| Identity-less snapshot on no-baseline identity review | 3.1 rule 6 | A snapshot is written while a review is open. This is required by the contract and stated as a deliberate exception to "old baseline kept" and to invariant 12. |
+| Contract rule 8 "deletion" work | Tombstone failures stay non-observation issues (P7) | They do not block `synced`. Decision D9. |
 | One owner writes `synced` and snapshots | 3.1, 3.8 | The UI import is an exception unless D7 chooses to absorb it. |
 | `synced` only after required work and snapshot; snapshot failure blocks | 3.1 rule 4, 3.2 | Re-push after an interrupted sync (3.2), which is acceptable. |
 | Required child failure → dirty, retryable, old baseline | 3.1 rules 1–2 | Current push stores the baseline after failure. That changes, and the push-side `accepted_asymmetry` pruning then happens one sync later. |
@@ -483,7 +509,7 @@ functions in the facade. The follow-up moves them with the owner.
 | Inv. 5 taxonomy | The classifier must keep `taxon_identity` as a virtual field, and keep "snapshot without identity" as a `SnapshotIntent` option. | The snapshot representation must be byte-identical (fixtures, section 7). |
 | Inv. 10 pull-only | Owner performs zero remote writes. | — |
 | Inv. 11 partial reads | `SnapshotIntent` is only built from complete reads (unchanged). | — |
-| Inv. 12 snapshot | Strengthened. This is the central fix. | — |
+| Inv. 12 snapshot | Strengthened. This is the central fix. | Exception: 3.1 rule 6 (identity-less snapshot). |
 | Inv. 13 | Classifier fixtures. | — |
 | Inv. 14 plans | 3.7. | — |
 | Inv. 15 | 3.1 rule 1. | — |
@@ -506,7 +532,7 @@ They are tied to the change that alters them.
 | `…::test_reviewed_measurement_upload_generates_mosaic_before_finalization` | mosaic before finalization | contract | — (fakes the stamp; rewire to the owner) |
 | `…::_patch_common` fixture users | stamp/snapshot recorders | accidental (mechanics) | 3.7 owner adoption: recorders move to the owner |
 | `…::test_ordinary_snapshot_write_prunes_accepted_asymmetry_…`, `test_sqlite_snapshot_round_trip_*` | snapshot content | contract | — |
-| `test_cloud_conflict_dialog.py::test_resolution_plan_applies_mixed_cloud_field_local_measurement_and_recomputes` | ordered stamp/snapshot calls | accidental | 3.7 |
+| `test_cloud_conflict_dialog.py::test_resolution_plan_applies_mixed_cloud_field_local_measurement_and_recomputes` | field application, measurement upload, statistics recompute, no deletion (stamp and snapshot are faked, not asserted) | contract (outcome) | — (fakes are retargeted in 3.7) |
 | `test_cloud_conflict_dialog.py::test_keep_cloud_disables_deletion_preserves_local_file_and_overwrites_remote_measurements` | stamp + snapshot recorded | contract (outcome), accidental (call names) | 3.7 |
 | `test_cloud_visibility_phase7.py::test_mark_observation_dirty_clears_blocked_sync_state` | blocked → dirty on local edit | contract | — |
 | `test_cloud_visibility_phase7.py::test_resolve_conflict_keep_local_records_deleted_cloud_images_before_push` | tombstone record before push | contract | — |
@@ -522,6 +548,12 @@ They are tied to the change that alters them.
 | `test_cloud_sync_pending_image_repair.py::test_explicit_checkbox_change_marks_dirty_without_invalidating_signature` | `mark_observation_dirty` fake called | contract (local-edit signal, 3.5) | — |
 | `test_spore_summary_sync.py::test_call_site_unexpected_error_recorded_in_errors_list` | one-argument fake `mark_observation_sync_dirty` called | **accidental, masks a defect** | 3.5 → assert real `dirty` with SQLite |
 | `test_spore_summary_sync.py::test_measurement_reconcile_records_per_observation_errors` | same | **accidental, masks a defect** | 3.5 / D5 |
+| `test_spore_summary_sync.py::test_measurement_reconcile_rebuilds_mosaic_after_raw_repair` | call order: measurements, then mosaic, in the backfill pass | contract (the mosaic follows its measurements) | — |
+| `test_spore_summary_sync.py::test_measurement_reconcile_is_idempotent_after_successful_push` | push call count on a second pass | contract (inv. 18) | — |
+| `test_reference_client_capability_stage_m.py::test_device_report_once_per_session_before_pushes` | one report per session, before reference pushes | contract (Stage M), in tension with inv. 18 (section 5) | D10 |
+| `test_reference_client_capability_stage_m.py::test_device_report_failure_is_non_fatal_and_retried_next_sync` | report count 2 after a failure | contract | D10 |
+| `test_reference_client_capability_stage_m.py::test_pull_only_sync_never_reports`, `…::test_pull_only_allows_the_feed_and_blocks_the_device_report` | zero reports in pull-only | contract (inv. 10) | — |
+| `tests/local_supabase/test_reference_sync_local.py::test_2_no_change_sync_keeps_one_device` (opt-in) | exactly one `record_reference_client_capabilities` RPC on a no-change sync in a fresh process | contract (Stage M), in tension with inv. 18 | D10 |
 | `test_cloud_sync_image_captured_at.py::test_old_signature_capture_time_gap_marks_observation_dirty` | scan calls `mark_observation_dirty` | contract (scan, 1.3) | — |
 | `test_observations_tab_cloud_sync.py::test_gallery_publish_uncheck_routes_through_cloud_lifecycle`, `test_main_window_background_activity_badge.py::test_measure_gallery_publish_uncheck_routes_through_cloud_lifecycle` | checkbox → `mark_observation_dirty` | contract (local edit) | — |
 | `test_cloud_identity_fail_closed.py::test_snapshot_after_a_no_baseline_conflict_keeps_the_disagreement_detectable` | identity-less snapshot after a no-baseline conflict | contract (inv. 5) | — (becomes a `SnapshotIntent` option) |
@@ -547,9 +579,10 @@ Remote writes reachable on that path:
 | Spore summary upsert | `_reconcile_missing_spore_summaries`; only for missing/stale context hashes | no | `test_cloud_sync_fast_path.py::test_push_all_fast_path_runs_lightweight_spore_reconciliation` (call, not writes); **write-free assertion unverified** |
 | `set_desktop_id` | `pull_all` candidate loop; only when the remote `desktop_id` differs and not pull-only; candidates are pruned on the fast path | no (inequality guard) | `test_cloud_sync_fast_path.py::test_pull_all_fast_path_returns_early_when_nothing_changed` (no candidates) |
 | Image `desktop_id` relink | `_remote_image_desktop_id_current` guard | no | `test_child_change_probe.py::test_second_noop_sync_zero_child_candidates` |
-| Reference library writes | `sync_reference_library` | no | `test_reference_use_no_change_resync.py::test_no_change_sync_leaves_every_status_row_byte_identical`; `tests/local_supabase/test_reference_sync_local.py::test_2b_no_change_sync_sends_no_reference_writes` (opt-in) |
+| Reference library pushes (`sync_reference_*`, `sync_observation_reference_use`) | `sync_reference_library` → `_push_reference_library` | no | `test_reference_use_no_change_resync.py::test_no_change_sync_leaves_every_status_row_byte_identical`; `tests/local_supabase/test_reference_sync_local.py::test_2b_no_change_sync_sends_no_reference_writes` (opt-in; it filters its write count to these RPC names) |
+| **Device capability report** (`record_reference_client_capabilities` RPC) | `sync_reference_library` → `utils/reference_client_capabilities.py::report_reference_client_capabilities`; runs in every non-pull-only sync whose reference pull had no errors; deduplicated in memory **once per app process and account**, and retried at the next sync after a failure | **yes, a mutation with no observation or reference change**: the first no-op sync of every app session writes it. Its effect on any `updated_at` is defined server-side in `sporely-web` and is not verified here | Not covered by an inv. 18 test. `tests/local_supabase/test_reference_sync_local.py::test_2_no_change_sync_keeps_one_device` **expects** exactly one call on a no-change sync, and `test_reference_client_capability_stage_m.py::test_device_report_once_per_session_before_pushes` pins the once-per-session rule. **Existing tension with invariant 18**, recorded and not resolved here (decision D10) |
 
-No observation completion write is remote: `_store_remote_snapshot` and the
+Apart from the device capability report above, no other remote write is reachable on a fast no-op sync. No observation completion write is remote: `_store_remote_snapshot` and the
 status writers are local. The target model adds no remote writes.
 `_mark_cloud_observation_imported` performs unconditional `set_*desktop_id`
 writes, but it is a manual UI action, not a sync path.
@@ -652,7 +685,7 @@ mode?**
   `materialize=False` leaves rows dirty and pushes them again, which conflicts
   with invariant 18.
 
-Depends on it: the outcome rules for L2, L3 and L8, the `create` outcome, and
+Depends on it: the outcome rules for L2a–L3b and L8, the `create` outcome, and
 the canary scope.
 
 **D2. What does Download from Cloud (`pull_only`) leave behind?**
@@ -710,3 +743,32 @@ calls (1.4) can be:
 - (b) left for the follow-up, which removes those call sites.
 
 The orchestration plan's Stage 1 scope depends on this choice.
+
+**D9. Do tombstone (deletion) failures block observation completion?**
+Contract rule 8 lists "deletion" among the work whose failure must not leave
+an observation fully synced.
+
+- (a) No (proposal, P7). The unsynced tombstone row is the durable,
+  retryable and visible record, and the flush runs before pruning
+  (invariant 3). *Consequence:* rule 8 is read as "the deletion stays
+  retryable", not as "the observation stays dirty". This may need an optional
+  contract clarification, which would bring in a `sporely-web` candidate.
+- (b) Yes. A failed tombstone for an image makes its observation dirty.
+  *Consequence:* that observation is pushed again on every sync until the
+  deletion lands. This adds re-push cost but no new remote writes, because the
+  no-op PATCH skip applies.
+
+**D10. Device capability report versus invariant 18.**
+The once-per-session `record_reference_client_capabilities` RPC is a remote
+write on a no-op sync (section 5).
+
+- (a) Accept it as a documented exception to invariant 18 (a session-level
+  registration, not a sync data write). Record this in
+  `.claude/rules/cloud-sync.md` and the tests.
+- (b) Make it change-driven, for example by persisting the last reported
+  capabilities locally and reporting only when they change. *Consequence:*
+  this is a reference-sync change and is outside this plan. The local harness
+  test `test_2_no_change_sync_keeps_one_device` would change.
+
+This does not block the orchestration follow-up, but its no-op test must
+either exclude or assert this RPC explicitly.
