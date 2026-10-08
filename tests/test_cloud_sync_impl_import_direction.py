@@ -52,6 +52,9 @@ OWNER_LAYERS: dict[str, int] = {
     "utils.cloud_sync_impl.location_precision": 5,
     "utils.cloud_sync_impl.preflight": 6,
     "utils.cloud_sync_impl.calibrations": 7,
+    # Stage S5: image identity and the remote side of metadata-only anchors.
+    "utils.cloud_sync_impl.image_identity": 2,
+    "utils.cloud_sync_impl.anchors": 7,
 }
 
 #: Owner modules allowed to import the facade at runtime (transitional; each

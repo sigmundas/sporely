@@ -127,6 +127,33 @@ def test_identity_baseline_unknown_sentinel_exists_once():
 #: "Unrecognized client method". This set may only shrink: a new client method
 #: must join one of the two registries.
 #:
+#: Stage S5: observation and image push identity moved to a client mixin.
+#: Pull-only classification at the extraction base, unchanged by the move.
+PUSH_IDENTITY_MIXIN_METHODS = {
+    "_resolve_existing_observation_for_push": "unclassified",
+    "_find_cloud_image": "allowed",
+    "_resolve_existing_image_for_push": "unclassified",
+}
+
+
+@pytest.mark.parametrize("name", sorted(PUSH_IDENTITY_MIXIN_METHODS))
+def test_push_identity_methods_resolve_through_the_mro_to_the_mixin(name):
+    from utils.cloud_sync_impl.image_identity import CloudSyncPushIdentityMixin
+
+    cls = cloud_sync.SporelyCloudClient
+    assert issubclass(cls, CloudSyncPushIdentityMixin)
+    assert name not in vars(cls), f"{name} is still defined on the client"
+    owner = next(klass for klass in cls.__mro__ if name in vars(klass))
+    assert owner is CloudSyncPushIdentityMixin
+    assert getattr(cls, name) is vars(CloudSyncPushIdentityMixin)[name]
+    for subclass in (cloud_sync.OAuthSporelyCloudClient, cloud_sync.SporelyReadOnlyCloudClient):
+        assert getattr(subclass, name) is vars(CloudSyncPushIdentityMixin)[name]
+    expected = PUSH_IDENTITY_MIXIN_METHODS[name]
+    assert (name in cloud_sync._PULL_ONLY_ALLOWED_READ_METHODS) == (expected == "allowed")
+    assert name not in cloud_sync._PULL_ONLY_BLOCKED_CLIENT_METHODS
+    assert (name in UNCLASSIFIED_AT_EXTRACTION_BASE) == (expected == "unclassified")
+
+
 #: This is NOT exhaustive two-list classification. The S3 brief asks for both
 #: "every method in exactly one pull-only list" and "registries are those of the
 #: base"; at the base these methods are in neither list, so both cannot hold.
