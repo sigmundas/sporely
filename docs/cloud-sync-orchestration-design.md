@@ -290,9 +290,9 @@ contract section. **Unverified** means no test pins the behaviour.
 | P3 | push, `sync_images=True` | measurement push | yes | required | `test_gap_e_measurement_push_failure_obs_stays_dirty`; contract rule 8 |
 | P4 | push, `sync_images=True` | spore mosaic | no (logged only) | best-effort (D4) | contract "Public spore mosaic after conflict resolution"; plan-path `best_effort_failed` in `test_cloud_conflict_plan_execution.py`; ordinary push **unverified** |
 | P5 | push, `sync_images=False` | metadata-only image PATCH | yes | required | `test_cloud_sync_dirty_loop_steady_state.py::test_metadata_only_refresh_patches_image_metadata_on_existing_cloud_rows` (success path only; failure **unverified**) |
-| P6 | push, any | spore summary | **no** (broken call, 1.4) | required (contract rule 8 names "summary") | rule 8; masking test `test_spore_summary_sync.py::test_call_site_unexpected_error_recorded_in_errors_list` |
+| P6 | push, any | spore summary | **yes** since the D8 fix (`23fae1b`): a failure in the per-observation push loop calls `mark_observation_dirty` after the `synced` stamp | required (contract rule 8 names "summary") | rule 8; `test_summary_failure_marks_observation_dirty.py` (real SQLite); `test_spore_summary_sync.py::test_call_site_unexpected_error_recorded_in_errors_list` |
 | P7 | push, any | pending tombstone flush | error only; tombstone stays unsynced and retries; the observation's status is not touched | **proposal, in tension with contract rule 8** (which names "deletion" work): keep the durable unsynced tombstone as the retry record, so a failure does not block the observation's `synced` (decision D9) | `test_cloud_sync_fast_path.py::test_push_all_surfaces_image_tombstone_failures`; contract rule 8, "Retry-safe sequencing" |
-| P8 | push, any | measurement / summary backfill | error only (broken call) | required for the affected observation (D5) | `test_spore_summary_sync.py::test_measurement_reconcile_records_per_observation_errors` (fake) |
+| P8 | push, any | measurement / summary backfill | **no**: error string only; the dead dirty call was removed by the D8 fix (`23fae1b`) and the summary backfill passes `mark_dirty_on_error=False` | typed issue, observation not dirtied (D5(b), settled); retried independently from persisted data (9.2) | `test_summary_failure_marks_observation_dirty.py`; `test_spore_summary_sync.py::test_measurement_reconcile_records_per_observation_errors` |
 | P9 | push, any | calibration push | error only | not observation work. Separate issue type. | `test_cloud_calibration_sync.py`; rule 8 names "calibration" **unverified** per observation |
 | P10 | push, any | snapshot store | `CloudSyncError`: dirty; other exceptions: `synced` and the push aborts | required; failure blocks `synced` (decided) | **unverified** for push |
 | L1 | pull, any | field apply | n/a | required | contract "One side changed" |
@@ -799,16 +799,17 @@ either exclude or assert this RPC explicitly.
 
 Recorded by the person after the extraction (Stages S2–S7) was integrated on
 `main` at `d28580a`. Accepted decisions are binding on the orchestration
-follow-up plan. Provisional decisions bind only as stated, and the follow-up
-plan must not widen them without a new decision.
+follow-up plan. D1 and D5 were first recorded as provisional and were settled
+the same day after the findings in 9.1 and 9.2. The D8 fix landed on `main`
+as `23fae1b`.
 
 | Decision | Status | Choice |
 | --- | --- | --- |
-| D1 | **provisional** | (a) for existing rows only; new rows keep current behaviour (see 9.1) |
+| D1 | accepted (settled after 9.1) | (a) for existing observations only: a metadata-only pull may complete them under the established rules. Newly created observations stay `dirty` until a reliable persistent media-pending mechanism exists (see 9.1) |
 | D2 | accepted | (a) pull-only uses the pull completion rules; `synced` is written locally |
 | D3 | accepted | (a) on-demand materialization writes the baseline only through the owner, and only when the download is complete |
 | D4 | accepted | (a) spore mosaic is best-effort and visible (an issue in `errors`) |
-| D5 | **provisional** | (b) backfill failures are reported as typed issues and do not dirty the observation (see 9.2) |
+| D5 | accepted (settled after 9.2) | (b) backfills retry independently; their failures must become visible typed issues and do not dirty the observation (see 9.2) |
 | D6 | accepted | (b) the rules change to match the code: Observations-tab Refresh equals Sync now (`sync_images=True`) |
 | D7 | accepted | (a) manual import of a cloud observation becomes a `create` outcome under the owner |
 | D8 | accepted | (a) fix the one-argument `mark_observation_sync_dirty` calls in a small standalone change before the follow-up |
@@ -841,7 +842,7 @@ Finding (code at `d28580a`): **not demonstrated.**
   `materialize=True`. `materialize=False` comes from unchecking "pull images"
   in the cloud sync dialog and from the local test harness.
 
-Decision consequence: the follow-up applies D1(a) to existing rows only. A new
+Decision (settled): the follow-up applies D1(a) to existing rows only. A new
 row created without media stays `dirty` as today. Changing that requires a new
 decision together with a durable recovery path, for example a persisted
 "media pending" marker that the fast-path prune treats as a candidate reason
@@ -882,3 +883,12 @@ Gaps for the follow-up:
 3. Measurements that are stamped locally but deleted remotely are caught only
    when deep verification runs (version bump, child-safety pull or full pull),
    not on every sync.
+4. Known duplicate retry in the same sync (since the D8 fix). When a summary
+   push fails in the per-observation push loop, the observation is marked
+   `dirty`, and the summary backfill pass later in the same `push_all`
+   selects it again, because its candidate query compares context hashes and
+   does not read `sync_status`. The result can be a second error string for
+   the same failure, or, if the retry succeeds, one extra re-push of a row
+   that is already up to date at the next sync. This is accepted for now. The
+   follow-up should skip observations that the same sync already attempted, or
+   merge the two attempts into one typed issue.
