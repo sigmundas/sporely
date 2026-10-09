@@ -4,7 +4,8 @@ Status: **decision document (Stage S1 of
 `docs/plans/active/2026-10-07-cloud-sync-extraction-and-orchestration.md`).**
 It changes no code. Section 1 to section 7 record current behaviour and a
 proposed target. Section 8 lists the decisions that the person must make
-before the orchestration follow-up plan is written.
+before the orchestration follow-up plan is written. Section 9 records the
+person's answers (2026-10-09).
 
 Evidence base: `feature/cloud-sync-extraction-and-orchestration` at `861e19d`
 (`utils/cloud_sync.py` is the same as at `c9d655f`). Code is cited by symbol
@@ -793,3 +794,91 @@ write on a no-op sync (section 5).
 
 This does not block the orchestration follow-up, but its no-op test must
 either exclude or assert this RPC explicitly.
+
+## 9. Decision record (2026-10-09)
+
+Recorded by the person after the extraction (Stages S2–S7) was integrated on
+`main` at `d28580a`. Accepted decisions are binding on the orchestration
+follow-up plan. Provisional decisions bind only as stated, and the follow-up
+plan must not widen them without a new decision.
+
+| Decision | Status | Choice |
+| --- | --- | --- |
+| D1 | **provisional** | (a) for existing rows only; new rows keep current behaviour (see 9.1) |
+| D2 | accepted | (a) pull-only uses the pull completion rules; `synced` is written locally |
+| D3 | accepted | (a) on-demand materialization writes the baseline only through the owner, and only when the download is complete |
+| D4 | accepted | (a) spore mosaic is best-effort and visible (an issue in `errors`) |
+| D5 | **provisional** | (b) backfill failures are reported as typed issues and do not dirty the observation (see 9.2) |
+| D6 | accepted | (b) the rules change to match the code: Observations-tab Refresh equals Sync now (`sync_images=True`) |
+| D7 | accepted | (a) manual import of a cloud observation becomes a `create` outcome under the owner |
+| D8 | accepted | (a) fix the one-argument `mark_observation_sync_dirty` calls in a small standalone change before the follow-up |
+| D9 | accepted | (a) tombstone failures do not block observation completion; the unsynced tombstone is the retry record (may need a `sporely-web` contract clarification of rule 8) |
+| D10 | accepted | (a) the once-per-session device capability report is a documented exception to invariant 18 |
+
+### 9.1 D1 finding: no persistent media path for new rows
+
+Question: if a **new** observation created by a pull with
+`materialize_remote_images=False` were marked `synced`, would its images still
+be downloaded later?
+
+Finding (code at `d28580a`): **not demonstrated.**
+
+- `_create_local_from_remote` with `materialize=False` creates no local image
+  rows for ordinary images (`_import_remote_images` in
+  `utils/cloud_sync_impl/image_pull.py` only counts them as skipped). Nothing
+  in the database records that bytes are missing, and the stored snapshot has
+  no `images` or `measurements` keys.
+- Today the row stays `dirty` with `synced_at=NULL`, so the fast-path prune in
+  `pull_all` keeps it as a candidate (`missing_ts`) until a pull with
+  `materialize=True` completes it. That dirty state is, in effect, the only
+  automatic trigger.
+- If the row were stamped `synced`, a later Refresh or Sync now
+  (`full_pull=False`) would skip it until the remote `updated_at` changes.
+  Recovery would depend on a manual full pull or on the person opening the
+  observation (`materialize_cloud_media_for_observation`, which shows a
+  download button but does not auto-start for a media-less snapshot).
+- Exposure today is low: the production Refresh and Sync now presets use
+  `materialize=True`. `materialize=False` comes from unchecking "pull images"
+  in the cloud sync dialog and from the local test harness.
+
+Decision consequence: the follow-up applies D1(a) to existing rows only. A new
+row created without media stays `dirty` as today. Changing that requires a new
+decision together with a durable recovery path, for example a persisted
+"media pending" marker that the fast-path prune treats as a candidate reason
+(close to D1(b)), or a remote-versus-local image comparison for rows whose
+snapshot has no media. The follow-up should add a test that pins the current
+behaviour for new rows (the design marks L3b as unverified).
+
+### 9.2 D5 finding: backfills retry independently
+
+Question: if backfill failures no longer dirty the observation, are they
+still retried?
+
+Finding (code at `d28580a`): **yes, with a reporting gap.**
+
+- Both passes run at the end of every `push_all`, including the fast path
+  (`tests/test_cloud_sync_fast_path.py`), and select candidates from persisted
+  data without reading `sync_status`:
+  - spore measurement reconciliation
+    (`utils/cloud_sync_impl/measurement_reconcile.py`): spore measurements
+    whose `cloud_id` is NULL;
+  - spore summary reconciliation (`utils/cloud_sync.py`): observations whose
+    local summary `context_hash` set differs from the remote set.
+- A failure leaves that data unchanged, so the next sync selects the
+  observation again. The one-argument `mark_observation_sync_dirty` calls in
+  both passes never worked (D8), so the current behaviour already matches
+  D5(b). Removing them removes no retry.
+- There are no retry markers or error columns. Failures surface only as
+  untyped strings in `errors` and as printed log lines.
+
+Gaps for the follow-up:
+
+1. Per-measurement push failures inside `_push_measurements_for_observation`
+   (`utils/cloud_sync_impl/measurements.py`) are printed and skipped, so they
+   never reach `errors`. A typed issue needs that helper to report a failure
+   count, or the pass to re-count unstamped rows after pushing.
+2. A summary skip because the remote table is missing
+   (`SUMMARY_STATUS_SKIP_TABLE_MISSING`) is silent.
+3. Measurements that are stamped locally but deleted remotely are caught only
+   when deep verification runs (version bump, child-safety pull or full pull),
+   not on every sync.
