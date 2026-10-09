@@ -94,20 +94,65 @@ All stages run in `sporely-py`, in order, as one run slice.
 | 7 Typed sync issues | result-preserving refactor + additive key | 2, 6 |
 | 8 Backfill issues and retry responsibility (D5) | behavior change (visibility) | 7 |
 | 9 Completion owner: push | behavior change | 6, 7, 8 |
-| 10 Completion owner: pull, create and pull-only | behavior change | 9 (and Gate G1) |
+| 10 Completion owner: pull, create and pull-only | behavior change | 9; blocked by Gate G1 |
 | 11 Completion owner: conflict execution | behavior change | 10 |
-| 12 Other writers: on-demand materialization and manual import | behavior change (incl. UI path) | 11 (and Gate G2) |
+| 12 Other writers: on-demand materialization and manual import | behavior change (incl. UI path) | 11; blocked by Gate G2 |
 | 13 Single-writer guard and desktop documentation | tests + docs | 12 |
 
 Gates (manual, person only; see their sections): **Gate G1** after Stage 9,
 holding Stage 10. **Gate G2** after Stage 11, holding Stage 12. **Completion
 gate G3** after Stage 13, holding plan completion.
 
-**Execution route.** Stages use the direct `## Stage <n> — <title>` convention
-so `sparring check-plan` parses them. The gates can only be carried by compile
-intake (version 2 manifest): G1 as `gates_before` on Stage 10, G2 as
-`gates_before` on Stage 12, G3 as `completion_gates`. A direct Markdown run
-would drop the gates and is therefore not an acceptable route for this plan.
+**Execution route: compile intake only.** Stages use the direct
+`## Stage <n> — <title>` convention so `sparring check-plan` parses them.
+`check-plan` and a plain Markdown `run-plan` read only the stage sections:
+they ignore the three gate sections, so a plain Markdown run would execute
+Stages 1–13 with no live-canary hold at all. **That route is not acceptable
+for this plan.** Only compile intake (`start-plan`, `--mode compile`) turns
+the gate sections into engine gates, in a version 2 manifest:
+
+| Gate | Manifest field | Blocks | Kind | Suggested id |
+| --- | --- | --- | --- | --- |
+| G1 | `gates_before` of Stage 10 | Stage 10 is not created | `manual` | `g1-push-completion-canary` |
+| G2 | `gates_before` of Stage 12 | Stage 12 is not created | `manual` | `g2-pull-conflict-completion-canary` |
+| G3 | `completion_gates` | the plan does not report COMPLETE | `manual` | `g3-end-to-end-completion-canary` |
+
+**Run precondition (the person, before approving the intake):** the compiled
+manifest is `"version": 2` and contains exactly these three gates at these
+positions. If any is missing or misplaced, do not approve or start the run;
+re-run intake. Stage 1 repeats this check read-only (its "Run-shape check").
+
+**Engine semantics relied on** (agent-sparring `docs/plans.md`, "Version 2:
+plan-declared gates"): after the preceding stage is accepted the run mints
+one obligation per gate and stops with `deferred_verification_required`.
+Reaching a gate never satisfies it. Only
+`sparring resume-plan … --deferred-result '<instance>:<gate id>=pass=<note>'`
+releases it; `fail` and `blocked` keep the run stopped. The engine accepts a
+`pass` without a note; this plan does not: a `pass` must carry the evidence
+note listed in "Gate evidence" below, and nobody records `pass` over failed
+evidence or with an empty note. A `fail` is written to the originating
+stage's `notes.md`; the engine does not rewind accepted stages.
+
+**Gate evidence (required in every recorded answer, aggregate only, no
+personal data):**
+1. Build: the accepted candidate SHA run from source.
+2. Profile: the `SPORELY_PROFILE` value.
+3. Account class: `disposable` or `known` (no email, user id or name).
+4. Database path and backup path (profile-relative is enough).
+5. Reconciliation report category counts A–H before and after, and their diff.
+6. State report counts (`synced`, `dirty`, `blocked`, NULL, review markers,
+   rows with error columns, pending tombstones) before and after.
+7. Write counter: instrumented mutating-request totals per sync, per
+   (method, table/RPC/bucket); the list of uninstrumented mutating paths
+   (Stage 3 allow-list) that could have run in that sync; and the Supabase
+   API-log cross-check result (`matched`, `mismatch: …`, or `not available`).
+8. Sync errors: count and issue kinds per sync (no observation content).
+9. Per check step: `pass`, `fail` or `not exercised` with its pass criterion.
+
+**Repair route for `fail` or `blocked`:** the next stage (or completion)
+stays closed. The fix is new reviewed candidate work (a new stage or a
+revert), and the gate is answered again for the repaired build with fresh
+evidence.
 
 Engine-gated verification: Stages 9–12 are committed, pushed and accepted on
 automated evidence; the gate that follows holds the next stage until the
@@ -115,11 +160,9 @@ person records `pass` (AGENTS.md, engine-gated exception). Agents never run a
 live sync against Supabase, never perform live Supabase writes, and never run
 the canaries.
 
-**Retirement of transitional scaffolding is not in this plan.** The design
-document does not define it (no scope, no retirement conditions for
-`tests/cloud_sync_owner_patching.py`, the conftest fixture
-`_facade_patches_reach_cloud_sync_owners`, or the facade-identity stay-lists).
-See unresolved decision U4.
+**Retirement of transitional scaffolding is not in this plan** (U4): it
+belongs in a later plan with its own retirement conditions and live-canary
+hold.
 
 ## Assumptions
 
@@ -127,12 +170,20 @@ See unresolved decision U4.
   test pattern); the local Supabase harness is not used for media paths
   (design 7). Stage 2 may add observation metadata device actions to
   `tests/local_supabase/device.py` only as opt-in tests.
-- A2. All mutating client HTTP requests pass through
-  `_request_with_transient_retry` or an enumerable small set of other call
-  sites (R2/Worker upload); Stage 3 enumerates them. If that is false, the
-  write counter is incomplete and Stage 3 says so; the canaries then fall back
-  to the Supabase project API log for the account and time window, read by the
-  person.
+- A2. From code at the base, Sporely cloud HTTP has three funnels:
+  `SporelyCloudClient._request_with_refresh` (`utils/cloud_sync.py:5681`,
+  and the read-only client's override at `:8268`) →
+  `_request_with_transient_retry` (`:1633`), carrying `_post` (`:6117`),
+  `_rpc` (`:6129`), `_patch` (`:6448`), `_delete` (`:6490`) and
+  `_storage_remove` (`:6500`); `CloudflareR2Client._request`
+  (`utils/r2_storage.py:410`, request at `:481`); and
+  `CloudflareMediaWorkerClient._request` (`utils/r2_storage.py:838`, request
+  at `:868`; plus the HEAD probe at `:694`). Auth token traffic
+  (`SporelyCloudClient.login` `:5849`, `refresh_login` `:5868`,
+  `utils/sporely_cloud_auth.py:192`, `:221`) is not a data write. No direct
+  `session.<verb>` bypass was found under `utils/`. Stage 3 proves this with a
+  coverage test rather than assuming it; canaries never assume zero
+  uninstrumented writes (see "Gate evidence" item 7).
 - A3. The snapshot store `_store_remote_snapshot` stays read-only remotely;
   completion adds no remote write.
 - A4. `keep_cloud` image-application warnings stay best-effort (visible, not
@@ -145,48 +196,94 @@ See unresolved decision U4.
   (`.venv/bin/python main.py` in a clean checkout of that SHA). No local
   release binary is built; release binaries come only from GitHub Actions.
 - A7. 9.2 gap 3 (remote deletion of locally stamped measurements caught only
-  on deep verification) and the optional calibration raw `UPDATE` reroute
-  (design 3.5) are out of scope.
+  on deep verification) is out of scope. The calibration raw `UPDATE`
+  (design 3.5) stays as it is and is an enumerated local-edit dirty signal
+  under the ownership rule below (see "Completion ownership rule"); rerouting
+  it through `mark_observation_sync_dirty` would also clear error, blocked and
+  review-marker columns on calibration change, which is a behavior change not
+  authorized here.
 
-## Unresolved decisions (not settled by design section 9)
+## Decisions settled by the person (2026-10-09)
 
-These must be answered at intake (compile `needs_decision`) or before plan
-approval. Each names the stage that depends on it.
+Recorded after the first draft of this plan. Binding on every stage. There
+are no open decisions left in this plan.
 
-- **U1. Pull-side review marker (Stage 10).** Design 3.3 lists pull conflict
-  fields and `removed_keys` as `review` producers, which under 3.1 rule 2 sets
-  the conflict-review marker. Today the pull path never sets the marker for
-  ordinary field conflicts (row ends `dirty`, no snapshot, error string) and
-  `removed_keys` makes no state write (a clean row stays `synced`). Options:
-  (a) adopt design 3.3 literally (pull conflicts and `removed_keys` set
-  `dirty` + marker and appear as review candidates); (b) preserve today's
-  state outcomes (pull field conflicts become `required`-severity
-  `conflict_review` issues without a marker; `removed_keys` stays report-only
-  with no state write and no snapshot). Recommendation: (b) in this plan,
-  (a) as a later product change, because (a) changes what the conflict dialog
-  shows.
-- **U2. `webp_required` severity (Stage 9).** Today the WebP-required branch
-  makes no state write and the row keeps the early `synced` stamp. Removing the
-  early stamp forces a choice: (a) `required` (row `dirty`, re-pushed every
-  sync until WebP is available; no remote writes thanks to the no-op PATCH
-  skip, but repeated preflight reads); (b) `blocked` with a distinct reason
-  (visible, not retried until a local change). Recommendation: (a), matching
-  contract rule 8 ("image … work failed").
-- **U3. Push/pull classifier differences (Stage 6).** Stage 1 records every
-  corpus row where today's push and pull decisions differ. Stage 6 preserves
-  each side's decision exactly (side-specific views over one classification).
-  Any difference the person wants removed is a separate decision after Stage 1;
-  none is removed in this plan by default.
-- **U4. Transitional scaffolding retirement.** Whether and when to retire
-  `tests/cloud_sync_owner_patching.py` and its autouse fixture, the
-  `S6_*`/`S7_KEPT_IN_FACADE` stay-lists in
-  `tests/test_cloud_sync_facade_identity.py`, and the relocation-check tooling.
-  Not in the design; would need its own plan with retirement conditions and a
-  live-canary gate before it.
-- **U5. Manual-import image pairing (Stage 12).** `_mark_cloud_observation_imported`
-  pairs local and cloud images by list position. D7 brings completion under
-  the owner; it does not decide whether pairing moves to stable ids. Stage 12
-  keeps positional pairing unless the person decides otherwise.
+- **U1 — pull-side conflict review: preserve current outcomes.** Pull field
+  conflicts keep today's result: row `dirty`, **no** review marker, no
+  snapshot, the legacy error string. `removed_keys` keeps today's result: the
+  legacy error string, **no** state write, no snapshot (a clean row stays
+  `synced`). The goldens must show these marker and state outcomes unchanged
+  in every stage. Any change to the conflict dialog or to which observations
+  it lists is out of scope.
+- **U2 — WebP: required only when it blocks required image sync.** From code
+  at the base:
+  - `required` (`webp_required`): `_prepare_cloud_image_upload_file` raises
+    `WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE` when
+    `features.check('webp')` is false (`utils/cloud_sync.py:3978–3979`);
+    `SporelyCloudClient.upload_image_file` re-raises it for the full-image
+    upload (`utils/cloud_sync.py:7277–7278`); the image-preparation callback
+    re-raises it (`utils/cloud_sync_impl/image_push.py:722–723`); `push_all`
+    receives it in its `CloudSyncError` handler and today makes no state
+    write (`utils/cloud_sync.py:9688`). These block the selected image's
+    byte upload, i.e. required work under contract rule 8.
+  - `best_effort` (`original_upload_failed`, covering a WebP failure):
+    `SporelyCloudClient.upload_original_image_file` raises the same message
+    for an original upload (`utils/cloud_sync.py:7448–7449`, `:7520–7521`);
+    the image push catches every `CloudSyncError` there, removes the partial
+    original and records an original-upload warning in the original-upload
+    summary, not in `errors` (`utils/cloud_sync_impl/image_push.py:1318–1337`,
+    `_record_original_upload_warning` at `:754`). This stays best-effort and
+    never changes observation status.
+- **U3 — classifier outcomes preserved.** Stage 6 changes no push or pull
+  outcome. Every push/pull difference Stage 1 finds is recorded, not
+  resolved. A later change to any single outcome needs separate
+  authorization and its own Δ entry.
+- **U4 — scaffolding retirement is a later plan.** Non-goal here (see "Out
+  of scope").
+- **U5 — positional image pairing preserved** in the manual import (Stage 12,
+  D7).
+
+## Completion ownership rule
+
+Evidence that a strict "one writer of `sync_status`" claim would be false:
+
+- `database/models.py:5101–5109` (`recalculate_measurements_for_calibration`)
+  runs `UPDATE observations SET sync_status = 'dirty' WHERE id IN (…) AND
+  cloud_id IS NOT NULL`. It writes `sync_status` only: not `synced_at`, the
+  error or blocked columns, the review marker or the snapshot. A `blocked`
+  linked row becomes `dirty` with its blocked reason kept.
+- `database/models.py:385–412` (`mark_observation_sync_dirty`) sets `dirty`
+  **and clears** `sync_error_code`, `sync_error_message`,
+  `sync_blocked_reason` (which holds the review marker) and `sync_blocked_at`
+  for linked or `blocked` rows. Every local-edit signal in design 1.2 reaches
+  it.
+- `database/models.py:431–438` (`reset_cloud_sync_state`) and
+  `utils/cloud_sync.py:2749` (`unlink_local_observation_from_cloud`) reset
+  completion state for account reset and explicit unlink.
+
+The rule this plan implements and Stage 13 enforces is therefore:
+
+1. **Owned exclusively by `utils/cloud_sync_impl/observation_completion.py`:**
+   every transition **to** a completion state during sync and in the D3/D7
+   paths: writing `synced` and `synced_at`, accepting or replacing the
+   snapshot baseline, writing `blocked`, setting or clearing the review
+   marker, and clearing error columns as part of completion; plus outcome
+   dirtying (a `required` issue making a row `dirty`).
+2. **Enumerated local-edit dirty signals (not owned, allow-listed):**
+   `mark_observation_sync_dirty` and its callers (`_touch_observation(mark_dirty=True)`,
+   `update_observation`, `reconcile_legacy_publish_exclusion_tombstones`),
+   `utils/cloud_sync_impl/sync_state.py::mark_observation_dirty` /
+   `mark_observation_media_dirty` as called from local-edit paths
+   (`set_image_cloud_selected`, `ui/main_window.py`), the calibration raw
+   `UPDATE` above, and the sync-time dirty scans (design 1.3). They may only
+   move a row toward `dirty` (and, for `mark_observation_sync_dirty`, clear
+   error/blocked columns as today). Their behavior is unchanged.
+3. **Enumerated account/link exceptions:** `reset_cloud_sync_state`,
+   `unlink_local_observation_from_cloud` (including its snapshot clear).
+
+Stage 13's test checks this exact list: any other writer of these columns or
+of the snapshot fails it, and any allow-list entry that no longer exists fails
+it too.
 
 ## Security and privacy
 
@@ -216,24 +313,36 @@ description of wording for later approval, not work this run may perform.
 
 ## Out of scope
 
-Reference-library sync (including making the D10 device report
+Any change to the conflict dialog or to which observations it shows (U1).
+Retirement of transitional scaffolding — `tests/cloud_sync_owner_patching.py`
+and its autouse conftest fixture, the `S6_*`/`S7_KEPT_IN_FACADE` stay-lists in
+`tests/test_cloud_sync_facade_identity.py`, and the relocation-check tooling —
+which belongs in a later plan (U4). Rerouting the calibration raw `UPDATE`
+(A7). Reference-library sync (including making the D10 device report
 change-driven), R2 garbage collection, media selection and anchor logic
 (inv. 1–2, 7–9, 16–17), child-change cursor semantics, caller-preset changes
 (D6 is a rules-text change only), a persisted media-pending marker for new
 rows (9.1 follow-up), account link/reset, `SporelyCloudClient` class
-relocation, UI redesign, scaffolding retirement (U4).
+relocation, UI redesign.
 
 ## Stage 1 — Classifier and snapshot characterization
 
 **Builds on:** `main` @ `03a9adf`. Plan:
 `docs/plans/active/2026-10-09-cloud-sync-orchestration.md` (read its
-"Invariants held by every stage", "Golden discipline" and "Unresolved
-decisions" sections).
+"Invariants held by every stage", "Decisions settled by the person" and
+"Execution route" sections).
 
 **Kind:** tests and rules text only. No production code changes.
 
 **Outcome:** a stored decision corpus and snapshot byte golden on the
 pre-change code (design 7 items 1–2), and the D6/D10 rules text.
+
+**Run-shape check (first, read-only):** confirm from the compiled manifest
+under `.sparring/intake/` or the run state under `.sparring/plans/` that this
+run carries the three plan gates (G1, G2, G3) at the positions in the plan's
+"Execution route" table. If the run carries no gates or they are misplaced,
+make no change and return `NEEDS_YOU` (category `OTHER`) saying the plan must
+be run through compile intake.
 
 **Scope:**
 1. `tests/fixtures/cloud_sync_orchestration/classifier_corpus.json`: a table
@@ -255,7 +364,7 @@ pre-change code (design 7 items 1–2), and the D6/D10 rules text.
    `tests/test_cloud_sync_orchestration_classifier_golden.py` asserting the
    current code reproduces both goldens.
 4. A list, in the test module docstring and stage notes, of every row where
-   push and pull decide differently (input to U3).
+   push and pull decide differently. Recorded only, not resolved (U3).
 5. `.claude/rules/cloud-sync.md`: replace the Refresh bullet with the D6
    preset (`sync_images=True`, same as Sync now) and add the D10 exception
    (one `record_reference_client_capabilities` RPC per app process and
@@ -264,6 +373,7 @@ pre-change code (design 7 items 1–2), and the D6/D10 rules text.
 **Non-goals:** no production change; no classifier change; no test removal.
 
 **Acceptance:**
+- Run-shape check recorded in stage notes.
 - Both goldens are produced by the unchanged code and the new tests pass.
 - Every corpus class above has at least one row; the push/pull difference
   list is complete for the corpus.
@@ -299,9 +409,17 @@ later stages can show every intended diff row by row.
    - L1, L2a, L2b, L2c, L3a, L3b (9.1: new row with `materialize=False` stays
      `dirty`), L4a (both `materialize` values), L4b, L5 (existing row and
      `_create_local_from_remote`), L6 (including a `blocked` row being
-     re-stamped `synced`), L7, L8, pull Case F, pull field conflict,
-     `removed_keys`, remote-unchanged/local-clean re-stamp (including a
+     re-stamped `synced`), L7, L8, pull Case F, pull field conflict
+     (`dirty`, no marker, no snapshot; U1), `removed_keys` (no state write, no
+     snapshot; U1), remote-unchanged/local-clean re-stamp (including a
      `blocked` row).
+   - P1-webp-prep (`features.check('webp')` false), P1-webp-full-upload, and
+     P2-original-webp (original upload WebP failure: warning in the
+     original-upload summary, status unchanged) (U2).
+   - E-* local-edit allow-list rows (ownership rule item 2): calibration
+     rescale on a `synced`, a `blocked` and a review-marked linked row
+     (`database/models.py:5101–5109`); `mark_observation_sync_dirty` on the
+     same three rows.
    - Combined outcomes (design 7 item 4): no-baseline identity review with
      each of image upload, measurement push and summary failure; with all
      work succeeding; with a snapshot failure.
@@ -345,42 +463,73 @@ golden records a defect (record it as `current` with a note).
 
 **Builds on:** Stage 2. Plan:
 `docs/plans/active/2026-10-09-cloud-sync-orchestration.md` (read "Security
-and privacy").
+and privacy", A2 and "Gate evidence").
 
 **Kind:** additive diagnostic only. Default off. No sync behavior change.
 
 **Outcome:** the person can measure, during a live canary, completion state
-and remote writes without an agent touching live data.
+and remote writes, with proven counter coverage, without an agent touching
+live data.
 
 **Scope:**
-1. `tools/cloud_sync_state_report.py` (read-only SQLite, `--db PATH`,
-   `--json OUT`, `--observation ID`): counts of `sync_status` per value
-   (`synced`, `dirty`, `blocked`, NULL), review-marker count, rows with error
-   columns, pending unsynced tombstone count, and per observation id a
-   snapshot hash. Opens SQLite read-only (`mode=ro` URI); never imports Qt or
-   the cloud client.
-2. A per-sync remote mutating-request counter, enabled only by an environment
-   variable (name chosen in the stage, e.g. `SPORELY_DEBUG_CLOUD_WRITES=1`),
-   recorded at `_request_with_transient_retry` and at every other mutating
-   call site the stage enumerates (A2). At the end of `sync_all` it logs one
-   line with the total and per (method, table/RPC/bucket) counts. Off: no
-   behavior or output change.
-3. Tests: the report on a fixture database; the counter off is a no-op
-   (the Stage 2 goldens are unchanged) and on counts the Stage 2 N-* rows.
-4. Short usage note in `docs/cloud-sync-architecture.md` (verification
-   section).
+1. `tools/cloud_sync_state_report.py` (read-only SQLite via `mode=ro` URI,
+   `--db PATH`, `--json OUT`, `--observation ID`): counts of `sync_status` per
+   value (`synced`, `dirty`, `blocked`, NULL), review-marker count, rows with
+   error columns, pending unsynced tombstone count, and per observation id a
+   snapshot hash. Never imports Qt or the cloud client.
+2. A per-sync mutating-request counter, enabled only by an environment
+   variable (`SPORELY_DEBUG_CLOUD_WRITES=1`), recorded in the three funnels of
+   A2: `_request_with_transient_retry` (counts every non-GET/HEAD; an RPC is
+   counted as `rpc:<name>` and classified read or write from
+   `_PULL_ONLY_ALLOWED_READ_METHODS` / `_PULL_ONLY_BLOCKED_CLIENT_METHODS` in
+   `utils/cloud_sync_impl/pull_only.py`), `CloudflareR2Client._request` and
+   `CloudflareMediaWorkerClient._request`. At the end of `sync_all` it logs one
+   line: instrumented totals per (method, table/RPC/bucket) and the names of
+   allow-listed uninstrumented paths that executed (each such path increments
+   an "uninstrumented path ran" marker even though its request is not counted).
+   Off: no behavior or output change.
+3. **Coverage enumeration and table.** Enumerate from code every mutating
+   cloud path reachable from `sync_all`, conflict execution,
+   `materialize_cloud_media_for_observation` and the manual import: PATCH,
+   POST, DELETE, PUT, RPC mutations, storage upload and remove (R2 and Worker),
+   identity write-backs (`set_desktop_id`, `set_image_desktop_id`,
+   identity-clear RPCs), the device capability RPC (D10), the original-upload
+   cleanup (`_storage_remove` + `_patch` at
+   `utils/cloud_sync_impl/image_push.py:1318–1326`). Record a coverage table
+   (path, call site, funnel, counted yes/no, reason) in
+   `docs/cloud-sync-architecture.md` (verification section) and stage notes.
+4. **Coverage test** `tests/test_cloud_write_counter_coverage.py`:
+   - AST scan of the sync-reachable modules (`utils/cloud_sync.py`,
+     `utils/cloud_sync_impl/**`, `utils/r2_storage.py`, the reference-sync
+     modules, `utils/spore_summary_sync.py`, `utils/cloud_spore_mosaic*.py`,
+     `utils/cloud_media_recovery.py`, `utils/curated_reference_sync.py`,
+     `utils/reference_client_capabilities.py`, `utils/sporely_cloud_auth.py`,
+     and `ui/observations_tab.py` for the import path). Every HTTP call site
+     (`requests.<verb>`, `<session>.request`, `<session>.<verb>`, `urlopen`)
+     must be one of the three instrumented funnels or appear in
+     `UNINSTRUMENTED_MUTATING_PATHS` (with reason) or
+     `NON_SYNC_HTTP_ALLOWLIST` (auth token exchange, iNaturalist suggest at
+     `ui/observations_tab.py:1809`/`:1822`, with reason). An unlisted site fails
+     the test; a listed site that no longer exists fails it too.
+   - For every name in `_PULL_ONLY_BLOCKED_CLIENT_METHODS`, call it on a client
+     with a fake transport and assert the counter increments (or that the
+     method is in `UNINSTRUMENTED_MUTATING_PATHS`).
+5. Tests: the state report on a fixture database; counter off is a no-op
+   (Stage 1–2 goldens unchanged); counter on matches the Stage 2 N-* rows.
 
-**Non-goals:** no new `sync_all` result key; no change to what is written.
+**Non-goals:** no new `sync_all` result key; no change to what is written; no
+change to which requests are made.
 
 **Acceptance:**
-- Stage 1–2 goldens unchanged; counter off produces byte-identical logs
-  except where the env var is set.
-- The stage notes list every mutating request path and whether it is
-  counted. Any uncounted path is named.
+- Stage 1–2 goldens unchanged; with the env var unset, logs are unchanged.
+- The coverage test passes and fails on a synthetic unrouted call site.
+- The coverage table lists every mutating path, and every uninstrumented one
+  with its reason and how a canary can cross-check it (Supabase API log,
+  Cloudflare dashboard, or `not available`).
 - Logged content contains no URL query values, payloads, headers or tokens.
 
 **Verification:**
-`.venv/bin/pytest -q tests/test_cloud_sync_orchestration_noop_golden.py tests/test_cloud_sync_orchestration_completion_golden.py <new tool/counter tests>`;
+`.venv/bin/pytest -q tests/test_cloud_write_counter_coverage.py tests/test_cloud_sync_orchestration_noop_golden.py tests/test_cloud_sync_orchestration_completion_golden.py <state report tests>`;
 `.venv/bin/python -m py_compile tools/cloud_sync_state_report.py`.
 
 ## Stage 4 — Pure move: completion writers and leaf helpers
@@ -495,7 +644,7 @@ tests below.
 ## Stage 6 — Shared reconciliation classifier
 
 **Builds on:** Stages 1 and 5. Plan:
-`docs/plans/active/2026-10-09-cloud-sync-orchestration.md` (U3).
+`docs/plans/active/2026-10-09-cloud-sync-orchestration.md` (U3 settled).
 
 **Kind:** decision-preserving refactor. No golden may change.
 
@@ -508,7 +657,8 @@ used by push and pull in the same commit (no period with two classifiers).
   for fields, identity (`taxon_identity` as a virtual field), images and
   measurements, plus `no_baseline_contradiction` and `remote_removed_images`,
   and exposes push and pull views that reproduce each side's current
-  decision exactly, including every difference recorded in Stage 1 (U3).
+  decision exactly, including every difference recorded in Stage 1. No
+  outcome changes (U3); a difference is never resolved in this stage.
 - Push (`_analyze_observation_push_conflicts`, Case F,
   `identity_review_pending`) and pull (`_remote_snapshot_has_meaningful_changes`,
   `_analyze_observation_field_changes`, `_analyze_image_changes`,
@@ -517,8 +667,8 @@ used by push and pull in the same commit (no period with two classifiers).
   internals or removed if no caller remains; public names stay importable.
 - Purity enforced by `tools/cloud_sync_reconciliation_purity.py`.
 
-**Non-goals:** no completion change, no issue types, no removal of push/pull
-differences.
+**Non-goals:** no completion change, no issue types, no change to any push or
+pull outcome, no resolution of push/pull differences (U3).
 
 **Invariants at risk:** inv. 5, 12, 13, 19.
 
@@ -550,6 +700,17 @@ issues]` in production order; new `result['issues']`.
   retry owner: `observation_dirty` (next sync re-pushes/re-pulls the row),
   `tombstone_row` (unsynced tombstone, D9), `backfill_selection` (persisted-data
   candidate query, D5), `calibration_dirty`, `none` (best-effort/report).
+- WebP distinction (U2, conditions as recorded in "Decisions settled by the
+  person"): `webp_required` has severity `required` and is produced only for
+  the preparation check (`utils/cloud_sync.py:3978–3979`) and the full-image
+  upload (`:7277–7278`, re-raised at `image_push.py:722–723`). An original
+  upload failure, including WebP (`:7448–7449`, `:7520–7521`, caught at
+  `image_push.py:1318`), is `original_upload_failed` with severity
+  `best_effort`, reported in `result['issues']` only; `errors` and the
+  original-upload summary stay as today. Unit tests pin both producers.
+- Pull field conflicts are kind `conflict_review` with severity `required`
+  and no marker; `removed_keys` is kind `cloud_removed_local_images` with a
+  report-only disposition (no state write) (U1).
 - Issues are produced but **not yet consumed** for state: existing state
   writes stay where they are.
 - `sync_all` assembles `errors` from issues; `pull_only` result unchanged
@@ -607,14 +768,17 @@ gap 3; no completion change.
 ## Stage 9 — Completion owner: push
 
 **Builds on:** Stages 6, 7 and 8. Plan:
-`docs/plans/active/2026-10-09-cloud-sync-orchestration.md` (U2).
+`docs/plans/active/2026-10-09-cloud-sync-orchestration.md` (U2 settled;
+"Completion ownership rule").
 
 **Kind:** behavior change.
 
 **Outcome:** `complete_observation(outcome, client)` in
 `utils/cloud_sync_impl/observation_completion.py` implementing design 3.1
 rules 1–6 and their precedence, with `ObservationOutcome` and `SnapshotIntent`
-(`None` keeps the old baseline; `without_identity=True` for rule 6). `push_all`
+(`None` keeps the old baseline; `without_identity=True` for rule 6), and a
+`report_only` outcome disposition that writes nothing (needed for U1
+`removed_keys` in Stage 10). `push_all`
 builds one outcome per observation and calls the owner; domain helpers return
 issues and stop calling `mark_observation_dirty`, `_stamp_observation_synced`
 or the snapshot store on the push path.
@@ -631,8 +795,11 @@ or the snapshot store on the push path.
   failure (other non-`CloudSyncError` exceptions still propagate as today).
 - **Δ9d (P4, D4, 3.6(c)).** Mosaic failure adds a visible `best_effort`
   `mosaic_failed` string; status unchanged.
-- **Δ9e (P1 WebP branch, U2).** WebP-required follows the U2 answer
-  (recommended: `required`, row `dirty`).
+- **Δ9e (P1-webp-prep, P1-webp-full-upload; U2).** `webp_required` is a
+  `required` issue: the row ends `dirty` with the old baseline (today it
+  keeps the early `synced` stamp). P2-original-webp is unchanged: a
+  best-effort original-upload warning, status and baseline unaffected.
+  Completion tests cover all three rows.
 - **Δ9f (3.1 rule 6, design 7 item 4).** No-baseline identity review is one
   `review` issue (no stamp-then-unstamp). With any required failure: marker,
   `dirty`, baseline unchanged. With all work succeeding: identity-less
@@ -670,13 +837,14 @@ owner.
 **Kind:** manual canary that only the person performs. Agents never perform
 it and never perform live Supabase writes.
 
-**Position:** follows Stage 9 and holds Stage 10: after Stage 9 is accepted,
-Stage 10 does not start until this gate records `pass`. Push completion
-ordering is the first change that can leave live rows in a new state.
+**Position:** follows Stage 9 and blocks Stage 10 (compiled as
+`gates_before` of Stage 10): after Stage 9 is accepted, Stage 10 is not
+created until this gate records `pass`. Push completion ordering is the
+first change that can leave live rows in a new state.
 
 **Check `push-completion-canary`:**
 1. Build: run from source at Stage 9's accepted candidate SHA in a clean
-   checkout (A6). Record the SHA.
+   checkout. Record the SHA.
 2. Profile and account: `SPORELY_PROFILE=orch-canary` (an isolated profile)
    signed in to a disposable or known account; record which. Never a
    database linked to another account.
@@ -684,7 +852,7 @@ ordering is the first change that can leave live rows in a new state.
 4. Baseline: run `tools/cloud_reconciliation_report.py --db <profile db>` and
    `tools/cloud_sync_state_report.py --db <profile db>`. Categories C, D1, D2,
    E and H must be zero or carry a documented exception; record A–H.
-5. With `SPORELY_DEBUG_CLOUD_WRITES=1` (Stage 3 name), Sync now after adding
+5. With `SPORELY_DEBUG_CLOUD_WRITES=1`, Sync now after adding
    one selected image and spore measurements to an observation. Expect no
    errors; that observation ends `synced` with a new snapshot hash.
 6. Forced required failure, if a safe trigger exists (an image over the plan
@@ -693,24 +861,33 @@ ordering is the first change that can leave live rows in a new state.
    If no safe trigger exists, record `not exercised` (automated Δ9b evidence
    stands).
 7. Restart the app (new process), Sync now twice with no changes. Expect the
-   first to log at most one mutating request (the D10 capability RPC) and the
-   second zero; zero errors.
+   first to count at most one instrumented mutating request (the D10
+   capability RPC) and the second zero; zero errors. List any
+   uninstrumented mutating path the counter reports as having run, and
+   cross-check both syncs' time windows in the Supabase API log for
+   non-GET requests where available.
 8. Rerun both reports and diff against step 4.
+
+**Evidence:** the plan's "Gate evidence" items 1–9, aggregate only.
 
 **Pass criteria:** no unexpected sync errors; C, D1, D2, E, H zero or
 unchanged; F and G unchanged; A/B change only by the step-5 image; status
 counts change only for the observations touched; step 6 (if exercised)
-shows `dirty` with the old snapshot hash; step 7 write counts as stated.
+shows `dirty` with the old snapshot hash; step 7 instrumented counts as
+stated, no uninstrumented mutating path ran on the second no-op sync (or the
+API-log cross-check shows no non-GET request for it), and the cross-check
+result is recorded (`matched`, or `not available` with the reason).
 
-**Fail or blocked:** either keeps Stage 10 from starting. A failure is
-repaired as new reviewed candidate work (a new stage or a revert), and this
-check is then answered for the repaired build. Nobody records `pass` over
-failed evidence. Restore from the step-3 backup if local state is damaged.
+**Fail or blocked:** either keeps Stage 10 closed. A failure is repaired as
+new reviewed candidate work (a new stage or a revert), and this check is
+then answered again for the repaired build with fresh evidence. Nobody
+records `pass` over failed evidence or with an empty note. Restore from the
+step-3 backup if local state is damaged.
 
 ## Stage 10 — Completion owner: pull, create and pull-only
 
 **Builds on:** Stage 9. Plan:
-`docs/plans/active/2026-10-09-cloud-sync-orchestration.md` (U1).
+`docs/plans/active/2026-10-09-cloud-sync-orchestration.md` (U1 settled).
 
 **Kind:** behavior change.
 
@@ -734,7 +911,9 @@ an `ObservationOutcome(direction='pull'|'create')` completed by the owner.
 - **Δ10e (L2b).** A failed download in the baseline/remote-changed branch is a
   direct `remote_media_pending` required issue (end state equal to today's
   retry-block result; mechanism changes).
-- **Δ10f (U1).** Pull field conflicts and `removed_keys` follow the U1 answer.
+- Unchanged and pinned (U1): pull field conflicts end `dirty` with no review
+  marker and no snapshot; `removed_keys` makes no state write and no snapshot
+  (owner `report_only` disposition); the legacy strings are unchanged.
 - Unchanged and pinned: D1 — existing rows with `materialize=False` may
   complete without bytes (L3a); new rows created with `materialize=False`
   stay `dirty` (L3b, 9.1); D2 — pull-only writes `synced` locally with
@@ -742,11 +921,15 @@ an `ObservationOutcome(direction='pull'|'create')` completed by the owner.
   no-baseline pull identity conflict uses rule 6; `set_desktop_id` guard and
   child-change cursor advancement unchanged.
 
+**Non-goals:** no conflict-dialog change; no change to which observations are
+review candidates (U1).
+
 **Invariants at risk:** inv. 5, 10, 11, 12, 18, 20; contract rule 16.
 
 **Acceptance:**
-- Golden diffs touch only L-*, R-* rows annotated Δ10a–Δ10f; no-op golden
-  unchanged.
+- Golden diffs touch only L-*, R-* rows annotated Δ10a–Δ10e; no-op golden
+  unchanged. The pull-field-conflict and `removed_keys` rows are unchanged:
+  no review marker, same state, no snapshot (U1).
 - In `pull_all`/`_create_local_from_remote`, only the owner writes completion
   state (grep/AST evidence).
 - Stage notes record whether each Gate G2 measurement is reachable.
@@ -780,6 +963,8 @@ owner; `finalize_sync_candidates` clears the marker through the owner
   `snapshot_failed`); keep-cloud image-application warnings stay best-effort
   (A4); privacy limit `blocked`; tombstone-before-push in keep-local.
 
+**Non-goals:** no conflict-dialog change (U1).
+
 **Tests changed:** `_patch_common` stamp/snapshot recorders move to the owner;
 `test_keep_cloud_disables_deletion_…` call-name assertions retargeted; outcome
 assertions unchanged.
@@ -800,12 +985,13 @@ assertions unchanged.
 **Kind:** manual canary that only the person performs. Agents never perform
 it and never perform live Supabase writes.
 
-**Position:** follows Stage 11 and holds Stage 12: after Stage 11 is
-accepted, Stage 12 does not start until this gate records `pass`. Pull,
+**Position:** follows Stage 11 and blocks Stage 12 (compiled as
+`gates_before` of Stage 12): after Stage 11 is accepted, Stage 12 is not
+created until this gate records `pass`. Pull,
 create, pull-only and conflict execution completion have all switched owner.
 
 **Check `pull-conflict-completion-canary`:**
-1. Build: source run at Stage 11's accepted candidate SHA (A6); record it.
+1. Build: source run at Stage 11's accepted candidate SHA; record it.
 2. Profile/account and backup as Gate G1 steps 2–3 (fresh backup).
 3. Baseline reports as Gate G1 step 4.
 4. On the web or Android client, edit a field and add one image to an
@@ -816,32 +1002,40 @@ create, pull-only and conflict execution completion have all switched owner.
    existing one. In the cloud sync dialog uncheck "pull images" and sync.
    Expect the new local row `dirty` (9.1) and the edited existing row
    `synced`. Then Sync now (materialize on): the new row becomes `synced`.
-6. D2: Download from Cloud. Expect zero mutating requests logged, no blocked
-   write attempts, and completion states written locally.
+6. D2: Download from Cloud. Expect zero instrumented mutating requests, no
+   uninstrumented mutating path reported as run, no blocked write attempts,
+   and completion states written locally.
 7. Conflict review: edit the same field on web and desktop, Sync now. Expect
-   the review marker and `dirty`. Resolve in the conflict dialog (keep local).
+   the review marker and `dirty` (push-side preflight; pull-side marker
+   outcomes are unchanged by U1). Resolve in the conflict dialog (keep local).
    Expect marker cleared, `synced`, and no further conflict on the next sync.
 8. D9 tombstone: delete one cloud image on desktop ("remove cloud copy"),
    Sync now. Expect the pending tombstone count 0 afterwards and the
    observation `synced`. A tombstone failure is not safely triggerable live;
    record `failure path: automated evidence only`.
-9. Restart, two no-change Sync now runs: at most one mutating request (D10)
-   on the first, zero on the second.
+9. Restart, two no-change Sync now runs: at most one instrumented mutating
+   request (D10) on the first, zero on the second; list uninstrumented paths
+   reported as run; Supabase API-log cross-check where available.
 10. Rerun both reports and diff against step 3.
+
+**Evidence:** the plan's "Gate evidence" items 1–9, aggregate only.
 
 **Pass criteria:** steps 4–9 as stated; no unexpected errors; C, D1, D2, E, H
 zero or unchanged; F, G unchanged; A/B change only by images added in steps
 4–5 or removed in step 8; status counts change only for touched
-observations; no `blocked` row cleared without a local edit.
+observations; no `blocked` row cleared without a local edit; on steps 6 and
+9 (second sync) no uninstrumented mutating path ran, or the API-log
+cross-check shows no non-GET request; cross-check result recorded.
 
-**Fail or blocked:** either keeps Stage 12 from starting. A failure is
-repaired as new reviewed candidate work, and this check is then answered for
-the repaired build. Nobody records `pass` over failed evidence.
+**Fail or blocked:** either keeps Stage 12 closed. A failure is repaired as
+new reviewed candidate work, and this check is then answered again for the
+repaired build with fresh evidence. Nobody records `pass` over failed
+evidence or with an empty note.
 
 ## Stage 12 — Other writers: on-demand materialization and manual import
 
 **Builds on:** Stage 11. Plan:
-`docs/plans/active/2026-10-09-cloud-sync-orchestration.md` (U5).
+`docs/plans/active/2026-10-09-cloud-sync-orchestration.md` (U5 settled).
 
 **Kind:** behavior change, including a UI path (`ui/observations_tab.py`).
 
@@ -858,7 +1052,8 @@ the repaired build. Nobody records `pass` over failed evidence.
   `set_desktop_id` writes are replaced by the guarded helpers
   (`_remote_image_desktop_id_current`, inequality guard), so value-identical
   writes are skipped; swallowed exceptions become issues surfaced through the
-  existing UI message path. Positional pairing unchanged (U5).
+  existing UI message path. Positional image pairing (`zip` over list
+  order) is preserved exactly (U5); a test pins it.
 
 **Non-goals:** no UI layout change; no new dialogs; no change to which
 images are downloaded.
@@ -884,19 +1079,27 @@ images are downloaded.
 **Outcome:** the single-writer rule is enforced by a test and documented.
 
 **Scope:**
-- AST test: outside `observation_completion.py`, no module under
-  `utils/cloud_sync_impl/` or `utils/cloud_sync.py` calls
-  `update_observation_sync_state`, `_store_remote_snapshot`,
+- AST/SQL-text test `tests/test_cloud_sync_completion_single_writer.py`
+  enforcing the plan's "Completion ownership rule" exactly, over
+  `utils/`, `database/` and `ui/`: outside `observation_completion.py`, no
+  code calls `update_observation_sync_state`, `_store_remote_snapshot`,
   `_store_cloud_observation_snapshot`, `_stamp_observation_synced`,
-  `_set_observation_sync_state`, the marker writers, or issues raw
-  `sync_status` UPDATEs; enumerated exceptions with reasons:
-  `unlink_local_observation_from_cloud`, `reset_cloud_sync_state`, local-edit
-  signals (design 1.2) and sync-time scans (1.3), `mark_observation_dirty` /
-  `mark_observation_media_dirty`.
+  `_set_observation_sync_state`, the blocked/marker/error writers, or
+  executes SQL writing `observations.sync_status`, `synced_at`,
+  `sync_error_*` or `sync_blocked_*`, except the enumerated allow-list of
+  rule items 2 and 3 (`mark_observation_sync_dirty`, the calibration raw
+  `UPDATE` at `recalculate_measurements_for_calibration`,
+  `mark_observation_dirty`/`mark_observation_media_dirty` from local-edit
+  callers, the sync-time scans, `reset_cloud_sync_state`,
+  `unlink_local_observation_from_cloud`), each with its reason. Allow-listed
+  writers are checked to write only `dirty` (plus, for
+  `mark_observation_sync_dirty`, the existing column clears). A stale
+  allow-list entry fails the test. The `images.synced_at` writes are image
+  link state and out of the rule.
 - `docs/cloud-sync-architecture.md`: ownership table, sections C, H and I
   rewritten to the implemented model; the 1.8 disagreement table resolved.
-- `.claude/rules/cloud-sync.md`: one bullet naming the completion owner and
-  that domain helpers return issues.
+- `.claude/rules/cloud-sync.md`: one bullet naming the completion owner, the
+  local-edit allow-list, and that domain helpers return issues.
 - `docs/cloud-sync-orchestration-design.md`: status line "implemented by …".
 - `docs/supabase-sync-contract.md` is **not** edited here (see the
   sporely-web track).
@@ -912,31 +1115,38 @@ synthetic violation and passes on the tree; docs cite symbols that exist.
 **Kind:** manual canary that only the person performs. Agents never perform
 it and never perform live Supabase writes.
 
-**Position:** follows Stage 13 and holds plan completion: after Stage 13 is
-accepted, the plan does not complete until this gate records `pass`. Merging
+**Position:** follows Stage 13 and blocks plan completion (compiled as
+`completion_gates`): after Stage 13 is accepted, the plan does not report
+COMPLETE until this gate records `pass`. Merging
 the plan's work to `main` is a separate human decision after this pass.
 
 **Check `end-to-end-completion-canary`:**
-1. Build: source run at Stage 13's accepted candidate SHA (A6); record it.
+1. Build: source run at Stage 13's accepted candidate SHA; record it.
 2. Profile/account, backup and baseline reports as Gate G1 steps 2–4.
 3. Repeat Gate G1 steps 5–7 and Gate G2 steps 4–9 on this build.
 4. Manual import (D7): import one cloud observation into a new local row from
    the Observations tab. Expect images present, the row `synced` with a
-   snapshot hash, and on the next no-change sync zero `desktop_id` writes.
+   snapshot hash, images paired as before (positional, U5), and on the next
+   no-change sync zero instrumented `desktop_id` writes.
 5. On-demand materialization (D3): open a cloud observation whose media is
    missing and download it. Expect the snapshot hash to change only if the
    download completed; with the network disabled mid-download, expect the
    hash unchanged.
 6. Rerun both reports and diff against the baseline.
 
+**Evidence:** the plan's "Gate evidence" items 1–9, aggregate only.
+
 **Pass criteria:** every expectation of the repeated G1/G2 steps and steps
 4–5 holds; no unexpected errors; C, D1, D2, E, H zero or unchanged; F, G
-unchanged; no-op syncs perform zero mutating requests apart from the single
-D10 RPC per process.
+unchanged; no-op syncs count zero instrumented mutating requests apart from
+the single D10 RPC per process, no uninstrumented mutating path ran (or the
+API-log cross-check shows no non-GET request), and the cross-check result is
+recorded.
 
-**Fail or blocked:** either keeps the plan from completing. A failure is
-repaired as new reviewed candidate work, and this check is then answered for
-the repaired build. Nobody records `pass` over failed evidence.
+**Fail or blocked:** either keeps plan completion closed. A failure is
+repaired as new reviewed candidate work, and this check is then answered
+again for the repaired build with fresh evidence. Nobody records `pass` over
+failed evidence or with an empty note.
 
 ## Track W — sporely-web shared contract wording (separate, not authorized)
 
