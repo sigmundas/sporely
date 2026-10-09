@@ -9970,6 +9970,7 @@ def _reconcile_missing_spore_summaries(
             local_obs_id=local_id,
             cloud_id=cloud_id,
             errors=errors,
+            mark_dirty_on_error=False,
         )
     print(
         f'[cloud_sync] spore summary reconciliation: complete '
@@ -9987,8 +9988,14 @@ def _push_summary_for_current_observation(
     local_obs_id: int,
     cloud_id: str,
     errors: list[str],
+    mark_dirty_on_error: bool = True,
 ) -> dict | None:
     """Sync structured spore summaries for one observation (Stage D).
+
+    ``mark_dirty_on_error`` is True for the per-observation push loop (a
+    failed summary must leave the observation dirty for retry) and False for
+    the summary backfill pass (D5: backfill failures are reported via
+    ``errors`` and the log, not by re-dirtying the observation).
 
     Returns the sync helper's result dict, or ``None`` if the summary
     call raised. Missing-table errors (older cloud deployments without
@@ -10015,10 +10022,15 @@ def _push_summary_for_current_observation(
         errors.append(
             f"obs {obs.get('id')}: spore summary sync failed: {summary_exc}"
         )
-        try:
-            mark_observation_sync_dirty(int(obs.get('id') or 0))
-        except Exception:
-            pass
+        if mark_dirty_on_error:
+            try:
+                mark_observation_dirty(int(obs.get('id') or 0))
+            except Exception as dirty_exc:
+                print(
+                    f'[cloud_sync] Could not mark obs {local_obs_id} dirty '
+                    f'after spore summary failure: {dirty_exc}',
+                    flush=True,
+                )
         print(
             f'[cloud_sync] Spore summary push errored obs '
             f'{local_obs_id}: {summary_exc}',

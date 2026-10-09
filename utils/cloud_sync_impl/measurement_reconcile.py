@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import sqlite3
 
-from database.models import mark_observation_sync_dirty
 from database.schema import get_connection
 
 from utils.cloud_sync_impl.common import _CLOUD_SYNC_IN_BATCH_SIZE
@@ -250,10 +249,13 @@ def _reconcile_missing_spore_measurements(
             errors.append(
                 f'obs {local_id}: measurement reconciliation failed: {exc}'
             )
-            try:
-                mark_observation_sync_dirty(local_id)
-            except Exception:
-                pass
+            # D5: backfill failures are reported, not re-dirtied (avoids
+            # repeated uploads); the error above surfaces in sync results.
+            print(
+                f'[cloud_sync] Spore measurement reconciliation failed obs '
+                f'{local_id}: {exc}',
+                flush=True,
+            )
     print(
         f'[cloud_sync] spore measurement reconciliation: complete '
         f'candidates={counters["candidates"]} attempted={counters["attempted"]} '
