@@ -905,10 +905,10 @@ def test_call_site_unexpected_error_recorded_in_errors_list(monkeypatch):
     monkeypatch.setattr(cs, "sync_observation_spore_summaries", _raise)
 
     dirty_calls: list[int] = []
-    monkeypatch.setattr(
-        cs, "mark_observation_sync_dirty",
-        lambda obs_id: dirty_calls.append(obs_id),
-    )
+    # Real signature of the facade helper (one local_id) so arity bugs fail.
+    def _fake_mark_observation_dirty(local_id: int) -> None:
+        dirty_calls.append(local_id)
+    monkeypatch.setattr(cs, "mark_observation_dirty", _fake_mark_observation_dirty)
 
     errors: list[str] = []
     result = cs._push_summary_for_current_observation(
@@ -1171,9 +1171,10 @@ def test_reconcile_backfills_synced_observation_missing_summary(monkeypatch):
         },
     )
     writer_calls: list[dict] = []
-    def _capture(client, *, obs, local_obs_id, cloud_id, errors):
+    def _capture(client, *, obs, local_obs_id, cloud_id, errors, mark_dirty_on_error=True):
         writer_calls.append({
             "obs": obs, "local_obs_id": local_obs_id, "cloud_id": cloud_id,
+            "mark_dirty_on_error": mark_dirty_on_error,
         })
         return None
     monkeypatch.setattr(cs, "_push_summary_for_current_observation", _capture)
@@ -1188,6 +1189,8 @@ def test_reconcile_backfills_synced_observation_missing_summary(monkeypatch):
     assert len(writer_calls) == 1
     assert writer_calls[0]["local_obs_id"] == 42
     assert writer_calls[0]["cloud_id"] == "cloud-obs-631"
+    # D5=b: the backfill pass reports failures but never re-dirties.
+    assert writer_calls[0]["mark_dirty_on_error"] is False
 
 
 def test_reconcile_only_attempts_observations_with_context_mismatch(monkeypatch, capsys):
@@ -1204,7 +1207,7 @@ def test_reconcile_only_attempts_observations_with_context_mismatch(monkeypatch,
     writer_calls: list[dict] = []
     monkeypatch.setattr(
         cs, "_push_summary_for_current_observation",
-        lambda client, *, obs, local_obs_id, cloud_id, errors: writer_calls.append(
+        lambda client, *, obs, local_obs_id, cloud_id, errors, mark_dirty_on_error=True: writer_calls.append(
             {"local_obs_id": local_obs_id, "cloud_id": cloud_id},
         ),
     )
@@ -1239,7 +1242,7 @@ def test_reconcile_ignores_observations_without_local_measurements(monkeypatch):
     writer_calls: list[dict] = []
     monkeypatch.setattr(
         cs, "_push_summary_for_current_observation",
-        lambda client, *, obs, local_obs_id, cloud_id, errors: writer_calls.append(
+        lambda client, *, obs, local_obs_id, cloud_id, errors, mark_dirty_on_error=True: writer_calls.append(
             {"local_obs_id": local_obs_id, "cloud_id": cloud_id},
         ),
     )
@@ -1264,7 +1267,7 @@ def test_reconcile_ignores_observations_without_cloud_id(monkeypatch):
     writer_calls: list[dict] = []
     monkeypatch.setattr(
         cs, "_push_summary_for_current_observation",
-        lambda client, *, obs, local_obs_id, cloud_id, errors: writer_calls.append(
+        lambda client, *, obs, local_obs_id, cloud_id, errors, mark_dirty_on_error=True: writer_calls.append(
             {"local_obs_id": local_obs_id, "cloud_id": cloud_id},
         ),
     )
@@ -1294,7 +1297,7 @@ def test_reconcile_soft_skips_when_summary_table_missing(monkeypatch):
     writer_calls: list[dict] = []
     monkeypatch.setattr(
         cs, "_push_summary_for_current_observation",
-        lambda client, *, obs, local_obs_id, cloud_id, errors: writer_calls.append(
+        lambda client, *, obs, local_obs_id, cloud_id, errors, mark_dirty_on_error=True: writer_calls.append(
             {"local_obs_id": local_obs_id, "cloud_id": cloud_id},
         ),
     )
@@ -1324,7 +1327,7 @@ def test_reconcile_records_unrelated_bulk_error_and_does_not_abort(monkeypatch):
     writer_calls: list[dict] = []
     monkeypatch.setattr(
         cs, "_push_summary_for_current_observation",
-        lambda client, *, obs, local_obs_id, cloud_id, errors: writer_calls.append(
+        lambda client, *, obs, local_obs_id, cloud_id, errors, mark_dirty_on_error=True: writer_calls.append(
             {"local_obs_id": local_obs_id, "cloud_id": cloud_id},
         ),
     )
@@ -1869,8 +1872,8 @@ def test_measurement_reconcile_skips_when_image_has_no_cloud_id(monkeypatch):
 def test_measurement_reconcile_records_per_observation_errors(monkeypatch):
     """When `_push_measurements_for_observation` raises a non-auth /
     non-temporary error for a specific observation, the reconciliation
-    pass records it in `errors` and marks the observation dirty for
-    retry — same convention as the summary reconciliation."""
+    pass records it in `errors` and does NOT re-dirty the observation
+    (D5=b: backfill failures are reported, not retried via dirty)."""
     from utils import cloud_sync as cs
 
     _install_measurement_reconcile_stubs(
@@ -1885,7 +1888,13 @@ def test_measurement_reconcile_records_per_observation_errors(monkeypatch):
 
     dirty_calls: list[int] = []
     monkeypatch.setattr(cs, "_push_measurements_for_observation", _boom)
-    monkeypatch.setattr(cs, "mark_observation_sync_dirty", lambda obs_id: dirty_calls.append(int(obs_id)))
+    def _fake_dirty(local_id: int) -> None:
+        dirty_calls.append(int(local_id))
+
+    def _fake_sync_dirty(cursor, observation_id) -> None:
+        dirty_calls.append(int(observation_id))
+    monkeypatch.setattr(cs, "mark_observation_dirty", _fake_dirty)
+    monkeypatch.setattr(cs, "mark_observation_sync_dirty", _fake_sync_dirty)
 
     class _FakeClient:
         user_id = "user-x"
@@ -1896,7 +1905,7 @@ def test_measurement_reconcile_records_per_observation_errors(monkeypatch):
     assert len(errors) == 1
     assert "obs 42" in errors[0]
     assert "measurement reconciliation failed" in errors[0]
-    assert dirty_calls == [42]
+    assert dirty_calls == []
 
 
 def test_measurement_reconcile_excludes_non_microscope_images(monkeypatch):
