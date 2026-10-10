@@ -9520,8 +9520,21 @@ class MainWindow(GeometryMixin, QMainWindow):
         updated = dialog.result_data()
         if not isinstance(updated, dict) or not updated:
             return
+        # Legacy rows are identified by genus/species/source/mount/stain, so
+        # an edit to any of those (e.g. filling in a missing book title)
+        # changes the row's identity. Replace the edited row instead of
+        # leaving the old one behind next to the new one.
+        new_key = self._reference_series_key(updated)
         if updated.get("source_kind") == "reference":
             ReferenceDB.set_reference(updated)
+            if new_key != key:
+                ReferenceDB.delete_reference(
+                    genus,
+                    species,
+                    data.get("source"),
+                    data.get("mount_medium"),
+                    data.get("stain"),
+                )
             self._refresh_reference_species_availability()
         if updated.get("source_kind") == "existing_measurement_set":
             try:
@@ -9538,6 +9551,15 @@ class MainWindow(GeometryMixin, QMainWindow):
                 )
             return
         self._sync_reference_values_from_series_data(key, updated)
+        if new_key and new_key != key:
+            if self._find_reference_series_entry(new_key) is None:
+                # Re-key in place so the row keeps its position and
+                # visibility; _add_reference_series_entry then updates it.
+                entry["key"] = new_key
+            else:
+                self.reference_series = [
+                    other for other in self.reference_series if other is not entry
+                ]
         self._add_reference_series_entry(updated)
 
     def _on_comparison_library_update_requested(self, use_id) -> None:

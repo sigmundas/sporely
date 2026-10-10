@@ -699,3 +699,93 @@ def test_reference_panel_still_uses_reference_db_for_loading(
     assert window.table.item(1, 4).text() == "3.8"
 
     monkeypatch.setattr(main_window.ReferenceDB, "get_reference", original_get_reference)
+
+
+def test_edit_reference_series_row_replaces_row_when_source_changes(monkeypatch) -> None:
+    """Editing a legacy row's source (e.g. adding a missing book title)
+    changes its identity key; the edit must replace the old ReferenceDB row
+    and comparison row rather than add a second one beside it."""
+    mw_cls = main_window.MainWindow
+
+    class _Fake:
+        species_availability = None
+        active_observation_id = None
+        reference_values = {}
+        tr = staticmethod(lambda text: text)
+        _active_sporely_taxon_id = lambda self: None
+        _refresh_reference_species_availability = lambda self: None
+        _refresh_reference_series_table = lambda self: None
+        _update_reference_add_state = lambda self: None
+        update_graph_plots_only = lambda self: None
+        _save_gallery_settings = lambda self: None
+        for _name in (
+            "_edit_reference_series_row",
+            "_find_reference_series_entry",
+            "_reference_series_row_is_editable",
+            "_clean_ref_genus_text",
+            "_clean_ref_species_text",
+            "_reference_series_key",
+            "_format_reference_series_label",
+            "_normalize_reference_series_entry",
+            "_sync_reference_values_from_series_data",
+            "_add_reference_series_entry",
+        ):
+            locals()[_name] = getattr(mw_cls, _name)
+        del _name
+
+    original = {
+        "genus": "Pholiota", "species": "gummosa", "source": "P. gummosa",
+        "mount_medium": None, "stain": None, "source_kind": "reference",
+        "length_min": 5.5, "length_max": 8.0,
+    }
+    updated = dict(original, source="P. gummosa (Funga Nordica)")
+
+    class _Dialog:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def exec(self):
+            return main_window.QDialog.Accepted
+
+        def delete_requested(self):
+            return False
+
+        def result_data(self):
+            return dict(updated)
+
+    calls: list[tuple] = []
+
+    class _DB:
+        @staticmethod
+        def set_reference(values):
+            calls.append(("set", values.get("source")))
+
+        @staticmethod
+        def delete_reference(genus, species, source=None, mount_medium=None, stain=None):
+            calls.append(("delete", genus, species, source, mount_medium, stain))
+
+    monkeypatch.setattr(main_window, "ReferenceAddDialog", _Dialog)
+    monkeypatch.setattr(main_window, "ReferenceDB", _DB)
+
+    fake = _Fake()
+    other = {"key": ("reference", "Pholiota", "squarrosa", "FN", "", ""),
+             "data": {"genus": "Pholiota", "species": "squarrosa", "source": "FN"},
+             "label": "other", "enabled": True}
+    old_key = fake._reference_series_key(original)
+    fake.reference_series = [
+        {"key": old_key, "data": dict(original), "label": "old", "enabled": False},
+        other,
+    ]
+
+    fake._edit_reference_series_row(old_key)
+
+    assert calls == [
+        ("set", "P. gummosa (Funga Nordica)"),
+        ("delete", "Pholiota", "gummosa", "P. gummosa", None, None),
+    ]
+    assert len(fake.reference_series) == 2
+    edited = fake.reference_series[0]
+    assert edited["key"] == fake._reference_series_key(updated)
+    assert edited["data"]["source"] == "P. gummosa (Funga Nordica)"
+    assert edited["enabled"] is False
+    assert fake.reference_series[1] is other
