@@ -60,8 +60,7 @@ below that conservative quota, but this does not prove physical disk safety.
    row export. Existing rehearsed archive SHA and path are in README.md.
    Record explicit column lists for recovery COPY; do not replay active rows.
 3. Capture permanent/active counts and fingerprints, RPC definitions and
-   representative resolver/search outputs. Pause application writes and
-   taxonomy publication during the approved window. Wait out active users'
+   representative resolver/search outputs. Do not pause application writes. Confirm taxonomy publication does not overlap. Wait out active users'
    long transactions; do not terminate them automatically.
 4. Execute cleanup.sql exactly: activation advisory lock, 5-second lock
    timeout, 120-second statement timeout, six tables locked against writes;
@@ -184,8 +183,8 @@ DELETE WAL/sort peak is not guaranteed, so keep the live capacity checks.
 
 ### Mandatory execution gates and abort thresholds (updated safer order)
 
-1. Production changes still require explicit user approval. Pause normal
-   application writes and publication; the pause must be real, not assumed.
+1. Production changes still require explicit user approval. Keep normal application writes running. Confirm no taxonomy import/publication
+   is active or scheduled to overlap; use the existing contention limits.
 2. Verify current backup readability and SHA-256, then take a fresh backup
    and verify it through the already tested archive/isolated selective-recovery
    procedure. Current rehearsed SHA remains
@@ -209,8 +208,7 @@ DELETE WAL/sort peak is not guaranteed, so keep the live capacity checks.
    Abort the current statement on contention/timeout/error; do not auto-retry.
 6. Before each subsequent operation, recompute
    `cluster_bytes + ceil(1.25 * measured_replacement_bytes) < 495000000`.
-   Recheck >=150 MiB free disk, current WAL/archive health, no unexpected
-   writers, active identity integrity and last operation's actual size.
+   Recheck >=150 MiB free disk, current WAL/archive health, no overlapping taxonomy publication, active identity integrity and last operation's actual size.
    Unexpected size growth above the 25% replacement allowance, failed integrity,
    or unavailable metrics means STOP before the next operation. A second
    read-only monitoring connection should watch quota during rewrites; cancel
@@ -279,7 +277,7 @@ and background writes remain covered by capacity monitoring and the existing
 ~7.27 GB free disk remains ample; neither old database nor current 128 MiB
 WAL should be added twice to dashboard used disk.
 
-All backup/recovery, integrity, write-pause, lock-timeout, statement-timeout,
+All backup/recovery, integrity, taxonomy-publication exclusion, lock-timeout, statement-timeout,
 monitoring and abort requirements remain unchanged. Each next operation must
 pass actual `cluster_bytes + allowance_for_that_table < 495000000`; stop on
 unexpected allocation/growth, unavailable metrics, integrity failure or timeout.
@@ -290,7 +288,7 @@ reached; monitoring is a safeguard, not permission to start above the gate.
 refreshed per-operation capacity checks and explicit user approval. No
 production data/configuration changes have been made.
 
-## Authorized execution attempt — stopped at write-pause gate
+## Earlier execution attempt — superseded write-pause gate
 
 User authorized the exact procedure. Verified SQL/runbook committed and pushed
 as cbf99ae. Read-only production precheck returned application database
@@ -310,3 +308,16 @@ operation; earlier backup verification is not a fresh execution backup.
 Normal production configuration/operations were left unchanged. No outage
 was initiated. Untracked local rehearsal helper files remain outside this
 committed execution candidate.
+
+
+## Narrowed authorized execution
+
+User explicitly removed the global application write-pause requirement. Normal
+Sporely writes continue. No maintenance mode, database read-only setting or
+permission changes are authorized or needed. Brief taxonomy read blocking
+during each VACUUM FULL is accepted, limited by 5-second lock timeout and
+120-second statement timeout. Confirm no active/loading/running taxonomy
+import or scheduled taxonomy publication; retain activation advisory-lock
+serialization during cleanup and recheck active release between operations.
+All backup, capacity, integrity and abort gates remain in force. The earlier
+write-pause STOP is superseded, not a current execution requirement.
