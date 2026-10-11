@@ -67,6 +67,14 @@ def _seed(db_path: Path, *, v2: bool = True) -> None:
                  "Cantharellaceae", "family", "accepted", "col_xr"),
                 (11, None, None, None,
                  "Incertae sedis", "genus", "accepted", "col_xr"),
+                # Non-accepted genus: never offered.
+                (12, "Craterellus", None, "Cantharellaceae",
+                 "Craterellus", "genus", "synonym", "col_xr"),
+                (13, "Pseudocraterellus", None, "Cantharellaceae",
+                 "Pseudocraterellus", "genus", " Provisionally Accepted ", "col_xr"),
+                # Species admission stays status-independent.
+                (14, "Lactarius", "deterrimus", "Russulaceae",
+                 "Lactarius deterrimus", "species", "doubtful", "col_xr"),
             ],
         )
         conn.executemany(
@@ -99,6 +107,7 @@ def _seed(db_path: Path, *, v2: bool = True) -> None:
                 (9, "de", "Fußpilz", 1),
                 (10, "nb", "Kantarellfamilien", 1),
                 (11, "nb", "Kantarellukjent", 1),
+                (12, "nb", "Trompetsopper", 1),
                 (3, "en", "Winter chanterelle", 1),
                 (3, "nb", "Traktkantarell", 1),
                 (4, "nb", "Kantarellsopp", 0),
@@ -329,3 +338,21 @@ def test_suggest_scientific_names_still_excludes_genera(tmp_path: Path) -> None:
         (3, "Cantharellus tubaeformis"),
     ]
     assert all(r["taxon_rank_snapshot"] != "genus" for r in rows)
+
+
+def test_non_accepted_genus_is_excluded_from_both_paths(tmp_path: Path) -> None:
+    service = _service(tmp_path, language="nb")
+    # Scientific: the synonym genus Craterellus is absent; its species stays.
+    assert _ids(service.search_taxa("Craterellus")) == [3]
+    # Vernacular: the synonym genus's name finds nothing.
+    assert service.search_taxa("Trompetsopp") == []
+
+
+def test_provisionally_accepted_genus_is_included(tmp_path: Path) -> None:
+    results = _service(tmp_path).search_taxa("Pseudocrat")
+    assert _ids(results) == [13]
+    assert (results[0].rank, results[0].species) == ("genus", "")
+
+
+def test_species_admission_ignores_taxonomic_status(tmp_path: Path) -> None:
+    assert _ids(_service(tmp_path).search_taxa("Lactarius d")) == [14]

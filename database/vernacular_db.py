@@ -742,6 +742,12 @@ _ALIAS_MARKERS: tuple[tuple[re.Pattern, str], ...] = (
     (re.compile(r"^([A-Z][a-z]+) ([a-z]+) agg\.$"),                                  "aggregate"),
 )
 
+# Taxonomic statuses of an accepted concept — the taxonomy build's
+# convention (`_ACCEPTED_STATUSES` in `taxonomy/scripts/compile_release.py`
+# and `cross_source_mapping.py`). Genus concepts in the unified search must
+# carry one; compared after `strip().lower()`.
+_ACCEPTED_TAXONOMIC_STATUSES = frozenset({"accepted", "provisionally accepted", "valid"})
+
 # Names that are placeholder / curatorial and MUST NOT appear in the picker.
 _PICKER_EXCLUDED_NAMES = frozenset({"Incertae sedis"})
 
@@ -793,9 +799,11 @@ def _canonical_picker_row(
     ``None`` when the picker's whitelist excludes it. Shared by the prefix
     search and the by-id lookup so both apply the same filter.
 
-    ``include_genus`` (unified search only) also admits a concept whose
-    structured rank is ``genus`` and whose name parses as a genus; a
-    single-word name of another rank (a family) stays excluded."""
+    ``include_genus`` (unified search only) also admits an accepted concept
+    (``_ACCEPTED_TAXONOMIC_STATUSES``) whose structured rank is ``genus`` and
+    whose name parses as a genus; a single-word name of another rank (a
+    family) and a non-accepted genus stay excluded. Other ranks keep their
+    existing, status-independent admission."""
     if not name or "(" in name:
         return None
     if name in _PICKER_EXCLUDED_NAMES:
@@ -811,6 +819,7 @@ def _canonical_picker_row(
         include_genus
         and rank_snapshot == "genus"
         and str(rank or "").strip().lower() == "genus"
+        and str(status or "").strip().lower() in _ACCEPTED_TAXONOMIC_STATUSES
     )
     if (
         rank_snapshot not in _SCIENTIFIC_PICKER_RANKS
@@ -872,14 +881,15 @@ VernacularDB.scientific_picker_rows_for_taxa = _scientific_picker_rows_for_taxa 
 
 
 def _suggest_genus_concepts(self: "VernacularDB", prefix: str, *, limit: int = 40) -> list[dict]:
-    """Genus-rank ``taxon_min`` concepts whose canonical name starts with
-    ``prefix``, as picker rows (``taxon_rank_snapshot`` ``"genus"``). The
+    """Accepted genus-rank ``taxon_min`` concepts whose canonical name
+    starts with ``prefix``, as picker rows (``taxon_rank_snapshot`` ``"genus"``). The
     unified search's genus source; the per-field picker
     (``suggest_scientific_names``) keeps excluding genera. Same indexed
     range scan on ``canonical_scientific_name``."""
     prefix = (prefix or "").strip()
     if not prefix or "taxon_min" not in self._table_names():
         return []
+    accepted = sorted(_ACCEPTED_TAXONOMIC_STATUSES)
     with self._connect() as conn:
         national_expr = self._national_name_expr(conn)
         rows = list(conn.execute(
@@ -888,9 +898,10 @@ def _suggest_genus_concepts(self: "VernacularDB", prefix: str, *, limit: int = 4
             f"      {national_expr} "
             "FROM taxon_min t "
             "WHERE t.canonical_scientific_name >= ? AND t.canonical_scientific_name < ? "
-            "  AND lower(t.taxon_rank) = 'genus' "
+            "  AND lower(trim(t.taxon_rank)) = 'genus' "
+            f"  AND lower(trim(t.taxonomic_status)) IN ({','.join('?' for _ in accepted)}) "
             "ORDER BY t.canonical_scientific_name, t.taxon_id LIMIT ?",
-            (prefix, _prefix_upper_bound(prefix), int(limit)),
+            (prefix, _prefix_upper_bound(prefix), *accepted, int(limit)),
         ))
     out: list[dict] = []
     for taxon_id, name, rank, status, family, source, national_name in rows:
