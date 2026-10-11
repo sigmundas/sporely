@@ -289,3 +289,24 @@ reached; monitoring is a safeguard, not permission to start above the gate.
 **GO on Free with this safer order**, contingent on fresh backup verification,
 refreshed per-operation capacity checks and explicit user approval. No
 production data/configuration changes have been made.
+
+## Authorized execution attempt — stopped at write-pause gate
+
+User authorized the exact procedure. Verified SQL/runbook committed and pushed
+as cbf99ae. Read-only production precheck returned application database
+450243731 bytes, cluster sum 465359025 bytes, and unchanged expected release
+statuses. No cleanup, VACUUM, production DDL or configuration write executed.
+
+STOP: required application/publication write pause cannot be verified. The
+runbook specifies a real pause but defines no implemented pause/resume
+mechanism. Inspected application/import paths showed no existing maintenance
+control. Idle PostgREST sessions are not proof that clients cannot write.
+Do not improvise ALTER DATABASE, role/grant changes, service shutdown or
+write-blocking triggers. A concrete reviewed pause/resume mechanism (or a
+verified existing operator procedure) is required before resuming. Fresh
+backup/restore and live capacity refresh must then precede any destructive
+operation; earlier backup verification is not a fresh execution backup.
+
+Normal production configuration/operations were left unchanged. No outage
+was initiated. Untracked local rehearsal helper files remain outside this
+committed execution candidate.
