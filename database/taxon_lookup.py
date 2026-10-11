@@ -146,7 +146,7 @@ class TaxonSearchResult:
     sporely_taxon_id: int
     scientific_name: str
     genus: str
-    species: str | None
+    species: str  # "" for a genus-rank result
     rank: str
     family: str | None
     vernacular_name: str | None
@@ -773,8 +773,10 @@ class TaxonLookupService:
         Needs at least :data:`TAXON_SEARCH_MIN_CHARS` characters and an
         installed taxonomy-v2 DB, whose ``taxon_id`` is the Sporely ID;
         otherwise returns ``[]``. Scientific hits come from
-        :meth:`suggest_scientific_names`, vernacular hits from the
-        common-name prefix path, both within the picker's rank whitelist.
+        :meth:`suggest_scientific_names` plus genus-rank concepts, vernacular
+        hits from a vernacular prefix scan; both admit the picker's ranks
+        and genus. A genus result has ``species == ""`` and rank
+        ``"genus"``. The per-field completers still exclude genera.
         """
         query = " ".join(_normalize_text(query).split())
         if len(query) < TAXON_SEARCH_MIN_CHARS or self.vernacular_db is None:
@@ -815,14 +817,25 @@ class TaxonLookupService:
             and parse_scientific_name_snapshot(_normalize_text(row.get("scientific_name"))) is not None
         )
 
-    def _scientific_search_rows(self, prefix: str, folded: str, limit: int) -> list[dict]:
-        """``suggest_scientific_names`` rows for ``prefix`` that match the
-        casefolded query and are search-eligible, widened until they name
-        ``limit`` distinct taxa or the source runs dry, so collapsing a
-        taxon's variants or dropping ineligible rows cannot underfill."""
+    def _suggest_genus_concepts(self, prefix: str, limit: int = TAXON_COMPLETER_LIMIT) -> list[dict]:
+        """Genus-rank concepts for the unified search only; ``[]`` without
+        a v2 DB. The per-field completers keep excluding genera."""
+        source = getattr(self.vernacular_db, "suggest_genus_concepts", None)
+        if not prefix or not callable(source):
+            return []
+        try:
+            return source(prefix, limit=limit)
+        except Exception:
+            return []
+
+    def _scientific_search_rows(self, source, prefix: str, folded: str, limit: int) -> list[dict]:
+        """``source(prefix, limit=...)`` rows that match the casefolded query
+        and are search-eligible, widened until they name ``limit`` distinct
+        taxa or the source runs dry, so collapsing a taxon's variants or
+        dropping ineligible rows cannot underfill."""
         request = max(limit, 1)
         while True:
-            rows = self.suggest_scientific_names(prefix, limit=request)
+            rows = source(prefix, limit=request)
             eligible = [
                 row for row in rows
                 if _normalize_text(row.get("scientific_name")).casefold().startswith(folded)
@@ -867,7 +880,10 @@ class TaxonLookupService:
         # The scientific range scan is case-sensitive; scan the casefolded
         # and the scientific-name-cased query ("russula e" -> "Russula e").
         for prefix in dict.fromkeys((folded, folded[0].upper() + folded[1:])):
-            for row in self._scientific_search_rows(prefix, folded, limit):
+            for row in (
+                self._scientific_search_rows(self.suggest_scientific_names, prefix, folded, limit)
+                + self._scientific_search_rows(self._suggest_genus_concepts, prefix, folded, limit)
+            ):
                 name = _normalize_text(row.get("scientific_name"))
                 offer(row, "scientific", name, 0 if row.get("is_canonical") else 1)
 
@@ -877,7 +893,10 @@ class TaxonLookupService:
             language_codes = self._search_language_codes()
             priority = {code: idx for idx, code in enumerate(language_codes)}
             vernacular_rows = search_vernacular(query, language_codes)
-            picker_rows = lookup_rows(row["taxon_id"] for row in vernacular_rows) if vernacular_rows else {}
+            picker_rows = (
+                lookup_rows((row["taxon_id"] for row in vernacular_rows), include_genus=True)
+                if vernacular_rows else {}
+            )
             for row in vernacular_rows:
                 picker_row = picker_rows.get(row["taxon_id"])
                 if picker_row is None:
@@ -916,7 +935,7 @@ class TaxonLookupService:
                 sporely_taxon_id=taxon_id,
                 scientific_name=scientific_name,
                 genus=genus,
-                species=species,
+                species=species or "",
                 rank=rank,
                 family=_normalize_text(row.get("family")) or None,
                 vernacular_name=vernacular_name,

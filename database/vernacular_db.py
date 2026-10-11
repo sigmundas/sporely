@@ -722,8 +722,10 @@ import re
 # Stage 3B.3: scientific-name suggestion source for the observation editor
 # --------------------------------------------------------------------------
 
-# Ranks the observation editor accepts. Same whitelist enforced on write in
-# `models.py`. `aggregate` corresponds to `... coll.` / `... agg.` strings.
+# Ranks the per-field scientific-name picker offers (plus `aggregate`, for
+# `... coll.` / `... agg.` strings). Narrower than the write whitelist
+# `_ALLOWED_TAXON_RANK_SNAPSHOTS` in `models.py`, which also admits `genus`;
+# only the unified `search_taxa` offers genus concepts (`include_genus`).
 _SCIENTIFIC_PICKER_RANKS = frozenset(
     {"species", "subspecies", "variety", "form"}
 )
@@ -785,10 +787,15 @@ VernacularDB._SCIENTIFIC_PICKER_RANKS = _SCIENTIFIC_PICKER_RANKS  # type: ignore
 
 def _canonical_picker_row(
     taxon_id, name, rank, status, family, source, national_name,
+    *, include_genus: bool = False,
 ) -> dict | None:
     """The scientific-picker row for a ``taxon_min`` canonical concept, or
     ``None`` when the picker's whitelist excludes it. Shared by the prefix
-    search and the by-id lookup so both apply the same filter."""
+    search and the by-id lookup so both apply the same filter.
+
+    ``include_genus`` (unified search only) also admits a concept whose
+    structured rank is ``genus`` and whose name parses as a genus; a
+    single-word name of another rank (a family) stays excluded."""
     if not name or "(" in name:
         return None
     if name in _PICKER_EXCLUDED_NAMES:
@@ -800,7 +807,16 @@ def _canonical_picker_row(
         rank_snapshot = rank
     else:
         rank_snapshot = None
-    if rank_snapshot not in _SCIENTIFIC_PICKER_RANKS and rank_snapshot != "aggregate":
+    is_genus_concept = (
+        include_genus
+        and rank_snapshot == "genus"
+        and str(rank or "").strip().lower() == "genus"
+    )
+    if (
+        rank_snapshot not in _SCIENTIFIC_PICKER_RANKS
+        and rank_snapshot != "aggregate"
+        and not is_genus_concept
+    ):
         return None
     return {
         "sporely_taxon_id": int(taxon_id),
@@ -820,10 +836,13 @@ def _canonical_picker_row(
     }
 
 
-def _scientific_picker_rows_for_taxa(self: "VernacularDB", taxon_ids) -> dict[int, dict]:
+def _scientific_picker_rows_for_taxa(
+    self: "VernacularDB", taxon_ids, *, include_genus: bool = False,
+) -> dict[int, dict]:
     """``taxon_id -> canonical scientific-picker row`` for known concepts
-    the picker whitelist admits. A by-id lookup (not a search) used to give
-    vernacular-name hits the same committable row a scientific hit has."""
+    the picker whitelist admits (and genus concepts with ``include_genus``).
+    A by-id lookup (not a search) used to give vernacular-name hits the same
+    committable row a scientific hit has."""
     ids = sorted({int(t) for t in taxon_ids if t is not None})
     if not ids or "taxon_min" not in self._table_names():
         return {}
@@ -840,13 +859,50 @@ def _scientific_picker_rows_for_taxa(self: "VernacularDB", taxon_ids) -> dict[in
                 f"FROM taxon_min t WHERE t.taxon_id IN ({placeholders})",
                 chunk,
             ):
-                row = _canonical_picker_row(taxon_id, name, rank, status, family, source, national_name)
+                row = _canonical_picker_row(
+                    taxon_id, name, rank, status, family, source, national_name,
+                    include_genus=include_genus,
+                )
                 if row is not None:
                     out[int(taxon_id)] = row
     return out
 
 
 VernacularDB.scientific_picker_rows_for_taxa = _scientific_picker_rows_for_taxa  # type: ignore[attr-defined]
+
+
+def _suggest_genus_concepts(self: "VernacularDB", prefix: str, *, limit: int = 40) -> list[dict]:
+    """Genus-rank ``taxon_min`` concepts whose canonical name starts with
+    ``prefix``, as picker rows (``taxon_rank_snapshot`` ``"genus"``). The
+    unified search's genus source; the per-field picker
+    (``suggest_scientific_names``) keeps excluding genera. Same indexed
+    range scan on ``canonical_scientific_name``."""
+    prefix = (prefix or "").strip()
+    if not prefix or "taxon_min" not in self._table_names():
+        return []
+    with self._connect() as conn:
+        national_expr = self._national_name_expr(conn)
+        rows = list(conn.execute(
+            "SELECT t.taxon_id, t.canonical_scientific_name, t.taxon_rank, "
+            "       t.taxonomic_status, t.family, t.canonical_source_system, "
+            f"      {national_expr} "
+            "FROM taxon_min t "
+            "WHERE t.canonical_scientific_name >= ? AND t.canonical_scientific_name < ? "
+            "  AND lower(t.taxon_rank) = 'genus' "
+            "ORDER BY t.canonical_scientific_name, t.taxon_id LIMIT ?",
+            (prefix, _prefix_upper_bound(prefix), int(limit)),
+        ))
+    out: list[dict] = []
+    for taxon_id, name, rank, status, family, source, national_name in rows:
+        row = _canonical_picker_row(
+            taxon_id, name, rank, status, family, source, national_name, include_genus=True,
+        )
+        if row is not None and row["taxon_rank_snapshot"] == "genus":
+            out.append(row)
+    return out
+
+
+VernacularDB.suggest_genus_concepts = _suggest_genus_concepts  # type: ignore[attr-defined]
 
 
 def _vernacular_language_filter(language_codes) -> tuple[str, list[str]]:

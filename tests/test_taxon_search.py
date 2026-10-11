@@ -49,7 +49,7 @@ def _seed(db_path: Path, *, v2: bool = True) -> None:
                  "Craterellus tubaeformis", "species", "accepted", "col_xr"),
                 (4, "Cantharellus", "amethysteus", "Cantharellaceae",
                  "Cantharellus amethysteus", "species", "accepted", "col_xr"),
-                # Genus rank is outside the picker whitelist.
+                # Genus concept: offered by search_taxa only.
                 (5, "Cantharellus", None, "Cantharellaceae",
                  "Cantharellus", "genus", "accepted", "col_xr"),
                 (6, "Cantharellus", "friesii", "Cantharellaceae",
@@ -62,6 +62,11 @@ def _seed(db_path: Path, *, v2: bool = True) -> None:
                  "Cantharellus albo-citrinus", "species", "accepted", "col_xr"),
                 (9, "Fusarium", "oxysporum", "Nectriaceae",
                  "Fusarium oxysporum", "species", "accepted", "col_xr"),
+                # A family's one-word name parses like a genus; still excluded.
+                (10, None, None, "Cantharellaceae",
+                 "Cantharellaceae", "family", "accepted", "col_xr"),
+                (11, None, None, None,
+                 "Incertae sedis", "genus", "accepted", "col_xr"),
             ],
         )
         conn.executemany(
@@ -92,6 +97,8 @@ def _seed(db_path: Path, *, v2: bool = True) -> None:
                 (4, "en", "Chant", 0),
                 (7, "nb", "Østerssopp", 1),
                 (9, "de", "Fußpilz", 1),
+                (10, "nb", "Kantarellfamilien", 1),
+                (11, "nb", "Kantarellukjent", 1),
                 (3, "en", "Winter chanterelle", 1),
                 (3, "nb", "Traktkantarell", 1),
                 (4, "nb", "Kantarellsopp", 0),
@@ -159,11 +166,11 @@ def test_taxon_matching_both_ways_appears_once(tmp_path: Path) -> None:
 
 def test_exact_match_ranks_before_prefix_matches(tmp_path: Path) -> None:
     results = _service(tmp_path, language="nb").search_taxa("kantarell")
-    # Kantarell (exact) before Kantarellsopp; the genus-rank Kantareller is
-    # outside the picker whitelist.
-    assert _ids(results) == [1, 4]
+    # Kantarell (exact) before the prefix hits Kantareller (genus) and
+    # Kantarellsopp; the family and Incertae sedis names are excluded.
+    assert _ids(results) == [1, 5, 4]
     assert results[0].matched_text == "Kantarell"
-    assert [r.matched_on for r in results] == ["vernacular", "vernacular"]
+    assert [r.matched_on for r in results] == ["vernacular"] * 3
 
 
 def test_fewer_than_two_characters_returns_nothing(tmp_path: Path) -> None:
@@ -179,7 +186,7 @@ def test_language_switch_changes_vernacular_hits_and_labels(tmp_path: Path) -> N
     assert service.search_taxa("Cantharellus cib")[0].display_label == "Chanterelle (Cantharellus cibarius)"
 
     service.language_code = "nb"
-    assert _ids(service.search_taxa("Kantarell")) == [1, 4]
+    assert _ids(service.search_taxa("Kantarell")) == [1, 5, 4]
     assert service.search_taxa("Chanter") == []
     hit = service.search_taxa("Cantharellus cib")[0]
     assert hit.display_label == "Kantarell (Cantharellus cibarius)"
@@ -223,13 +230,13 @@ def test_limit_keeps_a_nonpreferred_exact_match(tmp_path: Path) -> None:
 
 
 def test_limit_counts_distinct_eligible_taxa_only(tmp_path: Path) -> None:
-    # Vernacular: Kantarell / Kantarell gul are one taxon and Kantareller is
-    # a genus outside the whitelist; two distinct eligible taxa still fill.
-    assert _ids(_service(tmp_path, language="nb").search_taxa("kantarell", limit=2)) == [1, 4]
+    # Vernacular: Kantarell / Kantarell gul are one taxon and the family is
+    # excluded; three distinct eligible taxa still fill.
+    assert _ids(_service(tmp_path, language="nb").search_taxa("kantarell", limit=3)) == [1, 5, 4]
     # Scientific: taxon 1's two variety variants and the unparseable
     # 'Cantharellus albo-citrinus' (sorted first) must not underfill.
-    assert _ids(_service(tmp_path / "sci").search_taxa("Cantharellus", limit=3)) == [4, 1, 6]
-    assert _ids(_service(tmp_path / "sci-all").search_taxa("Cantharellus")) == [4, 1, 6, 3]
+    assert _ids(_service(tmp_path / "sci").search_taxa("Cantharellus", limit=4)) == [5, 4, 1, 6]
+    assert _ids(_service(tmp_path / "sci-all").search_taxa("Cantharellus")) == [5, 4, 1, 6, 3]
 
 
 def test_vernacular_match_is_unicode_case_insensitive(tmp_path: Path) -> None:
@@ -271,3 +278,54 @@ def test_casefold_equivalent_queries_share_one_result(tmp_path: Path) -> None:
             results = service.search_taxa(query)
             assert _ids(results) == [9], query
             assert results[0].display_label == "Fußpilz (Fusarium oxysporum)"
+
+
+def test_genus_scientific_prefix_hit(tmp_path: Path) -> None:
+    results = _service(tmp_path, language="nb").search_taxa("cantharel")
+    genus = next(r for r in results if r.sporely_taxon_id == 5)
+    assert genus.matched_on == "scientific"
+    assert (genus.genus, genus.species, genus.rank) == ("Cantharellus", "", "genus")
+    assert genus.scientific_name == "Cantharellus"
+    assert genus.display_label == "Kantareller (Cantharellus)"
+    suggestion = genus.as_scientific_suggestion()
+    assert (suggestion["sporely_taxon_id"], suggestion["taxon_rank_snapshot"]) == (5, "genus")
+    assert suggestion["link_kind"] == "canonical"
+
+
+def test_genus_vernacular_hit(tmp_path: Path) -> None:
+    results = _service(tmp_path, language="nb").search_taxa("Kantarelle")
+    assert _ids(results) == [5]
+    hit = results[0]
+    assert hit.matched_on == "vernacular"
+    assert (hit.genus, hit.species, hit.rank) == ("Cantharellus", "", "genus")
+    assert hit.display_label == "Kantareller (Cantharellus)"
+
+
+def test_exact_genus_query_ranks_genus_before_its_species(tmp_path: Path) -> None:
+    results = _service(tmp_path).search_taxa("cantharellus")
+    assert results[0].sporely_taxon_id == 5
+    assert results[0].rank == "genus"
+    assert all(r.rank != "genus" for r in results[1:])
+    assert _ids(results) == [5, 4, 1, 6, 3]
+
+
+def test_non_genus_one_word_concepts_and_incertae_sedis_stay_excluded(tmp_path: Path) -> None:
+    service = _service(tmp_path, language="nb")
+    assert service.search_taxa("Cantharellace") == []
+    assert service.search_taxa("Kantarellf") == []
+    assert service.search_taxa("Incertae") == []
+    assert service.search_taxa("Kantarellu") == []
+
+
+def test_suggest_scientific_names_still_excludes_genera(tmp_path: Path) -> None:
+    rows = _service(tmp_path).suggest_scientific_names("Cantharellus")
+    assert [(r["sporely_taxon_id"], r["scientific_name"]) for r in rows] == [
+        (8, "Cantharellus albo-citrinus"),
+        (4, "Cantharellus amethysteus"),
+        (1, "Cantharellus cibarius"),
+        (1, "Cantharellus cibarius var. alba"),
+        (1, "Cantharellus cibarius var. bicolor"),
+        (6, "Cantharellus friesii"),
+        (3, "Cantharellus tubaeformis"),
+    ]
+    assert all(r["taxon_rank_snapshot"] != "genus" for r in rows)
