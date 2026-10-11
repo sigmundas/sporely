@@ -110,6 +110,17 @@ supported-client overlap exception and publication capacity gate in the
 existing importer; independently correct `admin_database_health()` in web
 and its UI. Keep legacy-table retirement and general index changes excluded.
 
+Publication-pipeline requirement from the `admin_database_health()`
+correction (sporely-web `feature/database-health-classification`): after a
+release load commits, and after a retention cleanup, the importer/cleanup
+must run `ANALYZE` on the six `public.taxonomy_v2_*` payload tables.
+`admin_database_health()` estimates per-release shares from planner
+statistics and falls back to an exact `count(*) GROUP BY release_id` while
+they are stale. With several releases resident that count can approach the
+8 s PostgREST statement timeout, which makes the dashboard's database-health
+section unavailable until autoanalyze runs. Implement this here, not in the
+dashboard branch, so only one branch changes the publication pipeline.
+
 Expected ~214 MiB payload savings and ~215 MiB final production size remain
 unverified proportional estimates. No measured reclaimed-storage result or
 Free-tier execution recommendation is available yet.
