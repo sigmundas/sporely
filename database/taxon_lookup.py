@@ -182,6 +182,8 @@ class TaxonSearchResult:
 
 TAXON_COMPLETER_LIMIT = 200
 TAXON_SEARCH_MIN_CHARS = 2
+# Upper bound on scientific rows one search_taxa source call may request.
+_SEARCH_SCAN_CEILING = 5000
 
 
 def _normalize_genus_display(genus: str | None) -> str:
@@ -233,6 +235,10 @@ class TaxonLookupService:
         self.vernacular_db = vernacular_db
         self.include_reference_data = bool(include_reference_data)
         self._language_code: str | None = None
+        # The code as requested, before the legacy ``nb``/``nn`` -> ``no``
+        # collapse of :attr:`language_code`; ``search_taxa`` queries v2
+        # vernaculars with it so explicit ``nb`` and ``nn`` stay distinct.
+        self._requested_language_code: str | None = None
         self._reference_provider = _coerce_reference_provider(reference_db_factory)
         self._local_table_names_cache: set[str] | None = None
         self._local_column_cache: dict[str, set[str]] = {}
@@ -245,13 +251,10 @@ class TaxonLookupService:
         self._common_names_for_taxon_cache: dict[tuple[str, str, int], tuple[TaxonChoice, ...]] = {}
         self._search_taxa_cache: dict[tuple[str, str | None, int], tuple[TaxonSearchResult, ...]] = {}
 
-        initial_language = normalize_vernacular_language(language_code) if language_code else None
-        if self.vernacular_db is not None:
-            existing_language = normalize_vernacular_language(getattr(self.vernacular_db, "language_code", None))
-            if initial_language:
-                pass
-            elif existing_language:
-                initial_language = existing_language
+        initial_language = language_code or None
+        if self.vernacular_db is not None and not initial_language:
+            # The setter normalizes; an unset DB language means ``no``.
+            initial_language = getattr(self.vernacular_db, "language_code", None) or "no"
         self.language_code = initial_language
 
     @property
@@ -261,8 +264,10 @@ class TaxonLookupService:
     @language_code.setter
     def language_code(self, value: str | None) -> None:
         new_language = normalize_vernacular_language(value) if value else None
-        if new_language == self._language_code:
+        requested = str(value).strip().lower().replace("-", "_") or None if value else None
+        if new_language == self._language_code and requested == self._requested_language_code:
             return
+        self._requested_language_code = requested
         self._language_code = new_language
         if self.vernacular_db is not None:
             try:
@@ -788,16 +793,46 @@ class TaxonLookupService:
         self._search_taxa_cache[cache_key] = values
         return list(values)
 
+    def _search_language_codes(self) -> tuple[str, ...]:
+        """The v2 vernacular codes ``search_taxa`` queries: explicit ``nb``,
+        ``nn`` and Sámi codes stay distinct, umbrella ``no`` fans out, and
+        no language set means every language."""
+        if not self._requested_language_code:
+            return ()
+        from utils.vernacular_utils import resolve_query_language_codes
+
+        return resolve_query_language_codes(self._requested_language_code)
+
+    def _scientific_search_rows(self, prefix: str, limit: int) -> list[dict]:
+        """``suggest_scientific_names`` rows for ``prefix``, widened until
+        they name ``limit`` distinct taxa or the source runs dry, so
+        collapsing a taxon's variants cannot underfill the result."""
+        request = max(limit, 1)
+        while True:
+            rows = self.suggest_scientific_names(prefix, limit=request)
+            distinct = {row.get("sporely_taxon_id") for row in rows}
+            if len(rows) < request or len(distinct) >= limit or request >= _SEARCH_SCAN_CEILING:
+                return rows
+            request = min(request * 4, _SEARCH_SCAN_CEILING)
+
     def _search_taxa_uncached(self, query: str, limit: int) -> list[TaxonSearchResult]:
+        from database.vernacular_db import parse_scientific_name_snapshot
+
         folded = query.casefold()
-        # taxon id -> (priority, picker row, matched_on, matched text): the
-        # best match per taxon. Exact beats prefix, then scientific beats
-        # vernacular, then canonical/preferred names, then source order.
-        best: dict[int, tuple[tuple, dict, str, str]] = {}
+        # taxon id -> (priority, picker row, matched_on, matched text,
+        # vernacular language): the best match per taxon. Exact beats prefix,
+        # then scientific beats vernacular, then canonical/preferred names,
+        # then source order. Every candidate is collected before the limit.
+        best: dict[int, tuple[tuple, dict, str, str, str | None]] = {}
         order = 0
 
-        def offer(row: dict, matched_on: str, matched_text: str, preference: int) -> bool:
+        def offer(row: dict, matched_on: str, matched_text: str, preference: int,
+                  language: str | None = None) -> None:
             nonlocal order
+            if parse_scientific_name_snapshot(_normalize_text(row.get("scientific_name"))) is None:
+                return
+            if not _normalize_text(row.get("taxon_rank_snapshot")):
+                return
             taxon_id = int(row["sporely_taxon_id"])
             key = (
                 0 if matched_text.casefold() == folded else 1,
@@ -808,32 +843,36 @@ class TaxonLookupService:
             order += 1
             current = best.get(taxon_id)
             if current is None or key < current[0]:
-                best[taxon_id] = (key, row, matched_on, matched_text)
-                return True
-            return False
+                best[taxon_id] = (key, row, matched_on, matched_text, language)
 
-        # The range scan is case-sensitive; also try the scientific-name
-        # case ("russula e" -> "Russula e") so typing stays case-insensitive.
-        scientific_queries = dict.fromkeys((query, query[0].upper() + query[1:].lower()))
-        for prefix in scientific_queries:
-            for row in self.suggest_scientific_names(prefix, limit=limit):
+        # The scientific range scan is case-sensitive; scan the lowercased
+        # and the scientific-name-cased query ("russula e" -> "Russula e"),
+        # both derived from the casefold-equivalent text so every
+        # capitalization of a query gives the same (cached) result.
+        lowered = query.lower()
+        for prefix in dict.fromkeys((lowered, lowered[0].upper() + lowered[1:])):
+            for row in self._scientific_search_rows(prefix, limit):
                 name = _normalize_text(row.get("scientific_name"))
                 if name and row.get("sporely_taxon_id") is not None and name.casefold().startswith(folded):
                     offer(row, "scientific", name, 0 if row.get("is_canonical") else 1)
 
-        vernacular_rows = self._local_common_name_rows(prefix=query, limit=limit)
-        picker_rows: dict[int, dict] = {}
+        search_vernacular = getattr(self.vernacular_db, "search_vernacular_prefix", None)
         lookup_rows = getattr(self.vernacular_db, "scientific_picker_rows_for_taxa", None)
-        if vernacular_rows and callable(lookup_rows):
-            picker_rows = lookup_rows(row["taxon_id"] for row in vernacular_rows)
-        vernacular_language: dict[int, str | None] = {}
-        for row in vernacular_rows:
-            picker_row = picker_rows.get(int(row["taxon_id"]))
-            name = _normalize_text(row["common_name"])
-            if picker_row is None or not name or not name.casefold().startswith(folded):
-                continue
-            if offer(picker_row, "vernacular", name, 0 if row["is_preferred_name"] else 1):
-                vernacular_language[int(row["taxon_id"])] = _normalize_text(row["language_code"]) or None
+        if callable(search_vernacular) and callable(lookup_rows):
+            language_codes = self._search_language_codes()
+            priority = {code: idx for idx, code in enumerate(language_codes)}
+            vernacular_rows = search_vernacular(query, language_codes)
+            picker_rows = lookup_rows(row["taxon_id"] for row in vernacular_rows) if vernacular_rows else {}
+            for row in vernacular_rows:
+                picker_row = picker_rows.get(row["taxon_id"])
+                if picker_row is None:
+                    continue
+                language = row["language_code"]
+                preference = (
+                    0 if row["is_preferred_name"] else 1,
+                    priority.get(language or "", len(priority)),
+                )
+                offer(picker_row, "vernacular", row["vernacular_name"], preference, language)
 
         ranked = sorted(best.values(), key=lambda item: (item[0][0], item[3].casefold(), item[0][1:]))[:limit]
 
@@ -841,22 +880,17 @@ class TaxonLookupService:
         preferred_names: dict[int, tuple[str, str | None]] = {}
         name_lookup = getattr(self.vernacular_db, "preferred_vernacular_names", None)
         if scientific_ids and callable(name_lookup):
-            preferred_names = name_lookup(scientific_ids, self.language_code)
-
-        from database.vernacular_db import parse_scientific_name_snapshot
+            preferred_names = name_lookup(scientific_ids, self._search_language_codes())
 
         results: list[TaxonSearchResult] = []
-        for _key, row, matched_on, matched_text in ranked:
+        for _key, row, matched_on, matched_text, matched_language in ranked:
             taxon_id = int(row["sporely_taxon_id"])
             scientific_name = _normalize_text(row.get("scientific_name"))
-            parsed = parse_scientific_name_snapshot(scientific_name)
+            genus, species, _parsed_rank = parse_scientific_name_snapshot(scientific_name)
             rank = _normalize_text(row.get("taxon_rank_snapshot"))
-            if parsed is None or not rank:
-                continue
-            genus, species, _parsed_rank = parsed
             if matched_on == "vernacular":
                 vernacular_name: str | None = matched_text
-                vernacular_language_code = vernacular_language.get(taxon_id)
+                vernacular_language_code = matched_language
             else:
                 vernacular_name, vernacular_language_code = preferred_names.get(taxon_id, (None, None))
             if vernacular_name and vernacular_name.casefold() != scientific_name.casefold():

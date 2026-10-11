@@ -847,29 +847,31 @@ def _scientific_picker_rows_for_taxa(self: "VernacularDB", taxon_ids) -> dict[in
 VernacularDB.scientific_picker_rows_for_taxa = _scientific_picker_rows_for_taxa  # type: ignore[attr-defined]
 
 
+def _vernacular_language_filter(language_codes) -> tuple[str, list[str]]:
+    codes = [str(c).strip().lower() for c in (language_codes or ()) if str(c or "").strip()]
+    if not codes:
+        return "", []
+    return f" AND v.language_code IN ({','.join('?' for _ in codes)})", codes
+
+
 def _preferred_vernacular_names(
-    self: "VernacularDB", taxon_ids, language_code: str | None = None,
+    self: "VernacularDB", taxon_ids, language_codes=(),
 ) -> dict[int, tuple[str, str | None]]:
-    """``taxon_id -> (vernacular name, language code)`` in the vernacular
-    language: preferred names first, then by the language fan-out order,
-    then alphabetically."""
+    """``taxon_id -> (vernacular name, language code)`` among exactly
+    ``language_codes`` (all languages when empty): preferred names first,
+    then by the order of ``language_codes``, then alphabetically."""
     ids = sorted({int(t) for t in taxon_ids if t is not None})
-    if not ids or "vernacular_min" not in self._table_names():
+    if not ids or "vernacular_min" not in self._table_names() or not self._has_language():
         return {}
-    lang_clause, lang_params = self._language_clause(language_code)
-    has_language = self._has_language()
-    priority = {
-        code: idx
-        for idx, code in enumerate(resolve_query_language_codes(language_code or self.language_code))
-    }
+    lang_clause, lang_params = _vernacular_language_filter(language_codes)
+    priority = {code: idx for idx, code in enumerate(lang_params)}
     best: dict[int, tuple[tuple, str, str | None]] = {}
     with self._connect() as conn:
-        language_expr = "v.language_code" if has_language else "NULL"
         for start in range(0, len(ids), 500):
             chunk = ids[start:start + 500]
             placeholders = ",".join("?" for _ in chunk)
             for taxon_id, name, language, preferred in conn.execute(
-                f"SELECT v.taxon_id, v.vernacular_name, {language_expr}, v.is_preferred_name "
+                "SELECT v.taxon_id, v.vernacular_name, v.language_code, v.is_preferred_name "
                 f"FROM vernacular_min v WHERE v.taxon_id IN ({placeholders})"
                 + lang_clause,
                 [*chunk, *lang_params],
@@ -890,6 +892,67 @@ def _preferred_vernacular_names(
 
 
 VernacularDB.preferred_vernacular_names = _preferred_vernacular_names  # type: ignore[attr-defined]
+
+
+#: Leading characters whose case variants the vernacular search scans.
+_VERNACULAR_CASE_PREFIX_CHARS = 3
+
+
+def _case_variant_prefixes(text: str) -> list[str]:
+    """Every upper/lower combination of ``text`` (Unicode-aware)."""
+    variants = [""]
+    for char in text:
+        options = dict.fromkeys((char, char.lower(), char.upper()))
+        variants = [v + o for v in variants for o in options]
+    return list(dict.fromkeys(variants))
+
+
+def _search_vernacular_prefix(
+    self: "VernacularDB", query: str, language_codes=(),
+) -> list[dict]:
+    """Every vernacular name in exactly ``language_codes`` (all languages
+    when empty) that starts with ``query``, compared with Unicode
+    ``casefold`` (``østers`` finds ``Østerssopp``).
+
+    Uses indexed range scans (``vernacular_name >= ? AND < ?`` on
+    ``idx_vern_lang_name``), one per case variant of the query's first
+    characters, then filters on the full casefolded query. Unlimited, so
+    the caller can rank exact matches and collapse taxa before limiting.
+    """
+    query = " ".join((query or "").split())
+    if not query or "vernacular_min" not in self._table_names() or not self._has_language():
+        return []
+    folded = query.casefold()
+    lang_clause, lang_params = _vernacular_language_filter(language_codes)
+    out: list[dict] = []
+    seen: set[tuple[int, str, str]] = set()
+    with self._connect() as conn:
+        for prefix in _case_variant_prefixes(query[:_VERNACULAR_CASE_PREFIX_CHARS]):
+            for taxon_id, name, language, preferred in conn.execute(
+                "SELECT v.taxon_id, v.vernacular_name, v.language_code, v.is_preferred_name "
+                "FROM vernacular_min v "
+                "WHERE v.vernacular_name >= ? AND v.vernacular_name < ?"
+                + lang_clause,
+                [prefix, _prefix_upper_bound(prefix), *lang_params],
+            ):
+                text = str(name or "").strip()
+                if taxon_id is None or not text.casefold().startswith(folded):
+                    continue
+                lang = str(language or "").strip().lower()
+                key = (int(taxon_id), text, lang)
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append({
+                    "taxon_id": int(taxon_id),
+                    "vernacular_name": text,
+                    "language_code": lang or None,
+                    "is_preferred_name": bool(preferred),
+                })
+    return out
+
+
+VernacularDB.search_vernacular_prefix = _search_vernacular_prefix  # type: ignore[attr-defined]
 
 
 def _suggest_scientific_names(

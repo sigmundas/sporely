@@ -52,6 +52,10 @@ def _seed(db_path: Path, *, v2: bool = True) -> None:
                 # Genus rank is outside the picker whitelist.
                 (5, "Cantharellus", None, "Cantharellaceae",
                  "Cantharellus", "genus", "accepted", "col_xr"),
+                (6, "Cantharellus", "friesii", "Cantharellaceae",
+                 "Cantharellus friesii", "species", "accepted", "col_xr"),
+                (7, "Pleurotus", "ostreatus", "Pleurotaceae",
+                 "Pleurotus ostreatus", "species", "accepted", "col_xr"),
             ],
         )
         conn.executemany(
@@ -59,6 +63,10 @@ def _seed(db_path: Path, *, v2: bool = True) -> None:
             "VALUES (?, 'sci', ?, ?)",
             [
                 (1, "Cantharellus cibarius", 1),
+                (1, "Cantharellus cibarius var. alba", 0),
+                (1, "Cantharellus cibarius var. bicolor", 0),
+                (6, "Cantharellus friesii", 1),
+                (7, "Pleurotus ostreatus", 1),
                 (2, "Russula emetica", 1),
                 (3, "Craterellus tubaeformis", 1),
                 (3, "Cantharellus tubaeformis", 0),
@@ -73,6 +81,10 @@ def _seed(db_path: Path, *, v2: bool = True) -> None:
                 (1, "nb", "Kantarell", 1),
                 (2, "en", "Russula sickener", 1),
                 (2, "nb", "Giftkremle", 1),
+                (2, "nn", "Spykremle", 1),
+                (1, "nb", "Kantarell gul", 0),
+                (4, "en", "Chant", 0),
+                (7, "nb", "Østerssopp", 1),
                 (3, "en", "Winter chanterelle", 1),
                 (3, "nb", "Traktkantarell", 1),
                 (4, "nb", "Kantarellsopp", 0),
@@ -82,6 +94,7 @@ def _seed(db_path: Path, *, v2: bool = True) -> None:
 
 
 def _service(tmp_path: Path, *, language: str = "en", v2: bool = True) -> TaxonLookupService:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     db_path = tmp_path / "taxonomy.sqlite"
     _seed(db_path, v2=v2)
     db = VernacularDB(db_path, language_code=language, display_language_code="en")
@@ -93,7 +106,7 @@ def _ids(results: list[TaxonSearchResult]) -> list[int]:
 
 
 def test_vernacular_prefix_hit_carries_committable_row(tmp_path: Path) -> None:
-    results = _service(tmp_path).search_taxa("chant")
+    results = _service(tmp_path).search_taxa("chanter")
     assert _ids(results) == [1]
     hit = results[0]
     assert hit.matched_on == "vernacular"
@@ -160,7 +173,7 @@ def test_language_switch_changes_vernacular_hits_and_labels(tmp_path: Path) -> N
 
     service.language_code = "nb"
     assert _ids(service.search_taxa("Kantarell")) == [1, 4]
-    assert service.search_taxa("Chant") == []
+    assert service.search_taxa("Chanter") == []
     hit = service.search_taxa("Cantharellus cib")[0]
     assert hit.display_label == "Kantarell (Cantharellus cibarius)"
     assert hit.vernacular_language_code == "nb"
@@ -191,3 +204,50 @@ def test_without_taxonomy_v2_db_returns_empty_without_raising(tmp_path: Path) ->
         reference_db_factory=lambda: None,
     )
     assert missing.search_taxa("Chant") == []
+
+
+def test_limit_keeps_a_nonpreferred_exact_match(tmp_path: Path) -> None:
+    # The preferred prefix name 'Chanterelle' must not crowd out the
+    # nonpreferred exact name 'Chant' before ranking.
+    results = _service(tmp_path).search_taxa("Chant", limit=1)
+    assert _ids(results) == [4]
+    assert results[0].matched_text == "Chant"
+    assert _ids(_service(tmp_path / "all").search_taxa("Chant")) == [4, 1]
+
+
+def test_limit_counts_distinct_eligible_taxa_only(tmp_path: Path) -> None:
+    # Vernacular: Kantarell / Kantarell gul are one taxon and Kantareller is
+    # a genus outside the whitelist; two distinct eligible taxa still fill.
+    assert _ids(_service(tmp_path, language="nb").search_taxa("kantarell", limit=2)) == [1, 4]
+    # Scientific: taxon 1's two variety variants must not underfill.
+    assert _ids(_service(tmp_path / "sci").search_taxa("Cantharellus", limit=3)) == [4, 1, 6]
+
+
+def test_vernacular_match_is_unicode_case_insensitive(tmp_path: Path) -> None:
+    for i, queries in enumerate((("østers", "Østers", "ØSTERS"), ("ØSTERS", "østers", "Østers"))):
+        service = _service(tmp_path / str(i), language="nb")
+        for query in queries:
+            results = service.search_taxa(query)
+            assert _ids(results) == [7], query
+            assert results[0].display_label == "Østerssopp (Pleurotus ostreatus)"
+
+
+def test_explicit_nb_and_nn_stay_distinct(tmp_path: Path) -> None:
+    service = _service(tmp_path, language="nb")
+    assert service.search_taxa("Spykr") == []
+    assert service.search_taxa("Russula em")[0].display_label == "Giftkremle (Russula emetica)"
+
+    service.language_code = "nn"
+    assert _ids(service.search_taxa("Spykr")) == [2]
+    assert service.search_taxa("Giftkr") == []
+    hit = service.search_taxa("Russula em")[0]
+    assert (hit.display_label, hit.vernacular_language_code) == ("Spykremle (Russula emetica)", "nn")
+
+    # The umbrella code still fans out to both.
+    service.language_code = "no"
+    assert _ids(service.search_taxa("Spykr")) == [2]
+    assert _ids(service.search_taxa("Giftkr")) == [2]
+
+    nn_service = _service(tmp_path / "nn", language="nn")
+    assert _ids(nn_service.search_taxa("Spykr")) == [2]
+    assert nn_service.search_taxa("Giftkr") == []
