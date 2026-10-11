@@ -781,6 +781,117 @@ def _prefix_upper_bound(prefix: str) -> str:
 VernacularDB._SCIENTIFIC_PICKER_RANKS = _SCIENTIFIC_PICKER_RANKS  # type: ignore[attr-defined]
 
 
+def _canonical_picker_row(
+    taxon_id, name, rank, status, family, source, national_name,
+) -> dict | None:
+    """The scientific-picker row for a ``taxon_min`` canonical concept, or
+    ``None`` when the picker's whitelist excludes it. Shared by the prefix
+    search and the by-id lookup so both apply the same filter."""
+    if not name or "(" in name:
+        return None
+    if name in _PICKER_EXCLUDED_NAMES:
+        return None
+    parsed = parse_scientific_name_snapshot(name)
+    if parsed:
+        rank_snapshot = parsed[2]
+    elif rank in _PICKER_TAXON_RANKS:
+        rank_snapshot = rank
+    else:
+        rank_snapshot = None
+    if rank_snapshot not in _SCIENTIFIC_PICKER_RANKS and rank_snapshot != "aggregate":
+        return None
+    return {
+        "sporely_taxon_id": int(taxon_id),
+        "scientific_name": str(name),
+        "taxon_rank_snapshot": rank_snapshot,
+        "is_canonical": True,
+        "canonical_scientific_name": str(name),
+        "canonical_rank": str(rank or ""),
+        "canonical_taxonomic_status": str(status or ""),
+        "family": str(family or "") or None,
+        "canonical_source_system": str(source or "") or None,
+        "display_scientific_name": str(national_name or "") or str(name),
+        "authorship": None,
+        # For canonical rows the link kind is "canonical" — the
+        # observer picks the accepted concept directly.
+        "link_kind": "canonical",
+    }
+
+
+def _scientific_picker_rows_for_taxa(self: "VernacularDB", taxon_ids) -> dict[int, dict]:
+    """``taxon_id -> canonical scientific-picker row`` for known concepts
+    the picker whitelist admits. A by-id lookup (not a search) used to give
+    vernacular-name hits the same committable row a scientific hit has."""
+    ids = sorted({int(t) for t in taxon_ids if t is not None})
+    if not ids or "taxon_min" not in self._table_names():
+        return {}
+    out: dict[int, dict] = {}
+    with self._connect() as conn:
+        national_expr = self._national_name_expr(conn)
+        for start in range(0, len(ids), 500):
+            chunk = ids[start:start + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            for taxon_id, name, rank, status, family, source, national_name in conn.execute(
+                "SELECT t.taxon_id, t.canonical_scientific_name, t.taxon_rank, "
+                "       t.taxonomic_status, t.family, t.canonical_source_system, "
+                f"      {national_expr} "
+                f"FROM taxon_min t WHERE t.taxon_id IN ({placeholders})",
+                chunk,
+            ):
+                row = _canonical_picker_row(taxon_id, name, rank, status, family, source, national_name)
+                if row is not None:
+                    out[int(taxon_id)] = row
+    return out
+
+
+VernacularDB.scientific_picker_rows_for_taxa = _scientific_picker_rows_for_taxa  # type: ignore[attr-defined]
+
+
+def _preferred_vernacular_names(
+    self: "VernacularDB", taxon_ids, language_code: str | None = None,
+) -> dict[int, tuple[str, str | None]]:
+    """``taxon_id -> (vernacular name, language code)`` in the vernacular
+    language: preferred names first, then by the language fan-out order,
+    then alphabetically."""
+    ids = sorted({int(t) for t in taxon_ids if t is not None})
+    if not ids or "vernacular_min" not in self._table_names():
+        return {}
+    lang_clause, lang_params = self._language_clause(language_code)
+    has_language = self._has_language()
+    priority = {
+        code: idx
+        for idx, code in enumerate(resolve_query_language_codes(language_code or self.language_code))
+    }
+    best: dict[int, tuple[tuple, str, str | None]] = {}
+    with self._connect() as conn:
+        language_expr = "v.language_code" if has_language else "NULL"
+        for start in range(0, len(ids), 500):
+            chunk = ids[start:start + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            for taxon_id, name, language, preferred in conn.execute(
+                f"SELECT v.taxon_id, v.vernacular_name, {language_expr}, v.is_preferred_name "
+                f"FROM vernacular_min v WHERE v.taxon_id IN ({placeholders})"
+                + lang_clause,
+                [*chunk, *lang_params],
+            ):
+                text = str(name or "").strip()
+                if not text:
+                    continue
+                lang = str(language or "").strip().lower() or None
+                rank_key = (
+                    0 if preferred else 1,
+                    priority.get(lang or "", len(priority)),
+                    text.casefold(),
+                )
+                current = best.get(int(taxon_id))
+                if current is None or rank_key < current[0]:
+                    best[int(taxon_id)] = (rank_key, text, lang)
+    return {taxon_id: (text, lang) for taxon_id, (_key, text, lang) in best.items()}
+
+
+VernacularDB.preferred_vernacular_names = _preferred_vernacular_names  # type: ignore[attr-defined]
+
+
 def _suggest_scientific_names(
     self: "VernacularDB",
     prefix: str,
@@ -840,42 +951,15 @@ def _suggest_scientific_names(
     seen: set[tuple[int, str]] = set()
     out: list[dict] = []
 
-    def parsed_rank_or(structured_rank: str | None, name: str) -> str | None:
-        parsed = parse_scientific_name_snapshot(name)
-        if parsed:
-            return parsed[2]
-        if structured_rank in _PICKER_TAXON_RANKS:
-            return structured_rank
-        return None
-
     for taxon_id, name, rank, status, family, source, national_name in canonical_rows:
-        if not name or "(" in name:
-            continue
-        if name in _PICKER_EXCLUDED_NAMES:
-            continue
-        rank_snapshot = parsed_rank_or(rank, name)
-        if rank_snapshot not in _SCIENTIFIC_PICKER_RANKS and rank_snapshot != "aggregate":
+        row = _canonical_picker_row(taxon_id, name, rank, status, family, source, national_name)
+        if row is None:
             continue
         key = (int(taxon_id), name)
         if key in seen:
             continue
         seen.add(key)
-        out.append({
-            "sporely_taxon_id": int(taxon_id),
-            "scientific_name": str(name),
-            "taxon_rank_snapshot": rank_snapshot,
-            "is_canonical": True,
-            "canonical_scientific_name": str(name),
-            "canonical_rank": str(rank or ""),
-            "canonical_taxonomic_status": str(status or ""),
-            "family": str(family or "") or None,
-            "canonical_source_system": str(source or "") or None,
-            "display_scientific_name": str(national_name or "") or str(name),
-            "authorship": None,
-            # For canonical rows the link kind is "canonical" — the
-            # observer picks the accepted concept directly.
-            "link_kind": "canonical",
-        })
+        out.append(row)
 
     for (taxon_id, name, is_pref, canonical_name, rank,
          status, family, source, national_name) in alias_rows:

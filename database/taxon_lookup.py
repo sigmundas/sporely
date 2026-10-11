@@ -133,7 +133,55 @@ class ManualScientificResolution:
     link_kind: str = "canonical"
 
 
+@dataclass(frozen=True)
+class TaxonSearchResult:
+    """One taxon from :meth:`TaxonLookupService.search_taxa`.
+
+    Carries the full scientific-picker row the observation editor commits
+    (``taxon_rank_snapshot``, ``link_kind``, ``canonical_*``), so a UI that
+    shows this result never re-queries to commit it. ``scientific_name`` is
+    the name the selection writes: the matched variant for a scientific hit,
+    the canonical name for a vernacular hit.
+    """
+    sporely_taxon_id: int
+    scientific_name: str
+    genus: str
+    species: str | None
+    rank: str
+    family: str | None
+    vernacular_name: str | None
+    vernacular_language_code: str | None
+    matched_on: str  # "scientific" | "vernacular"
+    matched_text: str
+    display_label: str
+    display_scientific_name: str
+    link_kind: str | None
+    canonical_scientific_name: str
+    canonical_rank: str | None
+    canonical_source_system: str | None
+
+    @property
+    def taxon_rank_snapshot(self) -> str:
+        return self.rank
+
+    def as_scientific_suggestion(self) -> dict:
+        """The row shape ``suggest_scientific_names`` returns, for the
+        controller's existing scientific-selection commit path."""
+        return {
+            "sporely_taxon_id": self.sporely_taxon_id,
+            "scientific_name": self.scientific_name,
+            "taxon_rank_snapshot": self.rank,
+            "link_kind": self.link_kind,
+            "canonical_scientific_name": self.canonical_scientific_name,
+            "canonical_rank": self.canonical_rank,
+            "canonical_source_system": self.canonical_source_system,
+            "display_scientific_name": self.display_scientific_name,
+            "family": self.family,
+        }
+
+
 TAXON_COMPLETER_LIMIT = 200
+TAXON_SEARCH_MIN_CHARS = 2
 
 
 def _normalize_genus_display(genus: str | None) -> str:
@@ -195,6 +243,7 @@ class TaxonLookupService:
         self._resolve_scientific_cache: dict[tuple[str, str], TaxonChoice | None] = {}
         self._best_common_name_cache: dict[tuple[str, str], TaxonChoice | None] = {}
         self._common_names_for_taxon_cache: dict[tuple[str, str, int], tuple[TaxonChoice, ...]] = {}
+        self._search_taxa_cache: dict[tuple[str, str | None, int], tuple[TaxonSearchResult, ...]] = {}
 
         initial_language = normalize_vernacular_language(language_code) if language_code else None
         if self.vernacular_db is not None:
@@ -230,6 +279,7 @@ class TaxonLookupService:
         self._resolve_scientific_cache.clear()
         self._best_common_name_cache.clear()
         self._common_names_for_taxon_cache.clear()
+        self._search_taxa_cache.clear()
 
     @contextmanager
     def _local_connection(self):
@@ -700,6 +750,138 @@ class TaxonLookupService:
         values = tuple(self._row_to_choice(row, "taxonomy") for row in rows[:limit_value])
         self._suggest_common_names_cache[cache_key] = values
         return list(values)
+
+    def _has_taxonomy_v2(self) -> bool:
+        is_v2 = getattr(self.vernacular_db, "_is_v2", None)
+        if not callable(is_v2):
+            return False
+        try:
+            return bool(is_v2())
+        except Exception:
+            return False
+
+    def search_taxa(self, query: str = "", limit: int = TAXON_COMPLETER_LIMIT) -> list[TaxonSearchResult]:
+        """One search over scientific names (canonical and variants) and
+        vernacular names in the current vernacular language, one result per
+        taxon, exact matches before prefix matches.
+
+        Needs at least :data:`TAXON_SEARCH_MIN_CHARS` characters and an
+        installed taxonomy-v2 DB, whose ``taxon_id`` is the Sporely ID;
+        otherwise returns ``[]``. Scientific hits come from
+        :meth:`suggest_scientific_names`, vernacular hits from the
+        common-name prefix path, both within the picker's rank whitelist.
+        """
+        query = " ".join(_normalize_text(query).split())
+        if len(query) < TAXON_SEARCH_MIN_CHARS or self.vernacular_db is None:
+            return []
+        limit_value = max(0, int(limit))
+        cache_key = (query.casefold(), self.display_language_code, limit_value)
+        cached = self._search_taxa_cache.get(cache_key)
+        if cached is not None:
+            return list(cached[:limit_value])
+        if not self._has_taxonomy_v2():
+            return []
+        try:
+            values = tuple(self._search_taxa_uncached(query, limit_value))
+        except sqlite3.Error:
+            return []
+        self._search_taxa_cache[cache_key] = values
+        return list(values)
+
+    def _search_taxa_uncached(self, query: str, limit: int) -> list[TaxonSearchResult]:
+        folded = query.casefold()
+        # taxon id -> (priority, picker row, matched_on, matched text): the
+        # best match per taxon. Exact beats prefix, then scientific beats
+        # vernacular, then canonical/preferred names, then source order.
+        best: dict[int, tuple[tuple, dict, str, str]] = {}
+        order = 0
+
+        def offer(row: dict, matched_on: str, matched_text: str, preference: int) -> bool:
+            nonlocal order
+            taxon_id = int(row["sporely_taxon_id"])
+            key = (
+                0 if matched_text.casefold() == folded else 1,
+                0 if matched_on == "scientific" else 1,
+                preference,
+                order,
+            )
+            order += 1
+            current = best.get(taxon_id)
+            if current is None or key < current[0]:
+                best[taxon_id] = (key, row, matched_on, matched_text)
+                return True
+            return False
+
+        # The range scan is case-sensitive; also try the scientific-name
+        # case ("russula e" -> "Russula e") so typing stays case-insensitive.
+        scientific_queries = dict.fromkeys((query, query[0].upper() + query[1:].lower()))
+        for prefix in scientific_queries:
+            for row in self.suggest_scientific_names(prefix, limit=limit):
+                name = _normalize_text(row.get("scientific_name"))
+                if name and row.get("sporely_taxon_id") is not None and name.casefold().startswith(folded):
+                    offer(row, "scientific", name, 0 if row.get("is_canonical") else 1)
+
+        vernacular_rows = self._local_common_name_rows(prefix=query, limit=limit)
+        picker_rows: dict[int, dict] = {}
+        lookup_rows = getattr(self.vernacular_db, "scientific_picker_rows_for_taxa", None)
+        if vernacular_rows and callable(lookup_rows):
+            picker_rows = lookup_rows(row["taxon_id"] for row in vernacular_rows)
+        vernacular_language: dict[int, str | None] = {}
+        for row in vernacular_rows:
+            picker_row = picker_rows.get(int(row["taxon_id"]))
+            name = _normalize_text(row["common_name"])
+            if picker_row is None or not name or not name.casefold().startswith(folded):
+                continue
+            if offer(picker_row, "vernacular", name, 0 if row["is_preferred_name"] else 1):
+                vernacular_language[int(row["taxon_id"])] = _normalize_text(row["language_code"]) or None
+
+        ranked = sorted(best.values(), key=lambda item: (item[0][0], item[3].casefold(), item[0][1:]))[:limit]
+
+        scientific_ids = [item[1]["sporely_taxon_id"] for item in ranked if item[2] == "scientific"]
+        preferred_names: dict[int, tuple[str, str | None]] = {}
+        name_lookup = getattr(self.vernacular_db, "preferred_vernacular_names", None)
+        if scientific_ids and callable(name_lookup):
+            preferred_names = name_lookup(scientific_ids, self.language_code)
+
+        from database.vernacular_db import parse_scientific_name_snapshot
+
+        results: list[TaxonSearchResult] = []
+        for _key, row, matched_on, matched_text in ranked:
+            taxon_id = int(row["sporely_taxon_id"])
+            scientific_name = _normalize_text(row.get("scientific_name"))
+            parsed = parse_scientific_name_snapshot(scientific_name)
+            rank = _normalize_text(row.get("taxon_rank_snapshot"))
+            if parsed is None or not rank:
+                continue
+            genus, species, _parsed_rank = parsed
+            if matched_on == "vernacular":
+                vernacular_name: str | None = matched_text
+                vernacular_language_code = vernacular_language.get(taxon_id)
+            else:
+                vernacular_name, vernacular_language_code = preferred_names.get(taxon_id, (None, None))
+            if vernacular_name and vernacular_name.casefold() != scientific_name.casefold():
+                display_label = f"{vernacular_name} ({scientific_name})"
+            else:
+                display_label = scientific_name
+            results.append(TaxonSearchResult(
+                sporely_taxon_id=taxon_id,
+                scientific_name=scientific_name,
+                genus=genus,
+                species=species,
+                rank=rank,
+                family=_normalize_text(row.get("family")) or None,
+                vernacular_name=vernacular_name,
+                vernacular_language_code=vernacular_language_code,
+                matched_on=matched_on,
+                matched_text=matched_text,
+                display_label=display_label,
+                display_scientific_name=_normalize_text(row.get("display_scientific_name")) or scientific_name,
+                link_kind=row.get("link_kind"),
+                canonical_scientific_name=_normalize_text(row.get("canonical_scientific_name")),
+                canonical_rank=_normalize_text(row.get("canonical_rank")) or None,
+                canonical_source_system=_normalize_text(row.get("canonical_source_system")) or None,
+            ))
+        return results
 
     def resolve_scientific(self, genus: str, species: str) -> TaxonChoice | None:
         key = (_normalize_genus_display(genus).casefold(), _normalize_species_display(species).casefold())
@@ -1391,6 +1573,8 @@ def resolve_installed_external_identity(
 
 __all__ = [
     "TAXON_COMPLETER_LIMIT",
+    "TAXON_SEARCH_MIN_CHARS",
+    "TaxonSearchResult",
     "InstalledTaxonConcept",
     "installed_taxon_concept",
     "namespaced_external_id_matches",
