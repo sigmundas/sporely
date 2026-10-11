@@ -321,3 +321,33 @@ import or scheduled taxonomy publication; retain activation advisory-lock
 serialization during cleanup and recheck active release between operations.
 All backup, capacity, integrity and abort gates remain in force. The earlier
 write-pause STOP is superseded, not a current execution requirement.
+
+## Narrowed execution attempt — fresh backup passed, capacity refresh unavailable
+
+Committed/pushed narrowed authorization as a58f093. Normal application writes
+were not paused. Production read-only checks found no loading/ready taxonomy
+release, no running import, no active taxonomy import query; cron contains
+only unrelated reference-policy retention, and inspected web workflows have
+no taxonomy publication schedule. Current cluster sum 465359025 bytes; zero
+replication slots. Quota gate passes.
+
+Fresh private backup:
+`/Users/sigmundas/sporely-scratch/taxonomy-retention-execution/production.dump`
+SHA-256: 73213995c0290105989763472913bb387c3218ee5342a85e33bd9d9aacf91b02.
+Export exit 0; full archive read passed; isolated restore exited 0 with no
+errors using the rehearsed cron TOC exclusion. Active validator passed.
+Fresh retired-only selective export, cleanup and recovery passed with exact
+full payload fingerprints in the isolated database. Evidence resides beside
+backup in backup-verification.json. This is a private recovery artifact,
+not an indefinite taxonomy archive.
+
+STOP before production deletion: required refreshed free disk and current
+WAL/archive health cannot be observed with available access. User-provided
+8 GB/0.73 GB/128 MB measurements remain the last physical-capacity evidence;
+SQL cluster bytes and zero slots do not measure current free filesystem space
+or archive backlog. Existing per-operation metric/abort requirements were
+explicitly preserved by the user. Do not silently replace live monitoring
+with a static earlier dashboard reading. No production deletion, VACUUM,
+DDL/configuration change, application pause or maintenance mode occurred.
+Next action: make current dashboard/metrics capacity and archive health
+observable for the execution window, then resume the same authorized procedure.
