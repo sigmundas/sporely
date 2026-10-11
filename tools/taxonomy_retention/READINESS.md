@@ -351,3 +351,21 @@ with a static earlier dashboard reading. No production deletion, VACUUM,
 DDL/configuration change, application pause or maintenance mode occurred.
 Next action: make current dashboard/metrics capacity and archive health
 observable for the execution window, then resume the same authorized procedure.
+
+## Explicit risk acceptance — current execution authority
+
+User explicitly accepts uncertainty about current physical free disk and
+WAL/archive measurements. These are no longer mandatory execution gates or
+per-operation abort criteria based on unavailable metrics. This is risk
+acceptance, NOT evidence that live measurements passed. Last dashboard evidence
+remains 0.73 GB used of 8 GB provisioned, WAL 128 MB; zero replication slots.
+All earlier contrary mandatory live disk/WAL wording is superseded here.
+Normal application writes continue. No additional maintenance infrastructure.
+
+Remaining gates: verified fresh backup and selective recovery evidence;
+exact release statuses/IDs; no active overlapping taxonomy publication;
+cluster database size + 125% measured replacement strictly below 495000000
+bytes before each sequential rebuild; post-rebuild actual size reduction;
+5-second lock and 120-second statement timeouts; integrity checks. Stop on
+errors, excess contention, unexpected growth, observed capacity problems or
+identity/functionality failure. No active payload or permanent identity edits.
