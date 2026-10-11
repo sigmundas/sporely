@@ -1,7 +1,9 @@
 """SQLite helper for vernacular name lookup."""
 from __future__ import annotations
 
+from functools import lru_cache
 import sqlite3
+import sys
 from pathlib import Path
 
 from utils.vernacular_utils import (
@@ -894,17 +896,55 @@ def _preferred_vernacular_names(
 VernacularDB.preferred_vernacular_names = _preferred_vernacular_names  # type: ignore[attr-defined]
 
 
-#: Leading characters whose case variants the vernacular search scans.
+#: Leading casefolded characters the vernacular search range-scans on.
 _VERNACULAR_CASE_PREFIX_CHARS = 3
 
 
-def _case_variant_prefixes(text: str) -> list[str]:
-    """Every upper/lower combination of ``text`` (Unicode-aware)."""
-    variants = [""]
-    for char in text:
-        options = dict.fromkeys((char, char.lower(), char.upper()))
-        variants = [v + o for v in variants for o in options]
-    return list(dict.fromkeys(variants))
+@lru_cache(maxsize=1)
+def _casefold_sources() -> dict[str, tuple[str, ...]]:
+    """``casefolded text -> characters that casefold to it``, for every
+    character that casefold changes (``"ss" -> ("ß", "ẞ")``). Built once,
+    lazily (~0.1 s)."""
+    sources: dict[str, list[str]] = {}
+    for codepoint in range(sys.maxunicode + 1):
+        char = chr(codepoint)
+        folded = char.casefold()
+        if folded != char:
+            sources.setdefault(folded, []).append(char)
+    return {folded: tuple(chars) for folded, chars in sources.items()}
+
+
+def _casefold_source_prefixes(folded: str, depth: int) -> list[str]:
+    """Every stored-text prefix whose casefold covers the first ``depth``
+    characters of ``folded`` (all of it when shorter). Any name whose
+    casefold starts with ``folded`` begins with one of them, so the result
+    depends on the casefolded query only."""
+    sources = _casefold_sources()
+    target = min(depth, len(folded))
+    out: dict[str, None] = {}
+
+    def chars_folding_to(segment: str) -> tuple[str, ...]:
+        own = (segment,) if len(segment) == 1 and segment.casefold() == segment else ()
+        return own + sources.get(segment, ())
+
+    def walk(index: int, built: str) -> None:
+        if index >= target:
+            out[built] = None
+            return
+        rest = folded[index:]
+        for size in range(1, min(3, len(rest)) + 1):
+            for char in chars_folding_to(rest[:size]):
+                walk(index + size, built + char)
+        # A character whose casefold runs past the end of the query.
+        if len(rest) >= 3:
+            return
+        for segment, chars in sources.items():
+            if len(segment) > len(rest) and segment.startswith(rest):
+                for char in chars:
+                    walk(len(folded), built + char)
+
+    walk(0, "")
+    return list(out)
 
 
 def _search_vernacular_prefix(
@@ -915,19 +955,20 @@ def _search_vernacular_prefix(
     ``casefold`` (``østers`` finds ``Østerssopp``).
 
     Uses indexed range scans (``vernacular_name >= ? AND < ?`` on
-    ``idx_vern_lang_name``), one per case variant of the query's first
-    characters, then filters on the full casefolded query. Unlimited, so
+    ``idx_vern_lang_name``), one per stored-text prefix that casefolds to
+    the query's first characters (``fuss`` scans ``Fuß`` too), then filters
+    on the full casefolded query. Depends on the casefolded query only, and
+    unlimited, so
     the caller can rank exact matches and collapse taxa before limiting.
     """
-    query = " ".join((query or "").split())
-    if not query or "vernacular_min" not in self._table_names() or not self._has_language():
+    folded = " ".join((query or "").split()).casefold()
+    if not folded or "vernacular_min" not in self._table_names() or not self._has_language():
         return []
-    folded = query.casefold()
     lang_clause, lang_params = _vernacular_language_filter(language_codes)
     out: list[dict] = []
     seen: set[tuple[int, str, str]] = set()
     with self._connect() as conn:
-        for prefix in _case_variant_prefixes(query[:_VERNACULAR_CASE_PREFIX_CHARS]):
+        for prefix in _casefold_source_prefixes(folded, _VERNACULAR_CASE_PREFIX_CHARS):
             for taxon_id, name, language, preferred in conn.execute(
                 "SELECT v.taxon_id, v.vernacular_name, v.language_code, v.is_preferred_name "
                 "FROM vernacular_min v "

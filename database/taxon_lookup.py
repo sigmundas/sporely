@@ -803,21 +803,42 @@ class TaxonLookupService:
 
         return resolve_query_language_codes(self._requested_language_code)
 
-    def _scientific_search_rows(self, prefix: str, limit: int) -> list[dict]:
-        """``suggest_scientific_names`` rows for ``prefix``, widened until
-        they name ``limit`` distinct taxa or the source runs dry, so
-        collapsing a taxon's variants cannot underfill the result."""
+    @staticmethod
+    def _search_row_eligible(row: dict) -> bool:
+        """Whether a picker row can become a ``TaxonSearchResult``: it names
+        a taxon, carries a rank snapshot and parses into genus/species."""
+        from database.vernacular_db import parse_scientific_name_snapshot
+
+        return (
+            row.get("sporely_taxon_id") is not None
+            and bool(_normalize_text(row.get("taxon_rank_snapshot")))
+            and parse_scientific_name_snapshot(_normalize_text(row.get("scientific_name"))) is not None
+        )
+
+    def _scientific_search_rows(self, prefix: str, folded: str, limit: int) -> list[dict]:
+        """``suggest_scientific_names`` rows for ``prefix`` that match the
+        casefolded query and are search-eligible, widened until they name
+        ``limit`` distinct taxa or the source runs dry, so collapsing a
+        taxon's variants or dropping ineligible rows cannot underfill."""
         request = max(limit, 1)
         while True:
             rows = self.suggest_scientific_names(prefix, limit=request)
-            distinct = {row.get("sporely_taxon_id") for row in rows}
+            eligible = [
+                row for row in rows
+                if _normalize_text(row.get("scientific_name")).casefold().startswith(folded)
+                and self._search_row_eligible(row)
+            ]
+            distinct = {row["sporely_taxon_id"] for row in eligible}
             if len(rows) < request or len(distinct) >= limit or request >= _SEARCH_SCAN_CEILING:
-                return rows
+                return eligible
             request = min(request * 4, _SEARCH_SCAN_CEILING)
 
     def _search_taxa_uncached(self, query: str, limit: int) -> list[TaxonSearchResult]:
         from database.vernacular_db import parse_scientific_name_snapshot
 
+        # Candidate retrieval depends on the casefolded query alone, so
+        # casefold-equivalent queries ("Fuß", "FUSS") share one cache entry
+        # and one result.
         folded = query.casefold()
         # taxon id -> (priority, picker row, matched_on, matched text,
         # vernacular language): the best match per taxon. Exact beats prefix,
@@ -829,9 +850,7 @@ class TaxonLookupService:
         def offer(row: dict, matched_on: str, matched_text: str, preference: int,
                   language: str | None = None) -> None:
             nonlocal order
-            if parse_scientific_name_snapshot(_normalize_text(row.get("scientific_name"))) is None:
-                return
-            if not _normalize_text(row.get("taxon_rank_snapshot")):
+            if not self._search_row_eligible(row):
                 return
             taxon_id = int(row["sporely_taxon_id"])
             key = (
@@ -845,16 +864,12 @@ class TaxonLookupService:
             if current is None or key < current[0]:
                 best[taxon_id] = (key, row, matched_on, matched_text, language)
 
-        # The scientific range scan is case-sensitive; scan the lowercased
-        # and the scientific-name-cased query ("russula e" -> "Russula e"),
-        # both derived from the casefold-equivalent text so every
-        # capitalization of a query gives the same (cached) result.
-        lowered = query.lower()
-        for prefix in dict.fromkeys((lowered, lowered[0].upper() + lowered[1:])):
-            for row in self._scientific_search_rows(prefix, limit):
+        # The scientific range scan is case-sensitive; scan the casefolded
+        # and the scientific-name-cased query ("russula e" -> "Russula e").
+        for prefix in dict.fromkeys((folded, folded[0].upper() + folded[1:])):
+            for row in self._scientific_search_rows(prefix, folded, limit):
                 name = _normalize_text(row.get("scientific_name"))
-                if name and row.get("sporely_taxon_id") is not None and name.casefold().startswith(folded):
-                    offer(row, "scientific", name, 0 if row.get("is_canonical") else 1)
+                offer(row, "scientific", name, 0 if row.get("is_canonical") else 1)
 
         search_vernacular = getattr(self.vernacular_db, "search_vernacular_prefix", None)
         lookup_rows = getattr(self.vernacular_db, "scientific_picker_rows_for_taxa", None)

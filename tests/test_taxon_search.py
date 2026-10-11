@@ -56,6 +56,12 @@ def _seed(db_path: Path, *, v2: bool = True) -> None:
                  "Cantharellus friesii", "species", "accepted", "col_xr"),
                 (7, "Pleurotus", "ostreatus", "Pleurotaceae",
                  "Pleurotus ostreatus", "species", "accepted", "col_xr"),
+                # Admitted by the scientific source on its structured rank,
+                # but its name does not parse, so search cannot commit it.
+                (8, "Cantharellus", "albo-citrinus", "Cantharellaceae",
+                 "Cantharellus albo-citrinus", "species", "accepted", "col_xr"),
+                (9, "Fusarium", "oxysporum", "Nectriaceae",
+                 "Fusarium oxysporum", "species", "accepted", "col_xr"),
             ],
         )
         conn.executemany(
@@ -85,6 +91,7 @@ def _seed(db_path: Path, *, v2: bool = True) -> None:
                 (1, "nb", "Kantarell gul", 0),
                 (4, "en", "Chant", 0),
                 (7, "nb", "Østerssopp", 1),
+                (9, "de", "Fußpilz", 1),
                 (3, "en", "Winter chanterelle", 1),
                 (3, "nb", "Traktkantarell", 1),
                 (4, "nb", "Kantarellsopp", 0),
@@ -219,8 +226,10 @@ def test_limit_counts_distinct_eligible_taxa_only(tmp_path: Path) -> None:
     # Vernacular: Kantarell / Kantarell gul are one taxon and Kantareller is
     # a genus outside the whitelist; two distinct eligible taxa still fill.
     assert _ids(_service(tmp_path, language="nb").search_taxa("kantarell", limit=2)) == [1, 4]
-    # Scientific: taxon 1's two variety variants must not underfill.
+    # Scientific: taxon 1's two variety variants and the unparseable
+    # 'Cantharellus albo-citrinus' (sorted first) must not underfill.
     assert _ids(_service(tmp_path / "sci").search_taxa("Cantharellus", limit=3)) == [4, 1, 6]
+    assert _ids(_service(tmp_path / "sci-all").search_taxa("Cantharellus")) == [4, 1, 6, 3]
 
 
 def test_vernacular_match_is_unicode_case_insensitive(tmp_path: Path) -> None:
@@ -251,3 +260,14 @@ def test_explicit_nb_and_nn_stay_distinct(tmp_path: Path) -> None:
     nn_service = _service(tmp_path / "nn", language="nn")
     assert _ids(nn_service.search_taxa("Spykr")) == [2]
     assert nn_service.search_taxa("Giftkr") == []
+
+
+def test_casefold_equivalent_queries_share_one_result(tmp_path: Path) -> None:
+    # 'Fuß' and 'Fuss' casefold alike; whichever runs first must not leave
+    # a cached miss for the other.
+    for i, queries in enumerate((("Fuss", "Fuß", "FUSS"), ("Fuß", "fuss", "FUSS"))):
+        service = _service(tmp_path / str(i), language="de")
+        for query in queries:
+            results = service.search_taxa(query)
+            assert _ids(results) == [9], query
+            assert results[0].display_label == "Fußpilz (Fusarium oxysporum)"
