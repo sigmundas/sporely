@@ -1,6 +1,8 @@
 # Unified species search in the observation editor
 
-Status: draft 2026-10-11, awaiting owner review. Request: "simplify the
+Status: approved 2026-10-11 by the owner for Stages 1-2 only ("just do the
+edit observation taxon selector first"). Decision 5 runs with the default
+below (old rows kept in a collapsed "Name details" section). Request: "simplify the
 species selector in sporely-py: make it the same as in sporely-web: include
 both vernacular and scientific type-as-you-search".
 Repository: `sporely-py`. Branch: `feature/unified-taxon-search` from
@@ -54,8 +56,8 @@ scientific-name variants and vernacular names in the chosen language
 
 ## Fixed decisions
 
-1. **Scope is the observation editor only**, for the main taxon (Stage 2) and
-   the host taxon (Stage 3). The reference-value editors and the add-reference
+1. **Scope is the observation editor's main taxon only** (Stage 2). The host
+   taxon is deferred to a follow-up plan (see "Deferred" at the end). The reference-value editors and the add-reference
    dialog keep their genus/species fields. They edit reference data keyed by
    genus/species, not an observation identification. Converting them is a
    possible later plan, not part of this one.
@@ -160,7 +162,9 @@ AI-ID copy, then save, reopen and confirm the name and red-list badge;
 (d) clear the field and save; (e) check the layout at the dialog's minimum
 width and with "Name details" open.
 
-## Stage 3 — Host taxon uses the same search field
+## Deferred — host taxon (not part of this run)
+
+Follow-up plan, after Stages 1-2 are accepted and used:
 
 Apply the Stage 2 component to the host taxon rows
 (`host_genus_input` / `host_species_input` / `host_vernacular_input`,
