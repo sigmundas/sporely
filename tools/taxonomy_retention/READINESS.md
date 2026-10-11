@@ -369,3 +369,37 @@ bytes before each sequential rebuild; post-rebuild actual size reduction;
 5-second lock and 120-second statement timeouts; integrity checks. Stop on
 errors, excess contention, unexpected growth, observed capacity problems or
 identity/functionality failure. No active payload or permanent identity edits.
+
+## Production completion
+
+Authorized cleanup and all six sequential rebuilds completed successfully.
+Order: redlist, taxa, external_ids, scientific_names, vernacular_names,
+legacy_external_ids. Before every operation, actual cluster bytes plus 125%
+measured replacement passed the strict 495000000-byte gate. All statements
+used 5-second lock and 120-second statement timeouts. No errors or excess
+contention occurred. DELETE transaction took ~29.3 seconds including connection;
+individual rebuild/measurement calls took ~1.8–6.7 seconds. The empty legacy
+external-ID relation remained at its 16384-byte minimum; it had no reclaimable
+payload. Every populated payload relation decreased to the expected size.
+
+Final measured application database: **199164431 bytes (189.94 MiB)**.
+Final measured cluster databases: **214279725 bytes (204.35 MiB)**.
+Application reduction: **251079300 bytes (239.45 MiB)** from 450243731.
+
+All three retired releases have zero rows in all six payload tables. Active
+payload fingerprints, permanent release metadata/concepts/import audits, v3
+registry/mappings/snapshots/resolution links and RPC definitions exactly match
+pre-execution baselines. All 765 existing observation IDs/selected concept
+identities match exactly. Active validator passed; zero orphaned observation
+concept links; scientific/vernacular search and external-resolution results
+unchanged. Authenticated-role search passed. Normal database read-write mode
+remains enabled; no application pause/configuration change was made. Temporary
+taxonomy blocking ended when each rebuild completed. No device sync or new
+production observation write was performed as a smoke test.
+
+Verified backup/recovery evidence retained privately at the execution directory
+above. Detailed operation bytes/timings and fingerprints in
+production-execution.json (private, mode 0600). Risk-acceptance commit 7139a22
+records skipped live physical disk/WAL checks; they were not claimed to pass.
+No legacy taxa retirement, general index optimization, dashboard or automatic
+retention implementation was included.
