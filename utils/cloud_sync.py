@@ -10952,6 +10952,8 @@ def _create_local_from_remote(
         interesting_comment=_normalize_observation_bool_value(remote.get('interesting_comment'), default=False),
         country_code=normalize_country_code(remote.get('country_code')),
         region_id=_normalize_observation_field_value('region_id', remote.get('region_id')),
+        # Pulled cloud rows carry no sync key yet (S3); never mint one.
+        sync_key=None,
     )
     # The cloud identity arrives with the row, conservatively: see
     # `_local_identity_columns_for_remote_claim`.

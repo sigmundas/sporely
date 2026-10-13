@@ -16,6 +16,7 @@ from .schema import (
     get_reference_connection,
     get_images_dir,
     get_calibrations_dir,
+    new_sync_key,
     save_app_settings,
 )
 from utils.exif_reader import get_image_datetime
@@ -32,6 +33,16 @@ from database.reverse_location_lookup import normalize_country_code
 from utils.taxon_identity import STATE_NONE, STATE_SPORELY, TaxonIdentity
 
 _UNSET = object()
+# Sentinel for creation functions' ``sync_key`` argument. Omitted means a
+# local creation, which mints a fresh key. An explicit value (including None
+# for a pulled cloud row without a key) is stored as given and never minted.
+MINT_SYNC_KEY = object()
+
+
+def _resolve_sync_key(sync_key: object) -> str | None:
+    if sync_key is MINT_SYNC_KEY:
+        return new_sync_key()
+    return sync_key
 
 # Per-image cloud lifecycle state used by the gallery UI and other consumers.
 # NONE           — image has no cloud copy (never uploaded, or upload cleared).
@@ -1347,8 +1358,13 @@ class ObservationDB:
                           taxon_identity_namespace: str | None = None,
                           taxon_identity_external_id: str | None = None,
                           taxon_identity_raw_external_id: str | None = None,
-                          taxon_identity_provenance: str | None = None) -> int:
-        """Create a new observation and return its ID"""
+                          taxon_identity_provenance: str | None = None,
+                          sync_key: str | None | object = MINT_SYNC_KEY) -> int:
+        """Create a new observation and return its ID.
+
+        ``sync_key`` omitted mints a fresh key; pull passes the remote key
+        explicitly (None included) so it never mints.
+        """
         conn = get_connection()
         cursor = conn.cursor()
         # Stage 3B.3: whitelist the rank_snapshot at write time.
@@ -1436,8 +1452,8 @@ class ObservationDB:
                                      taxon_identity_state, taxon_identity_proof,
                                      taxon_identity_source_system, taxon_identity_namespace,
                                      taxon_identity_external_id, taxon_identity_raw_external_id,
-                                     taxon_identity_provenance)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     taxon_identity_provenance, sync_key)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (date, genus, species, common_name, location, habitat, artsdata_id,
               artportalen_id, resolved_publish_target, species_guess, notes, 1 if uncertain else 0, 1 if unspontaneous else 0,
               1 if resolved_is_draft else 0, resolved_sharing_scope, 1 if resolved_location_public else 0,
@@ -1461,7 +1477,8 @@ class ObservationDB:
               _sanitize_identity_text(taxon_identity_namespace),
               _sanitize_identity_text(taxon_identity_external_id),
               _sanitize_identity_text(taxon_identity_raw_external_id),
-              _sanitize_identity_text(taxon_identity_provenance)))
+              _sanitize_identity_text(taxon_identity_provenance),
+              _resolve_sync_key(sync_key)))
 
         obs_id = cursor.lastrowid
         conn.commit()
@@ -2290,7 +2307,8 @@ class ImageDB:
                   source_role: str | None = None,
                   file_purpose: str | None = None,
                   original_mime_type: str | None = None,
-                  working_mime_type: str | None = None) -> int:
+                  working_mime_type: str | None = None,
+                  sync_key: str | None | object = MINT_SYNC_KEY) -> int:
         """Add an image and return its ID.
 
         Args:
@@ -2302,6 +2320,8 @@ class ImageDB:
             micro_category: Category for microscope images
             objective_name: Name of the objective used
             copy_to_folder: If True, copy image to observation folder
+            sync_key: Omitted mints a fresh key; pull passes the remote key
+                explicitly (None included) so it never mints.
         """
         conn = get_connection()
         conn.row_factory = sqlite3.Row
@@ -2453,6 +2473,7 @@ class ImageDB:
             "original_filepath",
             "sort_order",
             "artsobs_web_unpublished",
+            "sync_key",
         ]
         insert_values = [
             observation_id,
@@ -2483,6 +2504,7 @@ class ImageDB:
             final_original_filepath,
             sort_order,
             artsobs_web_unpublished,
+            _resolve_sync_key(sync_key),
         ]
         for column_name, column_value in (
             ("source_role", source_role),
@@ -2848,6 +2870,8 @@ class ImageDB:
                 (source_id,),
             ).fetchone()
             source_cloud_id = str(source_cloud_row[0] or "").strip() if source_cloud_row else ""
+            image_has_sync_key = "sync_key" in _table_columns(cursor, "images")
+            measurement_has_sync_key = "sync_key" in _table_columns(cursor, "spore_measurements")
 
             moved = 0
             for image_id in clean_ids:
@@ -2896,6 +2920,24 @@ class ImageDB:
                     """,
                     (target_id, next_sort_order, image_id),
                 )
+                # The moved image and its measurements become new cloud rows,
+                # so they are forks: each gets a fresh sync key.
+                if image_has_sync_key:
+                    cursor.execute(
+                        "UPDATE images SET sync_key = ? WHERE id = ?",
+                        (new_sync_key(), image_id),
+                    )
+                if measurement_has_sync_key:
+                    measurement_ids = [
+                        row[0] for row in cursor.execute(
+                            "SELECT id FROM spore_measurements WHERE image_id = ?",
+                            (image_id,),
+                        ).fetchall()
+                    ]
+                    cursor.executemany(
+                        "UPDATE spore_measurements SET sync_key = ? WHERE id = ?",
+                        [(new_sync_key(), measurement_id) for measurement_id in measurement_ids],
+                    )
                 next_sort_order += 1
                 moved += 1
 
@@ -3561,7 +3603,8 @@ class MeasurementDB:
     @staticmethod
     def add_measurement(image_id: int, length: float, width: float = None,
                        measurement_type: str = 'manual', notes: str = None,
-                       points: list = None) -> int:
+                       points: list = None,
+                       sync_key: str | None | object = MINT_SYNC_KEY) -> int:
         """Add a measurement and return its ID
 
         Args:
@@ -3571,7 +3614,10 @@ class MeasurementDB:
             measurement_type: Type of measurement
             notes: Optional notes
             points: List of 4 QPointF objects [p1, p2, p3, p4]
+            sync_key: Omitted mints a fresh key; an explicit value
+                (None included) is stored as given.
         """
+        resolved_sync_key = _resolve_sync_key(sync_key)
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute('SELECT observation_id FROM images WHERE id = ?', (image_id,))
@@ -3585,27 +3631,29 @@ class MeasurementDB:
             cursor.execute('''
                 INSERT INTO spore_measurements
                 (image_id, length_um, width_um, measurement_type, notes,
-                 p1_x, p1_y, p2_x, p2_y, p3_x, p3_y, p4_x, p4_y)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 p1_x, p1_y, p2_x, p2_y, p3_x, p3_y, p4_x, p4_y, sync_key)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (image_id, length, width, measurement_type, notes,
                   points[0].x(), points[0].y(),
                   points[1].x(), points[1].y(),
                   points[2].x(), points[2].y(),
-                  points[3].x(), points[3].y()))
+                  points[3].x(), points[3].y(),
+                  resolved_sync_key))
         elif points and len(points) == 2:
             cursor.execute('''
                 INSERT INTO spore_measurements
                 (image_id, length_um, width_um, measurement_type, notes,
-                 p1_x, p1_y, p2_x, p2_y)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 p1_x, p1_y, p2_x, p2_y, sync_key)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (image_id, length, width, measurement_type, notes,
                   points[0].x(), points[0].y(),
-                  points[1].x(), points[1].y()))
+                  points[1].x(), points[1].y(),
+                  resolved_sync_key))
         else:
             cursor.execute('''
-                INSERT INTO spore_measurements (image_id, length_um, width_um, measurement_type, notes)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (image_id, length, width, measurement_type, notes))
+                INSERT INTO spore_measurements (image_id, length_um, width_um, measurement_type, notes, sync_key)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (image_id, length, width, measurement_type, notes, resolved_sync_key))
 
         meas_id = cursor.lastrowid
         if observation_id:
