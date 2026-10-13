@@ -241,6 +241,52 @@ def test_pull_creates_observation_with_null_key_and_never_mints(installation, mo
     assert row["sync_key"] is None
 
 
+def test_measurement_pull_insert_stores_null_key_without_minting(installation, monkeypatch):
+    """Runs the real pull INSERT into spore_measurements on the upgraded schema."""
+    image_path = _image_file(installation, "micro.jpg")
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        obs_id = connection.execute(
+            "INSERT INTO observations (date, cloud_id, sync_key) VALUES ('2026-10-13', 'cloud-obs', NULL)"
+        ).lastrowid
+        image_id = connection.execute(
+            "INSERT INTO images (observation_id, filepath, image_type, cloud_id, sync_key) "
+            "VALUES (?, ?, 'microscope', 'cloud-image-1', NULL)",
+            (obs_id, str(image_path)),
+        ).lastrowid
+        connection.commit()
+    monkeypatch.setattr(cloud_sync, "_apply_remote_images_to_local", lambda *a, **k: [])
+    _forbid_minting(monkeypatch)
+
+    class Client:
+        def pull_measurements_for_images(self, image_cloud_ids):
+            raise AssertionError("remote measurements are supplied directly")
+
+        def set_measurement_desktop_id(self, *args, **kwargs):
+            pass
+
+    result = cloud_sync._import_remote_measurements_for_observation(
+        Client(),
+        obs_id,
+        "cloud-obs",
+        remote_images=[{
+            "id": "cloud-image-1", "observation_id": "cloud-obs", "image_type": "microscope",
+            "storage_path": "user/cloud-obs/cloud-image-1.jpg", "sort_order": 0,
+        }],
+        remote_measurements=[{
+            "id": "cloud-measurement-1", "image_id": "cloud-image-1", "length_um": 12.5,
+            "width_um": 7.5, "measurement_type": "manual", "measured_at": "2026-05-01T12:00:00Z",
+        }],
+        materialize_remote_images=False,
+    )
+
+    assert result["imported"] == 1, result
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        rows = connection.execute(
+            "SELECT image_id, cloud_id, sync_key FROM spore_measurements"
+        ).fetchall()
+    assert rows == [(image_id, "cloud-measurement-1", None)]
+
+
 def test_every_image_pull_add_image_call_passes_explicit_null_key():
     source = Path(cloud_sync.__file__).parent / "cloud_sync_impl" / "image_pull.py"
     calls = [
@@ -414,16 +460,50 @@ def test_full_restore_keeps_keys_and_cloud_ids(installation, tmp_path):
     image_path = schema.get_images_dir() / "source.jpg"
     image_path.parent.mkdir(parents=True, exist_ok=True)
     image_path.write_bytes(b"archived-image")
+    linked_image_path = schema.get_images_dir() / "linked.jpg"
+    linked_image_path.write_bytes(b"linked-image")
+    # Locally minted, unlinked records.
     obs_id = ObservationDB.create_observation(date="2026-10-13", genus="Archived")
     image_id = ImageDB.add_image(obs_id, str(image_path), "field", copy_to_folder=False)
+    meas_id = MeasurementDB.add_measurement(image_id, 10.0, 5.0)
+    # Linked legacy records: cloud_id set, NULL key.
     with sqlite3.connect(schema.get_database_path()) as connection:
-        connection.execute("UPDATE observations SET cloud_id='cloud-obs' WHERE id=?", (obs_id,))
+        linked_obs = connection.execute(
+            "INSERT INTO observations (date, genus, cloud_id) VALUES ('2026-10-12', 'Linked', 'cloud-obs')"
+        ).lastrowid
+        linked_image = connection.execute(
+            "INSERT INTO images (observation_id, filepath, image_type, cloud_id) "
+            "VALUES (?, ?, 'microscope', 'cloud-img')",
+            (linked_obs, str(linked_image_path)),
+        ).lastrowid
+        linked_meas = connection.execute(
+            "INSERT INTO spore_measurements (image_id, length_um, cloud_id) VALUES (?, 9.0, 'cloud-meas')",
+            (linked_image,),
+        ).lastrowid
         connection.commit()
-    before = {table: _keys(table) for table in ("observations", "images")}
+
+    def state() -> dict:
+        with sqlite3.connect(schema.get_database_path()) as connection:
+            return {
+                table: list(connection.execute(f"SELECT id, cloud_id, sync_key FROM {table} ORDER BY id"))
+                for table in TABLES
+            }
+
+    before = state()
+    assert before == {
+        "observations": [(obs_id, None, _row("observations", obs_id)["sync_key"]), (linked_obs, "cloud-obs", None)],
+        "images": [(image_id, None, _row("images", image_id)["sync_key"]), (linked_image, "cloud-img", None)],
+        "spore_measurements": [
+            (meas_id, None, _row("spore_measurements", meas_id)["sync_key"]),
+            (linked_meas, "cloud-meas", None),
+        ],
+    }
+    assert all(_is_uuid4(rows[0][2]) for rows in before.values())
     archive = tmp_path / "source.sporely"
     create_full_backup(archive, app_version="test", qsettings_values={})
 
     with sqlite3.connect(schema.get_database_path()) as connection:
+        connection.execute("DELETE FROM spore_measurements")
         connection.execute("DELETE FROM images")
         connection.execute("DELETE FROM observations")
         connection.commit()
@@ -432,9 +512,7 @@ def test_full_restore_keeps_keys_and_cloud_ids(installation, tmp_path):
         close_live=lambda: None, reopen_live=lambda: None,
     )
 
-    assert {table: _keys(table) for table in ("observations", "images")} == before
-    assert _row("observations", obs_id)["cloud_id"] == "cloud-obs"
-    assert _is_uuid4(_row("images", image_id)["sync_key"])
+    assert state() == before
 
 
 # ── Sync code ignores sync_key ───────────────────────────────────────────────
