@@ -1552,14 +1552,18 @@ How the desktop meets the requirements above, against sporely-web
   Images took from a photo imported in that session (the GPS the file's own
   EXIF held at import, not values typed over it in Prepare Images, of a file
   without a stored image row; stored or cloud-materialised images can carry
-  Sporely-written GPS and never count) opens attributed to it; a deliberate clear of an existing
+  Sporely-written GPS and never count) opens attributed to it, and that photo's
+  EXIF stays the reference for later edits in the dialog; a deliberate clear of an existing
   observation is `none`/`skipped`; any other change (typed values, map link)
-  is `manual`/`acquired`. Unchanged coordinates keep the pair the opened
+  is `manual`/`acquired`. A new observation whose coordinates were typed in
+  Prepare Images (and are not that EXIF) opens `manual`/`acquired`.
+  Unchanged coordinates keep the pair the opened
   record holds for them; a new observation saved without coordinates stays
   unattributed. An attribution survives an Edit Images detour (details dialog
   → Prepare Images → details dialog, for new and existing observations) while
   Prepare Images keeps those coordinates; if Prepare Images replaces them the
-  change is of unknown origin. Prepare Images and every other coordinate
+  change is of unknown origin, except that a new observation attributes them
+  as above on reopening. Prepare Images itself and every other coordinate
   writer do not attribute.
 - **Push.** An existing observation whose coordinates differ from the live
   cloud row and whose local pair is writable for them is written through

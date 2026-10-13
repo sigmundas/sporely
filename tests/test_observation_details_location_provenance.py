@@ -279,7 +279,7 @@ def _type_coordinates(prepare, lat, lon):
     prepare.lon_input.setValue(lon)
 
 
-def test_coordinates_typed_in_prepare_images_are_not_image_exif(prepare_images, open_details, tmp_path):
+def test_coordinates_typed_in_prepare_images_are_manual(prepare_images, open_details, tmp_path):
     prepare = prepare_images()
     prepare.add_images([_jpeg(tmp_path / "geotagged.jpg", _PHOTO_EXIF)])
     assert (prepare.lat_input.value(), prepare.lon_input.value()) == pytest.approx(_PHOTO_EXIF)
@@ -287,8 +287,36 @@ def test_coordinates_typed_in_prepare_images_are_not_image_exif(prepare_images, 
 
     data = open_details(prepare.import_results).get_data()
     assert (data["gps_latitude"], data["gps_longitude"]) == pytest.approx((60.5, 11.25))
-    # Prepare Images does not attribute: the typed point is of unknown origin.
-    assert _pair(data) is None
+    assert _pair(data) == ("manual", "acquired")
+
+
+def test_photo_exif_restored_in_details_after_typing_in_prepare_images_is_image_exif(
+    prepare_images, open_details, tmp_path,
+):
+    prepare = prepare_images()
+    prepare.add_images([_jpeg(tmp_path / "geotagged.jpg", _PHOTO_EXIF)])
+    _type_coordinates(prepare, 60.5, 11.25)
+
+    details = open_details(prepare.import_results)
+    details.lat_input.setValue(_PHOTO_EXIF[0])
+    details.lon_input.setValue(_PHOTO_EXIF[1])
+    assert _pair(details.get_data()) == ("image_exif", "acquired")
+    details.lat_input.setValue(61.0)
+    assert _pair(details.get_data()) == ("manual", "acquired")
+
+
+def test_only_changing_the_date_in_prepare_images_does_not_attribute(prepare_images, open_details, tmp_path):
+    # A downloaded (cloud-materialised) photo whose coordinates the user left
+    # alone: editing other metadata is not a coordinate entry.
+    from ui.image_import_dialog import ImageImportResult
+
+    downloaded = _jpeg(tmp_path / "downloaded.jpg", _PHOTO_EXIF)
+    prepare = prepare_images(import_results=[ImageImportResult(filepath=downloaded)])
+    prepare._select_image(0)
+    prepare.datetime_input.setDateTime(prepare.datetime_input.dateTime().addDays(-1))
+    assert prepare.import_results[0].typed_gps_latitude is None
+
+    assert _pair(open_details(prepare.import_results).get_data()) is None
 
 
 def test_coordinates_restored_in_prepare_images_to_photo_exif_are_image_exif(
@@ -313,7 +341,7 @@ def test_coordinates_typed_for_photo_without_exif_gps_are_not_image_exif(
 
     data = open_details(prepare.import_results).get_data()
     assert (data["gps_latitude"], data["gps_longitude"]) == pytest.approx(_PHOTO_EXIF)
-    assert _pair(data) is None
+    assert _pair(data) == ("manual", "acquired")
 
 
 def test_exif_read_from_a_non_session_file_is_not_image_origin_evidence(

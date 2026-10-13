@@ -120,6 +120,7 @@ from utils.exif_reader import get_image_metadata
 from utils.cloud_sync_impl.reconciliation.location_provenance import (
     IMAGE_EXIF_LOCATION_PAIR,
     LOCATION_PROVENANCE_FIELDS,
+    MANUAL_LOCATION_PAIR,
     attribute_coordinate_edit,
     coordinates_match,
     location_pair_is_writable,
@@ -14929,16 +14930,21 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             if location_pair_is_writable(*opened_pair, *self._opened_coordinates)
             else None
         )
-        # A new observation whose coordinates came from an imported photo's
-        # own EXIF opens attributed to that photo. (Edits of existing
-        # observations keep the contract's rule: a Prepare Images replacement
-        # is of unknown origin.)
+        # A new observation opens attributed to where Prepare Images got its
+        # coordinates: an imported photo's own EXIF, or values typed there.
+        # The photo's EXIF stays the reference for later edits in this dialog.
+        # (Edits of existing observations keep the contract's rule: a Prepare
+        # Images replacement is of unknown origin.)
         if not self.edit_mode:
-            exif_coordinates = self._imported_photo_exif_coordinates(*self._current_coordinate_inputs())
+            lat, lon = self._current_coordinate_inputs()
+            exif_coordinates = self._imported_photo_exif_coordinates(lat, lon)
             if exif_coordinates is not None:
                 self._image_exif_coordinates = exif_coordinates
-                if self._opened_location_pair is None:
+            if self._opened_location_pair is None and lat is not None and lon is not None:
+                if exif_coordinates is not None and coordinates_match(*exif_coordinates, lat, lon):
                     self._opened_location_pair = IMAGE_EXIF_LOCATION_PAIR
+                elif self._typed_in_prepare_images(lat, lon):
+                    self._opened_location_pair = MANUAL_LOCATION_PAIR
         QTimer.singleShot(0, self._complete_deferred_dialog_setup)
         self._apply_suggested_taxon()
         self._sync_taxon_cache()
@@ -18254,18 +18260,19 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         return code
 
     def _imported_photo_exif_coordinates(self, lat, lon) -> tuple[float, float] | None:
-        """``(lat, lon)`` when they equal the EXIF GPS of a photo imported in
-        this session, else ``None``.
+        """The EXIF GPS of a photo imported in this session, or ``None``.
 
-        Compares against the GPS each file's EXIF held at import
-        (``exif_gps_*``), never ``gps_latitude``/``gps_longitude``, which
-        Prepare Images overwrites with typed values. Only photos without a
-        stored image row count: stored and cloud-materialised images can carry
-        GPS that Sporely itself wrote, which is not evidence of where the
-        photo was taken.
+        That is ``(lat, lon)`` when they equal one; otherwise the GPS-source
+        photo's, else the first such photo's (rounded to the coordinate
+        inputs' precision), so returning to it later is recognised.
+
+        Uses the GPS each file's EXIF held at import (``exif_gps_*``), never
+        ``gps_latitude``/``gps_longitude``, which Prepare Images overwrites
+        with typed values. Only photos without a stored image row count:
+        stored and cloud-materialised images can carry GPS that Sporely
+        itself wrote, which is not evidence of where the photo was taken.
         """
-        if lat is None or lon is None:
-            return None
+        photos = []
         for result in self.image_results:
             if getattr(result, "image_id", None) is not None:
                 continue
@@ -18275,7 +18282,25 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 continue
             if coordinates_match(exif_lat, exif_lon, lat, lon):
                 return (lat, lon)
-        return None
+            photos.append((bool(getattr(result, "gps_source", False)), exif_lat, exif_lon))
+        if not photos:
+            return None
+        photos.sort(key=lambda photo: not photo[0])
+        _gps_source, exif_lat, exif_lon = photos[0]
+        decimals = self.lat_input.decimals()
+        return (round(exif_lat, decimals), round(exif_lon, decimals))
+
+    def _typed_in_prepare_images(self, lat, lon) -> bool:
+        """Whether ``(lat, lon)`` were typed for a photo in Prepare Images."""
+        return any(
+            coordinates_match(
+                getattr(result, "typed_gps_latitude", None),
+                getattr(result, "typed_gps_longitude", None),
+                lat,
+                lon,
+            )
+            for result in self.image_results
+        )
 
     def _current_coordinate_inputs(self) -> tuple[float | None, float | None]:
         lat = self.lat_input.value() if self.lat_input.value() > self.lat_input.minimum() else None

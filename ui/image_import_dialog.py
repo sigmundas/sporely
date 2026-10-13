@@ -93,6 +93,7 @@ from database.models import SettingsDB, ImageDB, MeasurementDB, CalibrationDB
 from database.database_tags import DatabaseTerms
 from utils.artsdatabanken_link import concept_link_from_name_id
 from utils.cloud_sync import _cloud_identification_prediction_taxon
+from utils.cloud_sync_impl.reconciliation.location_provenance import coordinates_match
 from utils.image_companion_grouping import normalize_raw_companion_source_preference
 from utils.image_import_candidates import (
     IMAGE_IMPORT_STATUS_COMMITTED,
@@ -327,6 +328,10 @@ class ImageImportResult:
     # for location provenance; stored and cloud-materialised rows leave it None.
     exif_gps_latitude: Optional[float] = None
     exif_gps_longitude: Optional[float] = None
+    # Coordinates last typed for this photo in Prepare Images (not ones set
+    # from a photo), so a new observation can attribute them as manual.
+    typed_gps_latitude: Optional[float] = None
+    typed_gps_longitude: Optional[float] = None
     calibration_id: Optional[int] = None
     ai_crop_box: Optional[tuple[float, float, float, float]] = None
     ai_crop_source_size: Optional[tuple[int, int]] = None
@@ -5329,9 +5334,19 @@ class ImageImportDialog(GeometryMixin, QDialog):
         dt_value = self.datetime_input.dateTime()
         result.captured_at = None if dt_value == self._unset_datetime else dt_value
         lat = self.lat_input.value()
-        result.gps_latitude = None if lat == self.lat_input.minimum() else lat
+        lat = None if lat == self.lat_input.minimum() else lat
         lon = self.lon_input.value()
-        result.gps_longitude = None if lon == self.lon_input.minimum() else lon
+        lon = None if lon == self.lon_input.minimum() else lon
+        if (
+            not self._setting_from_image_source
+            and lat is not None
+            and lon is not None
+            and not coordinates_match(lat, lon, result.gps_latitude, result.gps_longitude)
+        ):
+            result.typed_gps_latitude = lat
+            result.typed_gps_longitude = lon
+        result.gps_latitude = lat
+        result.gps_longitude = lon
 
     def _apply_metadata_to_indices(self, indices: list[int | None]) -> None:
         self._update_observation_metadata_from_inputs()
