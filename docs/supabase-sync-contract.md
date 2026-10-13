@@ -1549,7 +1549,8 @@ How the desktop meets the requirements above, against sporely-web
 - **Attribution.** The Observation details dialog attributes a coordinate
   edit made in it: coordinates equal to those last applied from a photo's EXIF
   are `image_exif`/`acquired` — a new observation whose coordinates Prepare
-  Images took from a photo imported in that session (EXIF GPS of a file
+  Images took from a photo imported in that session (the GPS the file's own
+  EXIF held at import, not values typed over it in Prepare Images, of a file
   without a stored image row; stored or cloud-materialised images can carry
   Sporely-written GPS and never count) opens attributed to it; a deliberate clear of an existing
   observation is `none`/`skipped`; any other change (typed values, map link)

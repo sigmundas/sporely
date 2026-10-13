@@ -156,15 +156,30 @@ def test_draft_whose_coordinates_were_replaced_is_not_reattributed(make_dialog):
 
 
 @pytest.fixture
-def make_import_dialog(make_dialog, monkeypatch):
-    from ui.image_import_dialog import ImageImportResult
-
+def open_details(make_dialog, monkeypatch):
+    """Open the new-observation details dialog on Prepare Images' results."""
     dialog_cls = observations_tab.ObservationDetailsDialog
     # The shared fixture stubs this out; the import path needs the real one.
     monkeypatch.setattr(dialog_cls, "_apply_primary_metadata", _REAL_APPLY_PRIMARY_METADATA)
     made = []
 
+    def _open(results, draft_data=None):
+        dialog = dialog_cls(parent=None, observation=None, draft_data=draft_data, image_results=results)
+        made.append(dialog)
+        return dialog
+
+    yield _open
+    for dialog in made:
+        dialog.deleteLater()
+
+
+@pytest.fixture
+def make_import_dialog(open_details):
+    from ui.image_import_dialog import ImageImportResult
+
     def _make(*photos, draft_data=None):
+        # Rows as an import candidate produces them: the file's EXIF GPS is
+        # both the editable coordinates and the recorded import-time origin.
         results = [
             ImageImportResult(
                 filepath=f"/tmp/photo-{i}.jpg",
@@ -172,17 +187,15 @@ def make_import_dialog(make_dialog, monkeypatch):
                 gps_latitude=photo.get("lat"),
                 gps_longitude=photo.get("lon"),
                 exif_has_gps=photo.get("lat") is not None,
+                exif_gps_latitude=photo.get("lat"),
+                exif_gps_longitude=photo.get("lon"),
                 gps_source=bool(photo.get("gps_source")),
             )
             for i, photo in enumerate(photos)
         ]
-        dialog = dialog_cls(parent=None, observation=None, draft_data=draft_data, image_results=results)
-        made.append(dialog)
-        return dialog
+        return open_details(results, draft_data=draft_data)
 
-    yield _make
-    for dialog in made:
-        dialog.deleteLater()
+    return _make
 
 
 _REAL_APPLY_PRIMARY_METADATA = observations_tab.ObservationDetailsDialog._apply_primary_metadata
@@ -212,3 +225,107 @@ def test_stored_image_gps_is_not_image_origin_evidence(make_import_dialog):
     # A stored (possibly cloud-materialised) image may carry GPS Sporely wrote.
     dialog = make_import_dialog({"lat": 59.9139, "lon": 10.7522, "image_id": 7})
     assert _pair(dialog.get_data()) is None
+
+
+# --- Through Prepare Images itself: a real geotagged file goes through
+# ImageImportDialog.add_images, and coordinates are typed into its widgets.
+
+_PHOTO_EXIF = (59.9139, 10.7522)
+
+
+def _jpeg(path, gps=None):
+    from PIL import Image
+
+    def _dms(value):
+        minutes, seconds = divmod(abs(value) * 3600, 60)
+        degrees, minutes = divmod(minutes, 60)
+        return (degrees, minutes, round(seconds, 4))
+
+    exif = Image.Exif()
+    if gps is not None:
+        exif[0x8825] = {1: "N", 2: _dms(gps[0]), 3: "E", 4: _dms(gps[1])}
+    Image.new("RGB", (64, 48), "green").save(path, exif=exif)
+    return str(path)
+
+
+@pytest.fixture
+def prepare_images(qapp, monkeypatch, tmp_path):
+    """An offscreen Prepare Images dialog on a scratch database."""
+    import database.schema as schema
+    import ui.image_import_dialog as image_import_dialog
+
+    images_dir = tmp_path / "images"
+    monkeypatch.setattr(schema, "get_app_settings", lambda: {})
+    monkeypatch.setattr(schema, "get_database_path", lambda: tmp_path / "mushrooms.db")
+    monkeypatch.setattr(schema, "get_images_dir", lambda: images_dir)
+    monkeypatch.setattr(schema, "init_reference_database", lambda *a, **kw: None)
+    monkeypatch.setattr(image_import_dialog, "get_images_dir", lambda: images_dir)
+    schema.init_database()
+    made = []
+
+    def _open(**kwargs):
+        dialog = image_import_dialog.ImageImportDialog(**kwargs)
+        made.append(dialog)
+        return dialog
+
+    yield _open
+    for dialog in made:
+        dialog.deleteLater()
+    qapp.processEvents()
+
+
+def _type_coordinates(prepare, lat, lon):
+    prepare.lat_input.setValue(lat)
+    prepare.lon_input.setValue(lon)
+
+
+def test_coordinates_typed_in_prepare_images_are_not_image_exif(prepare_images, open_details, tmp_path):
+    prepare = prepare_images()
+    prepare.add_images([_jpeg(tmp_path / "geotagged.jpg", _PHOTO_EXIF)])
+    assert (prepare.lat_input.value(), prepare.lon_input.value()) == pytest.approx(_PHOTO_EXIF)
+    _type_coordinates(prepare, 60.5, 11.25)
+
+    data = open_details(prepare.import_results).get_data()
+    assert (data["gps_latitude"], data["gps_longitude"]) == pytest.approx((60.5, 11.25))
+    # Prepare Images does not attribute: the typed point is of unknown origin.
+    assert _pair(data) is None
+
+
+def test_coordinates_restored_in_prepare_images_to_photo_exif_are_image_exif(
+    prepare_images, open_details, tmp_path,
+):
+    prepare = prepare_images()
+    prepare.add_images([_jpeg(tmp_path / "geotagged.jpg", _PHOTO_EXIF)])
+    _type_coordinates(prepare, 60.5, 11.25)
+    _type_coordinates(prepare, *_PHOTO_EXIF)
+
+    data = open_details(prepare.import_results).get_data()
+    assert (data["gps_latitude"], data["gps_longitude"]) == pytest.approx(_PHOTO_EXIF)
+    assert _pair(data) == ("image_exif", "acquired")
+
+
+def test_coordinates_typed_for_photo_without_exif_gps_are_not_image_exif(
+    prepare_images, open_details, tmp_path,
+):
+    prepare = prepare_images()
+    prepare.add_images([_jpeg(tmp_path / "no-gps.jpg")])
+    _type_coordinates(prepare, *_PHOTO_EXIF)
+
+    data = open_details(prepare.import_results).get_data()
+    assert (data["gps_latitude"], data["gps_longitude"]) == pytest.approx(_PHOTO_EXIF)
+    assert _pair(data) is None
+
+
+def test_exif_read_from_a_non_session_file_is_not_image_origin_evidence(
+    prepare_images, open_details, tmp_path,
+):
+    # Cloud-materialised rows reach Prepare Images as results, not import
+    # candidates (no stored image row yet); their file's GPS may be Sporely's.
+    from ui.image_import_dialog import ImageImportResult
+
+    downloaded = _jpeg(tmp_path / "downloaded.jpg", _PHOTO_EXIF)
+    prepare = prepare_images(import_results=[ImageImportResult(filepath=downloaded)])
+    result = prepare.import_results[0]
+    assert result.exif_has_gps and (result.gps_latitude, result.gps_longitude) == pytest.approx(_PHOTO_EXIF)
+
+    assert _pair(open_details(prepare.import_results).get_data()) is None

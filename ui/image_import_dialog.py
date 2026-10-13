@@ -321,6 +321,12 @@ class ImageImportResult:
     gps_longitude: Optional[float] = None
     needs_scale: bool = False
     exif_has_gps: bool = False
+    # GPS the picked file's own EXIF held when this session imported it. Set
+    # only from an import candidate and never edited (typing in Prepare Images
+    # rewrites gps_latitude/gps_longitude), so it is the image-origin evidence
+    # for location provenance; stored and cloud-materialised rows leave it None.
+    exif_gps_latitude: Optional[float] = None
+    exif_gps_longitude: Optional[float] = None
     calibration_id: Optional[int] = None
     ai_crop_box: Optional[tuple[float, float, float, float]] = None
     ai_crop_source_size: Optional[tuple[int, int]] = None
@@ -420,6 +426,8 @@ def image_import_result_from_candidate(
         gps_longitude=gps_longitude,
         needs_scale=False,
         exif_has_gps=bool(gps_latitude is not None or gps_longitude is not None),
+        exif_gps_latitude=gps_latitude,
+        exif_gps_longitude=gps_longitude,
         calibration_id=None,
         ai_crop_box=ai_crop_box,
         ai_crop_source_size=ai_crop_source_size,

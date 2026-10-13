@@ -18257,19 +18257,23 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         """``(lat, lon)`` when they equal the EXIF GPS of a photo imported in
         this session, else ``None``.
 
-        Only photos without a stored image row count: stored and
-        cloud-materialised images can carry GPS that Sporely itself wrote,
-        which is not evidence of where the photo was taken.
+        Compares against the GPS each file's EXIF held at import
+        (``exif_gps_*``), never ``gps_latitude``/``gps_longitude``, which
+        Prepare Images overwrites with typed values. Only photos without a
+        stored image row count: stored and cloud-materialised images can carry
+        GPS that Sporely itself wrote, which is not evidence of where the
+        photo was taken.
         """
         if lat is None or lon is None:
             return None
-        candidates = [
-            result for result in self.image_results
-            if getattr(result, "image_id", None) is None and getattr(result, "exif_has_gps", False)
-        ]
-        candidates.sort(key=lambda result: not getattr(result, "gps_source", False))
-        for result in candidates:
-            if coordinates_match(result.gps_latitude, result.gps_longitude, lat, lon):
+        for result in self.image_results:
+            if getattr(result, "image_id", None) is not None:
+                continue
+            exif_lat = getattr(result, "exif_gps_latitude", None)
+            exif_lon = getattr(result, "exif_gps_longitude", None)
+            if exif_lat is None or exif_lon is None:
+                continue
+            if coordinates_match(exif_lat, exif_lon, lat, lon):
                 return (lat, lon)
         return None
 
