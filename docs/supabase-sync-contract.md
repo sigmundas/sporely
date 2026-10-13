@@ -322,6 +322,50 @@ Plain English comes first; technical terms are in parentheses.
     since the explicit-clear condition above requires a known baseline that
     Case F lacks by definition.
 
+### Temporary obsolete-desktop brake
+
+<!-- obsolete-desktop-brake:begin -->
+Every desktop released before per-record sync keys resolves its cloud writes
+through the shared `desktop_id` reverse link, so two installations on one
+account can silently overwrite each other's cloud observations. Until a
+desktop that uses sync keys ships, the server refuses these desktops' cloud
+writes.
+
+- Who is refused: a request whose lower-cased `User-Agent` starts with
+  `python-requests/` (the default every released desktop sends) and that has
+  no `x-sporely-sync-identity: 2` header. In the database the request must
+  also come through the Data API with an `authenticated` or `anon` JWT; the
+  media worker's upload routes accept only `authenticated` JWTs. Web,
+  Android, `service_role` and other server roles, migrations, cron and direct
+  SQL sessions are not refused.
+- Database: every INSERT, UPDATE and DELETE, including writes made inside
+  RPCs, on `observations`, `observation_images`, `spore_measurements`,
+  `spore_measurement_mosaics`, `spore_measurement_mosaic_tiles`,
+  `observation_spore_summaries` and `observation_reference_uses` is refused
+  with SQLSTATE `P0001` and HINT `sporely_upgrade_required`, which PostgREST
+  returns as HTTP 400. Trigger: `trg_000_sync_brake`, function
+  `private.sync_brake_guard()`, migration `20261013200000`.
+- Media worker: every non-read method (PUT, DELETE and any other method
+  except GET, HEAD and OPTIONS) under `/upload/` is refused with HTTP 426,
+  header `X-Sporely-Error-Code: sporely_upgrade_required` and body
+  `{"error":"sporely_upgrade_required", ...}`, before authentication, storage
+  access or quota accounting. Its `/healthz` reports
+  `obsoleteDesktopBrake: true` while the guard is deployed.
+- Effect: reads are unaffected; refused desktops can still sign in, download
+  and pull. A refused write changes nothing in the cloud. The desktop keeps
+  the row local (new) or dirty (edited), keeps its photos and credentials,
+  and uploads the pending work once it is updated to a desktop that is not
+  refused.
+- Removal: only by the sync-key cutover migration, in the same transaction
+  that installs the permanent identity gate, with the worker guard removed in
+  the matching worker release. Never as a rollback: removing either half
+  early re-enables silent overwrites or media deletion ahead of a refused row
+  delete.
+- Not an authorization boundary: any caller can choose its User-Agent and
+  headers. The brake holds back honest old clients; row-level security and
+  the existing guards remain the authorization layer.
+<!-- obsolete-desktop-brake:end -->
+
 ## Normalized reference graph
 
 The owner graph is ordered work → taxon treatment → measurement set →
