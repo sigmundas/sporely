@@ -1348,3 +1348,241 @@ Every pull request that can remove a cloud row or file must state:
 - Which test proves publication selection is not deletion consent?
 - How can the owner audit and recover the result?
 - Were both copies of this contract updated?
+
+## Private ingestion and location provenance (not deployed)
+
+Migration `20261012105630_ingestion_location_provenance.sql` adds nullable
+`observation_images.ingest_method` and observation `location_source` /
+`location_status`. These are owner diagnostics, excluded from existing public
+views/RPCs. Historical and unsupported-client values stay NULL; ingestion is
+into Sporely and does not identify the photographing device. `gps_source`
+continues to identify the contributing image separately. Client-reported
+values are diagnostics, never authorization claims.
+
+| Field | Values | NULL means |
+| --- | --- | --- |
+| `observation_images.ingest_method` | `sporely_camera`, `system_camera`, `web_camera`, `native_picker`, `web_file_picker`, `unknown` | historical row or client without provenance |
+| `observations.location_source` | `device_gps`, `image_exif`, `manual`, `none`, `unknown` | no attribution (historical, legacy client, or invalidated by a legacy coordinate change) |
+| `observations.location_status` | `acquired`, `disabled`, `denied`, `timeout`, `skipped`, `unavailable`, `unknown` | as above; always NULL together with `location_source` |
+
+`unknown` means a provenance-aware client could not classify a new operation;
+it is not a substitute for NULL.
+
+### Server rules
+
+The coordinate bundle is latitude, longitude, altitude and accuracy. Ordinary
+UPDATEs changing any actual bundle value invalidate both location fields to
+NULL, including direct writes resending unchanged enum labels. Unrelated edits
+and value-identical coordinate resends preserve attribution. Complete pair and
+coordinate compatibility checks apply to new provenance; legacy NULL pairs do
+not impose new restrictions on historical coordinates:
+
+- `acquired` requires valid latitude/longitude and a source of `device_gps`,
+  `image_exif`, `manual` or `unknown`;
+- every other status requires all four bundle values NULL and a source of
+  `none` or `unknown`.
+
+Aware clients must call owner/RLS-enforced `set_observation_location` with all
+seven arguments (observation ID, four coordinate values, source, status). It
+locks the owner row, updates coordinates with ordinary invalidation, then sets
+the validated pair within the same transaction. Same-value retries make no
+writes. A failing second write rolls back both. No bypass flag or definer
+privileges are used. The same enum pair may legitimately be kept for new
+coordinates (a new `device_gps`/`acquired` fix). The RPC does not collect GPS
+or classify client actions. An INSERT may carry a compatible pair together
+with its coordinates; INSERTs without the fields store NULL/NULL.
+
+### Location outcome semantics (frozen transitions)
+
+The pair describes the saved observation's current coordinates. Valid
+selected coordinates use `acquired` and their actual source. Without
+coordinates the status is the latest meaningful acquisition outcome of the
+current session at save: continue-without-location preserves `denied`,
+`timeout`, `unavailable` or `disabled`; `skipped` is used only when no such
+outcome was observed, or when coordinates are deliberately cleared through
+the aware operation (`none`/`skipped`). A successful selected fix supersedes
+earlier failures; a failed attempt never replaces valid selected coordinates
+or their source. Session state never borrows an outcome from an earlier
+session, and stale asynchronous results are ignored. Status is not inferred
+where acquisition was never observed. The full table is in
+`docs/plans/active/2026-10-12-ingestion-location-provenance.md`.
+
+### Web client behavior (Stage 3)
+
+- **Session outcome.** `geo.js` records the classified outcome (permission
+  denied → `denied`, preference disabled → `disabled`, timeout → `timeout`,
+  position unavailable/unsupported/invalid fix → `unavailable`, other errors →
+  `unknown`) in `state.captureSessionLocation.outcome`, scoped by a generation
+  that changes only when a capture session starts or ends. Re-beginning the
+  same session (preflight "continue" after a denial) keeps the outcome. Every
+  acquisition (permission query, position request, watch, acquisition timer)
+  belongs to the generation in which it started: a continuation that completes
+  after the session changed may update the device-global permission but never
+  the session's fix, outcome or acquisition state, and a request whose session
+  ended during its permission check does not start. Within one session,
+  overlapping attempts are ordered: each request, watch, standalone permission
+  check or preference/unsupported observation takes an increasing attempt id,
+  and only the newest attempt may record a failure outcome or reset acquisition
+  state, so an older attempt completing after a retry cannot replace the
+  retry's outcome. A superseded attempt whose permission check resolves late
+  starts no acquisition and does not change acquisition status; only the
+  device-global permission value is updated. A superseded attempt's successful fix still counts as a
+  device fix. Global `state.location.error` is never used as provenance.
+- **Save decision (review screen).** Selected coordinates → their source +
+  `acquired`. Location preference disabled at save → `none`/`disabled`. The
+  location sheet's "Continue without location" (or an earlier continue in the
+  same session) → `none` + session outcome, else `skipped`. A successful
+  "Try again" saves `device_gps`/`acquired`.
+- **Coordinate sources.** `geo.js` tags each fix it accepts into the session
+  as `device_gps`; a session fix and photo snapshots keep the source recorded
+  with them (a restored pre-provenance fix stays `unknown`). GPS read from an
+  original photo's EXIF (pickers, system camera — including the native New
+  Find camera path, with late hydration that Save awaits) is `image_exif`. Sporely Cam writes GPS EXIF only from the location
+  Sporely hands it, so its EXIF carries that location's source (`unknown` if
+  none was handed over). In live review the selected coordinate (the more
+  accurate of session fix and first photo with GPS) decides the source; a
+  missing accuracy is unknown, never better than a measured one (ties keep the
+  session fix), and an unmeasured accuracy or altitude is saved as NULL, not 0; in
+  import groups it is the first photo with GPS. Late EXIF hydration changes the
+  source only when its coordinates become the selected location.
+- **Imports.** An imported review never observed acquisition: with coordinates
+  it saves their source, without coordinates it saves a NULL pair. A
+  multi-group import saves `none`/`skipped` only for groups the user explicitly
+  confirmed saving without any location; a group with only a place name stays
+  NULL.
+- **Persistence.** Per-photo GPS source and the session outcome survive review
+  drafts; per-photo source and the group source survive persisted import
+  sessions. Drafts and sessions written before provenance restore with no
+  outcome and an `unknown` source for existing coordinates.
+- **Queue.** The pair travels on the queued observation payload and is
+  inserted atomically with the coordinates in the single observation INSERT.
+  An incomplete or incompatible pair is dropped (NULL/NULL) before the insert,
+  so provenance can never block an upload. Legacy queue items carry no pair.
+- **Manual location.** The find-detail map picker saves through
+  `set_observation_location` as `manual`/`acquired` with NULL altitude and
+  accuracy. The web app has no coordinate-clearing UI; an aware clear must use
+  the RPC with `none`/`skipped`.
+- **Adding photos** to an existing find writes image rows only (with their own
+  `ingest_method`) and never touches the find's coordinates or provenance.
+- **Pre-migration targets.** A queue INSERT rejected for missing provenance
+  columns is retried once without the pair; a missing RPC falls back to a plain
+  owner-filtered coordinate update. Any other error (CHECK, non-owner) is
+  surfaced, never retried as a legacy write.
+
+### Desktop requirements (Stage 4 implements against this)
+
+The desktop client (`sporely`) must:
+
+1. **Store** `location_source` and `location_status` on its local observation
+   and `ingest_method` on its local image records, nullable, as text received
+   from the cloud. Do not validate, remap or default them on pull.
+2. **Pull** the three fields from owner base-table reads. Absent keys (a target
+   or projection without the columns) leave local values unchanged; an
+   explicit NULL is stored as NULL. Public views never carry them.
+3. **Merge** `location_source`/`location_status` as members of the coordinate
+   bundle (latitude, longitude, altitude, accuracy, source, status): the bundle
+   moves as a unit in three-way comparison, never field by field. Comparisons
+   are NULL-safe; NULL and an absent key are equal. A sync snapshot written
+   before provenance (no provenance keys) treats the baseline pair as equal to
+   the current cloud pair, so adopting the cloud pair is not a local change and
+   produces no push.
+4. **Preserve on unrelated edits.** Ordinary observation PATCHes never include
+   `location_source` or `location_status`. Value-identical coordinate resends
+   are allowed but should be avoided by comparing before writing.
+5. **Coordinate changes.** A desktop coordinate change whose origin the desktop
+   knows (manual entry → `manual`/`acquired`; image EXIF → `image_exif`/
+   `acquired`; deliberate clear → `none`/`skipped`) must use
+   `set_observation_location` with all seven arguments. Any other coordinate
+   change uses the ordinary PATCH and accepts server invalidation to NULL/NULL;
+   the desktop must not guess a pair. After either write the baseline records
+   the resulting server pair (NULL/NULL after a legacy coordinate PATCH).
+6. **First upload.** A new cloud observation INSERT may include a compatible
+   pair with its coordinates when the desktop knows it; otherwise it omits both
+   fields. Desktop-created images omit `ingest_method` (NULL) in the initial
+   release.
+7. **Images.** `ingest_method` is preserved cloud→desktop→cloud and never
+   PATCHed by the desktop: reservation, re-upload, metadata-anchor promotion
+   and identity repair keep the existing row value and do not resend it.
+   `gps_source` remains the contributing-image designation and is unrelated to
+   `ingest_method`.
+8. **Zero-write paths.** Download-from-Cloud and no-op sync remain strictly
+   zero-cloud-write; pulling or adopting provenance never causes a cloud write,
+   media upload, media-key change or child media-version bump.
+9. **Validation.** Any pair the desktop writes must satisfy the server rules
+   above before it is sent; an invalid pair is not sent.
+
+Older desktop clients without this support keep working: they preserve
+provenance on unrelated edits, and the server invalidates it on their actual
+coordinate changes. No image byte upload, media-key change or child
+media-version bump is required merely to assign location provenance.
+
+### Desktop implementation (sporely-py Stage 4)
+
+How the desktop meets the requirements above, against sporely-web
+`feature/photo-provenance` at `1029975`:
+
+- **Storage.** SQLite `observations.location_source`/`location_status` and
+  `images.ingest_method` are nullable TEXT, added by `database/schema.py`. The
+  local pair is part of the coordinate bundle: `ObservationDB.update_observation`
+  stores an explicitly passed pair (NULL included) and otherwise clears it
+  whenever latitude or longitude actually changes (sync GPS tolerance), the
+  local mirror of the server trigger. A stale pair therefore never describes
+  new coordinates, and a writable local pair always means the desktop
+  attributed the current coordinates.
+- **Reads.** Observation reads select the pair, `gps_altitude` and
+  `gps_accuracy`, and image reads select `ingest_method`, from the owner base
+  tables; a target rejecting the provenance columns is re-read without that
+  group once per client (as for identity provenance).
+- **Snapshots and merge.** The baseline records the pair, altitude and
+  accuracy only when the cloud row carries them. Comparison skips the pair
+  entirely for a cloud row without the columns; a baseline without it uses the
+  current cloud pair. The desktop stores no altitude or accuracy: a cloud
+  change to them (against a baseline that recorded them) is a cloud bundle
+  change, and their local absence is never a local change. Latitude,
+  longitude, altitude, accuracy and the pair are one bundle: changed on both
+  sides it is a conflict on the coordinates unless both sides hold the same
+  latitude/longitude (shared; the cloud pair is taken). The local pair alone is never
+  a local change: where local coordinates are not a pending change, a
+  differing cloud pair is adopted by a local write only, including on the
+  fast pull and in Download from Cloud. Applying cloud coordinates applies the
+  cloud pair with them.
+- **Attribution.** The Observation details dialog attributes a coordinate
+  edit made in it: coordinates equal to those last applied from a photo's EXIF
+  in the dialog are `image_exif`/`acquired`; a deliberate clear of an existing
+  observation is `none`/`skipped`; any other change (typed values, map link)
+  is `manual`/`acquired`. Unchanged coordinates keep the pair the opened
+  record holds for them; a new observation saved without coordinates stays
+  unattributed. An attribution survives an Edit Images detour (details dialog
+  → Prepare Images → details dialog, for new and existing observations) while
+  Prepare Images keeps those coordinates; if Prepare Images replaces them the
+  change is of unknown origin. Prepare Images and every other coordinate
+  writer do not attribute.
+- **Push.** An existing observation whose coordinates differ from the live
+  cloud row and whose local pair is writable for them is written through
+  `set_observation_location` (altitude and accuracy NULL — the desktop stores
+  neither), and the following PATCH omits the coordinates. Otherwise the
+  ordinary PATCH carries changed coordinates and the server invalidates the
+  pair; coordinates equal to the live row are not resent. A missing RPC
+  (PGRST202) falls back to the coordinate PATCH. A new observation INSERT
+  carries a writable pair, retried once without it on a target lacking the
+  columns. The baseline is refreshed from the cloud row after the push.
+- **Conflict review.** The review classifies the coordinates with the same
+  bundle rule (one-sided bundle changes are automatic decisions; a two-sided
+  one lists latitude and longitude as one choice). A plan applies one side to
+  both coordinates and refuses mixed sides. Taking the cloud side applies its
+  pair with the coordinates; keeping this device's side pushes through the
+  same aware path as ordinary sync (`set_observation_location` for an
+  attributed location, coordinates equal to the cloud row not resent). The
+  reviewed drift fingerprints include the local pair and the cloud pair,
+  altitude and accuracy, so a change to any of them after review refuses the
+  plan before any write. A completed coordinate operation records the bundle
+  it left (the local pair after a pull; the cloud pair, altitude and accuracy
+  read back after a push, whether from the RPC, server invalidation or the
+  RPC fallback); a retry accepts exactly those effects, only on the side the
+  operation wrote, and refuses any other change on either side.
+- **Images.** `ingest_method` is adopted locally as received (absent key:
+  unchanged) when an image is created or matched on pull, including
+  metadata-only anchors. No image write payload (`_IMG_PUSH_COLS`, anchor
+  payloads) contains it and it is outside the image snapshot and media
+  signature, so it causes no upload, media-key change or version bump.
+- **Download from Cloud.** `set_observation_location` is a blocked writer.

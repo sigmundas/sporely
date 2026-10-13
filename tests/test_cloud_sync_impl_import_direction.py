@@ -73,6 +73,8 @@ OWNER_LAYERS: dict[str, int] = {
     # Conflict execution stays in the facade and imports both downward.
     "utils.cloud_sync_impl.conflict_plan": 7,
     "utils.cloud_sync_impl.conflict_detail": 8,
+    # Ingestion/location provenance: pure vocabulary and bundle helpers.
+    "utils.cloud_sync_impl.reconciliation.location_provenance": 0,
 }
 
 #: Owner modules allowed to import the facade at runtime (transitional; each

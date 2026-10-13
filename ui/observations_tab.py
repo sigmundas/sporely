@@ -117,6 +117,13 @@ from database.schema import (
 from utils.thumbnail_generator import get_thumbnail_path, generate_all_sizes
 from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
 from utils.exif_reader import get_image_metadata
+from utils.cloud_sync_impl.reconciliation.location_provenance import (
+    LOCATION_PROVENANCE_FIELDS,
+    attribute_coordinate_edit,
+    coordinates_match,
+    location_pair_is_writable,
+    provenance_pair,
+)
 from utils.heic_converter import build_local_image_provenance, save_image_as_webp
 import utils.ai_image_prep as ai_image_prep
 from utils.image_metadata_merge import merge_image_lab_metadata
@@ -2294,6 +2301,17 @@ class InatPublishDecision:
     existing_observation_id: int | None = None
     failure_message: str | None = None
     failure_level: str = "info"
+
+
+def _pending_location_pair(draft: dict | None, latitude, longitude) -> tuple[str, str] | None:
+    """The details dialog's location attribution, if it still describes these coordinates."""
+    record = draft or {}
+    if LOCATION_PROVENANCE_FIELDS[0] not in record:
+        return None
+    if not coordinates_match(record.get("gps_latitude"), record.get("gps_longitude"), latitude, longitude):
+        return None
+    pair = provenance_pair(record)
+    return pair if location_pair_is_writable(*pair, latitude, longitude) else None
 
 
 class ObservationsTab(QWidget):
@@ -12342,6 +12360,9 @@ class ObservationsTab(QWidget):
                     # with the identity it describes, so the two can never
                     # drift apart across a restart.
                     **{key: data.get(key) for key in IDENTITY_COLUMNS},
+                    # Only an attributed coordinate edit carries a pair; any
+                    # other coordinate change invalidates it in the DB layer.
+                    **{key: data[key] for key in LOCATION_PROVENANCE_FIELDS if key in data},
                     allow_nulls=True
                 )
                 if dialog.is_unidentified():
@@ -12462,8 +12483,19 @@ class ObservationsTab(QWidget):
                     if coords_changed:
                         update_kwargs["country_code"] = None
                         update_kwargs["region_id"] = None
+                    # An attribution made in the details dialog stays with its
+                    # coordinates while Prepare Images keeps them selected; if
+                    # Prepare Images replaced them, the change is of unknown
+                    # origin and the DB layer invalidates the pair.
+                    pending_pair = _pending_location_pair(data, obs_lat, obs_lon)
+                    if pending_pair is not None:
+                        update_kwargs.update(zip(LOCATION_PROVENANCE_FIELDS, pending_pair))
                     ObservationDB.update_observation(obs_id, **update_kwargs)
                     self.schedule_metadata_cloud_sync(obs_id)
+                    stored_pair = provenance_pair(ObservationDB.get_observation(obs_id))
+                    for location_record in (observation, draft_observation, self._observation_edit_draft_cache.get(obs_id)):
+                        if location_record is not None:
+                            location_record.update(zip(LOCATION_PROVENANCE_FIELDS, stored_pair))
                     if observation is not None:
                         observation["gps_latitude"] = obs_lat
                         observation["gps_longitude"] = obs_lon
@@ -12912,6 +12944,11 @@ class ObservationsTab(QWidget):
                     if ai_state:
                         ai_state = self._remap_ai_state_to_images(ai_state, image_results)
                     obs_lat, obs_lon = image_dialog.get_observation_gps()
+                    # Keep the dialog's attribution only for the coordinates
+                    # it described.
+                    if _pending_location_pair(draft_observation, obs_lat, obs_lon) is None:
+                        for field in LOCATION_PROVENANCE_FIELDS:
+                            draft_observation.pop(field, None)
                     draft_observation["gps_latitude"] = obs_lat
                     draft_observation["gps_longitude"] = obs_lon
                 continue
@@ -14755,6 +14792,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.image_metadata = []
         self.image_settings = []
         self.selected_image_index = -1
+        # Last coordinates applied from a photo's EXIF in this dialog, so a
+        # save can attribute them as image_exif rather than manual entry.
+        self._image_exif_coordinates: tuple[float, float] | None = None
+        self._opened_coordinates: tuple = (None, None)
+        self._opened_location_pair: tuple[str, str] | None = None
         self.objectives = self._load_objectives()
         self.default_objective = self._get_default_objective()
         self.contrast_options = self._load_tag_options("contrast")
@@ -14868,6 +14910,24 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._cloud_privacy_original_slot_consumption = 0
             self._update_cloud_privacy_slots_label()
         self._loading_form = False
+        # Coordinates as opened: what get_data() compares against to decide
+        # whether the user changed the location in this dialog.
+        if self.edit_mode:
+            self._opened_coordinates = (
+                (observation or {}).get("gps_latitude"),
+                (observation or {}).get("gps_longitude"),
+            )
+        else:
+            self._opened_coordinates = self._current_coordinate_inputs()
+        # The pair the opened record holds for those coordinates: a stored
+        # attribution, or one made before an Edit Images detour (drafts).
+        opened_record = (observation if self.edit_mode else self.draft_data) or {}
+        opened_pair = provenance_pair(opened_record)
+        self._opened_location_pair = (
+            opened_pair
+            if location_pair_is_writable(*opened_pair, *self._opened_coordinates)
+            else None
+        )
         QTimer.singleShot(0, self._complete_deferred_dialog_setup)
         self._apply_suggested_taxon()
         self._sync_taxon_cache()
@@ -17917,6 +17977,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.lon_input.setValue(lon)
             self.gps_latitude = lat
             self.gps_longitude = lon
+            self._image_exif_coordinates = (lat, lon)
             self.gps_info_label.setText(f"GPS from: {meta['filename']}")
             self.map_btn.setEnabled(True)
         else:
@@ -18181,6 +18242,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return None
         return code
 
+    def _current_coordinate_inputs(self) -> tuple[float | None, float | None]:
+        lat = self.lat_input.value() if self.lat_input.value() > self.lat_input.minimum() else None
+        lon = self.lon_input.value() if self.lon_input.value() > self.lon_input.minimum() else None
+        return lat, lon
+
     def get_data(self):
         """Return observation data as dict."""
         genus = self.genus_input.text().strip() or None
@@ -18233,6 +18299,22 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if self.lon_input.value() > self.lon_input.minimum():
             lon = self.lon_input.value()
         country_code = self._resolved_country_code_for_current_coords(lat, lon)
+        location_pair = attribute_coordinate_edit(
+            before_lat=self._opened_coordinates[0],
+            before_lon=self._opened_coordinates[1],
+            after_lat=lat,
+            after_lon=lon,
+            image_exif_coords=self._image_exif_coordinates,
+            # A new observation without coordinates never observed a location
+            # acquisition: it stays unattributed rather than "skipped".
+            allow_clear=self.edit_mode,
+        )
+        if location_pair is None and coordinates_match(
+            self._opened_coordinates[0], self._opened_coordinates[1], lat, lon,
+        ):
+            # Still the opened coordinates: keep their attribution (a pending
+            # one from before an Edit Images detour must not be lost).
+            location_pair = self._opened_location_pair
         # ``region_id`` is preserve-only from the cloud. We surface whatever was
         # loaded so the standard save path can pass it back into
         # ``update_observation`` unchanged; if coordinates changed we do NOT
@@ -18328,6 +18410,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             'gps_longitude': lon,
             'country_code': country_code,
             'region_id': region_id,
+            # Present only for a coordinate edit whose origin this dialog
+            # knows (manual entry, a photo's EXIF, or a deliberate clear).
+            **(
+                dict(zip(LOCATION_PROVENANCE_FIELDS, location_pair))
+                if location_pair is not None else {}
+            ),
             'scientific_name_snapshot': scientific_name_snapshot,
             'taxon_rank_snapshot': taxon_rank_snapshot,
             'sporely_taxon_id': sporely_taxon_id,

@@ -40,6 +40,7 @@ from utils.cloud_sync_impl.preflight import (
     _locally_tombstoned_snapshot_image_identity_keys,
 )
 from utils.cloud_sync_impl.push_payloads import (
+    _analyze_observation_field_changes,
     _baseline_observation_compare_payload,
     _observation_compare_payload,
 )
@@ -47,6 +48,7 @@ from utils.cloud_sync_impl.reconciliation.asymmetry import (
     _filter_accepted_one_sided_images,
     _filter_accepted_one_sided_measurements,
 )
+from utils.cloud_sync_impl.reconciliation.location_provenance import LOCATION_COORDINATE_FIELDS
 from utils.cloud_sync_impl.reconciliation.identity import (
     _classify_identity_sync_change,
     _local_identity_is_claim,
@@ -339,6 +341,54 @@ def _observation_display_name(obs: dict | None) -> str:
 _MEASUREMENT_PRESENTATION_FIELDS = ('gallery_rotation',)
 
 
+def _apply_location_bundle_to_conflict_rows(
+    local_obs: dict,
+    remote_obs: dict | None,
+    baseline_obs: dict,
+    *,
+    local_payload: dict,
+    remote_payload: dict,
+    field_rows: list[dict],
+    automatic_field_decisions: list[dict],
+) -> None:
+    """Classify latitude/longitude as one bundle, as ordinary sync does.
+
+    The per-field pass above sees each coordinate alone; this replaces its
+    coordinate rows and decisions with the bundle classification of
+    ``_analyze_observation_field_changes`` (which also weighs the cloud's
+    provenance pair, altitude and accuracy). A bundle conflict lists both
+    coordinates; the review resolves them together from one side.
+    """
+    coordinates = set(LOCATION_COORDINATE_FIELDS)
+    field_rows[:] = [row for row in field_rows if row.get('field') not in coordinates]
+    automatic_field_decisions[:] = [
+        entry for entry in automatic_field_decisions if entry.get('field') not in coordinates
+    ]
+    changes = _analyze_observation_field_changes(local_obs, remote_obs, baseline_obs)
+    conflict = coordinates & set(changes['conflict_fields'])
+    local_only = coordinates & set(changes['local_only_fields'])
+    remote_only = coordinates & set(changes['remote_only_fields'])
+    for field in LOCATION_COORDINATE_FIELDS:
+        values = {
+            'local': local_payload.get(field),
+            'remote': remote_payload.get(field),
+            'baseline': baseline_obs.get(field),
+        }
+        if conflict:
+            field_rows.append({
+                'field': field,
+                'label': _CONFLICT_FIELD_LABELS.get(field, field),
+                **values,
+                'local_changed': not _observation_field_values_match(field, values['local'], values['baseline']),
+                'remote_changed': True,
+                'bundle': 'location',
+            })
+        elif field in local_only:
+            automatic_field_decisions.append({'field': field, 'action': 'push_local', **values})
+        elif field in remote_only:
+            automatic_field_decisions.append({'field': field, 'action': 'pull_cloud', **values})
+
+
 def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: str | None = None) -> dict:
     """Enhanced conflict details with filename-level media differences."""
     local_obs = ObservationDB.get_observation(int(local_id))
@@ -432,6 +482,14 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
             'baseline': b_val, 'local': l_val, 'remote': r_val,
             'local_changed': local_changed, 'remote_changed': remote_changed,
         })
+
+    _apply_location_bundle_to_conflict_rows(
+        local_obs, remote_obs, baseline_obs,
+        local_payload=local_payload,
+        remote_payload=remote_payload,
+        field_rows=field_rows,
+        automatic_field_decisions=automatic_field_decisions,
+    )
 
     # The taxonomy identity is classified by its own three-way rule, never by
     # plain equality: a cloud-derived local token is not a local edit, and an

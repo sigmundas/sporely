@@ -16,6 +16,7 @@ _PULL_ONLY_BLOCKED_CLIENT_METHODS = frozenset({
     'upload_image_file', 'upload_original_image_file',
     'set_image_storage_path', 'set_image_desktop_id', 'set_desktop_id',
     'set_observation_selected_taxon', 'clear_observation_selected_taxon',
+    'set_observation_location',
     'set_measurement_desktop_id', 'set_image_original_storage_path',
     'reserve_image_storage_path_for_promotion',
     'release_image_storage_path_reservation',
@@ -69,6 +70,10 @@ _PULL_ONLY_ALLOWED_READ_METHODS = frozenset({
     # Image / measurement metadata reads
     'pull_bulk_image_metadata',
     'pull_image_metadata',
+    # Image read helpers (select list with optional ``ingest_method``, and
+    # the read retried without it on a target lacking the column).
+    '_observation_image_select_columns',
+    '_read_observation_image_rows',
     'pull_measurements_for_images',
     'pull_observation_identifications',
     # Media byte reads

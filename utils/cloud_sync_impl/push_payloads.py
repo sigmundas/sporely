@@ -21,6 +21,15 @@ from utils.cloud_sync_impl.reconciliation.identity import (
     _remote_identity_claim,
     TAXON_IDENTITY_SYNC_FIELD,
 )
+from utils.cloud_sync_impl.reconciliation.location_provenance import (
+    cloud_only_bundle_changed,
+    coordinates_match,
+    LOCATION_CLOUD_ONLY_BUNDLE_FIELDS,
+    LOCATION_COORDINATE_FIELDS,
+    LOCATION_PROVENANCE_FIELDS,
+    provenance_pair,
+    row_carries_provenance,
+)
 from utils.cloud_sync_impl.reconciliation.values import (
     _normalize_observation_bool_value,
     _normalize_observation_float_value,
@@ -200,7 +209,80 @@ def _baseline_observation_compare_payload(record: dict | None) -> dict:
     # from before identity joined change detection must stay "unknown".
     if TAXON_IDENTITY_SYNC_FIELD in row:
         payload[TAXON_IDENTITY_SYNC_FIELD] = str(row.get(TAXON_IDENTITY_SYNC_FIELD) or '')
+    # Likewise the location pair: absent keys mean "not recorded".
+    if row_carries_provenance(row):
+        payload.update(zip(LOCATION_PROVENANCE_FIELDS, provenance_pair(row)))
+    for field in LOCATION_CLOUD_ONLY_BUNDLE_FIELDS:
+        if field in row:
+            payload[field] = _normalize_observation_float_value(row.get(field))
     return payload
+
+
+def _apply_location_bundle_rules(
+    local_obs: dict | None,
+    remote_obs: dict | None,
+    baseline_obs: dict | None,
+    *,
+    local_only_fields: list[str],
+    remote_only_fields: list[str],
+    conflict_fields: list[str],
+    shared_same_fields: list[str],
+) -> None:
+    """Make latitude, longitude and the provenance pair move as one bundle.
+
+    The per-field pass classifies each coordinate on its own; here a bundle
+    changed on both sides becomes a conflict on its changed coordinates unless
+    both sides hold the same coordinates (then shared). The pair is never a
+    local change by itself — the desktop only attributes coordinates it
+    changes, and that is decided at push time. Where the local coordinates are
+    not a pending local change, the cloud pair is adopted (``remote_only``).
+    A cloud row without the provenance columns has no pair to compare or
+    adopt; a baseline without them treats its pair as the current cloud pair.
+    """
+    local_row = dict(local_obs or {})
+    remote_row = dict(remote_obs or {})
+    baseline_row = dict(baseline_obs or {})
+
+    def _changed(field: str, *lists: list[str]) -> bool:
+        return any(field in fields for fields in lists)
+
+    local_changed_coords = [
+        field for field in LOCATION_COORDINATE_FIELDS
+        if _changed(field, local_only_fields, conflict_fields, shared_same_fields)
+    ]
+    remote_changed_coords = [
+        field for field in LOCATION_COORDINATE_FIELDS
+        if _changed(field, remote_only_fields, conflict_fields, shared_same_fields)
+    ]
+    remote_has_pair = row_carries_provenance(remote_row)
+    remote_pair = provenance_pair(remote_row)
+    baseline_pair = provenance_pair(baseline_row) if row_carries_provenance(baseline_row) else remote_pair
+    pair_remote_changed = remote_has_pair and remote_pair != baseline_pair
+    # Altitude/accuracy exist only in the cloud: a cloud change to them changes
+    # the bundle; their local absence is never a local change.
+    extras_remote_changed = cloud_only_bundle_changed(remote_row, baseline_row)
+
+    if local_changed_coords and (remote_changed_coords or pair_remote_changed or extras_remote_changed):
+        changed = set(local_changed_coords) | set(remote_changed_coords)
+        same_coordinates = coordinates_match(
+            local_row.get('gps_latitude'), local_row.get('gps_longitude'),
+            remote_row.get('gps_latitude'), remote_row.get('gps_longitude'),
+        )
+        target = shared_same_fields if same_coordinates else conflict_fields
+        for field in LOCATION_COORDINATE_FIELDS:
+            if field not in changed:
+                continue
+            for fields in (local_only_fields, remote_only_fields, conflict_fields, shared_same_fields):
+                while field in fields:
+                    fields.remove(field)
+            target.append(field)
+        if not same_coordinates:
+            return
+    elif local_changed_coords:
+        return
+
+    if remote_has_pair and provenance_pair(local_row) != remote_pair:
+        remote_only_fields.extend(LOCATION_PROVENANCE_FIELDS)
 
 
 def _analyze_observation_field_changes(local_obs: dict | None, remote_obs: dict | None, baseline_obs: dict | None) -> dict:
@@ -229,6 +311,14 @@ def _analyze_observation_field_changes(local_obs: dict | None, remote_obs: dict 
             local_only_fields.append(field)
         elif remote_changed:
             remote_only_fields.append(field)
+
+    _apply_location_bundle_rules(
+        local_obs, remote_obs, baseline_obs,
+        local_only_fields=local_only_fields,
+        remote_only_fields=remote_only_fields,
+        conflict_fields=conflict_fields,
+        shared_same_fields=shared_same_fields,
+    )
 
     identity_change = _classify_identity_sync_change(
         local_obs, remote_obs, baseline_obs,

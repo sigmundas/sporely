@@ -863,6 +863,7 @@ and nothing pure imports them.
 | `local_files.py` [0] | Local image asset path resolution | `_resolve_existing_local_image_asset_path`, `_is_readable_local_file` |
 | `reconciliation/values.py` [0] | Pure observation value normalizers, tolerances, snapshot field sets | `_normalize_observation_*_value`, `_observation_field_values_match`, `_SNAPSHOT_OBS_FIELDS`, `_SNAPSHOT_IMG_FIELDS`, `_SNAPSHOT_MEAS_FIELDS`, `_normalize_snapshot_value` |
 | `reconciliation/location_precision.py` [0] | Pure location-precision ranking | `_LOCATION_PRECISION_RANK`, `_location_precision_rank` |
+| `reconciliation/location_provenance.py` [0] | Pure location-provenance vocabulary, writable-pair rule, coordinate-bundle matching and desktop edit attribution; `ingest_method` field name | `location_pair_is_writable`, `attribute_coordinate_edit`, `row_carries_provenance` |
 | `reconciliation/report.py` [0] | Preflight report type and formatting | `ObservationPushConflictReport`, `_format_push_conflict_review_reasons` |
 | `sample_source.py` [0] | Sample-source representation (not pure: `DatabaseTerms` imports Qt; the push adapter asks the client for a capability) | `_desktop_to_cloud_sample_source`, `_cloud_to_desktop_sample_source`, `_split_legacy_sample_type_into_source`, `_apply_image_sample_fields_to_push_payload` |
 | `reconciliation/identity.py` [1] | Pure taxonomy identity classification | `_RemoteIdentityClaim`, `_remote_identity_claim`, `_local_identity_sync_key`, `_classify_identity_sync_change`, `_IDENTITY_BASELINE_UNKNOWN`, `TAXON_IDENTITY_SYNC_FIELD` |

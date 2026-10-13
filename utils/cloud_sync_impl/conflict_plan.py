@@ -21,6 +21,15 @@ from utils.cloud_sync_impl.errors import CloudSyncError
 from utils.cloud_sync_impl.image_payloads import _remote_image_payload
 from utils.cloud_sync_impl.preflight import _local_image_snapshot_payload
 from utils.cloud_sync_impl.push_payloads import _observation_compare_payload
+from utils.cloud_sync_impl.reconciliation.location_provenance import (
+    LOCATION_CLOUD_ONLY_BUNDLE_FIELDS,
+    LOCATION_COORDINATE_FIELDS,
+    LOCATION_PROVENANCE_FIELDS,
+    LOCATION_PROVENANCE_READ_FIELDS,
+    provenance_pair,
+    row_carries_provenance,
+)
+from utils.cloud_sync_impl.reconciliation.values import _normalize_observation_float_value
 from utils.cloud_sync_impl.reconciliation.asymmetry import (
     _asymmetry_fingerprint_local_image,
     _asymmetry_fingerprint_local_measurement,
@@ -106,12 +115,36 @@ def _build_plan_from_automatic_decisions(detail: dict) -> dict:
 
 
 def _conflict_plan_local_observation_fingerprint(record: dict | None) -> dict:
-    """Normalized local observation fingerprint used for drift detection."""
-    return _observation_compare_payload(record or {}, local=True)
+    """Normalized local observation fingerprint used for drift detection.
+
+    Includes the local location pair: it is a member of the coordinate
+    bundle the review resolves, so a change to it after review is drift.
+    """
+    payload = _observation_compare_payload(record or {}, local=True)
+    payload.update(zip(LOCATION_PROVENANCE_FIELDS, provenance_pair(record)))
+    return payload
 
 
 def _conflict_plan_remote_observation_fingerprint(record: dict | None) -> dict:
-    return _observation_compare_payload(record or {}, local=False)
+    """Cloud fingerprint, with the cloud-only coordinate-bundle members.
+
+    The pair, altitude and accuracy are included when the cloud row carries
+    them (a target without the columns fingerprints stably without them).
+    """
+    row = record or {}
+    payload = _observation_compare_payload(row, local=False)
+    if row_carries_provenance(row):
+        payload.update(zip(LOCATION_PROVENANCE_FIELDS, provenance_pair(row)))
+    for field in LOCATION_CLOUD_ONLY_BUNDLE_FIELDS:
+        if field in row:
+            payload[field] = _normalize_observation_float_value(row.get(field))
+    return payload
+
+
+def _location_bundle_expectation(fingerprint: dict | None) -> dict:
+    """The non-coordinate bundle members a fingerprint holds (for retry checks)."""
+    data = fingerprint or {}
+    return {field: data[field] for field in LOCATION_PROVENANCE_READ_FIELDS if field in data}
 
 
 def _conflict_plan_local_image_fingerprint(row: dict | None) -> dict:
@@ -625,6 +658,34 @@ def _validate_plan_identity_state(
             )
 
 
+def _bundle_coordinate_field_ops(ops: list[dict]) -> list[dict]:
+    """Resolve latitude and longitude together, from one side.
+
+    The coordinates (with the cloud's provenance pair) are one bundle: a plan
+    choosing a side for either coordinate applies that side to both, and a
+    plan choosing different sides is refused before anything executes.
+    """
+    coordinates = set(LOCATION_COORDINATE_FIELDS)
+    sides = {
+        op.get('op') for op in ops
+        if op.get('op') in {'pull_field', 'push_field'} and op.get('field') in coordinates
+    }
+    if not sides:
+        return ops
+    if len(sides) > 1:
+        raise CloudSyncError(
+            'Latitude and longitude must be resolved from the same side. '
+            'Refresh the comparison before applying.'
+        )
+    side = next(iter(sides))
+    present = {op.get('field') for op in ops if op.get('op') == side}
+    return ops + [
+        {'op': side, 'field': field}
+        for field in LOCATION_COORDINATE_FIELDS
+        if field not in present
+    ]
+
+
 def _build_plan_operations(items: list[dict]) -> list[dict]:
     """Turn the item plan into a spy-friendly, unambiguous operation list.
 
@@ -706,7 +767,7 @@ def _build_plan_operations(items: list[dict]) -> list[dict]:
                         'side': 'cloud',
                         'cloud_id': cloud_id,
                     })
-    return ops
+    return _bundle_coordinate_field_ops(ops)
 
 
 def _malformed_retry_state(reason: str) -> CloudSyncError:
@@ -1128,6 +1189,27 @@ def _normalize_observation_field_for_baseline(
     return payload.get(field)
 
 
+def _verify_location_bundle_effect(
+    expected: dict, current_fingerprint: dict, side: str, opname: str, drift_error,
+) -> set[str]:
+    """Verify the bundle members a completed coordinate op recorded.
+
+    A coordinate op records the pair (and, cloud side, altitude/accuracy) it
+    left behind — including server invalidation or an RPC fallback. Those are
+    its own effects, so a retry accepts them; anything else is drift.
+    """
+    recorded = expected.get('location_bundle')
+    if not isinstance(recorded, dict):
+        return set()
+    for field, value in recorded.items():
+        if current_fingerprint.get(field) != value:
+            raise drift_error(
+                f'{side} location field "{field}" no longer matches the '
+                f'expected effect of a completed {opname}'
+            )
+    return set(recorded)
+
+
 def _verify_completed_ops_and_rebase(
     prior_result: dict,
     original_baseline: dict,
@@ -1154,7 +1236,12 @@ def _verify_completed_ops_and_rebase(
         if isinstance(op, dict) and op.get('status') in {'completed', 'verification_pending'}
     ]
 
-    explained_field_names: set[str] = set()
+    # A completed op explains only the side it wrote: a pull changes the
+    # local observation, a push the cloud one. The other side must still
+    # match its reviewed state.
+    explained_field_names: set[str] = set()  # both sides (derived values)
+    explained_local_field_names: set[str] = set()
+    explained_remote_field_names: set[str] = set()
     explained_local_image_ids: set[int] = set()
     explained_cloud_image_ids: set[str] = set()
     explained_local_meas_ids: set[int] = set()
@@ -1216,7 +1303,10 @@ def _verify_completed_ops_and_rebase(
                     f'local observation field "{field}" no longer matches the '
                     'expected effect of a completed pull_field'
                 )
-            explained_field_names.add(field)
+            explained_local_field_names.add(field)
+            explained_local_field_names |= _verify_location_bundle_effect(
+                expected, _conflict_plan_local_observation_fingerprint(local_obs), 'local', opname, _drift_error,
+            )
         elif opname == 'push_field':
             field = op.get('field') or ''
             if not field:
@@ -1229,7 +1319,10 @@ def _verify_completed_ops_and_rebase(
                     f'cloud observation field "{field}" no longer matches the '
                     'expected effect of a completed push_field'
                 )
-            explained_field_names.add(field)
+            explained_remote_field_names.add(field)
+            explained_remote_field_names |= _verify_location_bundle_effect(
+                expected, _conflict_plan_remote_observation_fingerprint(remote_obs), 'cloud', opname, _drift_error,
+            )
         elif opname in {'push_image', 'import_image',
                         'push_image_metadata', 'apply_image_metadata'}:
             # Full material verification for every image op.  Identity alone is
@@ -1338,7 +1431,7 @@ def _verify_completed_ops_and_rebase(
     current_local_obs_fp = _conflict_plan_local_observation_fingerprint(local_obs)
     current_remote_obs_fp = _conflict_plan_remote_observation_fingerprint(remote_obs)
     for field, expected_value in original_local_obs.items():
-        if field in explained_field_names:
+        if field in explained_field_names or field in explained_local_field_names:
             continue
         if not _observation_field_values_match(
             field, current_local_obs_fp.get(field), expected_value
@@ -1347,7 +1440,7 @@ def _verify_completed_ops_and_rebase(
                 f'unrelated local field "{field}" changed since the baseline'
             )
     for field, expected_value in original_remote_obs.items():
-        if field in explained_field_names:
+        if field in explained_field_names or field in explained_remote_field_names:
             continue
         if not _observation_field_values_match(
             field, current_remote_obs_fp.get(field), expected_value

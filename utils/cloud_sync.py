@@ -314,6 +314,32 @@ from utils.cloud_sync_impl.reconciliation.location_precision import (  # noqa: F
     _LOCATION_PRECISION_RANK,
     _location_precision_rank,
 )
+from utils.cloud_sync_impl.reconciliation.location_provenance import (  # noqa: F401  (facade re-export)
+    CLEARED_LOCATION_PAIR,
+    IMAGE_EXIF_LOCATION_PAIR,
+    INGEST_METHOD_FIELD,
+    LOCATION_CLOUD_ONLY_BUNDLE_FIELDS,
+    LOCATION_COORDINATE_FIELDS,
+    LOCATION_PROVENANCE_FIELDS,
+    LOCATION_PROVENANCE_READ_FIELDS,
+    LOCATION_SOURCE_FIELD,
+    LOCATION_SOURCES,
+    LOCATION_STATUS_FIELD,
+    LOCATION_STATUSES,
+    MANUAL_LOCATION_PAIR,
+    _ABSENT_SOURCES,
+    _ACQUIRED_SOURCES,
+    _COORDINATE_ABS_TOL,
+    _coordinate,
+    attribute_coordinate_edit,
+    cloud_only_bundle_changed,
+    coordinate_values_match,
+    coordinates_match,
+    location_pair_is_writable,
+    provenance_pair,
+    provenance_text,
+    row_carries_provenance,
+)
 from utils.cloud_sync_impl.reconciliation.identity import (  # noqa: F401  (facade re-export)
     TAXON_IDENTITY_SYNC_FIELD,
     _IDENTITY_BASELINE_UNKNOWN,
@@ -417,6 +443,7 @@ from utils.cloud_sync_impl.reconciliation.asymmetry import (  # noqa: F401  (fac
 from utils.cloud_sync_impl.push_payloads import (  # noqa: F401  (facade re-export)
     _OBS_PUSH_COLS,
     _analyze_observation_field_changes,
+    _apply_location_bundle_rules,
     _baseline_observation_compare_payload,
     _normalize_observation_field_value,
     _observation_compare_payload,
@@ -586,6 +613,7 @@ from utils.cloud_sync_impl.original_recovery import (  # noqa: F401  (facade re-
     recover_full_original_for_image,
 )
 from utils.cloud_sync_impl.image_pull import (  # noqa: F401  (facade re-export)
+    _adopt_remote_ingest_method,
     _apply_remote_image_metadata_only_to_local,
     _apply_remote_images_to_local,
     _carry_forward_local_mosaic_signature,
@@ -660,8 +688,11 @@ from utils.cloud_sync_impl.measurement_reconcile import (  # noqa: F401  (facade
 )
 from utils.cloud_sync_impl.conflict_plan import (  # noqa: F401  (facade re-export)
     _build_plan_from_automatic_decisions,
+    _bundle_coordinate_field_ops,
     _conflict_plan_local_observation_fingerprint,
     _conflict_plan_remote_observation_fingerprint,
+    _location_bundle_expectation,
+    _verify_location_bundle_effect,
     _conflict_plan_local_image_fingerprint,
     _conflict_plan_remote_image_fingerprint,
     _conflict_plan_local_measurement_fingerprint,
@@ -703,6 +734,7 @@ from utils.cloud_sync_impl.conflict_plan import (  # noqa: F401  (facade re-expo
 from utils.cloud_sync_impl.conflict_detail import (  # noqa: F401  (facade re-export)
     _CONFLICT_COMPARE_FIELDS,
     _CONFLICT_FIELD_LABELS,
+    _apply_location_bundle_to_conflict_rows,
     _image_label,
     _image_kind_noun,
     _pluralize_image_count,
@@ -1962,6 +1994,70 @@ def _shape_geography_patch_payload(
         # Coordinates changed. Region tied to old coords is stale; clear it.
         payload['region_id'] = None
         payload['country_code'] = normalized_country  # may be None
+
+
+def _post_new_observation(client, payload: dict, obs: dict) -> list[dict]:
+    """INSERT a new cloud observation, with its location pair when known.
+
+    A compatible attributed pair travels with the coordinates in the one
+    INSERT; otherwise both fields are omitted (NULL/NULL). A target
+    without the provenance columns gets one retry without them.
+    """
+    source, status = provenance_pair(obs)
+    if (
+        not getattr(client, '_observation_location_provenance_unsupported', False)
+        and location_pair_is_writable(
+            source, status, payload.get('gps_latitude'), payload.get('gps_longitude'),
+        )
+    ):
+        attributed = dict(payload, location_source=source, location_status=status)
+        try:
+            return client._post('observations', attributed)
+        except CloudSyncError as exc:
+            if not _MISSING_LOCATION_PROVENANCE_COLUMN_PATTERN.search(str(exc or '').lower()):
+                raise
+            client._observation_location_provenance_unsupported = True
+    return client._post('observations', payload)
+
+
+def _push_attributed_location(
+    client,
+    cloud_id: str,
+    obs: dict,
+    live_remote: dict | None,
+) -> bool:
+    """Write an attributed local coordinate change through the aware RPC.
+
+    Returns True when ``set_observation_location`` wrote the coordinates
+    and pair. A coordinate change without a writable local pair (unknown
+    origin) is left to the ordinary PATCH, which the server answers by
+    invalidating the pair to NULL/NULL. The desktop never sends a
+    provenance-only update for unchanged coordinates.
+    """
+    if getattr(client, '_set_observation_location_unsupported', False):
+        return False
+    latitude = _normalize_observation_float_value(obs.get('gps_latitude'))
+    longitude = _normalize_observation_float_value(obs.get('gps_longitude'))
+    source, status = provenance_pair(obs)
+    if not location_pair_is_writable(source, status, latitude, longitude):
+        return False
+    reference = live_remote if live_remote is not None else client.get_observation(cloud_id)
+    if not reference:
+        return False
+    if coordinates_match(
+        latitude, longitude,
+        reference.get('gps_latitude'), reference.get('gps_longitude'),
+    ):
+        return False
+    try:
+        client.set_observation_location(cloud_id, latitude, longitude, source, status)
+    except CloudSyncError as exc:
+        if not _MISSING_SET_OBSERVATION_LOCATION_PATTERN.search(str(exc or '').lower()):
+            raise
+        # Pre-migration target: plain coordinate PATCH, as the web does.
+        client._set_observation_location_unsupported = True
+        return False
+    return True
 
 
 def _normalize_observation_sync_field(field: str) -> str:
@@ -3302,8 +3398,21 @@ def _remote_observation_update_kwargs(remote: dict) -> dict:
         'habitat_grows_on_note': remote.get('habitat_grows_on_note'),
         'country_code': normalize_country_code(remote.get('country_code')),
         'region_id': _normalize_observation_field_value('region_id', remote.get('region_id')),
+        **_remote_location_provenance_kwargs(remote),
         'allow_nulls': True,
     }
+
+
+def _remote_location_provenance_kwargs(remote: dict | None) -> dict:
+    """The cloud pair as received, or nothing when the row lacks the columns.
+
+    Absent keys (a target or projection without the columns) leave the local
+    pair unchanged; an explicit NULL is stored as NULL.
+    """
+    if not row_carries_provenance(remote):
+        return {}
+    source, status = provenance_pair(remote)
+    return {'location_source': source, 'location_status': status}
 
 
 def _remote_observation_extra_values(remote: dict) -> dict:
@@ -3858,6 +3967,21 @@ _MISSING_IDENTITY_COLUMN_PATTERN = re.compile(
     r"|could not find the '?taxon_identity_\w+'? column"
 )
 
+#: The same server phrasing for the private provenance columns (sporely-web
+#: migration 20261012105630); a target without them is read without them.
+_MISSING_LOCATION_PROVENANCE_COLUMN_PATTERN = re.compile(
+    r"column \S*location_(?:source|status) does not exist"
+    r"|could not find the '?location_(?:source|status)'? column"
+)
+_MISSING_INGEST_METHOD_COLUMN_PATTERN = re.compile(
+    r"column \S*ingest_method does not exist"
+    r"|could not find the '?ingest_method'? column"
+)
+#: PostgREST's "function not found in the schema cache" for a missing RPC.
+_MISSING_SET_OBSERVATION_LOCATION_PATTERN = re.compile(
+    r"pgrst202|could not find the function \S*set_observation_location"
+)
+
 
 def _apply_remote_observation_fields(
     local_id: int,
@@ -3883,6 +4007,11 @@ def _apply_remote_observation_fields(
         'sharing_scope' if field in {'visibility', 'sharing_scope'} else field
         for field in requested_fields
     }
+    # The coordinate bundle moves as a unit: applying cloud coordinates applies
+    # the cloud's pair with them (or, without the columns, lets the local
+    # invalidation rule clear a pair that described the old coordinates).
+    if normalized_fields & set(LOCATION_COORDINATE_FIELDS):
+        normalized_fields |= set(LOCATION_PROVENANCE_FIELDS)
     applies_identity = fields is None or TAXON_IDENTITY_SYNC_FIELD in normalized_fields
     local_before = ObservationDB.get_observation(int(local_id)) if applies_identity else None
     update_kwargs = _remote_observation_update_kwargs(remote)
@@ -4743,6 +4872,11 @@ def resolve_conflict_plan(
         # Record the expected local value that pull_field wrote — retry
         # verifies the current local field still matches.
         refreshed_after_pull = ObservationDB.get_observation(int(local_id)) or local_obs
+        # Pulled coordinates bring the cloud pair with them: record the local
+        # pair they left so a retry verifies (and accepts) it.
+        pulled_location_bundle = _location_bundle_expectation(
+            _conflict_plan_local_observation_fingerprint(refreshed_after_pull)
+        )
         for f in sorted(cloud_field_names):
             executed.append({
                 'op': 'pull_field', 'field': f, 'status': 'completed',
@@ -4752,6 +4886,10 @@ def resolve_conflict_plan(
                     'field': f,
                     'value': _normalize_observation_field_for_baseline(
                         refreshed_after_pull, f, local=True,
+                    ),
+                    **(
+                        {'location_bundle': pulled_location_bundle}
+                        if f in LOCATION_COORDINATE_FIELDS else {}
                     ),
                 },
             })
@@ -4773,6 +4911,21 @@ def resolve_conflict_plan(
                 for field in local_field_names
                 if field != TAXON_IDENTITY_SYNC_FIELD
             }
+            # "Keep this device's location": the coordinate bundle goes through
+            # the same aware path as an ordinary push — attributed coordinates
+            # via set_observation_location, unchanged ones not resent.
+            if set(LOCATION_COORDINATE_FIELDS) & local_field_names and (
+                _push_attributed_location(client, resolved_cloud_id, refreshed_local, remote_obs)
+                or (
+                    remote_obs is not None
+                    and coordinates_match(
+                        local_payload.get('gps_latitude'), local_payload.get('gps_longitude'),
+                        remote_obs.get('gps_latitude'), remote_obs.get('gps_longitude'),
+                    )
+                )
+            ):
+                for field in LOCATION_COORDINATE_FIELDS:
+                    patch_payload.pop(field, None)
             if patch_payload:
                 client._patch(f'observations?id=eq.{resolved_cloud_id}', patch_payload)
             # "Keep this device's identity": the guarded RPC is the only
@@ -4788,6 +4941,23 @@ def resolve_conflict_plan(
                 failing={'op': 'push_field', 'fields': sorted(local_field_names)},
                 cause=exc,
             )
+        # A pushed coordinate bundle leaves a server-decided pair (the RPC's
+        # pair, the invalidated NULL pair of a legacy PATCH or an RPC
+        # fallback) and altitude/accuracy: read back what the cloud now holds.
+        pushed_location_bundle = None
+        if set(LOCATION_COORDINATE_FIELDS) & local_field_names:
+            try:
+                pushed_location_bundle = _location_bundle_expectation(
+                    _conflict_plan_remote_observation_fingerprint(
+                        client.get_observation(resolved_cloud_id)
+                    )
+                )
+            except Exception as exc:
+                raise _partial_error(
+                    f'Could not read back the cloud location after pushing it: {exc}',
+                    failing={'op': 'push_field', 'fields': sorted(local_field_names)},
+                    cause=exc,
+                )
         for f in sorted(local_field_names):
             expected_value = _normalize_observation_field_for_baseline(
                 refreshed_local, f, local=True,
@@ -4808,6 +4978,11 @@ def resolve_conflict_plan(
                     'side': 'cloud',
                     'field': f,
                     'value': expected_value,
+                    **(
+                        {'location_bundle': pushed_location_bundle}
+                        if f in LOCATION_COORDINATE_FIELDS and pushed_location_bundle is not None
+                        else {}
+                    ),
                 },
             })
 
@@ -5718,32 +5893,62 @@ class SporelyCloudClient(
         failure; without them `selected_sporely_taxon_id` alone still
         describes a bound identity.
         """
-        if getattr(self, '_observation_identity_columns_unsupported', False):
-            return _OBSERVATION_SELECT_COLUMNS
-        return _join_select_columns(
-            _OBSERVATION_SELECT_COLUMNS, *_OBSERVATION_IDENTITY_SELECT_COLUMNS,
-        )
+        columns = [_OBSERVATION_SELECT_COLUMNS]
+        if not getattr(self, '_observation_identity_columns_unsupported', False):
+            columns.extend(_OBSERVATION_IDENTITY_SELECT_COLUMNS)
+        # Private location provenance (sporely-web migration 20261012105630),
+        # read from the owner base table only, likewise dropped when absent.
+        # Cloud-only bundle members ride in the same group: the migration's
+        # CHECK constraint references them, so a target with the pair has them.
+        if not getattr(self, '_observation_location_provenance_unsupported', False):
+            columns.extend(LOCATION_PROVENANCE_READ_FIELDS)
+        return _join_select_columns(*columns)
 
     def _read_observation_rows(self, read, path_for):
-        """``read(path_for(select))``, retried once without identity columns.
+        """``read(path_for(select))``, retried without optional columns.
 
         No extra probe request: the normal read carries the columns, and only
-        a server that rejects them costs one retry, once per client.
+        a server that rejects one optional group (identity provenance or
+        location provenance) costs one retry per group, once per client.
         """
+        optional_groups = (
+            ('_observation_identity_columns_unsupported', _MISSING_IDENTITY_COLUMN_PATTERN),
+            ('_observation_location_provenance_unsupported', _MISSING_LOCATION_PROVENANCE_COLUMN_PATTERN),
+        )
+        while True:
+            try:
+                return read(path_for(self._observation_select_columns()))
+            except CloudSyncError as exc:
+                # The error text echoes the request path (and so the select
+                # list), so match the server's own phrasing about one of THESE
+                # columns, not any "does not exist" sharing the message.
+                text = str(exc or '').lower()
+                for flag, pattern in optional_groups:
+                    if not getattr(self, flag, False) and pattern.search(text):
+                        setattr(self, flag, True)
+                        break
+                else:
+                    raise
+
+    def _observation_image_select_columns(self) -> str:
+        """Image read columns, with ``ingest_method`` unless the server lacks it."""
+        if getattr(self, '_observation_image_ingest_method_unsupported', False):
+            return _OBSERVATION_IMAGE_SELECT_COLUMNS
+        return _join_select_columns(_OBSERVATION_IMAGE_SELECT_COLUMNS, INGEST_METHOD_FIELD)
+
+    def _read_observation_image_rows(self, read, path_for):
+        """``read(path_for(select))``, retried once without ``ingest_method``."""
         try:
-            return read(path_for(self._observation_select_columns()))
+            return read(path_for(self._observation_image_select_columns()))
         except CloudSyncError as exc:
-            # The error text echoes the request path (and so the select list),
-            # so match the server's own phrasing about one of THESE columns,
-            # not any "does not exist" that happens to share the message.
             text = str(exc or '').lower()
             if (
-                getattr(self, '_observation_identity_columns_unsupported', False)
-                or not _MISSING_IDENTITY_COLUMN_PATTERN.search(text)
+                getattr(self, '_observation_image_ingest_method_unsupported', False)
+                or not _MISSING_INGEST_METHOD_COLUMN_PATTERN.search(text)
             ):
                 raise
-            self._observation_identity_columns_unsupported = True
-            return read(path_for(_OBSERVATION_SELECT_COLUMNS))
+            self._observation_image_ingest_method_unsupported = True
+            return read(path_for(_OBSERVATION_IMAGE_SELECT_COLUMNS))
 
     def _observation_supports_media_keys(self) -> bool:
         return self._has_column('observations', 'image_key') or self._has_column('observations', 'thumb_key')
@@ -6810,6 +7015,25 @@ class SporelyCloudClient(
                     return existing_id
             # Coord-change / preserve-only geography rules — see §4 in the spec.
             _shape_geography_patch_payload(payload, obs, existing_id)
+            live_remote = (
+                remote_obs
+                if remote_obs is not None and str(remote_obs.get('id') or '').strip() == str(existing_id)
+                else None
+            )
+            if _push_attributed_location(self, existing_id, obs, live_remote):
+                # Coordinates and their pair were written atomically; the
+                # PATCH must not resend them.
+                for field in LOCATION_COORDINATE_FIELDS:
+                    payload.pop(field, None)
+            elif live_remote is not None and coordinates_match(
+                payload.get('gps_latitude'), payload.get('gps_longitude'),
+                live_remote.get('gps_latitude'), live_remote.get('gps_longitude'),
+            ):
+                # Never resend unchanged coordinates: a sub-tolerance rounding
+                # difference would read as a change and invalidate the
+                # cloud's location provenance.
+                for field in LOCATION_COORDINATE_FIELDS:
+                    payload.pop(field, None)
             self._patch(f'observations?id=eq.{existing_id}', payload)
             consume_confirmed_location_precision(obs.get('id'))
             _increment_sync_summary(summary, 'observations_patched')
@@ -6822,13 +7046,41 @@ class SporelyCloudClient(
             return existing_id
         # New observation: never invent a region_id.
         payload.pop('region_id', None)
-        rows = self._post('observations', payload)
+        rows = _post_new_observation(self, payload, obs)
         consume_confirmed_location_precision(obs.get('id'))
         _increment_sync_summary(summary, 'observations_patched')
         cloud_id = rows[0]['id']
         self._sync_observation_selected_taxon(cloud_id, obs, remote_obs=None)
         return cloud_id
 
+
+    def set_observation_location(
+        self,
+        cloud_id: str,
+        latitude: float | None,
+        longitude: float | None,
+        location_source: str,
+        location_status: str,
+    ) -> None:
+        """Owner/RLS-enforced atomic coordinate + provenance write.
+
+        sporely-web migration 20261012105630. All seven arguments are sent;
+        the desktop stores no altitude or accuracy, so a desktop-attributed
+        location carries none (as the web's manual picker does).
+        """
+        if not location_pair_is_writable(location_source, location_status, latitude, longitude):
+            raise CloudSyncError(
+                f'Refusing invalid location provenance ({location_source}, {location_status})'
+            )
+        self._rpc('set_observation_location', {
+            'p_observation_id': int(cloud_id),
+            'p_gps_latitude': latitude,
+            'p_gps_longitude': longitude,
+            'p_gps_altitude': None,
+            'p_gps_accuracy': None,
+            'p_location_source': location_source,
+            'p_location_status': location_status,
+        })
 
     def clear_observation_selected_taxon(
         self,
@@ -7578,9 +7830,10 @@ class SporelyCloudClient(
         path = f'observation_images?observation_id=eq.{cloud_value}&user_id=eq.{self.user_id}'
         if not include_deleted_for_sync:
             path += '&deleted_at=is.null'
-        path += f'&select={_OBSERVATION_IMAGE_SELECT_COLUMNS}'
 
-        rows = self._get(path)
+        rows = self._read_observation_image_rows(
+            self._get, lambda select: f'{path}&select={select}',
+        )
         image_rows = [dict(row or {}) for row in (rows or [])]
         if include_deleted_for_sync:
             return image_rows
@@ -7687,11 +7940,14 @@ class SporelyCloudClient(
                 # the response is silently truncated at db-max-rows=1000, which
                 # drops entire observations at the tail of a large batch and
                 # leaves them with an empty images list.
-                rows = self._get_paginated(
-                    f'observation_images?observation_id=in.({ids_str})'
-                    f'&user_id=eq.{self.user_id}'
-                    f'&order=id.asc'
-                    f'&select={_OBSERVATION_IMAGE_SELECT_COLUMNS}'
+                rows = self._read_observation_image_rows(
+                    self._get_paginated,
+                    lambda select, ids_str=ids_str: (
+                        f'observation_images?observation_id=in.({ids_str})'
+                        f'&user_id=eq.{self.user_id}'
+                        f'&order=id.asc'
+                        f'&select={select}'
+                    ),
                 )
                 all_images.extend(rows)
             success = True
@@ -10291,6 +10547,13 @@ def pull_all(
                     for field in _SNAPSHOT_OBS_FIELDS
                     if field not in {'id', 'desktop_id'}
                 ) and not _remote_identity_changed_since(remote, snapshot_obs)
+                # The location pair is outside the snapshot field list: a
+                # cloud pair the local row does not hold yet still needs the
+                # pull's field apply (a local write only, never a cloud one).
+                if observation_fields_match and row_carries_provenance(remote):
+                    observation_fields_match = (
+                        provenance_pair(local_obs) == provenance_pair(remote)
+                    )
                 local_status = str((local_obs or {}).get('sync_status') or '').strip().lower()
                 if observation_fields_match and local_status != 'dirty':
                     # Converge without deep fetch: stamp synced + refresh
@@ -10491,11 +10754,20 @@ def pull_all(
                     for row in remote_images_raw
                     if not str(row.get('deleted_at') or '').strip() and should_pull_cloud_image_to_desktop(row)
                 ]
-                remote_changed = (not stored_snapshot) or _remote_snapshot_has_meaningful_changes(
-                    remote,
-                    remote_images,
-                    remote_measurements,
-                    stored_snapshot,
+                remote_changed = (
+                    (not stored_snapshot)
+                    or _remote_snapshot_has_meaningful_changes(
+                        remote,
+                        remote_images,
+                        remote_measurements,
+                        stored_snapshot,
+                    )
+                    # A cloud location pair the local row does not hold yet
+                    # (it is outside the snapshot field list).
+                    or (
+                        row_carries_provenance(remote)
+                        and provenance_pair(local_obs) != provenance_pair(remote)
+                    )
                 )
                 should_store_snapshot = True
                 store_full_snapshot = True
@@ -10952,6 +11224,7 @@ def _create_local_from_remote(
         interesting_comment=_normalize_observation_bool_value(remote.get('interesting_comment'), default=False),
         country_code=normalize_country_code(remote.get('country_code')),
         region_id=_normalize_observation_field_value('region_id', remote.get('region_id')),
+        **_remote_location_provenance_kwargs(remote),
     )
     # The cloud identity arrives with the row, conservatively: see
     # `_local_identity_columns_for_remote_claim`.

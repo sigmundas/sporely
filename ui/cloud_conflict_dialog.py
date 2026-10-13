@@ -1028,6 +1028,19 @@ class CloudConflictDialog(QDialog):
                     item.setForeground(foreground)
                 self._compare_table.setItem(row_index, column, item)
             field = str(row.get('field') or '')
+            local_text = _format_compare_value(field, row.get('local'))
+            remote_text = _format_compare_value(field, row.get('remote'))
+            if row.get('bundle') == 'location':
+                # Coordinates resolve as one bundle from one side: a single
+                # choice on the latitude row covers both (the executor applies
+                # the chosen side to latitude and longitude together).
+                if field != 'gps_latitude':
+                    continue
+                longitude = next(
+                    (other for other in rows if other.get('field') == 'gps_longitude'), {},
+                )
+                local_text = f"{local_text}, {_format_compare_value('gps_longitude', longitude.get('local'))}"
+                remote_text = f"{remote_text}, {_format_compare_value('gps_longitude', longitude.get('remote'))}"
             chooser = QGroupBox(str(row.get('label') or field), self._field_choices_container)
             chooser_layout = QVBoxLayout(chooser)
             chooser_layout.addWidget(QLabel(self.tr('Needs your choice'), chooser))
@@ -1035,12 +1048,8 @@ class CloudConflictDialog(QDialog):
                 f'field:{field}',
                 {'kind': 'field', 'field': field, 'required': True},
                 [
-                    ('local', self.tr('This device — {value}').format(
-                        value=_format_compare_value(field, row.get('local'))
-                    )),
-                    ('cloud', self.tr('Sporely Cloud — {value}').format(
-                        value=_format_compare_value(field, row.get('remote'))
-                    )),
+                    ('local', self.tr('This device — {value}').format(value=local_text)),
+                    ('cloud', self.tr('Sporely Cloud — {value}').format(value=remote_text)),
                 ],
                 chooser,
             ))
@@ -1531,7 +1540,9 @@ class CloudConflictDialog(QDialog):
                 put(field, entry.get('local') if side == 'local' else entry.get('remote'))
         for row in detail.get('field_rows') or []:
             field = str(row.get('field') or '')
-            choice = self._selected_choice(f'field:{field}')
+            # Bundled coordinates share the latitude row's choice.
+            choice_field = 'gps_latitude' if row.get('bundle') == 'location' else field
+            choice = self._selected_choice(f'field:{choice_field}')
             if choice not in {'local', 'cloud'}:
                 continue
             put(field, row.get('local') if choice == 'local' else row.get('remote'))

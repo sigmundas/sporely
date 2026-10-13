@@ -27,6 +27,11 @@ from utils.cloud_sync_impl.reconciliation.identity import (
     _remote_identity_claim,
     TAXON_IDENTITY_SYNC_FIELD,
 )
+from utils.cloud_sync_impl.reconciliation.location_provenance import (
+    LOCATION_CLOUD_ONLY_BUNDLE_FIELDS,
+    LOCATION_PROVENANCE_FIELDS,
+    row_carries_provenance,
+)
 from utils.cloud_sync_impl.reconciliation.values import (
     _normalize_image_captured_at_for_cloud,
     _normalize_snapshot_value,
@@ -117,6 +122,17 @@ def _cloud_observation_snapshot(
     identity_claim = _remote_identity_claim(remote)
     if identity_claim is not None:
         obs_part[TAXON_IDENTITY_SYNC_FIELD] = identity_claim.key
+    # Location provenance is recorded only when the cloud row carries the
+    # columns: a snapshot without the keys means "pair not recorded", which
+    # comparison treats as equal to the current cloud pair.
+    if row_carries_provenance(remote):
+        for field in LOCATION_PROVENANCE_FIELDS:
+            obs_part[field] = _normalize_snapshot_value(remote.get(field))
+    # Cloud-only bundle members (altitude, accuracy): recorded when read, so a
+    # later cloud change to them is a bundle change.
+    for field in LOCATION_CLOUD_ONLY_BUNDLE_FIELDS:
+        if field in (remote or {}):
+            obs_part[field] = _normalize_snapshot_value(remote.get(field))
     payload: dict = {
         'schema_version': _CLOUD_OBSERVATION_SNAPSHOT_SCHEMA_VERSION,
         'observation': obs_part,

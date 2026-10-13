@@ -990,7 +990,7 @@ def test_pull_image_metadata_filters_deleted_rows_by_default(monkeypatch):
         (
             "observation_images?observation_id=eq.cloud-obs-1&user_id=eq.user-123"
             "&deleted_at=is.null&select="
-            f"{cloud_sync._OBSERVATION_IMAGE_SELECT_COLUMNS}"
+            f"{client._observation_image_select_columns()}"
         )
     ]
     assert [row["id"] for row in rows] == ["cloud-img-1"]
@@ -1019,7 +1019,7 @@ def test_pull_image_metadata_include_deleted_for_sync_returns_deleted_rows(monke
     assert fetched_paths == [
         (
             "observation_images?observation_id=eq.cloud-obs-1&user_id=eq.user-123&select="
-            f"{cloud_sync._OBSERVATION_IMAGE_SELECT_COLUMNS}"
+            f"{client._observation_image_select_columns()}"
         )
     ]
     assert [row["id"] for row in rows] == ["cloud-img-1", "cloud-img-2"]

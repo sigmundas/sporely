@@ -57,6 +57,7 @@ from utils.cloud_sync_impl.mosaic_signature import (
     _store_local_mosaic_signature,
 )
 from utils.cloud_sync_impl.preflight import _load_local_measurement_lookup
+from utils.cloud_sync_impl.reconciliation.location_provenance import INGEST_METHOD_FIELD
 from utils.cloud_sync_impl.progress import (
     _advance_progress,
     _cloud_sync_current_profiler,
@@ -125,6 +126,28 @@ def _update_image_columns_without_touching_observation(
         conn.commit()
     finally:
         conn.close()
+
+
+def _adopt_remote_ingest_method(
+    local_image_id: int,
+    remote_image: dict | None,
+    local_image: dict | None = None,
+) -> None:
+    """Store the cloud row's ``ingest_method`` locally, as received.
+
+    Preserve-only: the desktop never PATCHes it, so adopting it is a local
+    column write with no cloud write, media upload or dirty marking. A row
+    read without the column (absent key) leaves the local value unchanged.
+    """
+    row = remote_image or {}
+    if INGEST_METHOD_FIELD not in row:
+        return
+    value = row.get(INGEST_METHOD_FIELD)
+    if local_image is not None and local_image.get(INGEST_METHOD_FIELD) == value:
+        return
+    _update_image_columns_without_touching_observation(
+        int(local_image_id or 0), {INGEST_METHOD_FIELD: value},
+    )
 
 
 def _cloud_pulled_image_order_key(image_row: dict) -> tuple[int, int, str, int]:
@@ -463,6 +486,8 @@ def _ensure_local_metadata_only_microscope_anchor(
         'ai_crop_source_h': ai_crop_source_size[1] if ai_crop_source_size and len(ai_crop_source_size) == 2 else None,
         'ai_crop_is_custom': _remote_ai_crop_is_custom(remote_row),
     }
+    if INGEST_METHOD_FIELD in remote_row:
+        metadata_columns[INGEST_METHOD_FIELD] = remote_row.get(INGEST_METHOD_FIELD)
     remote_captured_at = _cloud_image_captured_at_to_local(remote_row.get('captured_at'))
     if remote_captured_at is not None:
         metadata_columns['captured_at'] = remote_captured_at
@@ -509,6 +534,7 @@ def _ensure_local_metadata_only_microscope_anchor(
         if local_image_id <= 0:
             return None
         has_local_file = False
+        _adopt_remote_ingest_method(local_image_id, remote_row)
 
     _update_image_columns_without_touching_observation(
         local_image_id,
@@ -780,6 +806,7 @@ def _apply_remote_images_to_local(
             continue
         local_image = local_cloud_map.get(cloud_image_id)
         if local_image:
+            _adopt_remote_ingest_method(local_image.get('id'), remote_image, local_image)
             if _is_metadata_only_microscope_cloud_image(remote_image):
                 _ensure_local_metadata_only_microscope_anchor(
                     client,
@@ -902,6 +929,7 @@ def _apply_remote_images_to_local(
                 original_mime_type=None,
                 working_mime_type=guess_local_image_mime_type(download_path),
             )
+            _adopt_remote_ingest_method(local_image_id, remote_image)
             download_path = _promote_temp_imported_image_if_needed(
                 int(local_image_id),
                 int(local_id),
@@ -1155,6 +1183,7 @@ def _import_remote_images(
                     original_mime_type=None,
                     working_mime_type=guess_local_image_mime_type(download_path),
                 )
+                _adopt_remote_ingest_method(local_image_id, image_row)
                 download_path = _promote_temp_imported_image_if_needed(
                     int(local_image_id),
                     int(local_id),

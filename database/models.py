@@ -30,6 +30,10 @@ from utils.publish_targets import (
 )
 from database.reverse_location_lookup import normalize_country_code
 from utils.taxon_identity import STATE_NONE, STATE_SPORELY, TaxonIdentity
+from utils.cloud_sync_impl.reconciliation.location_provenance import (
+    coordinates_match,
+    provenance_text,
+)
 
 _UNSET = object()
 
@@ -1338,6 +1342,8 @@ class ObservationDB:
                           ai_selected_at: str | None = None,
                           country_code: str | None = None,
                           region_id: str | None = None,
+                          location_source: str | None = None,
+                          location_status: str | None = None,
                           scientific_name_snapshot: str | None = None,
                           taxon_rank_snapshot: str | None = None,
                           sporely_taxon_id: int | None = None,
@@ -1432,12 +1438,13 @@ class ObservationDB:
                                      ai_selected_service, ai_selected_taxon_id, ai_selected_scientific_name,
                                      ai_selected_probability, ai_selected_at,
                                      country_code, region_id,
+                                     location_source, location_status,
                                      scientific_name_snapshot, taxon_rank_snapshot, sporely_taxon_id,
                                      taxon_identity_state, taxon_identity_proof,
                                      taxon_identity_source_system, taxon_identity_namespace,
                                      taxon_identity_external_id, taxon_identity_raw_external_id,
                                      taxon_identity_provenance)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (date, genus, species, common_name, location, habitat, artsdata_id,
               artportalen_id, resolved_publish_target, species_guess, notes, 1 if uncertain else 0, 1 if unspontaneous else 0,
               1 if resolved_is_draft else 0, resolved_sharing_scope, 1 if resolved_location_public else 0,
@@ -1454,6 +1461,7 @@ class ObservationDB:
               ai_selected_service, ai_selected_taxon_id, ai_selected_scientific_name,
               ai_selected_probability, ai_selected_at,
               resolved_country_code, resolved_region_id,
+              provenance_text(location_source), provenance_text(location_status),
               scientific_name_snapshot, taxon_rank_snapshot, sporely_taxon_id,
               _sanitize_identity_text(taxon_identity_state),
               _sanitize_identity_text(taxon_identity_proof),
@@ -1504,6 +1512,8 @@ class ObservationDB:
                            ai_selected_at: str | object = _UNSET,
                            country_code: str | None | object = _UNSET,
                            region_id: str | None | object = _UNSET,
+                           location_source: str | None | object = _UNSET,
+                           location_status: str | None | object = _UNSET,
                            scientific_name_snapshot: str | None | object = _UNSET,
                            taxon_rank_snapshot: str | None | object = _UNSET,
                            sporely_taxon_id: int | None | object = _UNSET,
@@ -1650,6 +1660,28 @@ class ObservationDB:
             if gps_longitude is not _UNSET and (allow_nulls or gps_longitude is not None):
                 updates.append('gps_longitude = ?')
                 values.append(gps_longitude)
+            # Location provenance belongs to the coordinate bundle. An explicit
+            # pair (even NULL) is stored as given; a coordinate change without
+            # one invalidates the stored pair, mirroring the cloud trigger, so
+            # a stale attribution never describes new coordinates.
+            new_lat = gps_latitude if gps_latitude is not _UNSET and (allow_nulls or gps_latitude is not None) else current.get('gps_latitude')
+            new_lon = gps_longitude if gps_longitude is not _UNSET and (allow_nulls or gps_longitude is not None) else current.get('gps_longitude')
+            if location_source is not _UNSET or location_status is not _UNSET:
+                updates.append('location_source = ?')
+                values.append(provenance_text(
+                    current.get('location_source') if location_source is _UNSET else location_source
+                ))
+                updates.append('location_status = ?')
+                values.append(provenance_text(
+                    current.get('location_status') if location_status is _UNSET else location_status
+                ))
+            elif not coordinates_match(
+                current.get('gps_latitude'), current.get('gps_longitude'), new_lat, new_lon,
+            ):
+                updates.append('location_source = ?')
+                values.append(None)
+                updates.append('location_status = ?')
+                values.append(None)
             if species_guess is not _UNSET and (allow_nulls or species_guess is not None):
                 updates.append('species_guess = ?')
                 values.append(species_guess)

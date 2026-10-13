@@ -1237,6 +1237,8 @@ def init_database(
             interesting_comment INTEGER DEFAULT 0,
             country_code TEXT,
             region_id TEXT,
+            location_source TEXT,
+            location_status TEXT,
             ai_state_json TEXT,
             ai_selected_service TEXT,
             ai_selected_taxon_id TEXT,
@@ -1529,6 +1531,14 @@ def init_database(
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Private location provenance mirrored from the cloud (sporely-web
+    # migration 20261012105630). Stored as received; NULL means unattributed.
+    for column in ('location_source', 'location_status'):
+        try:
+            cursor.execute(f'ALTER TABLE observations ADD COLUMN {column} TEXT')
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
     # Images table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS images (
@@ -1560,6 +1570,7 @@ def init_database(
             ai_crop_is_custom INTEGER DEFAULT 0,
             crop_mode TEXT,
             gps_source INTEGER DEFAULT 0,
+            ingest_method TEXT,
             artsobs_web_unpublished INTEGER DEFAULT 0,
             scale_bar_x1 REAL,
             scale_bar_y1 REAL,
@@ -1713,6 +1724,13 @@ def init_database(
     # Add GPS source flag for observation metadata
     try:
         cursor.execute('ALTER TABLE images ADD COLUMN gps_source INTEGER DEFAULT 0')
+    except sqlite3.OperationalError:
+        pass
+
+    # Cloud-only ingestion provenance (how a photo entered Sporely). Stored as
+    # received from the cloud; desktop-created images keep NULL.
+    try:
+        cursor.execute('ALTER TABLE images ADD COLUMN ingest_method TEXT')
     except sqlite3.OperationalError:
         pass
 
