@@ -149,3 +149,66 @@ def test_draft_whose_coordinates_were_replaced_is_not_reattributed(make_dialog):
     # The new-observation flow drops the pair when Prepare Images moved the point.
     reopened = make_dialog(draft_data=draft)
     assert _pair(reopened.get_data()) is None
+
+
+# --- New observation created from imported photos (the real constructor path:
+# Prepare Images hands the dialog its import results; nothing private is poked).
+
+
+@pytest.fixture
+def make_import_dialog(make_dialog, monkeypatch):
+    from ui.image_import_dialog import ImageImportResult
+
+    dialog_cls = observations_tab.ObservationDetailsDialog
+    # The shared fixture stubs this out; the import path needs the real one.
+    monkeypatch.setattr(dialog_cls, "_apply_primary_metadata", _REAL_APPLY_PRIMARY_METADATA)
+    made = []
+
+    def _make(*photos, draft_data=None):
+        results = [
+            ImageImportResult(
+                filepath=f"/tmp/photo-{i}.jpg",
+                image_id=photo.get("image_id"),
+                gps_latitude=photo.get("lat"),
+                gps_longitude=photo.get("lon"),
+                exif_has_gps=photo.get("lat") is not None,
+                gps_source=bool(photo.get("gps_source")),
+            )
+            for i, photo in enumerate(photos)
+        ]
+        dialog = dialog_cls(parent=None, observation=None, draft_data=draft_data, image_results=results)
+        made.append(dialog)
+        return dialog
+
+    yield _make
+    for dialog in made:
+        dialog.deleteLater()
+
+
+_REAL_APPLY_PRIMARY_METADATA = observations_tab.ObservationDetailsDialog._apply_primary_metadata
+
+
+def test_new_observation_from_geotagged_photo_is_image_exif(make_import_dialog):
+    dialog = make_import_dialog({"lat": 59.9139, "lon": 10.7522, "gps_source": True})
+    data = dialog.get_data()
+    assert (data["gps_latitude"], data["gps_longitude"]) == pytest.approx((59.9139, 10.7522))
+    assert _pair(data) == ("image_exif", "acquired")
+
+
+def test_new_observation_typed_over_photo_exif_is_manual(make_import_dialog):
+    dialog = make_import_dialog({"lat": 59.9139, "lon": 10.7522})
+    dialog.lat_input.setValue(60.5)
+    assert _pair(dialog.get_data()) == ("manual", "acquired")
+    dialog.lat_input.setValue(59.9139)
+    assert _pair(dialog.get_data()) == ("image_exif", "acquired"), "back on the photo's EXIF"
+
+
+def test_new_observation_from_photo_without_gps_stays_unattributed(make_import_dialog):
+    dialog = make_import_dialog({})
+    assert _pair(dialog.get_data()) is None
+
+
+def test_stored_image_gps_is_not_image_origin_evidence(make_import_dialog):
+    # A stored (possibly cloud-materialised) image may carry GPS Sporely wrote.
+    dialog = make_import_dialog({"lat": 59.9139, "lon": 10.7522, "image_id": 7})
+    assert _pair(dialog.get_data()) is None

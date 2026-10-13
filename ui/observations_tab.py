@@ -118,6 +118,7 @@ from utils.thumbnail_generator import get_thumbnail_path, generate_all_sizes
 from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
 from utils.exif_reader import get_image_metadata
 from utils.cloud_sync_impl.reconciliation.location_provenance import (
+    IMAGE_EXIF_LOCATION_PAIR,
     LOCATION_PROVENANCE_FIELDS,
     attribute_coordinate_edit,
     coordinates_match,
@@ -14928,6 +14929,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             if location_pair_is_writable(*opened_pair, *self._opened_coordinates)
             else None
         )
+        # A new observation whose coordinates came from an imported photo's
+        # own EXIF opens attributed to that photo. (Edits of existing
+        # observations keep the contract's rule: a Prepare Images replacement
+        # is of unknown origin.)
+        if not self.edit_mode:
+            exif_coordinates = self._imported_photo_exif_coordinates(*self._current_coordinate_inputs())
+            if exif_coordinates is not None:
+                self._image_exif_coordinates = exif_coordinates
+                if self._opened_location_pair is None:
+                    self._opened_location_pair = IMAGE_EXIF_LOCATION_PAIR
         QTimer.singleShot(0, self._complete_deferred_dialog_setup)
         self._apply_suggested_taxon()
         self._sync_taxon_cache()
@@ -18241,6 +18252,26 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if abs(cached_lat - float(lat)) > 1e-6 or abs(cached_lon - float(lon)) > 1e-6:
             return None
         return code
+
+    def _imported_photo_exif_coordinates(self, lat, lon) -> tuple[float, float] | None:
+        """``(lat, lon)`` when they equal the EXIF GPS of a photo imported in
+        this session, else ``None``.
+
+        Only photos without a stored image row count: stored and
+        cloud-materialised images can carry GPS that Sporely itself wrote,
+        which is not evidence of where the photo was taken.
+        """
+        if lat is None or lon is None:
+            return None
+        candidates = [
+            result for result in self.image_results
+            if getattr(result, "image_id", None) is None and getattr(result, "exif_has_gps", False)
+        ]
+        candidates.sort(key=lambda result: not getattr(result, "gps_source", False))
+        for result in candidates:
+            if coordinates_match(result.gps_latitude, result.gps_longitude, lat, lon):
+                return (lat, lon)
+        return None
 
     def _current_coordinate_inputs(self) -> tuple[float | None, float | None]:
         lat = self.lat_input.value() if self.lat_input.value() > self.lat_input.minimum() else None
