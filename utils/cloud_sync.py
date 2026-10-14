@@ -774,6 +774,8 @@ from utils.cloud_sync_impl.measurement_reconcile import (  # noqa: F401  (facade
     _reconcile_missing_spore_measurements,
 )
 from utils.cloud_sync_impl.conflict_plan import (  # noqa: F401  (facade re-export)
+    _CLOUD_TO_LOCAL_ROW_OPS,
+    _op_already_completed,
     _as_reviewed_local_rows,
     _find_by_cloud_id_then_key,
     _sync_key_pairing_conflict,
@@ -5220,7 +5222,7 @@ def resolve_conflict_plan(
     # ── Step 4: build the explicit operation list ─────────────────────────────
     ops = [
         op for op in _build_plan_operations(items)
-        if _stable_op_key(op) not in completed_prior_keys
+        if not _op_already_completed(op, completed_prior_keys)
     ]
 
     # ── Step 5: capture local presentation state ──────────────────────────────

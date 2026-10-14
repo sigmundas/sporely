@@ -493,19 +493,29 @@ def _as_reviewed_local_rows(
     unlinked with this key and the linked cloud row carries the same key, so
     drift and retry checks still see every content and parent change. A row a
     completed earlier operation wrote keeps its real link: that operation's
-    recorded post-state is checked against it.
+    recorded post-state is checked against it. Such a row is found by the
+    operation's local id or, for an import whose verification read failed
+    (``verification_pending`` records only the cloud id), by its cloud id.
     """
     explained: dict[str, set[int]] = {'image': set(), 'measurement': set()}
+    explained_cloud: dict[str, set[str]] = {'image': set(), 'measurement': set()}
     for op in (prior_result or {}).get('operations') or []:
         if not isinstance(op, dict) or op.get('status') not in {'completed', 'verification_pending'}:
             continue
         kind = 'image' if 'image' in str(op.get('op') or '') else (
             'measurement' if 'measurement' in str(op.get('op') or '') else None
         )
-        if kind and _safe_int(op.get('local_id')):
-            explained[kind].add(_safe_int(op.get('local_id')))
+        if not kind:
+            continue
+        stable = op.get('stable_identity') if isinstance(op.get('stable_identity'), dict) else {}
+        for local_value in (op.get('local_id'), stable.get('local_id')):
+            if _safe_int(local_value):
+                explained[kind].add(_safe_int(local_value))
+        for cloud_value in (op.get('cloud_id'), stable.get('cloud_id')):
+            if str(cloud_value or '').strip():
+                explained_cloud[kind].add(str(cloud_value).strip())
 
-    def _undo_key_links(rows, baseline_rows, remotes, keep_ids):
+    def _undo_key_links(rows, baseline_rows, remotes, keep_ids, keep_cloud_ids):
         reviewed_unlinked = {
             _safe_int(row.get('__local_id')): _normalize_sync_key_value(row.get('sync_key'))
             for row in baseline_rows or []
@@ -524,6 +534,7 @@ def _as_reviewed_local_rows(
             if (
                 cloud_id and key and local_id in reviewed_unlinked
                 and local_id not in keep_ids
+                and cloud_id not in keep_cloud_ids
                 and reviewed_unlinked[local_id] == key
                 and remote_key_by_id.get(cloud_id) == key
             ):
@@ -533,9 +544,9 @@ def _as_reviewed_local_rows(
 
     return (
         _undo_key_links(local_images, (baseline or {}).get('local_images'), remote_images,
-                        explained['image']),
+                        explained['image'], explained_cloud['image']),
         _undo_key_links(local_measurements, (baseline or {}).get('local_measurements'),
-                        remote_measurements, explained['measurement']),
+                        remote_measurements, explained['measurement'], explained_cloud['measurement']),
     )
 
 
@@ -1605,6 +1616,29 @@ def _stable_op_key(op: dict) -> tuple:
         str(op.get('field') or ''),
         _safe_int(op.get('local_id')) or 0,
         str(op.get('cloud_id') or '').strip(),
+    )
+
+
+# Cloud→local operations whose ``verification_pending`` record names only the
+# cloud row: the read that would find the local row is the one that failed.
+_CLOUD_TO_LOCAL_ROW_OPS = frozenset({'import_image', 'import_measurement', 'apply_image_metadata'})
+
+
+def _op_already_completed(op: dict, completed_keys: set) -> bool:
+    """Whether a planned operation was already done by an earlier attempt.
+
+    A cloud→local operation is also matched by its cloud row alone, so a
+    pending record without the local id still counts for the planned
+    operation that names both.
+    """
+    key = _stable_op_key(op)
+    if key in completed_keys:
+        return True
+    opname, field, _local_id, cloud_id = key
+    return (
+        opname in _CLOUD_TO_LOCAL_ROW_OPS
+        and bool(cloud_id)
+        and (opname, field, 0, cloud_id) in completed_keys
     )
 
 

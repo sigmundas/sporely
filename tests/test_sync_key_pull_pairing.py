@@ -703,3 +703,73 @@ def test_a_retry_still_refuses_content_drift_after_committed_key_links(two_deskt
             cloud.client(), obs_id, plan=plan, prior_result=failure.value.partial_result,
         )
     assert _row("spore_measurements", measurement_id)["length_um"] == 12.0
+
+
+def _fail_verification_read_once(monkeypatch, apply_name: str, db_class, reader_name: str) -> list[int]:
+    """The real ``apply_name`` runs; the next ``db_class.reader_name`` read fails once."""
+    real_apply = getattr(cloud_sync, apply_name)
+    real_read = getattr(db_class, reader_name)
+    state = {"armed": False}
+    applied: list[int] = []
+
+    def apply(*args, **kwargs):
+        result = real_apply(*args, **kwargs)
+        applied.append(1)
+        state["armed"] = True
+        return result
+
+    def read(*args, **kwargs):
+        if state["armed"]:
+            state["armed"] = False
+            raise RuntimeError("verification read failed")
+        return real_read(*args, **kwargs)
+
+    monkeypatch.setattr(cloud_sync, apply_name, apply)
+    monkeypatch.setattr(db_class, reader_name, staticmethod(read))
+    return applied
+
+
+@pytest.mark.parametrize("which", ["measurement", "image"])
+def test_a_retry_after_a_failed_verification_read_completes_without_replaying_the_import(
+    two_desktops, tmp_path, monkeypatch, which,
+):
+    cloud, obs_id, image_id, measurement_id, cloud_image, cloud_measurement = (
+        _lost_link_child_conflict(tmp_path, edit_image=(which == "image"))
+    )
+    if which == "measurement":
+        plan = _measurement_only_plan(cloud, obs_id, "cloud")
+        applied = _fail_verification_read_once(
+            monkeypatch, "_import_remote_measurements_for_observation",
+            cloud_sync.MeasurementDB, "get_measurements_for_observation",
+        )
+    else:
+        plan = _plan_for(cloud, obs_id, "cloud")
+        plan["items"] = [item for item in plan["items"] if item["kind"] == "image_metadata"]
+        applied = _fail_verification_read_once(
+            monkeypatch, "_apply_remote_images_to_local",
+            cloud_sync.ImageDB, "get_images_for_observation",
+        )
+    cloud.requests.clear()
+
+    with pytest.raises(cloud_sync.PartialConflictPlanError) as failure:
+        cloud_sync.resolve_conflict_plan(cloud.client(), obs_id, plan=plan)
+    pending = [op for op in failure.value.partial_result["operations"]
+               if op.get("status") == "verification_pending"]
+    assert pending and all(not op.get("local_id") for op in pending), "the pending record names only the cloud row"
+    assert len(applied) == 1
+    if which == "measurement":
+        assert _row("spore_measurements", measurement_id)["length_um"] == 14.0
+    else:
+        assert _row("images", image_id)["notes"] == "cloud note"
+
+    cloud_sync.resolve_conflict_plan(
+        cloud.client(), obs_id, plan=plan, prior_result=failure.value.partial_result,
+    )
+    assert len(applied) == 1, "the import is never replayed"
+    assert str(_row("images", image_id)["cloud_id"]) == str(cloud_image["id"])
+    if which == "measurement":
+        assert str(_row("spore_measurements", measurement_id)["cloud_id"]) == str(cloud_measurement["id"])
+        assert _row("spore_measurements", measurement_id)["length_um"] == 14.0
+    else:
+        assert _row("images", image_id)["notes"] == "cloud note"
+    assert [w for t in ("observation_images", "spore_measurements") for w in cloud.writes(t)] == []
