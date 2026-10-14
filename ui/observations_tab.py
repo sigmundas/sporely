@@ -199,6 +199,7 @@ from utils.cloud_sync import (
     SporelyCloudClient,
     cloud_observation_uses_privacy_slot,
     remote_observations_not_on_this_desktop,
+    remote_sync_key,
     cloud_media_materialization_state_for_observation,
     build_cloud_ai_state_from_observation_identifications,
     _cloud_identification_prediction_taxon,
@@ -3543,6 +3544,8 @@ class ObservationsTab(QWidget):
                     resample_scale_factor=image_row.get("resample_scale_factor"),
                     original_filepath=filepath,
                     store_original=False,
+                    cloud_image_id=str(image_row.get("id") or "").strip() or None,
+                    cloud_sync_key=remote_sync_key(image_row),
                 )
             )
         return results
@@ -12806,10 +12809,16 @@ class ObservationsTab(QWidget):
 
     def _mark_cloud_observation_imported(
         self,
-        client,
         row_data: dict,
         local_observation_id: int,
+        image_results: list[ImageImportResult],
     ) -> None:
+        """Link the imported observation and images to the cloud rows they came from.
+
+        Each image links by the cloud row its import result carries, never by
+        list position: an image removed or reordered in the dialog links to
+        its own row or to none. Nothing is written to the cloud.
+        """
         raw = row_data.get("raw") or {}
         cloud_id = str(row_data.get("cloud_id") or raw.get("id") or "").strip()
         if not cloud_id:
@@ -12830,27 +12839,32 @@ class ObservationsTab(QWidget):
         finally:
             conn.close()
 
-        cloud_images = self._download_cloud_observation_images(row_data, download_all=True)
-        local_images = ImageDB.get_images_for_observation(int(local_observation_id))
         conn = get_connection()
         try:
-            for local_image, cloud_image in zip(local_images, cloud_images):
-                cloud_image_id = str(cloud_image.get("id") or "").strip()
-                local_image_id = local_image.get("id")
+            for result in image_results or []:
+                cloud_image_id = str(getattr(result, "cloud_image_id", None) or "").strip()
+                local_image_id = getattr(result, "image_id", None)
                 if not cloud_image_id or not local_image_id:
                     continue
                 conn.execute(
-                    "UPDATE images SET cloud_id = ?, synced_at = ? WHERE id = ?",
-                    (cloud_image_id, synced_at, int(local_image_id)),
+                    "UPDATE images SET cloud_id = ?, synced_at = ? "
+                    "WHERE id = ? AND observation_id = ?",
+                    (cloud_image_id, synced_at, int(local_image_id), int(local_observation_id)),
                 )
             conn.commit()
         finally:
             conn.close()
-        # No identity is written onto the cloud rows: the local cloud_id links
-        # them.
 
     def _open_cloud_observation_editor(self, row_data: dict) -> None:
         if not isinstance(row_data, dict):
+            return
+        raw = row_data.get("raw") or {}
+        if raw and not remote_observations_not_on_this_desktop([raw]):
+            # A stale inbox row: this desktop already holds the cloud row (by
+            # cloud id or sync key) since the list was loaded. Never a second
+            # local copy.
+            self.refresh_observations()
+            self.set_status_message(self.tr("Sporely Cloud already up to date."), level="info")
             return
         image_results = self._cloud_image_import_results(row_data)
         draft_observation: dict | None = self._cloud_observation_draft_data(row_data)
@@ -12884,6 +12898,8 @@ class ObservationsTab(QWidget):
                 if not self._confirm_duplicate_observation_creation(obs_data, image_results):
                     continue
 
+                # The cloud row's key, not a fresh one (NULL stays NULL).
+                obs_data["sync_key"] = remote_sync_key(row_data.get("raw") or {})
                 obs_id = ObservationDB.create_observation(**obs_data)
                 confirmed_precision = getattr(dialog, "confirmed_location_precision", None)
                 if confirmed_precision:
@@ -12939,11 +12955,7 @@ class ObservationsTab(QWidget):
                         progress.close()
 
                 try:
-                    from utils.cloud_sync import SporelyCloudClient
-
-                    client = SporelyCloudClient.from_stored_credentials()
-                    if client is not None:
-                        self._mark_cloud_observation_imported(client, row_data, obs_id)
+                    self._mark_cloud_observation_imported(row_data, obs_id, image_results)
                 except Exception:
                     pass
 
@@ -14518,6 +14530,13 @@ class ObservationsTab(QWidget):
                 original_filepath=original_to_store,
                 lab_metadata=image_lab_metadata or None,
                 **provenance_kwargs,
+                # A cloud-inbox image keeps its cloud row's key (NULL stays
+                # NULL); every other import mints one.
+                **(
+                    {"sync_key": getattr(result, "cloud_sync_key", None)}
+                    if getattr(result, "cloud_image_id", None)
+                    else {}
+                ),
             )
             result.image_id = image_id
             if image_id and image_id not in existing_ids:

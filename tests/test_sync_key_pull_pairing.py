@@ -451,3 +451,130 @@ def test_a_portable_pending_graph_uploads_with_keys_and_never_reads_or_writes_de
         assert "desktop_id" not in (request["payload"] or {}), request
     # The flag no longer gates anything; it stays until the deferred cleanup.
     assert _row("observations", obs_id)["portable_cloud_identity_pending"] == 1
+
+
+# ── Reviewed key-paired children: both conflict choices apply ────────────
+
+
+def _lost_link_child_conflict(tmp_path) -> tuple[BytesCloud, int, int, int, dict, dict]:
+    """This database's image and measurement exist in the cloud, their local
+    links were lost, and both sides edited them since: a key-paired conflict."""
+    cloud = BytesCloud()
+    obs_id, image_id, measurement_id = _full_graph(tmp_path, "Amanita", name="a")
+    assert _errors(_sync(cloud.client())) == []
+    [cloud_image] = cloud.rows("observation_images")
+    [cloud_measurement] = cloud.rows("spore_measurements")
+    _set("images", image_id, cloud_id=None)
+    _set("spore_measurements", measurement_id, cloud_id=None)
+    ImageDB.update_image(image_id, notes="local note")
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        connection.execute("UPDATE spore_measurements SET length_um = 12.0 WHERE id = ?", (measurement_id,))
+    ObservationDB.update_observation(obs_id, notes="touched")
+    cloud.edit_elsewhere("observation_images", cloud_image["id"], notes="cloud note")
+    cloud.edit_elsewhere("spore_measurements", cloud_measurement["id"], length_um=14.0)
+
+    result = _sync(cloud.client())
+    assert result["errors"], "a differing key-paired child is never linked by ordinary sync"
+    assert _row("images", image_id)["cloud_id"] is None
+    return (cloud, obs_id, image_id, measurement_id,
+            cloud.rows("observation_images")[0], cloud.rows("spore_measurements")[0])
+
+
+def _plan_for(cloud, obs_id, choice: str) -> dict:
+    detail = cloud_sync.get_conflict_detail(cloud.client(), obs_id)
+    [image_pair] = [p for p in detail["image_pairs"] if p.get("local")]
+    assert image_pair["match_basis"] == "sync_key"
+    [measurement_pair] = image_pair["measurement_pairs"]
+    assert measurement_pair["pairing"] == "sync_key"
+    items = [
+        {"kind": "image_metadata", "local_id": image_pair["local"]["local_id"],
+         "cloud_id": image_pair["remote"]["cloud_id"], "choice": choice},
+        {"kind": "measurement", "side": "matched", "local_id": measurement_pair["local_id"],
+         "cloud_id": measurement_pair["cloud_id"], "local_image_id": measurement_pair["local_image_id"],
+         "cloud_image_id": measurement_pair["cloud_image_id"], "choice": choice},
+    ]
+    return {"items": items, "baseline": detail["plan_baseline"], "allow_media_deletion": False}
+
+
+def test_take_cloud_on_key_paired_children_links_and_applies_the_cloud_rows(two_desktops, tmp_path):
+    cloud, obs_id, image_id, measurement_id, cloud_image, cloud_measurement = (
+        _lost_link_child_conflict(tmp_path)
+    )
+    plan = _plan_for(cloud, obs_id, "cloud")
+    before = _cloud_state(cloud)
+    cloud.requests.clear()
+
+    cloud_sync.resolve_conflict_plan(cloud.client(), obs_id, plan=plan)
+
+    assert str(_row("images", image_id)["cloud_id"]) == str(cloud_image["id"])
+    assert _row("images", image_id)["notes"] == "cloud note"
+    assert str(_row("spore_measurements", measurement_id)["cloud_id"]) == str(cloud_measurement["id"])
+    assert _row("spore_measurements", measurement_id)["length_um"] == 14.0
+    for table in ("observation_images", "spore_measurements"):
+        assert cloud.writes(table) == [], table
+        assert cloud.rows(table) == before[table]
+    assert len(_local_rows("images")) == 1 and len(_local_rows("spore_measurements")) == 1
+    cloud.requests.clear()
+    assert _errors(_sync(cloud.client())) == []
+    assert [w for t in ("observation_images", "spore_measurements") for w in cloud.writes(t)] == []
+
+
+def test_keep_device_on_key_paired_children_patches_the_keyed_rows_by_id(two_desktops, tmp_path):
+    cloud, obs_id, image_id, measurement_id, cloud_image, cloud_measurement = (
+        _lost_link_child_conflict(tmp_path)
+    )
+    plan = _plan_for(cloud, obs_id, "local")
+    cloud.requests.clear()
+
+    cloud_sync.resolve_conflict_plan(cloud.client(), obs_id, plan=plan, prepare_images_cb=_prepare_all)
+
+    assert str(_row("images", image_id)["cloud_id"]) == str(cloud_image["id"])
+    assert str(_row("spore_measurements", measurement_id)["cloud_id"]) == str(cloud_measurement["id"])
+    [image_row] = cloud.rows("observation_images")
+    [measurement_row] = cloud.rows("spore_measurements")
+    assert image_row["notes"] == "local note" and measurement_row["length_um"] == 12.0
+    for table, row in (("observation_images", cloud_image), ("spore_measurements", cloud_measurement)):
+        assert cloud.writes(table, "POST") == [], table
+        patches = cloud.writes(table, "PATCH")
+        assert patches and all(("id", f"eq.{row['id']}") in p["params"] for p in patches), table
+        assert all("sync_key" not in (p["payload"] or {}) for p in patches)
+    cloud.requests.clear()
+    assert _errors(_sync(cloud.client())) == []
+    assert [w for t in ("observation_images", "spore_measurements") for w in cloud.writes(t, "POST")] == []
+
+
+def test_review_never_links_a_key_pair_under_another_parent(two_desktops, tmp_path):
+    cloud, obs_id, image_id, measurement_id, cloud_image, _cloud_measurement = (
+        _lost_link_child_conflict(tmp_path)
+    )
+    # The keyed cloud image now claims another observation: no link.
+    links = cloud_sync.link_reviewed_key_pairs(
+        obs_id, "another-observation",
+        remote_images=[cloud_image], remote_measurements=[],
+    )
+    assert links == {"images": [], "spore_measurements": []}
+    assert _row("images", image_id)["cloud_id"] is None
+
+
+def test_whole_observation_take_cloud_links_key_paired_children(two_desktops, tmp_path):
+    cloud, obs_id, image_id, measurement_id, cloud_image, cloud_measurement = (
+        _lost_link_child_conflict(tmp_path)
+    )
+    cloud.requests.clear()
+    cloud_sync.resolve_conflict_keep_cloud(cloud.client(), obs_id)
+    assert str(_row("images", image_id)["cloud_id"]) == str(cloud_image["id"])
+    assert str(_row("spore_measurements", measurement_id)["cloud_id"]) == str(cloud_measurement["id"])
+    assert _row("spore_measurements", measurement_id)["length_um"] == 14.0
+    assert [w for t in ("observation_images", "spore_measurements") for w in cloud.writes(t)] == []
+
+
+def test_whole_observation_keep_device_patches_key_paired_children(two_desktops, tmp_path):
+    cloud, obs_id, image_id, measurement_id, cloud_image, cloud_measurement = (
+        _lost_link_child_conflict(tmp_path)
+    )
+    cloud.requests.clear()
+    cloud_sync.resolve_conflict_keep_local(cloud.client(), obs_id, prepare_images_cb=_prepare_all)
+    assert str(_row("images", image_id)["cloud_id"]) == str(cloud_image["id"])
+    assert cloud.rows("spore_measurements")[0]["length_um"] == 12.0
+    assert cloud.rows("observation_images")[0]["notes"] == "local note"
+    assert [w for t in ("observation_images", "spore_measurements") for w in cloud.writes(t, "POST")] == []

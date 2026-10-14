@@ -353,6 +353,12 @@ writers; it calls the read-only detail and plan-model owners downward.
 3. **Pull links by cloud id or `sync_key`, never by integer.** No client
    writes an identity onto an existing cloud row; nothing heals `desktop_id`.
    Conflict detail and conflict plans pair child rows by cloud id, then by key.
+   On explicit resolution (a reviewed plan, keep-device, keep-cloud or merge)
+   the key-paired children are linked locally first
+   (`link_reviewed_key_pairs`: same key, already-linked parent, not deleted;
+   no cloud write), so either choice runs on the verified `cloud_id` path.
+   The cloud-inbox import keeps each cloud row's key and links every image by
+   the cloud row it came from.
 4. **Download from Cloud creates local rows with `cloud_id` set and the cloud
    key stored** (NULL for rows written before keys); the local `cloud_id` is
    the link.
@@ -897,7 +903,7 @@ moving the method would split that binding.
 | `observation_identity.py` [3] | Observation create identity: named-index `23505` match, adoption by key and owner, create-content equality, one-time legacy recovery | `is_sync_key_unique_violation`, `adopt_observation_by_sync_key`, `observation_create_content_matches`, `recover_legacy_observation`, `SYNC_KEY_UNIQUE_INDEXES` |
 | `fault_injection.py` [0] | `SPORELY_SYNC_FAULT` crash points (`before_request`, `after_insert`, `after_upload`), inert unless the environment variable is set | `sync_fault_point` |
 | `pull_identity.py` [0] | Pull pairing: a cloud row's `sync_key` against the local rows, before pull creates a local row | `remote_sync_key`, `local_sync_key_holder`, `classify_remote_sync_key`, `pull_key_skip_message`, `KEY_*` outcomes |
-| `child_identity.py` [4] | Image and measurement create identity: parent deferral, POST with key, adoption by key and owner with the parent, tombstone and content checks, one-time legacy recovery under the linked parent, the interrupted-create marker | `create_child_row`, `adopt_child_by_sync_key`, `judge_child_row`, `recover_legacy_child`, `require_committed_parent`, `redirty_interrupted_child_creates`, `CHILD_TABLES` |
+| `child_identity.py` [4] | Image and measurement create identity: parent deferral, POST with key, adoption by key and owner with the parent, tombstone and content checks, one-time legacy recovery under the linked parent, the interrupted-create marker | `create_child_row`, `adopt_child_by_sync_key`, `judge_child_row`, `recover_legacy_child`, `require_committed_parent`, `redirty_interrupted_child_creates`, `link_reviewed_key_pairs`, `CHILD_TABLES` |
 
 The `desktop_id` reverse lookups (`_find_cloud_observation`,
 `_find_cloud_image`) and write-backs (`set_desktop_id`,

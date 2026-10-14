@@ -635,7 +635,16 @@ def _validate_plan_identity_state(
                 for rrow in remote_images or []
                 if _safe_int(lrow.get('id'))
                 and str(rrow.get('id') or '').strip()
-                and str(lrow.get('cloud_id') or '').strip() == str(rrow.get('id') or '').strip()
+                and (
+                    str(lrow.get('cloud_id') or '').strip() == str(rrow.get('id') or '').strip()
+                    # An unlinked image pairs with the cloud row carrying its key.
+                    or (
+                        not str(lrow.get('cloud_id') or '').strip()
+                        and _normalize_sync_key_value(lrow.get('sync_key'))
+                        and _normalize_sync_key_value(lrow.get('sync_key'))
+                        == _normalize_sync_key_value(rrow.get('sync_key'))
+                    )
+                )
             }
             if (image_local, image_cloud) not in authoritative_pairs:
                 raise CloudSyncError(

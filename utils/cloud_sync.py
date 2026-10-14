@@ -707,6 +707,7 @@ from utils.cloud_sync_impl.child_identity import (  # noqa: F401  (facade re-exp
     _has_settings_table,
     _spec,
     adopt_child_by_sync_key,
+    link_reviewed_key_pairs,
     clear_child_create_pending,
     clear_legacy_marker,
     committed_parent_cloud_id,
@@ -4505,6 +4506,38 @@ def _link_sync_key_adoption_conflict(
         conn.close()
 
 
+def _link_reviewed_child_key_pairs(
+    client: "SporelyCloudClient",
+    local_id: int,
+    cloud_id: str | None,
+    *,
+    remote_images: list[dict] | None = None,
+    pairs: set[tuple[str, int, str]] | None = None,
+) -> dict:
+    """On explicit resolution, link unlinked children to their own keyed cloud rows.
+
+    See ``link_reviewed_key_pairs``: conflict review pairs them by
+    ``sync_key``; the owner's choice then runs on the verified ``cloud_id``
+    path. Reads only; no cloud write.
+    """
+    cloud_value = str(cloud_id or '').strip()
+    if not cloud_value:
+        return {}
+    images = (
+        [dict(row or {}) for row in remote_images]
+        if remote_images is not None
+        else [dict(row or {}) for row in (_pull_remote_images_for_sync(client, cloud_value) or [])]
+    )
+    measurements = _pull_remote_measurements_for_images(
+        client,
+        [str(row.get('id') or '').strip() for row in images if str(row.get('id') or '').strip()],
+    )
+    return link_reviewed_key_pairs(
+        int(local_id), cloud_value,
+        remote_images=images, remote_measurements=measurements, pairs=pairs,
+    )
+
+
 def resolve_conflict_keep_local(
     client: "SporelyCloudClient",
     local_id: int,
@@ -4589,6 +4622,9 @@ def resolve_conflict_keep_local(
         )
 
     remote_images_raw = _pull_remote_images_for_sync(client, cloud_id) if cloud_id else []
+    # The owner chose this device: its unlinked children link to their own
+    # keyed cloud rows first, so the push PATCHes them by id.
+    _link_reviewed_child_key_pairs(client, int(local_id), cloud_id, remote_images=remote_images_raw)
     if remote_images_raw:
         _record_remote_image_tombstones(
             remote_images_raw,
@@ -4686,6 +4722,11 @@ def resolve_conflict_keep_cloud(
     ]
 
     _apply_remote_observation_fields(int(local_id), remote_obs)
+    # The owner chose the cloud: unlinked children link to their own keyed
+    # cloud rows first, so the cloud values are applied to them.
+    _link_reviewed_child_key_pairs(
+        client, int(local_id), resolved_cloud_id, remote_images=remote_images_raw,
+    )
     warnings = _apply_remote_images_to_local(client, int(local_id), remote_images, allow_delete=allow_delete)
     remote_measurements = _pull_remote_measurements_for_images(
         client,
@@ -4748,6 +4789,9 @@ def resolve_conflict_merge(
             if should_pull_cloud_image_to_desktop(row)
             and not str(row.get('deleted_at') or '').strip()
         ]
+        _link_reviewed_child_key_pairs(
+            client, int(local_id), resolved_cloud_id, remote_images=remote_images_raw,
+        )
         warnings = _apply_remote_images_to_local(client, int(local_id), remote_images, allow_delete=False)
     else:
         warnings = []
@@ -5120,6 +5164,31 @@ def resolve_conflict_plan(
         local_measurements=current_local_measurements,
         remote_measurements=remote_measurements,
     )
+
+    # ── Step 3b: link the reviewed sync-key pairs ────────────────────────────
+    # Review pairs an unlinked child with the cloud row carrying its own key.
+    # The owner's choice for that pair runs on the verified cloud_id path, so
+    # the reviewed pair is linked locally first (parent-checked, no cloud write).
+    reviewed_pairs = {
+        (
+            'images' if item.get('kind') in {'image', 'image_metadata'} else 'spore_measurements',
+            _safe_int(item.get('local_id')),
+            str(item.get('cloud_id') or '').strip(),
+        )
+        for item in items
+        if item.get('kind') in {'image', 'image_metadata', 'measurement'}
+        and _safe_int(item.get('local_id')) > 0
+        and str(item.get('cloud_id') or '').strip()
+    }
+    if reviewed_pairs:
+        key_links = link_reviewed_key_pairs(
+            int(local_id), resolved_cloud_id,
+            remote_images=remote_images, remote_measurements=remote_measurements,
+            pairs=reviewed_pairs,
+        )
+        if any(key_links.values()):
+            current_local_images = ImageDB.get_images_for_observation(int(local_id))
+            current_local_measurements = MeasurementDB.get_measurements_for_observation(int(local_id))
 
     # ── Step 4: build the explicit operation list ─────────────────────────────
     ops = [

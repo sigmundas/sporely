@@ -438,3 +438,103 @@ def take_adopted_child(client, table: str, cloud_id: str) -> dict | None:
     if not isinstance(rows, dict):
         return None
     return rows.pop((str(table), str(cloud_id)), None)
+
+
+def link_reviewed_key_pairs(
+    local_observation_id: int,
+    cloud_observation_id: str,
+    *,
+    remote_images: list[dict] | None,
+    remote_measurements: list[dict] | None,
+    pairs: set[tuple[str, int, str]] | None = None,
+) -> dict[str, list[tuple[int, str]]]:
+    """Explicit conflict resolution: link unlinked children to their own keyed rows.
+
+    Conflict review pairs an unlinked local image or measurement with the
+    cloud row carrying its ``sync_key`` (this database's own create, whose
+    answer was lost). Ordinary sync never links such a row when it differs;
+    once the owner resolves the conflict, the reviewed pair is linked locally
+    so either choice runs on the verified ``cloud_id`` path (PATCH by id, or
+    apply the cloud row). Only a row carrying the local key, under the
+    already-linked parent and not deleted, is linked; nothing is written to
+    the cloud. ``pairs`` limits the links to reviewed ``(table, local_id,
+    cloud_id)`` items (``'images'`` / ``'spore_measurements'``); ``None``
+    links every key pair of the observation (a whole-observation choice).
+    """
+    cloud_obs = str(cloud_observation_id or '').strip()
+    linked: dict[str, list[tuple[int, str]]] = {'images': [], 'spore_measurements': []}
+    if not cloud_obs:
+        return linked
+
+    def _active_by_key(rows) -> dict[str, dict]:
+        by_key: dict[str, dict] = {}
+        for row in rows or []:
+            key = local_sync_key(row)
+            if key and not str((row or {}).get('deleted_at') or '').strip():
+                by_key[key] = dict(row)
+        return by_key
+
+    def _wanted(table: str, local_id: int, cloud_id: str) -> bool:
+        return pairs is None or (table, int(local_id), str(cloud_id)) in pairs
+
+    remote_images_by_key = _active_by_key(remote_images)
+    remote_measurements_by_key = _active_by_key(remote_measurements)
+    conn = get_connection()
+    try:
+        keyed_tables = {
+            table for table in ('images', 'spore_measurements')
+            if 'sync_key' in {str(info[1]) for info in conn.execute(f'PRAGMA table_info({table})')}
+        }
+        if keyed_tables != {'images', 'spore_measurements'}:
+            # A database without keys holds no key pair to link.
+            return linked
+        image_rows = conn.execute(
+            'SELECT id, cloud_id, sync_key FROM images WHERE observation_id = ?',
+            (int(local_observation_id),),
+        ).fetchall()
+        for image_id, image_cloud_id, image_key in image_rows:
+            if str(image_cloud_id or '').strip():
+                continue
+            remote = remote_images_by_key.get(local_sync_key({'sync_key': image_key}))
+            if remote is None or str(remote.get('observation_id') or '').strip() != cloud_obs:
+                continue
+            remote_id = str(remote.get('id') or '').strip()
+            if remote_id and _wanted('images', image_id, remote_id):
+                conn.execute(
+                    'UPDATE images SET cloud_id = ? WHERE id = ? AND cloud_id IS NULL',
+                    (remote_id, int(image_id)),
+                )
+                linked['images'].append((int(image_id), remote_id))
+        measurement_rows = conn.execute(
+            'SELECT measurement.id, measurement.cloud_id, measurement.sync_key, image.cloud_id '
+            'FROM spore_measurements AS measurement '
+            'JOIN images AS image ON image.id = measurement.image_id '
+            'WHERE image.observation_id = ?',
+            (int(local_observation_id),),
+        ).fetchall()
+        for measurement_id, measurement_cloud_id, measurement_key, parent_cloud_id in measurement_rows:
+            if str(measurement_cloud_id or '').strip():
+                continue
+            remote = remote_measurements_by_key.get(local_sync_key({'sync_key': measurement_key}))
+            parent = str(parent_cloud_id or '').strip()
+            if remote is None or not parent or str(remote.get('image_id') or '').strip() != parent:
+                continue
+            remote_id = str(remote.get('id') or '').strip()
+            if remote_id and _wanted('spore_measurements', measurement_id, remote_id):
+                conn.execute(
+                    'UPDATE spore_measurements SET cloud_id = ? WHERE id = ? AND cloud_id IS NULL',
+                    (remote_id, int(measurement_id)),
+                )
+                linked['spore_measurements'].append((int(measurement_id), remote_id))
+        conn.commit()
+    finally:
+        conn.close()
+    for table, rows in linked.items():
+        for local_id, remote_id in rows:
+            print(
+                f'[cloud_sync] conflict resolution: {"image" if table == "images" else "measurement"} '
+                f'{local_id} linked to '
+                f'its keyed cloud row {remote_id} (no cloud write)',
+                flush=True,
+            )
+    return linked

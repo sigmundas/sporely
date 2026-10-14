@@ -308,6 +308,11 @@ class ImageImportResult:
     filepath: str
     preview_path: Optional[str] = None
     image_id: Optional[int] = None
+    # The cloud row an image imported from the cloud inbox came from: its id
+    # links the new local row, and its sync_key (None for a keyless cloud
+    # row) is stored instead of minting one. None for every other import.
+    cloud_image_id: Optional[str] = None
+    cloud_sync_key: Optional[str] = None
     image_type: str = "field"
     objective: Optional[str] = None
     custom_scale: Optional[float] = None
