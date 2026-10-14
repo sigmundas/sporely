@@ -476,6 +476,69 @@ def _sync_key_pairing_conflict(
     return ''
 
 
+def _as_reviewed_local_rows(
+    baseline: dict,
+    *,
+    local_images: list[dict],
+    local_measurements: list[dict],
+    remote_images: list[dict],
+    remote_measurements: list[dict],
+    prior_result: dict | None = None,
+) -> tuple[list[dict], list[dict]]:
+    """The current local rows as the reviewed state saw their identity links.
+
+    Resolution links a reviewed sync-key pair before its operations run, and a
+    retry after a partial failure finds that link committed. A link is shown
+    as it was reviewed (unlinked) only when the baseline recorded the row
+    unlinked with this key and the linked cloud row carries the same key, so
+    drift and retry checks still see every content and parent change. A row a
+    completed earlier operation wrote keeps its real link: that operation's
+    recorded post-state is checked against it.
+    """
+    explained: dict[str, set[int]] = {'image': set(), 'measurement': set()}
+    for op in (prior_result or {}).get('operations') or []:
+        if not isinstance(op, dict) or op.get('status') not in {'completed', 'verification_pending'}:
+            continue
+        kind = 'image' if 'image' in str(op.get('op') or '') else (
+            'measurement' if 'measurement' in str(op.get('op') or '') else None
+        )
+        if kind and _safe_int(op.get('local_id')):
+            explained[kind].add(_safe_int(op.get('local_id')))
+
+    def _undo_key_links(rows, baseline_rows, remotes, keep_ids):
+        reviewed_unlinked = {
+            _safe_int(row.get('__local_id')): _normalize_sync_key_value(row.get('sync_key'))
+            for row in baseline_rows or []
+            if _safe_int(row.get('__local_id')) and not row.get('__cloud_id')
+        }
+        remote_key_by_id = {
+            str(row.get('id') or '').strip(): _normalize_sync_key_value(row.get('sync_key'))
+            for row in remotes or []
+        }
+        reviewed: list[dict] = []
+        for row in rows or []:
+            current = dict(row)
+            local_id = _safe_int(current.get('id'))
+            cloud_id = str(current.get('cloud_id') or '').strip()
+            key = _normalize_sync_key_value(current.get('sync_key'))
+            if (
+                cloud_id and key and local_id in reviewed_unlinked
+                and local_id not in keep_ids
+                and reviewed_unlinked[local_id] == key
+                and remote_key_by_id.get(cloud_id) == key
+            ):
+                current['cloud_id'] = None
+            reviewed.append(current)
+        return reviewed
+
+    return (
+        _undo_key_links(local_images, (baseline or {}).get('local_images'), remote_images,
+                        explained['image']),
+        _undo_key_links(local_measurements, (baseline or {}).get('local_measurements'),
+                        remote_measurements, explained['measurement']),
+    )
+
+
 def _validate_plan_identity_state(
     *,
     local_images: list[dict],

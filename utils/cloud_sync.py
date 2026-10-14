@@ -774,6 +774,7 @@ from utils.cloud_sync_impl.measurement_reconcile import (  # noqa: F401  (facade
     _reconcile_missing_spore_measurements,
 )
 from utils.cloud_sync_impl.conflict_plan import (  # noqa: F401  (facade re-export)
+    _as_reviewed_local_rows,
     _find_by_cloud_id_then_key,
     _sync_key_pairing_conflict,
     _build_plan_from_automatic_decisions,
@@ -5119,12 +5120,22 @@ def resolve_conflict_plan(
     )
     current_local_images = ImageDB.get_images_for_observation(int(local_id))
     current_local_measurements = MeasurementDB.get_measurements_for_observation(int(local_id))
+    # A sync-key link this plan committed on an earlier, partial attempt is
+    # compared as reviewed (unlinked); content and parents are compared as is.
+    reviewed_local_images, reviewed_local_measurements = _as_reviewed_local_rows(
+        baseline,
+        local_images=current_local_images,
+        local_measurements=current_local_measurements,
+        remote_images=remote_images,
+        remote_measurements=remote_measurements,
+        prior_result=prior_result if isinstance(prior_result, dict) else None,
+    )
 
     # ── Step 2: identity validation ───────────────────────────────────────────
     _validate_plan_identity_state(
-        local_images=current_local_images,
+        local_images=reviewed_local_images,
         remote_images=remote_images,
-        local_measurements=current_local_measurements,
+        local_measurements=reviewed_local_measurements,
         remote_measurements=remote_measurements,
         items=items,
     )
@@ -5141,8 +5152,8 @@ def resolve_conflict_plan(
         baseline, rebased_keys, verified_completed_ops = _verify_completed_ops_and_rebase(
             prior_result, baseline,
             local_obs=local_obs, remote_obs=remote_obs,
-            local_images=current_local_images, remote_images=remote_images,
-            local_measurements=current_local_measurements,
+            local_images=reviewed_local_images, remote_images=remote_images,
+            local_measurements=reviewed_local_measurements,
             remote_measurements=remote_measurements,
         )
         # Expand the completed keys to include plan-dispatch variants.
@@ -5159,9 +5170,9 @@ def resolve_conflict_plan(
         items,
         local_obs=local_obs,
         remote_obs=remote_obs,
-        local_images=current_local_images,
+        local_images=reviewed_local_images,
         remote_images=remote_images,
-        local_measurements=current_local_measurements,
+        local_measurements=reviewed_local_measurements,
         remote_measurements=remote_measurements,
     )
 
@@ -5189,6 +5200,22 @@ def resolve_conflict_plan(
         if any(key_links.values()):
             current_local_images = ImageDB.get_images_for_observation(int(local_id))
             current_local_measurements = MeasurementDB.get_measurements_for_observation(int(local_id))
+        # Every reviewed pair must now be one linked pair; otherwise no choice
+        # could be applied to it, so nothing runs (never a silent no-op).
+        linked_now = {
+            ('images', _safe_int(row.get('id')), str(row.get('cloud_id') or '').strip())
+            for row in current_local_images
+        } | {
+            ('spore_measurements', _safe_int(row.get('id')), str(row.get('cloud_id') or '').strip())
+            for row in current_local_measurements
+        }
+        unlinked_pairs = sorted(reviewed_pairs - linked_now)
+        if unlinked_pairs:
+            raise CloudSyncError(
+                'Identity conflict: reviewed rows are not paired '
+                f'({", ".join(f"{t} {lid} / cloud {cid}" for t, lid, cid in unlinked_pairs)}). '
+                'Refresh the comparison and try again.'
+            )
 
     # ── Step 4: build the explicit operation list ─────────────────────────────
     ops = [

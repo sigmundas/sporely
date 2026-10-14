@@ -481,6 +481,24 @@ def link_reviewed_key_pairs(
     remote_measurements_by_key = _active_by_key(remote_measurements)
     conn = get_connection()
     try:
+        if pairs is not None:
+            # A reviewed measurement brings its parent pair along: the parent
+            # image must be linked for the measurement's parent check, even
+            # when the image itself needed no choice.
+            remote_image_of = {
+                str(row.get('id') or '').strip(): str(row.get('image_id') or '').strip()
+                for row in remote_measurements or []
+            }
+            pairs = set(pairs)
+            for table, local_id, cloud_id in list(pairs):
+                if table != 'spore_measurements':
+                    continue
+                parent_row = conn.execute(
+                    'SELECT image_id FROM spore_measurements WHERE id = ?', (int(local_id),),
+                ).fetchone()
+                remote_parent = remote_image_of.get(str(cloud_id), '')
+                if parent_row is not None and parent_row[0] and remote_parent:
+                    pairs.add(('images', int(parent_row[0]), remote_parent))
         keyed_tables = {
             table for table in ('images', 'spore_measurements')
             if 'sync_key' in {str(info[1]) for info in conn.execute(f'PRAGMA table_info({table})')}

@@ -12,6 +12,8 @@ import sqlite3
 import uuid
 from urllib.parse import unquote, urlsplit
 
+import pytest
+
 
 from database import schema
 from database.models import ImageDB, ObservationDB
@@ -456,7 +458,7 @@ def test_a_portable_pending_graph_uploads_with_keys_and_never_reads_or_writes_de
 # ── Reviewed key-paired children: both conflict choices apply ────────────
 
 
-def _lost_link_child_conflict(tmp_path) -> tuple[BytesCloud, int, int, int, dict, dict]:
+def _lost_link_child_conflict(tmp_path, *, edit_image: bool = True) -> tuple[BytesCloud, int, int, int, dict, dict]:
     """This database's image and measurement exist in the cloud, their local
     links were lost, and both sides edited them since: a key-paired conflict."""
     cloud = BytesCloud()
@@ -466,16 +468,23 @@ def _lost_link_child_conflict(tmp_path) -> tuple[BytesCloud, int, int, int, dict
     [cloud_measurement] = cloud.rows("spore_measurements")
     _set("images", image_id, cloud_id=None)
     _set("spore_measurements", measurement_id, cloud_id=None)
-    ImageDB.update_image(image_id, notes="local note")
+    if edit_image:
+        ImageDB.update_image(image_id, notes="local note")
     with sqlite3.connect(schema.get_database_path()) as connection:
         connection.execute("UPDATE spore_measurements SET length_um = 12.0 WHERE id = ?", (measurement_id,))
     ObservationDB.update_observation(obs_id, notes="touched")
-    cloud.edit_elsewhere("observation_images", cloud_image["id"], notes="cloud note")
+    if edit_image:
+        cloud.edit_elsewhere("observation_images", cloud_image["id"], notes="cloud note")
     cloud.edit_elsewhere("spore_measurements", cloud_measurement["id"], length_um=14.0)
 
-    result = _sync(cloud.client())
-    assert result["errors"], "a differing key-paired child is never linked by ordinary sync"
+    if edit_image:
+        result = _sync(cloud.client())
+        assert result["errors"], "a differing key-paired child is never linked by ordinary sync"
+    # Without an image edit, an upload would adopt the equal image; the review
+    # here happens before any upload ran (e.g. while uploads were blocked), so
+    # both links are still missing.
     assert _row("images", image_id)["cloud_id"] is None
+    assert _row("spore_measurements", measurement_id)["cloud_id"] is None
     return (cloud, obs_id, image_id, measurement_id,
             cloud.rows("observation_images")[0], cloud.rows("spore_measurements")[0])
 
@@ -578,3 +587,119 @@ def test_whole_observation_keep_device_patches_key_paired_children(two_desktops,
     assert cloud.rows("spore_measurements")[0]["length_um"] == 12.0
     assert cloud.rows("observation_images")[0]["notes"] == "local note"
     assert [w for t in ("observation_images", "spore_measurements") for w in cloud.writes(t, "POST")] == []
+
+
+
+def _measurement_only_plan(cloud, obs_id, choice: str) -> dict:
+    """The dialog's plan when only the measurement differs: no image item, and
+    (as the dialog builds it) no owning-image ids on the measurement item."""
+    detail = cloud_sync.get_conflict_detail(cloud.client(), obs_id)
+    [image_pair] = [p for p in detail["image_pairs"] if p.get("local")]
+    assert image_pair["match_basis"] == "sync_key"
+    assert not image_pair.get("metadata_diff_details"), "image metadata agrees"
+    [measurement_pair] = image_pair["measurement_pairs"]
+    items = [{"kind": "measurement", "side": "matched", "local_id": measurement_pair["local_id"],
+              "cloud_id": measurement_pair["cloud_id"], "choice": choice}]
+    return {"items": items, "baseline": detail["plan_baseline"], "allow_media_deletion": False}
+
+
+@pytest.mark.parametrize("choice", ["cloud", "local"])
+def test_a_measurement_only_plan_links_the_parent_pair_and_applies_the_choice(two_desktops, tmp_path, choice):
+    cloud, obs_id, image_id, measurement_id, cloud_image, cloud_measurement = (
+        _lost_link_child_conflict(tmp_path, edit_image=False)
+    )
+    plan = _measurement_only_plan(cloud, obs_id, choice)
+    cloud.requests.clear()
+
+    cloud_sync.resolve_conflict_plan(cloud.client(), obs_id, plan=plan, prepare_images_cb=_prepare_all)
+
+    assert str(_row("images", image_id)["cloud_id"]) == str(cloud_image["id"])
+    assert str(_row("spore_measurements", measurement_id)["cloud_id"]) == str(cloud_measurement["id"])
+    expected = 14.0 if choice == "cloud" else 12.0
+    assert _row("spore_measurements", measurement_id)["length_um"] == expected
+    assert cloud.rows("spore_measurements")[0]["length_um"] == expected
+    assert cloud.writes("spore_measurements", "POST") == []
+    if choice == "cloud":
+        assert cloud.writes("spore_measurements") == []
+    cloud.requests.clear()
+    assert _errors(_sync(cloud.client())) == []
+    assert [w for t in ("observation_images", "spore_measurements") for w in cloud.writes(t, "POST")] == []
+
+
+def test_a_reviewed_pair_that_cannot_be_linked_runs_nothing(two_desktops, tmp_path):
+    cloud, obs_id, image_id, measurement_id, cloud_image, cloud_measurement = (
+        _lost_link_child_conflict(tmp_path, edit_image=False)
+    )
+    plan = _measurement_only_plan(cloud, obs_id, "cloud")
+    # The local measurement no longer carries the cloud row's key.
+    _set("spore_measurements", measurement_id, sync_key=str(uuid.uuid4()))
+    with pytest.raises(cloud_sync.CloudSyncError):
+        cloud_sync.resolve_conflict_plan(cloud.client(), obs_id, plan=plan)
+    assert _row("spore_measurements", measurement_id)["cloud_id"] is None
+    assert _row("spore_measurements", measurement_id)["length_um"] == 12.0
+
+
+def _fail_once(monkeypatch, name: str) -> list[int]:
+    real = getattr(cloud_sync, name)
+    calls: list[int] = []
+
+    def failing(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise cloud_sync.CloudSyncError(f"{name} failed once")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(cloud_sync, name, failing)
+    return calls
+
+
+@pytest.mark.parametrize(
+    "edit_image,failing",
+    [
+        # The only operation fails right after the links are committed.
+        (False, "_import_remote_measurements_for_observation"),
+        # The image operation completes; the measurement operation fails.
+        (True, "_import_remote_measurements_for_observation"),
+    ],
+)
+def test_a_retry_after_committed_key_links_completes_the_plan(
+    two_desktops, tmp_path, monkeypatch, edit_image, failing,
+):
+    cloud, obs_id, image_id, measurement_id, cloud_image, cloud_measurement = (
+        _lost_link_child_conflict(tmp_path, edit_image=edit_image)
+    )
+    plan = _plan_for(cloud, obs_id, "cloud") if edit_image else _measurement_only_plan(cloud, obs_id, "cloud")
+    calls = _fail_once(monkeypatch, failing)
+    cloud.requests.clear()
+
+    with pytest.raises(cloud_sync.PartialConflictPlanError) as failure:
+        cloud_sync.resolve_conflict_plan(cloud.client(), obs_id, plan=plan)
+    # The links were committed before the failing operation.
+    assert str(_row("images", image_id)["cloud_id"]) == str(cloud_image["id"])
+    assert str(_row("spore_measurements", measurement_id)["cloud_id"]) == str(cloud_measurement["id"])
+    assert _row("spore_measurements", measurement_id)["length_um"] == 12.0
+
+    cloud_sync.resolve_conflict_plan(
+        cloud.client(), obs_id, plan=plan, prior_result=failure.value.partial_result,
+    )
+    assert len(calls) == 2
+    assert _row("spore_measurements", measurement_id)["length_um"] == 14.0
+    if edit_image:
+        assert _row("images", image_id)["notes"] == "cloud note"
+    assert [w for t in ("observation_images", "spore_measurements") for w in cloud.writes(t)] == []
+
+
+def test_a_retry_still_refuses_content_drift_after_committed_key_links(two_desktops, tmp_path, monkeypatch):
+    cloud, obs_id, image_id, measurement_id, _cloud_image, cloud_measurement = (
+        _lost_link_child_conflict(tmp_path, edit_image=False)
+    )
+    plan = _measurement_only_plan(cloud, obs_id, "cloud")
+    _fail_once(monkeypatch, "_import_remote_measurements_for_observation")
+    with pytest.raises(cloud_sync.PartialConflictPlanError) as failure:
+        cloud_sync.resolve_conflict_plan(cloud.client(), obs_id, plan=plan)
+    cloud.edit_elsewhere("spore_measurements", cloud_measurement["id"], length_um=99.0)
+    with pytest.raises(cloud_sync.CloudSyncError, match="changed after this comparison"):
+        cloud_sync.resolve_conflict_plan(
+            cloud.client(), obs_id, plan=plan, prior_result=failure.value.partial_result,
+        )
+    assert _row("spore_measurements", measurement_id)["length_um"] == 12.0
