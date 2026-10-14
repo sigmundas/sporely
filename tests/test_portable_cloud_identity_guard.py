@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import sqlite3
-
-from database import schema
 from utils import cloud_sync
 
 
@@ -180,7 +177,9 @@ def test_portable_image_guard_applies_to_public_spore_metadata_anchor(monkeypatc
     assert "desktop_id" not in calls["post"][0][1]
 
 
-def test_portable_guard_blocks_pull_side_observation_reverse_match():
+def test_pull_never_matches_a_portable_row_by_desktop_id():
+    # Integer ids are never cloud identities: a cloud row naming local id 91
+    # never pairs with it, portable or not. A cloud id link still does.
     imported = {
         "id": 91,
         "cloud_id": None,
@@ -189,138 +188,13 @@ def test_portable_guard_blocks_pull_side_observation_reverse_match():
     remote = {"id": "source-cloud-observation", "desktop_id": 91}
 
     assert cloud_sync._find_local_observation_for_remote_cached(
-        remote, {}, {91: imported}
-    ) is None
+        remote, {}, {}
+    ) == (None, cloud_sync.KEY_FREE)
 
     imported["cloud_id"] = "new-cloud-observation"
-    assert cloud_sync._find_local_observation_for_remote_cached(
+    local, outcome = cloud_sync._find_local_observation_for_remote_cached(
         {"id": "new-cloud-observation", "desktop_id": None},
         {"new-cloud-observation": imported},
-        {91: imported},
-    )["id"] == 91
-
-
-def test_portable_guard_clears_only_after_entire_cloud_graph_has_identity(
-    monkeypatch, tmp_path
-):
-    class IdentityClient:
-        user_id = "user-1"
-
-        def __init__(self, observation_collision=None):
-            self.observation_collision = observation_collision
-            self.linked = []
-
-        def _find_cloud_observation(self, _desktop_id):
-            return self.observation_collision
-
-        def _find_cloud_image(self, _desktop_id, _observation_id, image_type=None):
-            return None
-
-        def _get(self, _path):
-            return []
-
-        def set_desktop_id(self, cloud_id, desktop_id):
-            self.linked.append(("observation", cloud_id, desktop_id))
-
-        def set_image_desktop_id(self, cloud_id, desktop_id):
-            self.linked.append(("image", cloud_id, desktop_id))
-
-        def set_measurement_desktop_id(self, cloud_id, desktop_id):
-            self.linked.append(("measurement", cloud_id, desktop_id))
-
-    client = IdentityClient()
-    root = tmp_path / "app"
-    root.mkdir()
-    monkeypatch.setattr(schema, "_app_dir", root)
-    monkeypatch.setattr(schema, "DATABASE_PATH", root / "mushrooms.db")
-    monkeypatch.setattr(schema, "REFERENCE_DATABASE_PATH", root / "reference_values.db")
-    monkeypatch.setattr(schema, "SETTINGS_PATH", root / "app_settings.json")
-    schema.init_database()
-    with sqlite3.connect(schema.get_database_path()) as connection:
-        connection.execute(
-            "INSERT INTO observations "
-            "(id, date, cloud_id, portable_cloud_identity_pending) "
-            "VALUES (1, '2026-08-27', 'new-observation', 1)"
-        )
-        connection.execute(
-            "INSERT INTO images (id, observation_id, filepath, image_type) "
-            "VALUES (2, 1, '/tmp/imported.jpg', 'microscope')"
-        )
-        connection.execute(
-            "INSERT INTO spore_measurements (id, image_id, length_um, width_um) "
-            "VALUES (3, 2, 10.0, 5.0)"
-        )
-        connection.commit()
-
-    assert not cloud_sync._finalize_portable_cloud_identity_guard(client, 1)
-    with sqlite3.connect(schema.get_database_path()) as connection:
-        connection.execute("UPDATE images SET cloud_id='new-image' WHERE id=2")
-        connection.commit()
-    assert not cloud_sync._finalize_portable_cloud_identity_guard(client, 1)
-    with sqlite3.connect(schema.get_database_path()) as connection:
-        connection.execute("UPDATE spore_measurements SET cloud_id='new-measurement' WHERE id=3")
-        connection.commit()
-
-    assert cloud_sync._finalize_portable_cloud_identity_guard(client, 1)
-    # The observation's desktop_id is retired as an identity and never
-    # written; the children's reverse links are retired in a later stage.
-    assert client.linked == [
-        ("image", "new-image", 2),
-        ("measurement", "new-measurement", 3),
-    ]
-    with sqlite3.connect(schema.get_database_path()) as connection:
-        assert connection.execute(
-            "SELECT portable_cloud_identity_pending FROM observations WHERE id=1"
-        ).fetchone()[0] == 0
-
-
-def test_portable_guard_stays_set_when_destination_reverse_id_collides(
-    monkeypatch, tmp_path
-):
-    root = tmp_path / "app"
-    root.mkdir()
-    monkeypatch.setattr(schema, "_app_dir", root)
-    monkeypatch.setattr(schema, "DATABASE_PATH", root / "mushrooms.db")
-    monkeypatch.setattr(schema, "REFERENCE_DATABASE_PATH", root / "reference_values.db")
-    monkeypatch.setattr(schema, "SETTINGS_PATH", root / "app_settings.json")
-    schema.init_database()
-    with sqlite3.connect(schema.get_database_path()) as connection:
-        connection.execute(
-            "INSERT INTO observations "
-            "(id, date, cloud_id, portable_cloud_identity_pending) "
-            "VALUES (1, '2026-08-27', 'new-observation', 1)"
-        )
-        connection.execute(
-            "INSERT INTO images (id, observation_id, filepath, image_type, cloud_id) "
-            "VALUES (2, 1, '/tmp/imported.jpg', 'field', 'new-image')"
-        )
-        connection.commit()
-
-    class CollisionClient:
-        user_id = "user-1"
-
-        def __init__(self):
-            self.linked = []
-
-        def _find_cloud_observation(self, _desktop_id):
-            return None
-
-        def _get(self, path):
-            if path.startswith("observation_images?"):
-                return [{"id": "source-cloud-image"}]
-            return []
-
-        def set_desktop_id(self, cloud_id, desktop_id):
-            self.linked.append((cloud_id, desktop_id))
-
-        def set_image_desktop_id(self, cloud_id, desktop_id):
-            self.linked.append((cloud_id, desktop_id))
-
-    client = CollisionClient()
-
-    assert not cloud_sync._finalize_portable_cloud_identity_guard(client, 1)
-    assert client.linked == []
-    with sqlite3.connect(schema.get_database_path()) as connection:
-        assert connection.execute(
-            "SELECT portable_cloud_identity_pending FROM observations WHERE id=1"
-        ).fetchone()[0] == 1
+        {},
+    )
+    assert local["id"] == 91 and outcome == cloud_sync.KEY_LINKED

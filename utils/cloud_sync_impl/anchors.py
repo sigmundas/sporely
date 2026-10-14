@@ -593,15 +593,6 @@ def _ensure_metadata_only_microscope_images_for_observation(
     conn = get_connection()
     conn.row_factory = sqlite3.Row
     try:
-        portable_identity_pending = False
-        if 'portable_cloud_identity_pending' in {
-            str(info[1]) for info in conn.execute('PRAGMA table_info(observations)')
-        }:
-            marker_row = conn.execute(
-                'SELECT portable_cloud_identity_pending FROM observations WHERE id = ?',
-                (obs_local_id,),
-            ).fetchone()
-            portable_identity_pending = bool(marker_row and marker_row[0])
         cursor = conn.execute(
             """
             SELECT images.*
@@ -638,7 +629,6 @@ def _ensure_metadata_only_microscope_images_for_observation(
             ]
 
     for image_row in rows:
-        image_row['portable_cloud_identity_pending'] = portable_identity_pending
         counters['considered'] += 1
         local_image_id = _safe_int(image_row.get('id'))
         try:

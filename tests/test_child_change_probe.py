@@ -1334,8 +1334,9 @@ def test_pull_skips_desktop_id_patch_when_link_already_correct(monkeypatch):
     assert client.desktop_id_patches == []
 
 
-def test_pull_still_patches_desktop_id_when_link_stale(monkeypatch):
-    """A genuinely stale/missing desktop_id link must still be repaired."""
+def test_pull_never_repairs_a_stale_desktop_id(monkeypatch):
+    """No client writes an identity onto a cloud row (per-record sync keys):
+    a stale ``desktop_id`` is left as it is, never relinked."""
     local_images = [{'id': 42, 'cloud_id': '5001', 'image_type': 'field'}]
     remote_images = [{
         'id': '5001', 'observation_id': 'cloud-1', 'image_type': 'field',
@@ -1347,4 +1348,4 @@ def test_pull_still_patches_desktop_id_when_link_stale(monkeypatch):
         client, 1, remote_images,
         allow_delete=False, materialize_remote_images=False,
     )
-    assert client.desktop_id_patches == [('5001', 42)]
+    assert client.desktop_id_patches == []

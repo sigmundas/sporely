@@ -14,10 +14,10 @@ _PULL_ONLY_BLOCKED_CLIENT_METHODS = frozenset({
     '_patch', '_post', '_delete', '_storage_remove',
     'push_observation', '_create_observation', 'push_image_metadata', 'push_measurement',
     'upload_image_file', 'upload_original_image_file',
-    'set_image_storage_path', 'set_image_desktop_id', 'set_desktop_id',
+    'set_image_storage_path',
     'set_observation_selected_taxon', 'clear_observation_selected_taxon',
     'set_observation_location',
-    'set_measurement_desktop_id', 'set_image_original_storage_path',
+    'set_image_original_storage_path',
     'reserve_image_storage_path_for_promotion',
     'release_image_storage_path_reservation',
     'soft_delete_image', 'delete_cloud_observation',
@@ -81,6 +81,11 @@ _PULL_ONLY_ALLOWED_READ_METHODS = frozenset({
     # the read retried without it on a target lacking the column).
     '_observation_image_select_columns',
     '_read_observation_image_rows',
+    # The same optional-column retry for measurements (``sync_key`` on a
+    # server that is not ready) and its shared reader.
+    '_spore_measurement_select_columns',
+    '_read_spore_measurement_rows',
+    '_read_with_optional_columns',
     'pull_measurements_for_images',
     'pull_observation_identifications',
     # Media byte reads
@@ -90,7 +95,6 @@ _PULL_ONLY_ALLOWED_READ_METHODS = frozenset({
     '_get',
     'get_read_only',
     # Client-internal probes and path builders — pure read/compute.
-    '_find_cloud_image',
     '_get_media_worker',
     '_build_original_storage_path',
     '_observation_images_support_ai_crop',

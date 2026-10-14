@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import copy
 import sqlite3
+import uuid
 from pathlib import Path
 
 import pytest
@@ -33,6 +34,10 @@ from utils.cloud_sync import (
 )
 from database import schema as db_schema
 from database.models import SettingsDB, ImageDB, MeasurementDB, ObservationDB
+
+
+def _key(number: int) -> str:
+    return str(uuid.UUID(int=number))
 
 
 class _RecordingClient:
@@ -438,7 +443,7 @@ def test_mosaic_auth_error_blocks_finalization_then_retry_reattempts_without_rep
     """
     local_obs = {"id": 1, "cloud_id": "obs-cloud"}
     remote_obs = {"id": "obs-cloud"}
-    local_meas = [{"id": 42, "image_id": 5, "length_um": 5.0}]
+    local_meas = [{"id": 42, "image_id": 5, "length_um": 5.0, "sync_key": _key(42)}]
     baseline = _baseline_from_state(local_obs, remote_obs, [], [], local_meas, [])
     push_calls = []
     tracker = _patch_common(monkeypatch, local_obs=local_obs, remote_obs=remote_obs,
@@ -452,8 +457,10 @@ def test_mosaic_auth_error_blocks_finalization_then_retry_reattempts_without_rep
     def _push_and_materialize(client_, local_id_, *, measurement_ids):
         push_calls.append(measurement_ids)
         for mid in measurement_ids:
+            # The created row carries the local row's key (no cloud_id link
+            # in this fake): readback pairs it by sync_key.
             remote_meas_store.append({
-                'id': f'm{mid}', 'desktop_id': mid,
+                'id': f'm{mid}', 'sync_key': _key(mid),
                 'image_id': 'img-cloud-5', 'length_um': 5.0,
             })
     monkeypatch.setattr(cloud_sync, "_push_measurements_for_observation", _push_and_materialize)
@@ -648,8 +655,8 @@ def test_mixed_plan_retry_still_skips_mosaic(monkeypatch):
     local_obs = {"id": 1, "cloud_id": "obs-cloud"}
     remote_obs = {"id": "obs-cloud"}
     local_meas = [
-        {"id": 42, "image_id": 5, "length_um": 5.0},
-        {"id": 99, "image_id": 5, "length_um": 9.0},
+        {"id": 42, "image_id": 5, "length_um": 5.0, "sync_key": _key(42)},
+        {"id": 99, "image_id": 5, "length_um": 9.0, "sync_key": _key(99)},
     ]
     baseline = _baseline_from_state(local_obs, remote_obs, [], [], local_meas, [])
     tracker = _patch_common(monkeypatch, local_obs=local_obs, remote_obs=remote_obs,
@@ -661,8 +668,10 @@ def test_mixed_plan_retry_still_skips_mosaic(monkeypatch):
     def _push_and_materialize(client_, local_id_, *, measurement_ids):
         tracker['push_measurements'].append(measurement_ids)
         for mid in measurement_ids:
+            # The created row carries the local row's key (no cloud_id link
+            # in this fake): readback pairs it by sync_key.
             remote_meas_store.append({
-                'id': f'm{mid}', 'desktop_id': mid,
+                'id': f'm{mid}', 'sync_key': _key(mid),
                 'image_id': 'img-cloud-5', 'length_um': 5.0,
             })
     monkeypatch.setattr(cloud_sync, "_push_measurements_for_observation", _push_and_materialize)
@@ -903,23 +912,44 @@ def test_duplicate_local_cloud_id_blocks_before_writes(monkeypatch):
     assert tracker['apply_remote_images'] == []
 
 
-def test_duplicate_cloud_desktop_id_blocks_before_writes(monkeypatch):
+def test_a_local_key_held_by_another_cloud_image_blocks_before_writes(monkeypatch):
     local_obs = {"id": 1, "cloud_id": "obs-cloud"}
     remote_obs = {"id": "obs-cloud"}
+    local_images = [{"id": 5, "image_type": "field", "sync_key": _key(5)}]
     remote_images = [
-        {"id": "a", "desktop_id": 5, "image_type": "field"},
-        {"id": "b", "desktop_id": 5, "image_type": "field"},
+        {"id": "a", "image_type": "field"},
+        {"id": "b", "image_type": "field", "sync_key": _key(5)},
     ]
     tracker = _patch_common(monkeypatch, local_obs=local_obs, remote_obs=remote_obs,
-                            remote_images=remote_images)
+                            local_images=local_images, remote_images=remote_images)
     client = _RecordingClient(remote_obs=remote_obs)
-    baseline = _baseline_from_state({}, {}, [], remote_images, [], [])
+    baseline = _baseline_from_state({}, {}, local_images, remote_images, [], [])
     with pytest.raises(CloudSyncError, match="identity conflict"):
         resolve_conflict_plan(client, 1, plan={
             'baseline': baseline,
             'items': [{'kind': 'image', 'cloud_id': 'a', 'local_id': 5, 'choice': 'download'}],
         })
     assert tracker['apply_remote_images'] == []
+
+
+def test_a_cloud_desktop_id_never_makes_an_image_identity_conflict(monkeypatch):
+    # Two cloud rows naming local id 5 (written by two desktops) are not a
+    # conflict: integer ids are never cloud identities.
+    local_obs = {"id": 1, "cloud_id": "obs-cloud"}
+    remote_obs = {"id": "obs-cloud"}
+    remote_images = [
+        {"id": "a", "desktop_id": 5, "image_type": "field"},
+        {"id": "b", "desktop_id": 5, "image_type": "field"},
+    ]
+    _patch_common(monkeypatch, local_obs=local_obs, remote_obs=remote_obs,
+                  remote_images=remote_images)
+    baseline = _baseline_from_state({}, {}, [], remote_images, [], [])
+    cloud_sync._validate_plan_identity_state(
+        local_images=[], remote_images=remote_images, local_measurements=[],
+        remote_measurements=[],
+        items=[{'kind': 'image', 'cloud_id': 'a', 'local_id': 5, 'choice': 'download'}],
+    )
+    assert baseline['remote_images']
 
 
 def test_duplicate_local_measurement_cloud_id_blocks(monkeypatch):
@@ -942,24 +972,31 @@ def test_duplicate_local_measurement_cloud_id_blocks(monkeypatch):
     assert tracker['push_measurements'] == []
 
 
-def test_duplicate_cloud_measurement_desktop_id_blocks(monkeypatch):
+def test_a_cloud_measurement_key_held_by_another_local_measurement_blocks(monkeypatch):
     local_obs = {"id": 1, "cloud_id": "obs-cloud"}
     remote_obs = {"id": "obs-cloud"}
-    remote_meas = [
-        {"id": "a", "desktop_id": 30, "image_id": "img", "length_um": 5.0},
-        {"id": "b", "desktop_id": 30, "image_id": "img", "length_um": 6.0},
+    local_images = [{"id": 5, "cloud_id": "img", "image_type": "microscope"}]
+    remote_images = [{"id": "img", "image_type": "microscope"}]
+    local_meas = [
+        {"id": 30, "cloud_id": "a", "image_id": 5, "length_um": 5.0},
+        {"id": 31, "image_id": 5, "length_um": 6.0, "sync_key": _key(31)},
     ]
-    baseline = _baseline_from_state(local_obs, remote_obs, [], [], [], remote_meas)
+    remote_meas = [{"id": "a", "image_id": "img", "length_um": 5.0, "sync_key": _key(31)}]
+    baseline = _baseline_from_state(local_obs, remote_obs, local_images, remote_images,
+                                    local_meas, remote_meas)
     tracker = _patch_common(monkeypatch, local_obs=local_obs, remote_obs=remote_obs,
-                            remote_measurements=remote_meas)
+                            local_images=local_images, remote_images=remote_images,
+                            local_measurements=local_meas, remote_measurements=remote_meas)
     client = _RecordingClient(remote_obs=remote_obs)
     with pytest.raises(CloudSyncError, match="Measurement identity conflict"):
         resolve_conflict_plan(client, 1, plan={
             'baseline': baseline,
-            'items': [{'kind': 'measurement', 'side': 'cloud_only',
-                       'cloud_id': 'a', 'choice': 'download'}],
+            'items': [{'kind': 'measurement', 'side': 'matched',
+                       'local_id': 30, 'cloud_id': 'a',
+                       'local_image_id': 5, 'cloud_image_id': 'img',
+                       'choice': 'local'}],
         })
-    assert tracker['import_remote_measurements'] == []
+    assert tracker['push_measurements'] == []
 
 
 def test_measurement_moved_to_other_image_after_review_aborts(monkeypatch):
@@ -1044,8 +1081,10 @@ def test_matched_measurement_owning_image_not_authoritative_aborts(monkeypatch):
 def test_cross_referenced_identity_contradiction_blocks(monkeypatch):
     local_obs = {"id": 1, "cloud_id": "obs-cloud"}
     remote_obs = {"id": "obs-cloud"}
-    local_images = [{"id": 5, "cloud_id": "c5", "image_type": "field"}]
-    remote_images = [{"id": "c5", "desktop_id": 99, "image_type": "field"}]  # cross-linked
+    # Cross-linked: the cloud row carries the key of another local image.
+    local_images = [{"id": 5, "cloud_id": "c5", "image_type": "field"},
+                    {"id": 99, "image_type": "field", "sync_key": _key(99)}]
+    remote_images = [{"id": "c5", "image_type": "field", "sync_key": _key(99)}]
     tracker = _patch_common(monkeypatch, local_obs=local_obs, remote_obs=remote_obs,
                             local_images=local_images, remote_images=remote_images)
     client = _RecordingClient(remote_obs=remote_obs)

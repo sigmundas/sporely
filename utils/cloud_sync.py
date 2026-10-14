@@ -1,13 +1,11 @@
 """Bidirectional sync between local SQLite and Sporely cloud (Supabase).
 
 Desktop → Cloud  push observations and selected images not yet synced
-Cloud → Desktop  pull observations created on mobile/web (no desktop_id)
+Cloud → Desktop  pull cloud observations (from any client) and their edits
 
-One-time Supabase SQL to run in the SQL editor for optimal upsert performance:
-    ALTER TABLE public.observations
-        ADD CONSTRAINT observations_desktop_id_user_unique UNIQUE (desktop_id, user_id);
-    ALTER TABLE public.observation_images
-        ADD CONSTRAINT observation_images_desktop_id_user_unique UNIQUE (desktop_id, user_id);
+Identity: a local row links to its cloud row by ``cloud_id``; a lost link is
+recovered by the record's ``sync_key``. Integer local ids are never cloud
+identities (see "Per-record sync keys" in ``docs/supabase-sync-contract.md``).
 """
 from __future__ import annotations
 
@@ -295,6 +293,7 @@ from utils.cloud_sync_impl.logs import (  # noqa: F401  (facade re-export)
     logger,
 )
 from utils.cloud_sync_impl.reconciliation.values import (  # noqa: F401  (facade re-export)
+    _normalize_sync_key_value,
     _OBSERVATION_FLOAT_ABS_TOL,
     _OBSERVATION_FLOAT_FIELDS,
     _OBSERVATION_FLOAT_REL_TOL,
@@ -438,6 +437,7 @@ from utils.cloud_sync_impl.reconciliation.asymmetry import (  # noqa: F401  (fac
     _ASYMMETRY_MATERIAL_IMAGE_FIELDS,
     _accepted_asymmetry_key,
     _asymmetry_fingerprint_local_image,
+    _counterpart_ids,
     _asymmetry_fingerprint_local_measurement,
     _asymmetry_fingerprint_remote_image,
     _asymmetry_fingerprint_remote_measurement,
@@ -461,6 +461,7 @@ from utils.cloud_sync_impl.local_files import (  # noqa: F401  (facade re-export
     _resolve_existing_local_image_asset_path,
 )
 from utils.cloud_sync_impl.baseline import (  # noqa: F401  (facade re-export)
+    _record_sync_key,
     _CLOUD_OBSERVATION_SNAPSHOT_SCHEMA_VERSION,
     _SETTING_CLOUD_OBS_SNAPSHOT_PREFIX,
     _clear_cloud_observation_snapshot,
@@ -499,6 +500,9 @@ from utils.cloud_sync_impl.location_precision import (  # noqa: F401  (facade re
     repair_legacy_location_precision,
 )
 from utils.cloud_sync_impl.media_signature import (  # noqa: F401  (facade re-export)
+    _LEGACY_MEASUREMENT_SIGNATURE_IDENTITY_KEY,
+    _measurement_signature_content,
+    _measurement_signature_entry,
     _CLOUD_LOCAL_MEDIA_RENDER_VERSION,
     _LOCAL_MEDIA_SIGNATURE_OPTIONAL_IMAGE_KEYS,
     _local_cloud_image_media_signature,
@@ -535,8 +539,6 @@ from utils.cloud_sync_impl.identity_push import (  # noqa: F401  (facade re-expo
     CloudSyncTaxonIdentityMixin,
 )
 from utils.cloud_sync_impl.image_identity import (  # noqa: F401  (facade re-export)
-    _finalize_portable_cloud_identity_guard,
-    _portable_cloud_identity_pending_for_observation,
     _reconcile_local_image_cloud_id,
     CloudSyncPushIdentityMixin,
 )
@@ -565,6 +567,17 @@ from utils.cloud_sync_impl.observation_identity import (  # noqa: F401  (facade 
     local_sync_key,
     observation_create_content_matches,
     recover_legacy_observation,
+)
+from utils.cloud_sync_impl.pull_identity import (  # noqa: F401  (facade re-export)
+    _LOCAL_TABLES,
+    KEY_FREE,
+    KEY_IDENTITY_CONFLICT,
+    KEY_LINKED,
+    KEY_PENDING_ADOPTION,
+    classify_remote_sync_key,
+    local_sync_key_holder,
+    pull_key_skip_message,
+    remote_sync_key,
 )
 from utils.sync_client_identity import (
     UPLOAD_BLOCK_CLOUD_NOT_READY,
@@ -679,7 +692,6 @@ from utils.cloud_sync_impl.image_pull import (  # noqa: F401  (facade re-export)
     _remote_ai_crop_is_custom,
     _remote_ai_crop_source_size,
     _remote_image_bytes_match_local,
-    _remote_image_desktop_id_current,
     _remote_images_missing_locally,
     _sync_existing_remote_image_to_local,
     _update_image_columns_without_touching_observation,
@@ -761,6 +773,8 @@ from utils.cloud_sync_impl.measurement_reconcile import (  # noqa: F401  (facade
     _reconcile_missing_spore_measurements,
 )
 from utils.cloud_sync_impl.conflict_plan import (  # noqa: F401  (facade re-export)
+    _find_by_cloud_id_then_key,
+    _sync_key_pairing_conflict,
     _build_plan_from_automatic_decisions,
     _bundle_coordinate_field_ops,
     _conflict_plan_local_observation_fingerprint,
@@ -3237,7 +3251,6 @@ def _format_local_media_prep_diagnostic_keys(keys: list[str], *, limit: int = 8)
 
 _OBSERVATION_SELECT_COLUMNS = _join_select_columns(
     'id',
-    'desktop_id',
     'selected_sporely_taxon_id',
     'captured_at',
     'created_at',
@@ -3247,7 +3260,6 @@ _OBSERVATION_SELECT_COLUMNS = _join_select_columns(
 
 _OBSERVATION_IMAGE_SELECT_COLUMNS = _join_select_columns(
     'id',
-    'desktop_id',
     'observation_id',
     'created_at',
     'deleted_at',
@@ -3341,7 +3353,8 @@ def _mark_cloud_observations_dirty_for_image_capture_time_changes() -> int:
     return marked
 
 
-def _load_local_observation_lookup() -> tuple[dict[str, dict], dict[int, dict]]:
+def _load_local_observation_lookup() -> tuple[dict[str, dict], dict[str, dict]]:
+    """Local observations by ``cloud_id`` and by ``sync_key`` (never by integer id)."""
     conn = get_connection()
     conn.row_factory = __import__('sqlite3').Row
     cursor = conn.cursor()
@@ -3351,32 +3364,51 @@ def _load_local_observation_lookup() -> tuple[dict[str, dict], dict[int, dict]]:
     finally:
         conn.close()
     by_cloud_id: dict[str, dict] = {}
-    by_local_id: dict[int, dict] = {}
+    by_sync_key: dict[str, dict] = {}
     for row in rows:
-        local_id = _safe_int(row.get('id'))
         cloud_id = str(row.get('cloud_id') or '').strip()
-        if local_id > 0:
-            by_local_id[local_id] = row
+        sync_key = local_sync_key(row)
         if cloud_id:
             by_cloud_id[cloud_id] = row
-    return by_cloud_id, by_local_id
+        if sync_key:
+            by_sync_key[sync_key] = row
+    return by_cloud_id, by_sync_key
 
 
 def _find_local_observation_for_remote_cached(
     remote: dict,
     by_cloud_id: dict[str, dict],
-    by_local_id: dict[int, dict],
-) -> dict | None:
+    by_sync_key: dict[str, dict],
+) -> tuple[dict | None, str]:
+    """Pair a cloud observation with a local one: by cloud id, else by ``sync_key``.
+
+    Returns ``(local_row, outcome)``. ``local_row`` is set only for a cloud-id
+    match. With no cloud-id match the outcome says what the cloud row's key
+    means here (see ``pull_identity``): ``KEY_FREE`` lets pull create the
+    local row; any other outcome means pull must not create a second local
+    row for it. A cloud ``desktop_id`` is never read.
+    """
     cloud_id = str((remote or {}).get('id') or '').strip()
     if cloud_id and cloud_id in by_cloud_id:
-        return dict(by_cloud_id[cloud_id])
-    local_id = _safe_int((remote or {}).get('desktop_id'))
-    if local_id > 0 and local_id in by_local_id:
-        candidate = dict(by_local_id[local_id])
-        if bool(candidate.get('portable_cloud_identity_pending')):
-            return None
-        return candidate
-    return None
+        return dict(by_cloud_id[cloud_id]), KEY_LINKED
+    holder = by_sync_key.get(remote_sync_key(remote) or '')
+    outcome, _ = classify_remote_sync_key(
+        'observations', remote, holder=holder, use_holder=True,
+    )
+    return None, outcome
+
+
+def remote_observations_not_on_this_desktop(remote_rows: list[dict] | None) -> list[dict]:
+    """Cloud observations no local row holds by cloud id or by ``sync_key``."""
+    by_cloud_id, by_sync_key = _load_local_observation_lookup()
+    unheld: list[dict] = []
+    for remote in remote_rows or []:
+        local_obs, key_outcome = _find_local_observation_for_remote_cached(
+            remote, by_cloud_id, by_sync_key,
+        )
+        if local_obs is None and key_outcome == KEY_FREE:
+            unheld.append(remote)
+    return unheld
 
 
 def _remote_snapshot_has_meaningful_changes(
@@ -3393,7 +3425,7 @@ def _remote_snapshot_has_meaningful_changes(
         return True
     remote_payload = _observation_compare_payload(remote, local=False)
     for field in _SNAPSHOT_OBS_FIELDS:
-        if field in {'id', 'desktop_id'}:
+        if field == 'id':
             continue
         if not _observation_field_values_match(field, remote_payload.get(field), baseline_obs.get(field)):
             return True
@@ -4955,6 +4987,19 @@ def _assign_downloaded_image_order(
     return statuses
 
 
+def _paired_remote_row(local_row: dict, remote_rows: list[dict]) -> dict:
+    """The cloud row a local row pairs with: by its ``cloud_id``, else by ``sync_key``."""
+    cloud_id = str((local_row or {}).get('cloud_id') or '').strip()
+    sync_key = _normalize_sync_key_value((local_row or {}).get('sync_key'))
+    for row in remote_rows or []:
+        if cloud_id and str(row.get('id') or '').strip() == cloud_id:
+            return row
+    for row in remote_rows or []:
+        if sync_key and _normalize_sync_key_value(row.get('sync_key')) == sync_key:
+            return row
+    return {}
+
+
 def resolve_conflict_plan(
     client: "SporelyCloudClient",
     local_id: int,
@@ -5386,12 +5431,10 @@ def resolve_conflict_plan(
                 if not str((row or {}).get('deleted_at') or '').strip()
                 and should_pull_cloud_image_to_desktop(row)
             ]
-            remote_by_desktop = {_safe_int(r.get('desktop_id')): r for r in remote_after_push
-                                 if _safe_int(r.get('desktop_id'))}
             for lid in sorted(local_image_ids_to_push):
                 local_row = by_local_id.get(int(lid)) or {}
                 cid_after = str(local_row.get('cloud_id') or '').strip() or None
-                remote_row = remote_by_desktop.get(int(lid)) or {}
+                remote_row = _paired_remote_row(local_row, remote_after_push)
                 executed.append({
                     'op': 'push_image', 'local_id': lid,
                     'cloud_id': cid_after,
@@ -5471,13 +5514,10 @@ def resolve_conflict_plan(
                 if not str((row or {}).get('deleted_at') or '').strip()
                 and should_pull_cloud_image_to_desktop(row)
             ]
-            remote_meta_by_desktop = {_safe_int(r.get('desktop_id')): r
-                                      for r in remote_after_meta
-                                      if _safe_int(r.get('desktop_id'))}
             for lid in sorted(local_metadata_image_ids_to_push):
                 local_row = by_local_id_meta.get(int(lid)) or {}
-                remote_row = remote_meta_by_desktop.get(int(lid)) or {}
                 cid_after = str(local_row.get('cloud_id') or '').strip() or None
+                remote_row = _paired_remote_row(local_row, remote_after_meta)
                 executed.append({
                     'op': 'push_image_metadata', 'local_id': lid,
                     'cloud_id': cid_after,
@@ -5622,13 +5662,10 @@ def resolve_conflict_plan(
                 [str(row.get('id') or '').strip() for row in remote_images
                  if str(row.get('id') or '').strip()],
             )
-            remote_by_desktop_mp = {_safe_int(r.get('desktop_id')): r
-                                    for r in remote_after_meas_push
-                                    if _safe_int(r.get('desktop_id'))}
             for lid in sorted(local_measurement_ids_to_push):
                 local_row = by_local_id_mp.get(int(lid)) or {}
-                remote_row = remote_by_desktop_mp.get(int(lid)) or {}
                 cid_after = str(local_row.get('cloud_id') or '').strip() or None
+                remote_row = _paired_remote_row(local_row, remote_after_meas_push)
                 executed.append({
                     'op': 'push_measurement', 'local_id': lid,
                     'cloud_id': cid_after,
@@ -5751,26 +5788,15 @@ def resolve_conflict_plan(
         [str(row.get('id') or '').strip()
          for row in reconciled_remote_images if str(row.get('id') or '').strip()],
     )
-    matched_cloud_image_ids: set[str] = set(
-        str(row.get('cloud_id') or '').strip()
-        for row in reconciled_local_images
-        if str(row.get('cloud_id') or '').strip()
+    # Counterparts pair by a local cloud_id link or a shared sync_key, never
+    # by a cloud desktop_id.
+    keyed_local_image_ids, matched_cloud_image_ids = _counterpart_ids(
+        reconciled_local_images, reconciled_remote_images,
     )
-    matched_local_image_ids_now = matched_image_local_ids | {
-        _safe_int(row.get('desktop_id'))
-        for row in reconciled_remote_images
-        if _safe_int(row.get('desktop_id'))
-    }
-    matched_cloud_measurement_ids: set[str] = set(
-        str(row.get('cloud_id') or '').strip()
-        for row in reconciled_local_measurements
-        if str(row.get('cloud_id') or '').strip()
+    matched_local_image_ids_now = matched_image_local_ids | keyed_local_image_ids
+    matched_local_measurement_ids_now, matched_cloud_measurement_ids = _counterpart_ids(
+        reconciled_local_measurements, reconciled_remote_measurements,
     )
-    matched_local_measurement_ids_now = {
-        _safe_int(row.get('desktop_id'))
-        for row in reconciled_remote_measurements
-        if _safe_int(row.get('desktop_id'))
-    }
     new_asymmetry = _build_accepted_asymmetry_from_plan(
         items,
         local_images=reconciled_local_images,
@@ -6052,6 +6078,8 @@ class SporelyCloudClient(
             self._get('observations?select=sync_key&limit=0')
         except CloudSyncError as exc:
             if _MISSING_SYNC_KEY_COLUMN_PATTERN.search(str(exc or '').lower()):
+                # Pull reads then skip the column instead of failing once each.
+                self._sync_key_column_unsupported = True
                 return False
             raise
         self._sync_identity_ready = True
@@ -6242,22 +6270,41 @@ class SporelyCloudClient(
         # CHECK constraint references them, so a target with the pair has them.
         if not getattr(self, '_observation_location_provenance_unsupported', False):
             columns.extend(LOCATION_PROVENANCE_READ_FIELDS)
+        if not getattr(self, '_sync_key_column_unsupported', False):
+            columns.append('sync_key')
         return _join_select_columns(*columns)
 
     def _read_observation_rows(self, read, path_for):
         """``read(path_for(select))``, retried without optional columns.
 
         No extra probe request: the normal read carries the columns, and only
-        a server that rejects one optional group (identity provenance or
-        location provenance) costs one retry per group, once per client.
+        a server that rejects one optional group (identity provenance,
+        location provenance, or ``sync_key`` on a server that is not ready)
+        costs one retry per group, once per client.
         """
-        optional_groups = (
-            ('_observation_identity_columns_unsupported', _MISSING_IDENTITY_COLUMN_PATTERN),
-            ('_observation_location_provenance_unsupported', _MISSING_LOCATION_PROVENANCE_COLUMN_PATTERN),
+        return self._read_with_optional_columns(
+            read, path_for, self._observation_select_columns,
+            (
+                ('_observation_identity_columns_unsupported', _MISSING_IDENTITY_COLUMN_PATTERN),
+                ('_observation_location_provenance_unsupported', _MISSING_LOCATION_PROVENANCE_COLUMN_PATTERN),
+                ('_sync_key_column_unsupported', _MISSING_SYNC_KEY_COLUMN_PATTERN),
+            ),
         )
+
+    def _observation_image_select_columns(self) -> str:
+        """Image read columns, with ``ingest_method`` and ``sync_key`` unless absent."""
+        columns = [_OBSERVATION_IMAGE_SELECT_COLUMNS]
+        if not getattr(self, '_observation_image_ingest_method_unsupported', False):
+            columns.append(INGEST_METHOD_FIELD)
+        if not getattr(self, '_sync_key_column_unsupported', False):
+            columns.append('sync_key')
+        return _join_select_columns(*columns)
+
+    def _read_with_optional_columns(self, read, path_for, select_columns, optional_groups):
+        """``read(path_for(select_columns()))``, dropping each absent optional group once."""
         while True:
             try:
-                return read(path_for(self._observation_select_columns()))
+                return read(path_for(select_columns()))
             except CloudSyncError as exc:
                 # The error text echoes the request path (and so the select
                 # list), so match the server's own phrasing about one of THESE
@@ -6270,25 +6317,32 @@ class SporelyCloudClient(
                 else:
                     raise
 
-    def _observation_image_select_columns(self) -> str:
-        """Image read columns, with ``ingest_method`` unless the server lacks it."""
-        if getattr(self, '_observation_image_ingest_method_unsupported', False):
-            return _OBSERVATION_IMAGE_SELECT_COLUMNS
-        return _join_select_columns(_OBSERVATION_IMAGE_SELECT_COLUMNS, INGEST_METHOD_FIELD)
-
     def _read_observation_image_rows(self, read, path_for):
-        """``read(path_for(select))``, retried once without ``ingest_method``."""
-        try:
-            return read(path_for(self._observation_image_select_columns()))
-        except CloudSyncError as exc:
-            text = str(exc or '').lower()
-            if (
-                getattr(self, '_observation_image_ingest_method_unsupported', False)
-                or not _MISSING_INGEST_METHOD_COLUMN_PATTERN.search(text)
-            ):
-                raise
-            self._observation_image_ingest_method_unsupported = True
-            return read(path_for(_OBSERVATION_IMAGE_SELECT_COLUMNS))
+        """``read(path_for(select))``, retried without ``ingest_method`` / ``sync_key``.
+
+        A server without the key schema ("cloud not ready") still serves
+        pull; rows then carry no key.
+        """
+        return self._read_with_optional_columns(
+            read, path_for, self._observation_image_select_columns,
+            (
+                ('_observation_image_ingest_method_unsupported', _MISSING_INGEST_METHOD_COLUMN_PATTERN),
+                ('_sync_key_column_unsupported', _MISSING_SYNC_KEY_COLUMN_PATTERN),
+            ),
+        )
+
+    def _spore_measurement_select_columns(self) -> str:
+        """Measurement read columns, with ``sync_key`` unless the server lacks it."""
+        if getattr(self, '_sync_key_column_unsupported', False):
+            return _SPORE_MEASUREMENT_SELECT_COLUMNS
+        return _join_select_columns(_SPORE_MEASUREMENT_SELECT_COLUMNS, 'sync_key')
+
+    def _read_spore_measurement_rows(self, read, path_for):
+        """``read(path_for(select))``, retried once without ``sync_key``."""
+        return self._read_with_optional_columns(
+            read, path_for, self._spore_measurement_select_columns,
+            (('_sync_key_column_unsupported', _MISSING_SYNC_KEY_COLUMN_PATTERN),),
+        )
 
     def _observation_supports_media_keys(self) -> bool:
         return self._has_column('observations', 'image_key') or self._has_column('observations', 'thumb_key')
@@ -7070,27 +7124,6 @@ class SporelyCloudClient(
             raise CloudSyncError(f'Media delete failed: {exc}') from exc
 
     # ── Observation push ─────────────────────────────────────────────────
-
-    def _find_cloud_observation(self, desktop_id: int) -> str | None:
-        """Reverse-link (``desktop_id``) recovery lookup for one observation.
-
-        Returns the single same-owner cloud observation id carrying this
-        ``desktop_id``, or ``None``. Multiple matches mean cloud-side
-        duplicates; silently picking one could route a push at the wrong
-        row, so that case raises instead of choosing.
-        """
-        rows = self._get(
-            f'observations?desktop_id=eq.{desktop_id}&user_id=eq.{self.user_id}'
-            '&select=id&order=id.asc'
-        )
-        if len(rows) > 1:
-            raise ObservationIdentityConflictError(
-                f'observation desktop_id={desktop_id}: {len(rows)} cloud observations '
-                f'carry this desktop_id '
-                f'({", ".join(str(row.get("id")) for row in rows)}); refusing to '
-                f'choose among duplicates'
-            )
-        return rows[0]['id'] if rows else None
 
     def get_observation(self, cloud_id: str) -> dict | None:
         cloud_value = str(cloud_id or '').strip()
@@ -8217,10 +8250,15 @@ class SporelyCloudClient(
     # ── Pull new web observations ─────────────────────────────────────────
 
     def pull_web_observations(self, after_iso: str | None = None) -> list[dict]:
-        """Fetch observations created on mobile/web (desktop_id IS NULL)."""
+        """Fetch the owner's cloud observations from every client, oldest first.
+
+        Integer local ids are never cloud identities, so this read does not
+        filter on ``desktop_id``; the cloud inbox drops the rows this database
+        already holds (``remote_observations_not_on_this_desktop``).
+        """
         def _path(select: str) -> str:
             qs = (
-                f'observations?desktop_id=is.null&user_id=eq.{self.user_id}'
+                f'observations?user_id=eq.{self.user_id}'
                 f'&order=created_at.asc,id.asc&select={select}'
             )
             if after_iso:
@@ -8228,10 +8266,6 @@ class SporelyCloudClient(
             return qs
 
         return self._read_observation_rows(self._get_paginated, _path)
-
-    def set_desktop_id(self, cloud_id: str, desktop_id: int) -> None:
-        """Write the local SQLite ID back to the cloud row for future dedup."""
-        self._patch(f'observations?id=eq.{cloud_id}', {'desktop_id': desktop_id})
 
     def pull_image_metadata(self, obs_cloud_id: str, include_deleted_for_sync: bool = False) -> list[dict]:
         cloud_value = str(obs_cloud_id or '').strip()
@@ -8276,18 +8310,6 @@ class SporelyCloudClient(
                 raise CloudTemporarilyUnavailableError(_CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE) from exc
             raise
 
-    def set_measurement_desktop_id(self, cloud_measurement_id: str, desktop_id: int) -> None:
-        """Write the local SQLite measurement ID back to a keyless cloud row.
-
-        Never onto a keyed row: the server refuses ``desktop_id`` beside a
-        ``sync_key``, so the filter leaves such a row untouched.
-        """
-        self._patch(
-            f'spore_measurements?id=eq.{cloud_measurement_id}&user_id=eq.{self.user_id}'
-            f'&sync_key=is.null',
-            {'desktop_id': desktop_id},
-        )
-
     def pull_measurements_for_images(self, image_cloud_ids: list[str]) -> list[dict]:
         profiler = _cloud_sync_current_profiler()
         image_ids = [str(image_id or '').strip() for image_id in (image_cloud_ids or []) if str(image_id or '').strip()]
@@ -8310,11 +8332,14 @@ class SporelyCloudClient(
                 chunk = image_ids[i:i + batch_size]
                 ids_str = ','.join(chunk)
                 batch_start = _cloud_sync_perf_counter()
-                rows = self._get_paginated(
-                    f'spore_measurements?image_id=in.({ids_str})'
-                    f'&user_id=eq.{self.user_id}'
-                    f'&order=measured_at.asc,id.asc'
-                    f'&select={_SPORE_MEASUREMENT_SELECT_COLUMNS}'
+                rows = self._read_spore_measurement_rows(
+                    self._get_paginated,
+                    lambda select, ids_str=ids_str: (
+                        f'spore_measurements?image_id=in.({ids_str})'
+                        f'&user_id=eq.{self.user_id}'
+                        f'&order=measured_at.asc,id.asc'
+                        f'&select={select}'
+                    ),
                 )
                 request_count += 1
                 all_rows.extend(rows)
@@ -8490,18 +8515,6 @@ class SporelyCloudClient(
         rows = self._rpc('search_public_reference_values', payload)
         return rows if isinstance(rows, list) else []
 
-    def set_image_desktop_id(self, cloud_image_id: str, desktop_id: int) -> None:
-        """Write the local SQLite image ID back to a keyless cloud image row.
-
-        Never onto a keyed row: the server refuses ``desktop_id`` beside a
-        ``sync_key``, so the filter leaves such a row untouched.
-        """
-        self._patch(
-            f'observation_images?id=eq.{cloud_image_id}&user_id=eq.{self.user_id}'
-            f'&sync_key=is.null',
-            {'desktop_id': desktop_id},
-        )
-
     def soft_delete_image(self, cloud_image_id: str, deleted_at: str | None) -> None:
         """Mark one cloud image row as deleted without removing storage objects."""
         normalized_id = str(cloud_image_id or '').strip()
@@ -8534,7 +8547,7 @@ class SporelyCloudClient(
         (:class:`ChildAdoptionConflictError`). Unlinked (L0): created with its
         committed ``sync_key`` under a committed parent image, or linked to
         this database's own copy without a write (``create_child_row``). The
-        payload never carries ``desktop_id``.
+        payload never carries an identity: ``sync_key`` only on the create.
         """
         summary = sync_summary or _cloud_sync_current_summary()
         storage_key = ''
@@ -8551,7 +8564,6 @@ class SporelyCloudClient(
             include_media_keys=include_media_keys,
         )
         payload['user_id'] = self.user_id
-        payload.pop('desktop_id', None)
 
         def content_matches(remote_row: dict) -> bool:
             return _measurement_payloads_match(
@@ -8582,9 +8594,12 @@ class SporelyCloudClient(
         if remote_measurement_cache is not None:
             remote_row = remote_measurement_cache.get(f'cloud:{local_cloud_id}')
         if remote_row is None:
-            rows = self._get(
-                f'spore_measurements?id=eq.{local_cloud_id}&user_id=eq.{self.user_id}'
-                f'&select={_SPORE_MEASUREMENT_SELECT_COLUMNS}&limit=1'
+            rows = self._read_spore_measurement_rows(
+                self._get,
+                lambda select: (
+                    f'spore_measurements?id=eq.{local_cloud_id}&user_id=eq.{self.user_id}'
+                    f'&select={select}&limit=1'
+                ),
             )
             remote_row = dict(rows[0] or {}) if rows else None
         if remote_row is None:
@@ -9924,8 +9939,6 @@ def _push_all_once(
             # Hoist it so the summary path runs even when `sync_images`
             # is False.
             local_obs_id = _safe_int(obs.get('id'))
-            if local_obs_id > 0 and bool(obs.get('portable_cloud_identity_pending')):
-                _finalize_portable_cloud_identity_guard(client, local_obs_id)
 
             # (The metadata-only stored-signature refresh used to happen HERE,
             # right after stamping the observation synced. That was too eager:
@@ -10271,12 +10284,7 @@ def _push_all_once(
                 # with a 42501 rejection. Media/storage edits on field
                 # images remain gated behind `sync_images=True`.
                 images_to_patch = [
-                    {
-                        **dict(img),
-                        'portable_cloud_identity_pending': bool(
-                            obs.get('portable_cloud_identity_pending')
-                        ),
-                    }
+                    dict(img)
                     for img in local_images_for_patch
                     if _is_local_metadata_only_microscope_anchor(img)
                 ]
@@ -10937,12 +10945,25 @@ def pull_all(
     errors = list(calibration_result.get('errors') or [])
     imported_local_ids: list[int] = []
     candidate_start = _cloud_sync_perf_counter()
-    local_by_cloud_id, local_by_id = _load_local_observation_lookup()
+    local_by_cloud_id, local_by_sync_key = _load_local_observation_lookup()
     candidates: list[tuple[dict, dict | None, str]] = []
     candidate_cloud_ids: list[str] = []
+    sync_key_skipped = 0
     for remote in remote_obs:
         cloud_id = str(remote.get('id') or '').strip()
-        local_obs = _find_local_observation_for_remote_cached(remote, local_by_cloud_id, local_by_id)
+        local_obs, key_outcome = _find_local_observation_for_remote_cached(
+            remote, local_by_cloud_id, local_by_sync_key,
+        )
+        if local_obs is None and key_outcome != KEY_FREE:
+            # The cloud row carries a key a local row already holds: never a
+            # second local row. A pending adoption is the upload's to link.
+            holder = local_by_sync_key.get(remote_sync_key(remote) or '')
+            warning = pull_key_skip_message('observation', remote, key_outcome, holder)
+            print(f'[cloud_sync] pull: {warning}', flush=True)
+            if key_outcome != KEY_PENDING_ADOPTION:
+                errors.append(warning)
+            sync_key_skipped += 1
+            continue
         stored_snapshot = _load_cloud_observation_snapshot(cloud_id) if cloud_id else ''
         candidates.append((remote, local_obs, stored_snapshot))
         if cloud_id:
@@ -11044,7 +11065,7 @@ def pull_all(
                         baseline_payload.get(field),
                     )
                     for field in _SNAPSHOT_OBS_FIELDS
-                    if field not in {'id', 'desktop_id'}
+                    if field != 'id'
                 ) and not _remote_identity_changed_since(remote, snapshot_obs)
                 # The location pair is outside the snapshot field list: a
                 # cloud pair the local row does not hold yet still needs the
@@ -11216,9 +11237,8 @@ def pull_all(
                 imported_local_ids.append(int(local_id))
             else:
                 local_id = int(local_obs['id'])
-                # No client writes an identity onto an existing cloud row: the
-                # observation's desktop_id is never healed (the server refuses
-                # it on keyed rows). The local cloud_id is the link.
+                # No client writes an identity onto an existing cloud row.
+                # The local cloud_id is the link.
                 local_dirty = str(local_obs.get('sync_status') or '').strip().lower() == 'dirty'
                 if local_dirty and cloud_id and _clear_observation_dirty_if_no_real_changes(local_id, cloud_id):
                     local_obs = ObservationDB.get_observation(local_id) or local_obs
@@ -11711,8 +11731,8 @@ def _create_local_from_remote(
         country_code=normalize_country_code(remote.get('country_code')),
         region_id=_normalize_observation_field_value('region_id', remote.get('region_id')),
         **_remote_location_provenance_kwargs(remote),
-        # Pulled cloud rows carry no sync key yet (S3); never mint one.
-        sync_key=None,
+        # Pull stores the cloud key, which may be NULL, and never mints one.
+        sync_key=remote_sync_key(remote),
     )
     # The cloud identity arrives with the row, conservatively: see
     # `_local_identity_columns_for_remote_claim`.
@@ -11892,19 +11912,8 @@ def _import_remote_measurements_for_observation(
 
     local_images_by_cloud_id, local_images_by_id = _load_local_images()
     local_measurements_by_cloud_id, local_measurements_by_id = _load_local_measurement_lookup(int(local_id))
-    # Under Download-from-Cloud the wrapper marks the client is_pull_only; skip
-    # the identity write-back to keep the zero-cloud-writes contract without
-    # relying on the wrapper to raise mid-flow.
-    _pull_only = bool(getattr(client, 'is_pull_only', False))
-    _suppress_reverse_identity = (
-        _pull_only
-        or _portable_cloud_identity_pending_for_observation(int(local_id))
-    )
-    set_measurement_desktop_id = (
-        None
-        if _suppress_reverse_identity
-        else getattr(client, 'set_measurement_desktop_id', None)
-    )
+    # The local cloud_id is the link: pull never writes an identity onto a
+    # cloud row, and pairs by cloud id, else by sync_key (never by integer).
     imported = 0
     conflict = False
     skipped_materialization = 0
@@ -11921,6 +11930,10 @@ def _import_remote_measurements_for_observation(
     conn.row_factory = __import__('sqlite3').Row
     cursor = conn.cursor()
     try:
+        measurement_has_sync_key = any(
+            str(info[1]) == 'sync_key'
+            for info in cursor.execute('PRAGMA table_info(spore_measurements)').fetchall()
+        )
         for remote_row in measurement_rows:
             remote_measurement_id = str(remote_row.get('id') or '').strip()
             if not remote_measurement_id:
@@ -11971,21 +11984,32 @@ def _import_remote_measurements_for_observation(
                 continue
 
             local_measurement = local_measurements_by_cloud_id.get(remote_measurement_id)
-            if local_measurement is None and not _suppress_reverse_identity:
-                remote_desktop_measurement_id = _safe_int(remote_row.get('desktop_id'))
-                if remote_desktop_measurement_id > 0:
-                    local_measurement = local_measurements_by_id.get(remote_desktop_measurement_id)
 
             if local_measurement is None:
+                key_outcome, key_holder = classify_remote_sync_key(
+                    'spore_measurements', remote_row,
+                )
+                if key_outcome != KEY_FREE:
+                    # Never a second local row for a key this database holds;
+                    # a pending adoption is the upload's to link.
+                    warnings.append(
+                        f"obs {int(local_id)}: "
+                        f"{pull_key_skip_message('measurement', remote_row, key_outcome, key_holder)}"
+                    )
+                    continue
                 write_values = _measurement_write_values(remote_row, local_image_id)
+                # Pull stores the cloud key, which may be NULL, and never mints
+                # one (a database without the column has no keys to store).
+                key_column = ', sync_key' if measurement_has_sync_key else ''
+                key_value = (remote_sync_key(remote_row),) if measurement_has_sync_key else ()
                 cursor.execute(
-                    '''
+                    f'''
                     INSERT INTO spore_measurements (
                         image_id, length_um, width_um, measurement_type, gallery_rotation,
                         p1_x, p1_y, p2_x, p2_y, p3_x, p3_y, p4_x, p4_y,
-                        measured_at, cloud_id
+                        measured_at, cloud_id{key_column}
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?{', ?' if key_value else ''})
                     ''',
                     (
                         write_values['image_id'],
@@ -12003,19 +12027,11 @@ def _import_remote_measurements_for_observation(
                         write_values['p4_y'],
                         write_values['measured_at'],
                         remote_measurement_id,
+                        *key_value,
                     ),
                 )
                 new_local_measurement_id = _safe_int(cursor.lastrowid)
                 imported += 1
-                if callable(set_measurement_desktop_id):
-                    remote_desktop_measurement_id = _safe_int(remote_row.get('desktop_id'))
-                    if remote_desktop_measurement_id != new_local_measurement_id:
-                        try:
-                            set_measurement_desktop_id(remote_measurement_id, new_local_measurement_id)
-                            remote_row['desktop_id'] = new_local_measurement_id
-                        except Exception as exc:
-                            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
-                                raise
                 local_measurements_by_cloud_id[remote_measurement_id] = {
                     'id': new_local_measurement_id,
                     'cloud_id': remote_measurement_id,
@@ -12093,16 +12109,6 @@ def _import_remote_measurements_for_observation(
                 ),
             )
             imported += 1
-            if callable(set_measurement_desktop_id):
-                remote_desktop_measurement_id = _safe_int(remote_row.get('desktop_id'))
-                local_measurement_id = _safe_int(local_measurement.get('id'))
-                if remote_desktop_measurement_id != local_measurement_id:
-                    try:
-                        set_measurement_desktop_id(remote_measurement_id, local_measurement_id)
-                        remote_row['desktop_id'] = local_measurement_id
-                    except Exception as exc:
-                        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
-                            raise
     finally:
         conn.commit()
         conn.close()
@@ -12216,10 +12222,6 @@ def materialize_cloud_media_for_observation(
             except Exception:
                 pass
         return _finish(summary)
-    suppress_reverse_identity = bool(
-        local_obs.get('portable_cloud_identity_pending')
-    )
-
     cloud_id = str(local_obs.get('cloud_id') or '').strip()
     summary['cloud_observation_id'] = cloud_id or None
     if not cloud_id:
@@ -12357,8 +12359,8 @@ def materialize_cloud_media_for_observation(
         if local_image_id <= 0:
             return
 
+        # Local link only: no identity is written onto the cloud row.
         current_cloud_id = str(local_image.get('cloud_id') or '').strip()
-        current_remote_desktop_id = _safe_int(remote_image.get('desktop_id'))
         if current_cloud_id != cloud_image_id:
             conn = get_connection()
             try:
@@ -12370,19 +12372,6 @@ def materialize_cloud_media_for_observation(
                 local_image['cloud_id'] = cloud_image_id
             finally:
                 conn.close()
-
-        if not suppress_reverse_identity and current_remote_desktop_id != local_image_id:
-            set_image_desktop_id = getattr(client, 'set_image_desktop_id', None)
-            if callable(set_image_desktop_id):
-                try:
-                    set_image_desktop_id(cloud_image_id, local_image_id)
-                    remote_image['desktop_id'] = local_image_id
-                except Exception as exc:
-                    if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
-                        raise
-                    summary['warnings'].append(
-                        f'obs {local_id}: could not link cloud image {cloud_image_id} to local image {local_image_id}: {exc}'
-                    )
 
     for idx, remote_image in enumerate(active_remote_images, start=1):
         cloud_image_id = str(remote_image.get('id') or '').strip()
@@ -12404,10 +12393,6 @@ def materialize_cloud_media_for_observation(
         )
 
         local_image = local_images_by_cloud_id.get(cloud_image_id)
-        if local_image is None and not suppress_reverse_identity:
-            remote_desktop_id = _safe_int(remote_image.get('desktop_id'))
-            if remote_desktop_id > 0:
-                local_image = local_images_by_id.get(remote_desktop_id)
 
         if local_image is not None:
             if _is_metadata_only_microscope_cloud_image(remote_image):
@@ -12511,10 +12496,6 @@ def materialize_cloud_media_for_observation(
 
         local_images_by_cloud_id, local_images_by_id = _load_local_image_lookup(local_id)
         created_local_image = local_images_by_cloud_id.get(cloud_image_id)
-        if created_local_image is None:
-            remote_desktop_id = _safe_int(remote_image.get('desktop_id'))
-            if remote_desktop_id > 0:
-                created_local_image = local_images_by_id.get(remote_desktop_id)
         if created_local_image is None or _local_image_asset_path(created_local_image) is None:
             summary['failed'] += 1
             summary['errors'].append(
@@ -12536,20 +12517,6 @@ def materialize_cloud_media_for_observation(
         materialize_remote_images=False,
     )
     summary['measurements_imported'] = int(measurement_result.get('imported') or 0)
-    try:
-        latest_local_measurements_by_cloud_id, _ = _load_local_measurement_lookup(local_id)
-        for remote_row in remote_measurements_source:
-            remote_measurement_id = str(remote_row.get('id') or '').strip()
-            if not remote_measurement_id:
-                continue
-            local_measurement = latest_local_measurements_by_cloud_id.get(remote_measurement_id)
-            if not local_measurement:
-                continue
-            local_measurement_id = _safe_int(local_measurement.get('id'))
-            if local_measurement_id > 0:
-                remote_row['desktop_id'] = local_measurement_id
-    except Exception:
-        pass
     if measurement_result.get('warnings'):
         summary['warnings'].extend(str(warning) for warning in measurement_result.get('warnings') or [])
     if measurement_result.get('conflict'):

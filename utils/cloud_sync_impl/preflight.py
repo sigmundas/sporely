@@ -76,7 +76,7 @@ def _observation_push_diff_fields(local_obs: dict | None, remote_obs: dict | Non
     remote_payload = _observation_compare_payload(remote_obs, local=False)
     diff_fields: list[str] = []
     for field in _SNAPSHOT_OBS_FIELDS:
-        if field in {'id', 'desktop_id'}:
+        if field == 'id':
             continue
         if not _observation_field_values_match(field, local_payload.get(field), remote_payload.get(field)):
             diff_fields.append(field)
@@ -87,7 +87,6 @@ def _local_image_snapshot_payload(image_row: dict | None) -> dict:
     row = dict(image_row or {})
     payload = {
         'id': _normalize_snapshot_value(str(row.get('cloud_id') or '').strip() or None),
-        'desktop_id': _normalize_snapshot_value(row.get('id')),
         'sort_order': _normalize_snapshot_value(row.get('sort_order')),
         'image_type': _normalize_snapshot_value(row.get('image_type')),
         'micro_category': _normalize_snapshot_value(row.get('micro_category')),
@@ -297,7 +296,7 @@ def _local_has_real_changes_since_snapshot(local_obs: dict, cloud_id: str | None
     local_obs = _guard_local_location_precision(local_obs, baseline_obs)
     local_payload = _observation_compare_payload(local_obs, local=True)
     for field in _SNAPSHOT_OBS_FIELDS:
-        if field in {'id', 'desktop_id'}:
+        if field == 'id':
             continue
         if not _observation_field_values_match(field, local_payload.get(field), baseline_obs.get(field)):
             return True

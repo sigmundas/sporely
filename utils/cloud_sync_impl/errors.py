@@ -85,13 +85,11 @@ class PartialConflictPlanError(CloudSyncError):
 class ObservationIdentityConflictError(CloudSyncError):
     """Raised when observation push identity cannot be resolved safely.
 
-    Two links tie a local observation to a cloud row: the direct link
-    (local ``observations.cloud_id``) and the reverse link (remote
-    ``observations.desktop_id``). This error is raised when they resolve to
-    different cloud rows, or when the reverse-link recovery lookup matches
-    more than one cloud row. PATCHing either candidate could overwrite the
-    wrong row and POSTing would create a duplicate, so the push must fail
-    and leave the observation dirty/retryable for review.
+    The local ``observations.cloud_id`` is the only push target. This error
+    is raised when that link does not verify (the cloud row is gone, or
+    invisible to this user-scoped client). PATCHing blindly could overwrite
+    the wrong row and POSTing would create a duplicate, so the push must
+    fail and leave the observation dirty/retryable for review.
     """
 
 

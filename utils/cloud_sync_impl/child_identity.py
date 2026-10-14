@@ -381,6 +381,8 @@ def create_child_row(
         _increment_sync_summary(summary, f'{spec.summary_prefix}_possible_duplicate')
 
     body = dict(payload or {})
+    # Defense in depth: desktop_id is never sent (the server refuses it beside
+    # a sync_key, which would stop every upload of this run).
     body.pop('desktop_id', None)
     body['sync_key'] = sync_key
     if spec.cloud_table == 'observation_images':

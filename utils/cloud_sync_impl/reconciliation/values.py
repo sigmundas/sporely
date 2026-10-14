@@ -8,10 +8,27 @@ from __future__ import annotations
 
 import json
 import math
+import uuid
 from datetime import (
     datetime,
     timezone,
 )
+
+
+def _normalize_sync_key_value(value) -> str | None:
+    """A record ``sync_key`` in canonical uuid form, or ``None``.
+
+    ``sync_key`` is the only recovery identity: rows pair by cloud id, then
+    by key, never by an integer local id. It is identity, not content, so
+    field compares never include it.
+    """
+    text = str(value or '').strip()
+    if not text:
+        return None
+    try:
+        return str(uuid.UUID(text))
+    except ValueError:
+        return None
 
 
 def _normalize_sharing_scope(value: str | None, fallback: str = 'private') -> str:
@@ -136,7 +153,7 @@ def _normalize_observation_json_value(value):
 
 
 _SNAPSHOT_OBS_FIELDS = [
-    'id', 'desktop_id', 'date', 'genus', 'species', 'common_name', 'species_guess',
+    'id', 'date', 'genus', 'species', 'common_name', 'species_guess',
     'uncertain', 'unspontaneous', 'determination_method',
     'location', 'gps_latitude', 'gps_longitude', 'location_public',
     'is_draft', 'location_precision',
@@ -164,7 +181,7 @@ _SNAPSHOT_OBS_FIELDS = [
 
 
 _SNAPSHOT_IMG_FIELDS = [
-    'id', 'desktop_id', 'sort_order', 'image_type', 'micro_category',
+    'id', 'sort_order', 'image_type', 'micro_category',
     'captured_at',
     'calibration_uuid',
     'objective_name', 'scale_microns_per_pixel', 'resample_scale_factor',
@@ -290,7 +307,7 @@ def _normalize_image_captured_at_for_cloud(value, *, local: bool) -> str | None:
 
 
 _SNAPSHOT_MEAS_FIELDS = [
-    'id', 'desktop_id', 'image_id', 'length_um', 'width_um', 'measurement_type',
+    'id', 'image_id', 'length_um', 'width_um', 'measurement_type',
     'gallery_rotation', 'p1_x', 'p1_y', 'p2_x', 'p2_y', 'p3_x', 'p3_y',
     'p4_x', 'p4_y', 'measured_at',
 ]

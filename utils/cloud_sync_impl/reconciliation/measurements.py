@@ -14,6 +14,7 @@ from utils.r2_storage import media_variant_key
 from utils.cloud_sync_impl.common import _normalize_cloud_media_key
 from utils.cloud_sync_impl.reconciliation.values import (
     _normalize_snapshot_value,
+    _normalize_sync_key_value,
     _parse_sync_timestamp,
     _SNAPSHOT_MEAS_FIELDS,
 )
@@ -52,8 +53,8 @@ _MEASUREMENT_FLOAT_ABS_TOL = 1e-9
 _MEASUREMENT_FLOAT_REL_TOL = 1e-9
 
 
-# desktop_id is retired as an identity and never sent, so it is not compared:
-# a keyed row carries NULL there and would otherwise re-PATCH on every sync.
+# Identity (cloud id, sync_key) is never compared as content: a key is
+# immutable and a legacy cloud row has none, so a compare would re-PATCH.
 _MEASUREMENT_SYNC_FIELDS = [
     'image_id',
     'length_um',
@@ -134,8 +135,6 @@ def _measurement_field_values_match(field: str, left, right) -> bool:
         return _normalize_measurement_timestamp_value(left) == _normalize_measurement_timestamp_value(right)
     if field == 'gallery_rotation':
         return _normalize_measurement_int_value(left, default=0) == _normalize_measurement_int_value(right, default=0)
-    if field == 'desktop_id':
-        return _normalize_measurement_int_value(left) == _normalize_measurement_int_value(right)
     if field in {'id', 'image_id', 'image_key', 'thumb_key'}:
         return _normalize_measurement_identity_value(left) == _normalize_measurement_identity_value(right)
     return _normalize_snapshot_value(left) == _normalize_snapshot_value(right)
@@ -144,12 +143,12 @@ def _measurement_field_values_match(field: str, left, right) -> bool:
 def _measurement_compare_key(measurement_row: dict | None) -> str:
     row = dict(measurement_row or {})
     cloud_id = str(row.get('id') or '').strip()
-    desktop_id = str(row.get('desktop_id') or '').strip()
+    sync_key = _normalize_sync_key_value(row.get('sync_key'))
     image_id = str(row.get('image_id') or '').strip()
     if cloud_id:
         return f'cloud:{cloud_id}'
-    if desktop_id:
-        return f'desktop:{desktop_id}'
+    if sync_key:
+        return f'key:{sync_key}'
     if image_id:
         return f'image:{image_id}'
     return json.dumps(row, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
@@ -169,13 +168,13 @@ def _measurement_compare_payload(
         payload['id'] = _normalize_measurement_identity_value(
             str(row.get('cloud_id') or '').strip() or row.get('id')
         )
-        payload['desktop_id'] = _normalize_measurement_int_value(row.get('id'))
+        payload['sync_key'] = _normalize_sync_key_value(row.get('sync_key'))
         payload['image_id'] = _normalize_measurement_identity_value(
             cloud_image_id or str(row.get('image_cloud_id') or '').strip() or row.get('image_id')
         )
     else:
         payload['id'] = _normalize_measurement_identity_value(row.get('id'))
-        payload['desktop_id'] = _normalize_measurement_int_value(row.get('desktop_id'))
+        payload['sync_key'] = _normalize_sync_key_value(row.get('sync_key'))
         payload['image_id'] = _normalize_measurement_identity_value(row.get('image_id'))
 
     payload['length_um'] = _normalize_measurement_float_value(row.get('length_um'))
@@ -229,7 +228,10 @@ def _measurement_sync_payload(
         include_media_keys=include_media_keys,
         image_storage_key=image_storage_key,
     )
+    # Identity is never content: a PATCH never sends a key, and a create
+    # adds its own committed key.
     payload.pop('id', None)
+    payload.pop('sync_key', None)
     return payload
 
 

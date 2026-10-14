@@ -236,7 +236,6 @@ def test_identity_baseline_unknown_sentinel_exists_once():
 #: Pull-only classification at the extraction base, unchanged by the move.
 PUSH_IDENTITY_MIXIN_METHODS = {
     "_resolve_existing_observation_for_push": "unclassified",
-    "_find_cloud_image": "allowed",
     "_resolve_existing_image_for_push": "unclassified",
 }
 
@@ -269,7 +268,6 @@ UNCLASSIFIED_AT_EXTRACTION_BASE = frozenset({
     "_build_storage_path",
     "_cloud_image_storage_key",
     "_download_public_media_file",
-    "_find_cloud_observation",
     "_get_paginated",
     "_get_r2",
     "_has_column",

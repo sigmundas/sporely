@@ -9,14 +9,12 @@ in Stage S4 of the cloud-sync extraction.
 
 from __future__ import annotations
 
-from utils.cloud_sync_impl.common import (
-    _normalize_cloud_media_key,
-    _safe_int,
-)
+from utils.cloud_sync_impl.common import _normalize_cloud_media_key
 from utils.cloud_sync_impl.reconciliation.images import _image_identity_keys
 from utils.cloud_sync_impl.reconciliation.values import (
     _normalize_image_captured_at_for_cloud,
     _normalize_snapshot_value,
+    _normalize_sync_key_value,
 )
 from utils.cloud_sync_impl.sample_source import _cloud_to_desktop_sample_source
 
@@ -39,7 +37,7 @@ def _remote_image_payload(
     image = remote_image or {}
     payload = {
         'id': _normalize_snapshot_value(image.get('id')),
-        'desktop_id': _safe_int(image.get('desktop_id')),
+        'sync_key': _normalize_sync_key_value(image.get('sync_key')),
         'sort_order': _normalize_snapshot_value(image.get('sort_order')),
         'image_type': _normalize_snapshot_value(image.get('image_type')),
         'micro_category': _normalize_snapshot_value(image.get('micro_category')),

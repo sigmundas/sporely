@@ -27,7 +27,6 @@ from utils.cloud_sync_impl.errors import (
     is_cloud_auth_error,
     is_cloud_temporary_unavailable_error,
 )
-from utils.cloud_sync_impl.image_identity import _finalize_portable_cloud_identity_guard
 from utils.cloud_sync_impl.progress import _cloud_sync_perf_counter
 from utils.cloud_sync_impl.tombstones import _local_tombstoned_cloud_image_ids
 
@@ -60,7 +59,6 @@ def _cloud_measurement_remote_verification_due(
 
 _SPORE_MEASUREMENT_SELECT_COLUMNS = _join_select_columns(
     'id',
-    'desktop_id',
     'image_id',
     'length_um',
     'width_um',
@@ -87,9 +85,6 @@ def _build_remote_measurement_identity_cache(remote_measurements: list[dict] | N
         cloud_id = str(remote_row.get('id') or '').strip()
         if cloud_id:
             cache[f'cloud:{cloud_id}'] = remote_row
-        desktop_id = _safe_int(remote_row.get('desktop_id'))
-        if desktop_id > 0:
-            cache[f'desktop:{desktop_id}'] = remote_row
     return cache
 
 
@@ -170,13 +165,6 @@ def _push_measurements_for_observation(
         measurements = [
             row for row in measurements if _safe_int(row.get('id')) in selected_ids
         ]
-
-    portable_identity_pending = bool(
-        dict(observation_row).get('portable_cloud_identity_pending')
-        if observation_row is not None else False
-    )
-    for measurement in measurements:
-        measurement['portable_cloud_identity_pending'] = portable_identity_pending
 
     tombstoned_cloud_ids = _local_tombstoned_cloud_image_ids(
         [
@@ -283,4 +271,3 @@ def _push_measurements_for_observation(
             f'obs {int(obs_local_id)}: {len(push_failures)} measurement(s) not synced: '
             + '; '.join(push_failures)
         )
-    _finalize_portable_cloud_identity_guard(client, int(obs_local_id))

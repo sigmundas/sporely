@@ -237,8 +237,8 @@ Runs inside observation push/pull, not as a separate top-level mode:
   applied per observation; identity prefetch via
   `fetch_remote_measurement_identity_cache` (`utils/cloud_sync_impl/measurements.py`).
 - Push: `client.push_measurement()` (L15968, upsert with no-op detection),
-  `client.set_measurement_desktop_id()` (L15805),
-  `client.delete_cloud_measurements_for_image()` (L16063).
+  `client.delete_cloud_measurements_for_image()` (L16063). No identity is
+  written back onto a cloud row.
 
 ### Image / media sync
 
@@ -309,7 +309,7 @@ writers; it calls the read-only detail and plan-model owners downward.
 | Anchor promotion (metadata-only → byte-backed) | `SporelyCloudClient.reserve_image_storage_path_for_promotion` / `release_image_storage_path_reservation` (+ local pending marker `sporely_cloud_image_promotion_pending_<obs>_<img>`) | Canonical owner of promoting a linked metadata-only anchor to a byte-backed row on its existing `cloud_id`. Reserve via owner-scoped conditional PATCH `storage_path=is.null`; release via `storage_path=eq.<exact key>`. Rollback on upload failure removes partial R2 objects and releases the key | Callers PATCHing `storage_path` unconditionally or creating a new row for the same anchor | Local pending marker is written BEFORE the reservation PATCH. A non-NULL `storage_path` combined with a live marker is UNCONFIRMED and never trusted as proof of bytes. Both writers are `PullOnlyCloudClient`-blocked |
 | Checkbox lifecycle | `set_image_cloud_selected` (`utils/cloud_sync_impl/image_policy.py`) | Uncheck queues tombstone + excludes; recheck cancels tombstone / triggers explicit restore | UI writing settings keys directly | Shares lifecycle with context-menu removal |
 | Tombstone processing | `_push_pending_image_tombstones` (`utils/cloud_sync_impl/tombstones.py`), `_record_remote_image_tombstones` (`utils/cloud_sync_impl/tombstones.py`), `_cancel_microscope_anchor_tombstones` (`utils/cloud_sync_impl/anchors.py`), `_local_tombstoned_cloud_image_ids` (`utils/cloud_sync_impl/tombstones.py`) | Push explicit deletions; record remote deletions locally; cancel anchor tombstones | Ad-hoc `soft_delete_image` calls | Flushed **before** pruning in `push_all` so an uncheck this session deletes this session |
-| Image identity repair | `_reconcile_local_image_cloud_id` (`utils/cloud_sync_impl/image_identity.py`) (contract name: `_associate_persisted_cloud_images` path) | Restore lost `cloud_id` from unambiguous `desktop_id` match | Upload paths inventing new rows | Checkbox-independent (contract rule 12). Ambiguous match → warn and skip, never auto-pick |
+| Image identity repair | `_reconcile_local_image_cloud_id` (`utils/cloud_sync_impl/image_identity.py`) (contract name: `_associate_persisted_cloud_images` path) | Persist a verified `cloud_id` onto the local row (a lost link is recovered by `sync_key` adoption or the one-time legacy recovery, never by a `desktop_id` match) | Upload paths inventing new rows | Checkbox-independent (contract rule 12). Ambiguous match → warn and skip, never auto-pick |
 | Image metadata push | `SporelyCloudClient.push_image_metadata` (L15176) | PATCH-or-POST one `observation_images` row | Raw `_patch`/`_post` | Understands metadata-only semantics (`storage_path IS NULL AND image_type='microscope'`, see L15209) |
 | Original upload | `upload_original_image_file` (L15566) + `utils/original_sync_policy.py` | Companion original bytes, policy-gated | — | Parent image must be desired |
 | Remote image application / materialization | `_apply_remote_image_metadata_only_to_local`, `_ensure_local_metadata_only_microscope_anchor`, `_sync_existing_remote_image_to_local` (`utils/cloud_sync_impl/image_pull.py`) | Apply remote rows locally; download bytes into recovery cache | Direct `ImageDB` writes from pull loops | Downloaded copy only replaces local file when local is not larger (L10502); larger local original kept as-is |
@@ -322,12 +322,13 @@ writers; it calls the read-only detail and plan-model owners downward.
 | Image push identity resolution | `SporelyCloudClient._resolve_existing_image_for_push` (`CloudSyncPushIdentityMixin`, `utils/cloud_sync_impl/image_identity.py`), `ImageIdentityConflictError` (`utils/cloud_sync_impl/errors.py`) | Decide which existing cloud image a push targets: the verified local `images.cloud_id` only, under the same cloud observation; a linked row that is gone, soft-deleted or under another observation raises (no PATCH/POST, stays dirty) | Callers doing their own `cloud_id`/`desktop_id` fallback logic | `desktop_id` is retired as an image identity: never looked up, released or written by push. An unlinked image takes the child create path below |
 | Child create identity (state L0) | `create_child_row`, `adopt_child_by_sync_key`, `recover_legacy_child`, `require_committed_parent`, `redirty_interrupted_child_creates` (`utils/cloud_sync_impl/child_identity.py`); `ChildAdoptionConflictError`, `ChildParentNotLinkedError` | Images (upload and metadata-only anchors) and measurements: created only under a parent whose `cloud_id` is committed locally; POST with the committed `sync_key`; `23505` on the table's `*_user_sync_key_uidx` adopts this database's own row after the parent check (never re-parented), the tombstone check (never resurrected) and a content check (different → error, never PATCH); one-time read-only legacy recovery restricted to the linked parent | POSTs without a key or before the parent link; matching on SQLSTATE alone | An adopted image reuses the row's reserved `storage_path`: its bytes go to that key and the row is not written. A new reservation or an anchor promotion's reserved key is kept, not rolled back, when the upload outcome is uncertain (timeout, lost connection, worker 5xx), and the observation stays dirty. An adopted child's fetched row is its baseline (`remember_judged_child_row`, used once by `_store_remote_snapshot`, kept even when a later read no longer lists the row); `push_all` drops unused judged rows on every exit and `pull_all` at its start. A linked anchor whose cloud row is deleted is refused, never un-deleted. The local link commits only after the row's work, with the cleared legacy marker. An interrupted image create or anchor promotion re-dirties its observation on the next push (`sporely_cloud_child_create_pending_obs_<id>`, set before every image create, promotion reservation and byte upload, including a resumed promotion, and cleared with the image's link commit) |
 | Observation push | `SporelyCloudClient.push_observation` (L15120) | PATCH existing / create new observation row | Raw transport | Identity via `_resolve_existing_observation_for_push`; a row without `cloud_id` goes to `_create_observation`. Payloads never carry `desktop_id`; only the create carries `sync_key` |
+| Pull identity | `_find_local_observation_for_remote_cached` (`utils/cloud_sync.py`), `classify_remote_sync_key` / `remote_sync_key` (`utils/cloud_sync_impl/pull_identity.py`) | Pair a cloud row with a local row by cloud id, else by `sync_key`; never by an integer. A key held by an unlinked local row is left to the upload state machine (no second local row); a key held by a row linked elsewhere is skipped as an identity conflict. Pulled rows store the cloud key (NULL stays NULL) | Matching on `desktop_id`; writing an identity onto a cloud row | Read columns carry `sync_key` as an optional group, dropped on a server without the key schema so pull keeps working |
 | Observation pull | `pull_all` per-candidate loop (L22251+) | Apply remote updates to clean local rows; import new | — | Conflicted rows are skipped, not overwritten |
 | Taxonomy identity sync | `_remote_identity_claim`, `_classify_identity_sync_change` (`utils/cloud_sync_impl/reconciliation/identity.py`), `_local_identity_columns_for_remote_claim`, `_apply_remote_identity_to_local` (`utils/cloud_sync_impl/identity_state.py`); push and explicit clear via `SporelyCloudClient._sync_observation_selected_taxon` / `_maybe_clear_stale_cloud_identity` / `_verify_identity_clear_landed` (`CloudSyncTaxonIdentityMixin`, `utils/cloud_sync_impl/identity_push.py`) | Map the cloud identity to one conservative local identity (`cloud_selected_unverified`); three-way identity change/conflict detection as the virtual field `taxon_identity` | Copying identity columns as ordinary snapshot fields; PATCHing identity | Contract: "Cloud → desktop taxonomy identity" and "Identity in change detection" |
 | Measurement push/pull | `push_measurement` (L15968), `pull_measurements_for_images` (L15812), `delete_cloud_measurements_for_image` (L16063) | Linked: verify by `cloud_id` under the parent image and PATCH only on a semantic difference; unlinked: child create path; paginated pull | Re-creating a linked row whose cloud copy is gone; re-parenting | Measurements may reference metadata-only anchors. `_push_measurements_for_observation` raises after the loop when any row failed, so the observation stays dirty |
 | Calibration push/pull | `push_calibrations` (`utils/cloud_sync_impl/calibrations.py`), `pull_calibrations` (`utils/cloud_sync_impl/calibrations.py`), `push_calibration_metadata` (L15086), `push_calibration_reference_image` (L14955) | Calibration identity, data, reference image | — | Local-wins repair: `repair_calibrations_local_wins` (`utils/cloud_sync_impl/calibrations.py`) |
 | Bulk PostgREST pagination | `SporelyCloudClient._get_paginated` (L14703) | Exhaustively page past the server `db-max-rows` cap | Any bulk `_get` without paging | Callers MUST pass a deterministic `order=` with `id.asc` tie-breaker; page failure propagates; **partial results are never returned** |
-| Bulk readers (must stay on `_get_paginated`) | `list_remote_observations`, `list_remote_calibrations`, `pull_web_observations` (L15749), `pull_measurements_for_images` (L15812), `pull_bulk_image_metadata` (L15865) | Complete remote collections | Single-shot `_get` for unbounded sets | See section F |
+| Bulk readers (must stay on `_get_paginated`) | `list_remote_observations`, `list_remote_calibrations`, `pull_web_observations` (L15749; every client's rows — the cloud inbox drops those held locally via `remote_observations_not_on_this_desktop`), `pull_measurements_for_images` (L15812), `pull_bulk_image_metadata` (L15865) | Complete remote collections | Single-shot `_get` for unbounded sets | See section F |
 | Metadata-only microscope anchors | `_is_metadata_only_microscope_cloud_image` (`utils/cloud_sync_impl/image_policy.py`), `_is_local_metadata_only_microscope_anchor` (`utils/cloud_sync_impl/image_policy.py`), `_ensure_metadata_only_microscope_image_for_public_spores` (`utils/cloud_sync_impl/anchors.py`), `_metadata_only_microscope_image_payload` (`utils/cloud_sync_impl/anchors.py`), `_set_cloud_image_metadata_only_state` (`utils/cloud_sync_impl/sync_state.py`) | Anchor lifecycle, separate from byte storage | Byte predicate; publication logic | `storage_path IS NULL` + `image_type='microscope'` = deliberate anchor, not breakage |
 | sync_status transitions | `_stamp_observation_synced` (L9143), `mark_observation_dirty` (`utils/cloud_sync_impl/sync_state.py`), `mark_observation_media_dirty` (`utils/cloud_sync_impl/sync_state.py`), `_clear_observation_dirty_if_no_real_changes` (L4360) | Common helpers that flip dirty/synced. They are **not** the only writers: see the inventory in `docs/cloud-sync-orchestration-design.md` section 1 | Direct SQL updates on `sync_status` | Current code stamps `synced` **before** the snapshot on push, pull and keep-local/keep-cloud/merge, and before child work on push (compensated by `mark_observation_dirty`). Only `resolve_conflict_plan` stores the snapshot first. The target (required work, then snapshot, then `synced`) is in the design document |
 | Cloud deletion (soft) | `SporelyCloudClient.soft_delete_image` (L15952) | PATCH `deleted_at` on one image row; **no storage removal** | Hard delete during routine sync | Contract rule 5 |
@@ -335,44 +336,29 @@ writers; it calls the read-only detail and plan-model owners downward.
 | Media deletion | `_storage_remove` (L14796) | Worker-owned dual-bucket delete + quota accounting | Direct S3 deletion (legacy-only, never lifecycle cleanup) | |
 | Pull-only enforcement | `PullOnlyCloudClient` (`utils/cloud_sync_impl/pull_only.py`), `_PULL_ONLY_BLOCKED_CLIENT_METHODS` (`utils/cloud_sync_impl/pull_only.py`), `_PULL_ONLY_ALLOWED_READ_METHODS` (`utils/cloud_sync_impl/pull_only.py`) | Fail-closed allowlist proxy; records `write_attempts` | Any Download-from-Cloud path using a raw client | Unrecognized callables are blocked too — an allowlist, not a denylist |
 
-### Observation identity model (`cloud_id` vs `desktop_id`)
+### Observation identity model (`cloud_id` and `sync_key`)
 
-Two links tie a local observation to a cloud row, and they are not
-interchangeable:
+`desktop_id` is retired as an identity (contract: "Per-record sync keys
+(`sync_key`)"). The rules:
 
-1. **`observations.cloud_id` (local) is the primary, direct local→cloud
-   identity.** Once it verifies against an existing same-owner cloud row,
-   that row is the push target.
-2. **Remote `observations.desktop_id` is the reverse cloud→local link and an
-   identity recovery mechanism** — used when no verified direct link exists,
-   and cross-checked against the direct link when both resolve.
-3. **A missing remote `desktop_id` must never cause object creation when a
-   verified local `cloud_id` already identifies the remote object.** This was
-   the August 2026 duplicate-observation bug: `push_observation` looked up
-   identity only via `desktop_id` and POSTed duplicates for observations
-   imported by Download from Cloud.
-4. **Direct and reverse links resolving to different objects is an identity
-   conflict** (`ObservationIdentityConflictError`, L2268), not permission to
-   create a third object. No PATCH of either candidate, no POST, no snapshot;
-   the observation stays dirty/retryable.
-5. **Download from Cloud legitimately creates local rows with `cloud_id` set
-   while remote `desktop_id` remains NULL.** The observation's `desktop_id` is
-   never healed or sent any more (per-record sync keys): the verified local
-   `cloud_id` is the link.
-6. **Observation POST happens only in state L0** (no `cloud_id`, committed
-   local `sync_key`), through `_create_observation`. A lost `cloud_id` is
-   recovered by `sync_key` adoption after `23505`, or, for rows that predate
-   keys, by the one-time read-only legacy recovery.
-7. **Portable imports temporarily disable reverse identity recovery for the
-   whole observation graph.** `observations.portable_cloud_identity_pending`
-   is an identity guard, not general import provenance. While set, observation,
-   image (including metadata-only anchors), and measurement pushes neither
-   match nor emit `desktop_id`; pull-side reconciliation is held to the same
-   rule, and may use only verified destination-side `cloud_id` links. After
-   the complete graph has fresh cloud IDs, a guarded finalization preflights
-   every destination integer reverse ID. It writes those reverse IDs and
-   clears the marker only when no collision exists; otherwise the guard stays
-   active.
+1. **`observations.cloud_id` (local) is the only push target.** Once it
+   verifies against an existing same-owner cloud row, that row is PATCHed by
+   id, without `sync_key` or `desktop_id`. A `cloud_id` that does not verify
+   raises `ObservationIdentityConflictError`: no PATCH, no POST, no snapshot.
+2. **`sync_key` is the only recovery identity.** Observation POST happens only
+   in state L0 (no `cloud_id`, committed local `sync_key`). A lost `cloud_id`
+   is recovered by `sync_key` adoption after `23505`, or, for rows that
+   predate keys, by the one-time read-only legacy recovery (the only
+   remaining `desktop_id` read).
+3. **Pull links by cloud id or `sync_key`, never by integer.** No client
+   writes an identity onto an existing cloud row; nothing heals `desktop_id`.
+   Conflict detail and conflict plans pair child rows by cloud id, then by key.
+4. **Download from Cloud creates local rows with `cloud_id` set and the cloud
+   key stored** (NULL for rows written before keys); the local `cloud_id` is
+   the link.
+5. **Portable imports mint fresh keys**, so the imported graph becomes new
+   cloud rows. `observations.portable_cloud_identity_pending` is still set on
+   import but gates nothing; the column stays until the deferred cleanup.
 
 The same principle governs image identity (`_reconcile_local_image_cloud_id`,
 L5585), but the two resolvers are deliberately separate functions — image
@@ -393,8 +379,6 @@ Every path that can change cloud state funnels through methods on
 | `push_image_metadata` (PATCH L15261/L15267) | `observation_images` metadata | image push |
 | `set_image_storage_path` (L15292) | `storage_path` | upload finalize |
 | `set_image_original_storage_path` (L15280) | `original_storage_path` | original upload |
-| `set_image_desktop_id` (L15945) | identity write-back | identity repair — pull-path callers are guarded by `_remote_image_desktop_id_current` and skip the PATCH when the remote link already matches (no-op writes advance the `updated_at` cursor) |
-| `set_measurement_desktop_id` (L15805) | identity write-back | measurement identity |
 | `soft_delete_image` (L15952) | `deleted_at` | tombstone processing |
 | `push_measurement` (PATCH L16021/L16056) | `spore_measurements` | measurement push |
 | `push_calibration_reference_image` (PATCH L15071) | calibration row | calibration push |
@@ -564,7 +548,7 @@ them:
 
 | Dimension | Where stored | Meaning |
 | --- | --- | --- |
-| **Row identity** | local `images.cloud_id` ↔ cloud `observation_images.id` / `desktop_id` | Which cloud row corresponds to which local row |
+| **Row identity** | local `images.cloud_id` ↔ cloud `observation_images.id`; `sync_key` recovers a lost link | Which cloud row corresponds to which local row |
 | **Byte existence** | cloud `storage_path` / `original_storage_path` + actual R2 object | Whether bytes are actually in cloud storage |
 | **Desired byte-storage state** | local `sporely_cloud_image_storage_excluded_ids_<obs>` via `cloud_image_bytes_desired` | Whether the user wants bytes in Sporely Cloud |
 | **Deletion intent** | local `image_tombstones` | Explicit user removal decision |
@@ -669,11 +653,10 @@ work failed.**
 - **Partial uploads**: the retry-safe upload sequence (contract) is
   row → bytes → `storage_path` PATCH → local `cloud_id` → snapshot. An
   interruption after any step must be recoverable by repeating sync;
-  find-before-create via `_resolve_existing_image_for_push` (two-leg: direct
-  verified `cloud_id` → recovery `desktop_id` scoped to observation →
-  `ImageIdentityConflictError` on disagreement) prevents duplicates on retry;
-  pull-only imports with `cloud_id` set and NULL remote `desktop_id` do not
-  trigger a duplicate POST.
+  a create repeats the same POST with the committed `sync_key`, and a
+  `23505` on the table's `*_user_sync_key_uidx` adopts this database's own
+  row, so a retry never duplicates; a linked row is only PATCHed by its
+  verified `cloud_id`.
 - **Partial downloads**: byte downloads go to temp files and are moved into
   place only after validation (see L1440–L1503 region); a failed download
   leaves prior local state untouched.
@@ -727,9 +710,10 @@ Read this list before changing anything in cloud sync.
    Identity repair restores identity; it never uploads bytes. Skipping
    repair for unchecked images causes duplicate rows and orphaned
    tombstones.
-5. **`cloud_id` and `desktop_id` point in opposite directions.**
-   `cloud_id` lives locally and names the cloud row; `desktop_id` lives in
-   the cloud and names the local row. Matching logic must not mix them.
+5. **Integer local ids are never cloud identities.** `cloud_id` lives locally
+   and names the cloud row; `sync_key` is shared by both sides and recovers
+   only the creating database's rows. A cloud `desktop_id` names a row of
+   whichever desktop wrote it and must never pair rows.
 6. **Local original ≠ cloud recovery copy.** `source_role=cloud_recovery_cache`
    / `file_purpose=cache` files are remote-owned; their bytes must never be
    prepared or uploaded back. A smaller cloud copy never overwrites a
@@ -778,16 +762,17 @@ Read this list before changing anything in cloud sync.
     fixed by `_resolve_existing_image_for_push`.** Pull-only imports with
     `cloud_id` set and NULL remote `desktop_id` previously triggered duplicate
     POSTs. The two-leg resolver (direct verified `cloud_id` → recovery
-    `desktop_id` scoped to observation) closes this gap; disagreement raises
-    `ImageIdentityConflictError`.
+    `desktop_id` scoped to observation) closed this gap; disagreement raises
+    `ImageIdentityConflictError`. Superseded by per-record sync keys: the
+    recovery leg is now `sync_key` adoption, never `desktop_id`.
 23. **A no-op cloud PATCH is a cursor event, not a harmless idempotent
     write.** `observation_images.updated_at` is trigger-bumped on every
     UPDATE for every role. Unconditional `set_image_desktop_id` relink
     PATCHes during pull rewrote ~2 500 rows per sync and made every sync
     force a full child re-pull of every observation (echo loop, live
     incident 2026-08-24). Sync-path writes must check the current remote
-    value and skip when it already matches
-    (`_remote_image_desktop_id_current`).
+    value and skip when it already matches. (The `desktop_id` relink itself
+    is gone: per-record sync keys removed every identity write-back.)
 24. **Cursor ids compare numerically, never as strings.** Lexicographic
     comparison makes `'10000' < '9999'`, silently dropping new
     same-timestamp rows once ids cross a digit-length boundary. The strict
@@ -902,7 +887,7 @@ moving the method would split that binding.
 
 | Owner | Responsibility | Main symbols |
 |---|---|---|
-| `image_identity.py` [2] | Local image `cloud_id` repair, the portable cloud identity guard, and observation/image push identity resolution mixed into the client | `_reconcile_local_image_cloud_id`, `_portable_cloud_identity_pending_for_observation`, `_finalize_portable_cloud_identity_guard`, `CloudSyncPushIdentityMixin` (`_resolve_existing_observation_for_push`, `_resolve_existing_image_for_push`, `_find_cloud_image`) |
+| `image_identity.py` [2] | Local image `cloud_id` repair and observation/image push identity resolution mixed into the client | `_reconcile_local_image_cloud_id`, `CloudSyncPushIdentityMixin` (`_resolve_existing_observation_for_push`, `_resolve_existing_image_for_push`) |
 | `anchors.py` [7] | Remote side of metadata-only microscope anchors: ensure, owner-sync parents (gated by `_owner_sync_parents_supported`), retirement, anchor tombstone cancellation, and the anchor promotion reserve/rollback helpers | `_ensure_metadata_anchors_for_public_spore_observation`, `_ensure_metadata_only_microscope_images_for_observation`, `_ensure_metadata_only_microscope_image_for_public_spores`, `_observation_has_owner_sync_candidates`, `_retire_unneeded_owner_sync_parent`, `_cancel_microscope_anchor_tombstones`, `_remote_image_row_matches_anchor_payload`, `_metadata_only_microscope_image_payload`, `_METADATA_ONLY_IMG_FIELDS`, `_reserve_anchor_promotion_key`, `_rollback_anchor_promotion` |
 
 ### Per-record sync key owners
@@ -911,10 +896,12 @@ moving the method would split that binding.
 |---|---|---|
 | `observation_identity.py` [3] | Observation create identity: named-index `23505` match, adoption by key and owner, create-content equality, one-time legacy recovery | `is_sync_key_unique_violation`, `adopt_observation_by_sync_key`, `observation_create_content_matches`, `recover_legacy_observation`, `SYNC_KEY_UNIQUE_INDEXES` |
 | `fault_injection.py` [0] | `SPORELY_SYNC_FAULT` crash points (`before_request`, `after_insert`, `after_upload`), inert unless the environment variable is set | `sync_fault_point` |
+| `pull_identity.py` [0] | Pull pairing: a cloud row's `sync_key` against the local rows, before pull creates a local row | `remote_sync_key`, `local_sync_key_holder`, `classify_remote_sync_key`, `pull_key_skip_message`, `KEY_*` outcomes |
 | `child_identity.py` [4] | Image and measurement create identity: parent deferral, POST with key, adoption by key and owner with the parent, tombstone and content checks, one-time legacy recovery under the linked parent, the interrupted-create marker | `create_child_row`, `adopt_child_by_sync_key`, `judge_child_row`, `recover_legacy_child`, `require_committed_parent`, `redirty_interrupted_child_creates`, `CHILD_TABLES` |
 
-`SporelyCloudClient._find_cloud_observation` stays on the client (the mixin
-reaches it through `self`); no push path calls it any more. Stage S6 moved the local pull-side anchor insert
+The `desktop_id` reverse lookups (`_find_cloud_observation`,
+`_find_cloud_image`) and write-backs (`set_desktop_id`,
+`set_image_desktop_id`, `set_measurement_desktop_id`) are removed. Stage S6 moved the local pull-side anchor insert
 `_ensure_local_metadata_only_microscope_anchor` with image pull, and the
 promotion call sites (`_push_images_for_observation`) with image push.
 
@@ -929,7 +916,7 @@ promotion call sites (`_push_images_for_observation`) with image push.
 | `status_messages.py` [1] | Per-observation status text | `_format_cloud_sync_observation_status`, `_observation_sync_species_label` |
 | `pending_images.py` [3] | Pending-image decisions and the pending-image repair scan | `explain_pending_cloud_image_decision`, `PENDING_REASON_*`, `_pending_cloud_pushable_image_ids`, `_mark_cloud_observations_dirty_for_pending_local_images`, `_CLOUD_PENDING_IMAGE_REPAIR_VERSION`, `_cloud_pending_image_repair_scan_due` |
 | `original_recovery.py` [5] | Full-resolution original recovery and its recovery cache | `recover_full_original_for_image`, `_original_recovery_cache_path`, `_find_remote_original_for_local_image` |
-| `image_pull.py` [8] | Applying and importing remote images, the local pull-side anchor insert, the mosaic signature carry-forward, materialization state | `_apply_remote_images_to_local`, `_import_remote_images`, `_sync_existing_remote_image_to_local`, `_apply_remote_image_metadata_only_to_local`, `_ensure_local_metadata_only_microscope_anchor`, `_promote_temp_imported_image_if_needed`, `_remote_images_missing_locally`, `_remote_image_desktop_id_current`, `_carry_forward_local_mosaic_signature`, `cloud_media_materialization_state_for_observation` |
+| `image_pull.py` [8] | Applying and importing remote images, the local pull-side anchor insert, the mosaic signature carry-forward, materialization state | `_apply_remote_images_to_local`, `_import_remote_images`, `_sync_existing_remote_image_to_local`, `_apply_remote_image_metadata_only_to_local`, `_ensure_local_metadata_only_microscope_anchor`, `_promote_temp_imported_image_if_needed`, `_remote_images_missing_locally`, `_carry_forward_local_mosaic_signature`, `cloud_media_materialization_state_for_observation` |
 | `image_push.py` [8] | Image push for one observation and its helpers | `_push_images_for_observation`, `should_push_local_image_to_cloud`, `_associate_persisted_cloud_images`, `_reconcile_metadata_only_linked_images`, `CLOUD_SYNC_SKIP_PREPARE_IMAGE_IDS_KEY` |
 | `measurements.py` [8] | Remote measurement identity cache, measurement push, verification schedule | `fetch_remote_measurement_identity_cache`, `_push_measurements_for_observation`, `_cloud_measurement_remote_verification_due`, `_SPORE_MEASUREMENT_SELECT_COLUMNS` |
 | `spore_mosaic.py` [9] | Glue around `utils.cloud_spore_mosaic` | `_push_spore_mosaic_for_observation`, `MOSAIC_STATUS_*`, `diagnose_public_spore_mosaic_gates`, `backfill_public_spore_mosaics` |

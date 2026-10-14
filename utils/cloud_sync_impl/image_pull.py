@@ -42,9 +42,6 @@ from utils.cloud_sync_impl.image_files import (
     _file_content_signature,
     _rename_to_detected_image_extension,
 )
-from utils.cloud_sync_impl.image_identity import (
-    _portable_cloud_identity_pending_for_observation,
-)
 from utils.cloud_sync_impl.image_policy import (
     _is_local_metadata_only_microscope_anchor,
     _is_metadata_only_microscope_cloud_image,
@@ -57,6 +54,12 @@ from utils.cloud_sync_impl.mosaic_signature import (
     _store_local_mosaic_signature,
 )
 from utils.cloud_sync_impl.preflight import _load_local_measurement_lookup
+from utils.cloud_sync_impl.pull_identity import (
+    KEY_FREE,
+    classify_remote_sync_key,
+    pull_key_skip_message,
+    remote_sync_key,
+)
 from utils.cloud_sync_impl.reconciliation.location_provenance import INGEST_METHOD_FIELD
 from utils.cloud_sync_impl.progress import (
     _advance_progress,
@@ -500,6 +503,12 @@ def _ensure_local_metadata_only_microscope_anchor(
             update_columns['filepath'] = ''
         _update_image_columns_without_touching_observation(local_image_id, update_columns)
     else:
+        key_outcome, key_holder = classify_remote_sync_key('images', remote_row)
+        if key_outcome != KEY_FREE:
+            # Never a second local row for a key this database holds.
+            warning = pull_key_skip_message('image', remote_row, key_outcome, key_holder)
+            print(f'[cloud_sync] Warning: obs {int(local_observation_id)}: {warning}')
+            return None
         created_local_image_id = ImageDB.add_image(
             observation_id=int(local_observation_id),
             filepath='',
@@ -529,8 +538,8 @@ def _ensure_local_metadata_only_microscope_anchor(
             file_purpose='cache',
             original_mime_type=None,
             working_mime_type=None,
-            # Pulled cloud rows carry no sync key yet (S3); never mint one.
-            sync_key=None,
+            # Pull stores the cloud key, which may be NULL, and never mints one.
+            sync_key=remote_sync_key(remote_row),
         )
         local_image_id = _safe_int(created_local_image_id)
         if local_image_id <= 0:
@@ -556,23 +565,6 @@ def _ensure_local_metadata_only_microscope_anchor(
                 'working_mime_type': None,
             },
         )
-
-    if (
-        client is not None
-        and not getattr(client, 'is_pull_only', False)
-        and not _portable_cloud_identity_pending_for_observation(
-            int(local_observation_id)
-        )
-        and not _remote_image_desktop_id_current(remote_row, local_image_id)
-    ):
-        set_image_desktop_id = getattr(client, 'set_image_desktop_id', None)
-        if callable(set_image_desktop_id):
-            try:
-                set_image_desktop_id(cloud_image_id, int(local_image_id))
-                remote_row['desktop_id'] = int(local_image_id)
-            except Exception as exc:
-                if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
-                    raise
 
     if local_image is not None:
         local_image['id'] = local_image_id
@@ -747,27 +739,6 @@ def _sync_existing_remote_image_to_local(
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-def _remote_image_desktop_id_current(remote_image, local_image_id) -> bool:
-    """True when the cloud row's desktop_id already equals the local image id.
-
-    Guards every ``set_image_desktop_id`` call in the pull path. The PATCH used
-    to be a tolerated no-op when the link was already correct, but the cloud
-    ``updated_at`` trigger now advances on EVERY update — so an unconditional
-    relink PATCH per pulled image makes each sync's own writes look like child
-    changes to the next sync's probe (self-sustaining full-pull echo loop).
-    """
-    try:
-        lid = int(local_image_id)
-    except (TypeError, ValueError):
-        return False
-    if lid <= 0:
-        return False
-    try:
-        return int((remote_image or {}).get('desktop_id')) == lid
-    except (TypeError, ValueError):
-        return False
-
-
 def _apply_remote_images_to_local(
     client: "SporelyCloudClient",
     local_id: int,
@@ -777,14 +748,8 @@ def _apply_remote_images_to_local(
     materialize_remote_images: bool = True,
 ) -> list[str]:
     warnings: list[str] = []
-    # ``set_image_desktop_id`` PATCHes the cloud row's desktop_id link — a
-    # cloud write. Skip it when running under Download-from-Cloud so we
-    # can honour the zero-cloud-writes contract. The pull_only flag comes
-    # from the wrapping ``PullOnlyCloudClient`` proxy.
-    pull_only = bool(getattr(client, 'is_pull_only', False))
-    suppress_reverse_identity = (
-        pull_only or _portable_cloud_identity_pending_for_observation(int(local_id))
-    )
+    # The local cloud_id is the link: pull never writes an identity onto a
+    # cloud row.
     local_images = ImageDB.get_images_for_observation(int(local_id))
     local_cloud_map = {
         str(img.get('cloud_id') or '').strip(): img
@@ -819,14 +784,6 @@ def _apply_remote_images_to_local(
                 continue
             if not materialize_remote_images:
                 _apply_remote_image_metadata_only_to_local(local_image, remote_image)
-                if not suppress_reverse_identity and not _remote_image_desktop_id_current(
-                    remote_image, local_image.get('id')
-                ):
-                    try:
-                        client.set_image_desktop_id(cloud_image_id, int(local_image.get('id')))
-                        remote_image['desktop_id'] = int(local_image.get('id'))
-                    except Exception:
-                        pass
                 continue
             try:
                 _sync_existing_remote_image_to_local(
@@ -840,14 +797,6 @@ def _apply_remote_images_to_local(
                     print(f'[cloud_sync] Warning: {_cloud_missing_image_warning(local_id, remote_image)}')
                     continue
                 raise
-            if not suppress_reverse_identity and not _remote_image_desktop_id_current(
-                remote_image, local_image.get('id')
-            ):
-                try:
-                    client.set_image_desktop_id(cloud_image_id, int(local_image.get('id')))
-                    remote_image['desktop_id'] = int(local_image.get('id'))
-                except Exception:
-                    pass
             continue
 
         if _is_metadata_only_microscope_cloud_image(remote_image):
@@ -858,6 +807,13 @@ def _apply_remote_images_to_local(
             )
             continue
         if not materialize_remote_images:
+            continue
+        key_outcome, key_holder = classify_remote_sync_key('images', remote_image)
+        if key_outcome != KEY_FREE:
+            # Never a second local row for a key this database holds.
+            warning = f"obs {local_id}: {pull_key_skip_message('image', remote_image, key_outcome, key_holder)}"
+            warnings.append(warning)
+            print(f'[cloud_sync] Warning: {warning}')
             continue
 
         storage_path = _normalize_cloud_media_key(remote_image.get('storage_path'))
@@ -930,8 +886,8 @@ def _apply_remote_images_to_local(
                 file_purpose='cache',
                 original_mime_type=None,
                 working_mime_type=guess_local_image_mime_type(download_path),
-                # Pulled cloud rows carry no sync key yet (S3); never mint one.
-                sync_key=None,
+                # Pull stores the cloud key, which may be NULL, and never mints one.
+                sync_key=remote_sync_key(remote_image),
             )
             _adopt_remote_ingest_method(local_image_id, remote_image)
             download_path = _promote_temp_imported_image_if_needed(
@@ -948,14 +904,6 @@ def _apply_remote_images_to_local(
                 conn.commit()
             finally:
                 conn.close()
-            if not suppress_reverse_identity and not _remote_image_desktop_id_current(
-                remote_image, local_image_id
-            ):
-                try:
-                    client.set_image_desktop_id(cloud_image_id, int(local_image_id))
-                    remote_image['desktop_id'] = int(local_image_id)
-                except Exception:
-                    pass
             try:
                 _profile_generate_all_sizes(str(download_path), int(local_image_id))
             except Exception:
@@ -1025,9 +973,6 @@ def _import_remote_images(
         result['errors'].append('Could not load Sporely Cloud credentials.')
         result['complete'] = False
         return result
-    suppress_reverse_identity = _portable_cloud_identity_pending_for_observation(
-        int(local_id)
-    )
     synced_at = datetime.now(timezone.utc).isoformat()
     
     remote_images_raw = (
@@ -1126,6 +1071,18 @@ def _import_remote_images(
                     result['warnings'].append(warning)
                     result['errors'].append(warning)
                     continue
+                key_outcome, key_holder = classify_remote_sync_key('images', image_row)
+                if key_outcome != KEY_FREE:
+                    # Never a second local row for a key this database holds.
+                    warning = (
+                        f"obs {int(local_id)}: "
+                        f"{pull_key_skip_message('image', image_row, key_outcome, key_holder)}"
+                    )
+                    print(f'[cloud_sync] Warning: {warning}')
+                    result['failed'] += 1
+                    result['complete'] = False
+                    result['warnings'].append(warning)
+                    continue
 
                 image_temp_dir = temp_dir / (str(image_row.get('id') or idx).strip() or str(idx))
                 image_temp_dir.mkdir(parents=True, exist_ok=True)
@@ -1186,8 +1143,8 @@ def _import_remote_images(
                     file_purpose='cache',
                     original_mime_type=None,
                     working_mime_type=guess_local_image_mime_type(download_path),
-                    # Pulled cloud rows carry no sync key yet (S3); never mint one.
-                    sync_key=None,
+                    # Pull stores the cloud key, which may be NULL, and never mints one.
+                    sync_key=remote_sync_key(image_row),
                 )
                 _adopt_remote_ingest_method(local_image_id, image_row)
                 download_path = _promote_temp_imported_image_if_needed(
@@ -1205,22 +1162,6 @@ def _import_remote_images(
                     conn.commit()
                 finally:
                     conn.close()
-
-                if (
-                    not getattr(client, 'is_pull_only', False)
-                    and not suppress_reverse_identity
-                    and not _remote_image_desktop_id_current(
-                    image_row, local_image_id
-                    )
-                ):
-                    set_image_desktop_id = getattr(client, 'set_image_desktop_id', None)
-                    if cloud_image_id and callable(set_image_desktop_id):
-                        try:
-                            set_image_desktop_id(cloud_image_id, int(local_image_id))
-                            image_row['desktop_id'] = int(local_image_id)
-                        except Exception as exc:
-                            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
-                                raise
 
                 # Generate thumbnails and signature
                 _profile_generate_all_sizes(str(download_path), int(local_image_id))
@@ -1284,9 +1225,6 @@ def cloud_media_materialization_state_for_observation(local_observation_id: int 
     if not local_obs:
         summary['reason'] = 'local_observation_not_found'
         return summary
-    suppress_reverse_identity = bool(
-        local_obs.get('portable_cloud_identity_pending')
-    )
 
     cloud_id = str(local_obs.get('cloud_id') or '').strip()
     summary['cloud_observation_id'] = cloud_id or None
@@ -1341,10 +1279,6 @@ def cloud_media_materialization_state_for_observation(local_observation_id: int 
             if not cloud_image_id or cloud_image_id in tombstoned_remote_image_ids:
                 continue
             local_image = local_images_by_cloud_id.get(cloud_image_id)
-            if local_image is None and not suppress_reverse_identity:
-                remote_desktop_id = _safe_int(remote_image.get('desktop_id'))
-                if remote_desktop_id > 0:
-                    local_image = local_images_by_id.get(remote_desktop_id)
             existing_asset_path = _resolve_existing_local_image_asset_path(
                 str((local_image or {}).get('filepath') or '')
             )
@@ -1367,10 +1301,6 @@ def cloud_media_materialization_state_for_observation(local_observation_id: int 
             remote_image_id = str(remote_row.get('image_id') or '').strip()
             if remote_image_id not in active_remote_image_ids:
                 continue
-            if local_measurement is None:
-                remote_desktop_measurement_id = _safe_int(remote_row.get('desktop_id'))
-                if remote_desktop_measurement_id > 0:
-                    local_measurement = local_measurements_by_id.get(remote_desktop_measurement_id)
             if local_measurement is None:
                 summary['local_measurements_missing'] += 1
             else:

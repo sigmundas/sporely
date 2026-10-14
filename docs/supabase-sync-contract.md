@@ -89,7 +89,8 @@ Plain English comes first; technical terms are in parentheses.
 - **Cloud record** (`Supabase/Postgres row`): a shared database entry.
 - **Cloud file** (`R2 object`): uploaded image bytes.
 - **Local-to-cloud link** (`cloud_id`): cloud record ID stored locally.
-- **Cloud-to-local link** (`desktop_id`): desktop record ID stored in the cloud.
+- **Cloud-to-local link** (`desktop_id`): desktop record ID stored in the cloud. Retired as an identity; see "Per-record sync keys (`sync_key`)".
+- **Sync key** (`sync_key`): a random per-record uuid minted locally before the first upload; the only recovery identity.
 - **Known-good baseline** (`sync snapshot`): the last state both sides agreed on.
 - **Removal marker** (`tombstone`): durable evidence of an explicit user deletion.
 - **Recoverable deletion** (`soft delete`): keep the record but mark it deleted, usually with `deleted_at`.
@@ -119,7 +120,7 @@ Plain English comes first; technical terms are in parentheses.
 9. **Conflicts block automatic writes.** When local and cloud both changed since the known-good baseline, stop and ask for a choice.
 10. **Stable IDs define identity.** Match by IDs, not dates, filenames, file paths, species names, or sort order.
 11. **All clients share the same state meanings.** Desktop, web, Android, cloud functions, and media workers must distinguish active, measurement-only, broken, and deleted images consistently.
-12. **Identity repair is checkbox-independent.** A local row with a lost `cloud_id` must be reconciled with the matching remote row by `desktop_id` regardless of the current gallery checkbox. Repair restores identity; it does not upload bytes. Recovery of identity for an unchecked image lets the byte gate correctly refuse re-uploads and lets a pending tombstone complete instead of creating a duplicate.
+12. **Identity repair is checkbox-independent.** A lost `cloud_id` is reconciled by `sync_key`; rows that predate keys use the one-time legacy recovery, which never writes to the matched row. Reconciliation happens regardless of the current gallery checkbox. Repair restores identity; it does not upload bytes. Recovery of identity for an unchecked image lets the byte gate correctly refuse re-uploads and lets a pending tombstone complete instead of creating a duplicate.
 13. **The legacy `artsobs_publish_excluded_image_ids_<obs>` setting is publication-only.** Its values must never automatically tombstone or otherwise remove cloud media. They may surface as audit hints in a later stage but never independently drive cloud-side change.
 14. **A partial remote collection is never authoritative remote state.** PostgREST (and any bounded API) can silently cap a response at the server row limit while returning HTTP 200. A truncated collection must never be used to conclude that rows are absent, to compute deletions, or to drive any diff against local state.
 15. **Bounded or paginated remote reads must be exhausted successfully before absence may be interpreted as deletion.** If any page fails, the whole read fails — the client must raise, not return the pages fetched so far. Absence of a row is meaningful only after a complete, successful paginated read of the relevant scope.
@@ -127,13 +128,13 @@ Plain English comes first; technical terms are in parentheses.
 17. **PostgREST pagination must use deterministic ordering.** Every paginated bulk read must include an explicit `order=` clause with a unique tie-breaker (`id.asc`); offset-based paging over an unstable order can silently skip or duplicate rows across pages.
 18. **Download from Cloud is a strict zero-cloud-write mode.** A pull-only run must complete with `cloud_writes_completed == 0` and an empty blocked-write list. Every write path — PATCH, POST, DELETE, RPC mutations, storage upload, storage removal, and identity write-backs — is out of scope for this mode.
 19. **Pull-only write blocking is defense in depth, not expected control flow.** The fail-closed pull-only client wrapper exists to catch mistakes, not to be exercised. Pull-side code must gate its own writes at the source; any blocked write attempt recorded during a Download-from-Cloud run is a defect to fix at the source, not a handled event. New client writer methods must be added to the pull-only blocklist; new read methods join the allowlist only as an explicit, reviewed choice.
-20. **The local `cloud_id` is the primary direct local→cloud observation identity.** Once it verifies against an existing same-owner cloud row, that row is the push target. The remote `desktop_id` is the reverse cloud→local link and an identity recovery mechanism — never the primary lookup.
-21. **A missing remote `desktop_id` must never cause object creation when a verified local `cloud_id` already identifies the remote object.** Download from Cloud legitimately creates local rows with `cloud_id` set while the remote `desktop_id` remains NULL until a future normal (write-enabled) sync heals the reverse link. Resolving push identity by reverse link alone creates duplicate cloud observations.
+20. **The local `cloud_id` is the primary direct local→cloud identity.** Once it verifies against an existing same-owner cloud row, that row is the push target. `sync_key` is the only recovery identity. Integer local ids are never cloud identities.
+21. **No client writes an identity onto an existing cloud row.** Pull links by cloud id or `sync_key`. (Replaces the former rule that a missing remote `desktop_id` is healed by a later sync.)
 22. **Direct and reverse identity links resolving to different objects is an identity conflict, not permission to create a third object.** The same applies to an ambiguous reverse-link match (multiple rows carrying one `desktop_id`). The push must fail safely — no update of either candidate, no creation, no snapshot — and the local observation stays dirty/retryable for review.
-23. **Observation creation (POST) is a last resort.** It is allowed only after direct identity verification and reverse-link recovery both find no target. "Lookup failed" never automatically means "create" while the local row carries a direct cloud identity.
+23. **POST only for a row with a key and no `cloud_id`.** A 23505 on the table's `*_user_sync_key_uidx` means adopt: parent check, then the fetched row as base, then a conflict on any difference. A tombstone goes to the deletion flow. Any other 409 or 4xx is an error. "Lookup failed" never automatically means "create" while the local row carries a direct cloud identity.
 24. **No no-op cloud writes on sync paths.** `observation_images.updated_at` is trigger-bumped on EVERY update, for every role, regardless of whether values changed — so a value-identical PATCH is a real child-change cursor event, not a harmless idempotent write. Before any cloud write in a sync path, check whether the target value already matches and skip the request if so. (Live incident 2026-08-24: unconditional `desktop_id` relink PATCHes during pull rewrote ~2 500 image rows per sync and created a self-sustaining full child re-pull echo loop.)
 25. **The child-change cursor must commit the true `MAX(updated_at, id)` tuple over every inspected row, with numeric id ordering.** Row ids compare numerically, never as strings (`'10000' > '9999'`), and the strict filter and the advancement comparison must use identical ordering. The cursor advances only after `pull_all` succeeds; a failed pull leaves the cursor untouched so the changes are re-detected next sync.
-26. **Portable imports establish a new cloud identity graph.** While an observation has `portable_cloud_identity_pending=1`, push and pull reconciliation for the observation, its images (including metadata anchors), and measurements must ignore remote `desktop_id` recovery and must not write a `desktop_id`. Verified destination-side `cloud_id` links remain authoritative. The marker clears only after the complete graph has fresh cloud IDs and collision checks have safely established reverse IDs from the new destination integer IDs; any collision leaves the guard active.
+26. **Superseded: imports and other forks mint fresh keys.** Portable import, legacy bundle import and image move give every created row a fresh `sync_key`, so the imported graph becomes new cloud rows and never adopts the source's. The former rule follows for the record only: while an observation has `portable_cloud_identity_pending=1`, push and pull reconciliation for the observation, its images (including metadata anchors), and measurements must ignore remote `desktop_id` recovery and must not write a `desktop_id`. Verified destination-side `cloud_id` links remain authoritative. The marker clears only after the complete graph has fresh cloud IDs and collision checks have safely established reverse IDs from the new destination integer IDs; any collision leaves the guard active.
 27. **Observation reference uses preserve frozen evidence.** Sync must transmit and
     reconcile the stored use UUID, role, note, selected revision, and
     `snapshot_json` verbatim. It must never rebuild a snapshot from the current
@@ -321,6 +322,149 @@ Plain English comes first; technical terms are in parentheses.
     a further manual free-text rename to yet another name does not clear it,
     since the explicit-clear condition above requires a known baseline that
     Case F lacks by definition.
+29. **Children follow their parent's committed cloud id.** Children are
+    uploaded only after their parent's `cloud_id` is committed locally. Media
+    object keys are random reserved keys, reused on adoption, never derived
+    from `sync_key`.
+30. **Desktop write stop.** The desktop sends `x-sporely-sync-identity: 2` and
+    `x-sporely-client-version`. A version listed in the server's write-block
+    table is refused with `sporely_upgrade_required`.
+
+## Per-record sync keys (`sync_key`)
+
+`sync_key` is a random uuid minted locally before the first upload. It is
+immutable for every role, unique per owner, and recovers only the creating
+database's own rows. `desktop_id` is retired as an identity: clients must not
+send it, and the server refuses it on rows that have a key.
+
+This section is the identity contract for `observations`,
+`observation_images` and `spore_measurements`. It supersedes every
+`desktop_id`-based identity rule elsewhere in this document: the reverse-link
+lookups in rules 21–23, "First upload" finding a row by `desktop_id`, and the
+`desktop_id` match in "Lost local `cloud_id` — identity repair". Rules 12, 20,
+21, 23, 26, 29 and 30 above state its summary.
+
+### Server
+
+Migration `20261013210000_sync_key_identity.sql`:
+
+- `sync_key uuid NULL` on the three tables, with no backfill. Rows created
+  before sync keys keep NULL and can never be given a key.
+- Per-owner partial unique indexes `observations_user_sync_key_uidx`,
+  `observation_images_user_sync_key_uidx` and
+  `spore_measurements_user_sync_key_uidx` on `(user_id, sync_key) WHERE
+  sync_key IS NOT NULL`. Another owner may use the same key value; there is no
+  cross-tenant 409.
+- Guard `public._sync_identity_guard()` (BEFORE INSERT OR UPDATE, sorting last
+  among BEFORE triggers):
+  - all roles: `sync_key` never changes on UPDATE, in any direction;
+  - every caller except `postgres`, `service_role` and `supabase_admin`: a row
+    carrying both `sync_key` and `desktop_id` is refused on INSERT and UPDATE.
+- `sync_key` never appears in non-owner views or public RPC results.
+
+### Refusals
+
+| Answer | Meaning | Client action |
+| --- | --- | --- |
+| `P0001`, hint `sporely_sync_identity_refused` | the write would change a key or put `desktop_id` on a keyed row | stop the upload phase (see the state machine) |
+| `P0001`, hint `sporely_upgrade_required` | this client version is blocked from writing rows | stop the upload phase (see the state machine) |
+| media worker HTTP `426` with `X-Sporely-Error-Code: sporely_upgrade_required` | this client version is blocked from media writes | stop the upload phase (see the state machine) |
+
+Refusals are always `P0001` (HTTP 400), never `42501`/403: released desktops
+v0.8.13 and v0.9.1 treat 403 as a sign-in failure. Refusal text is fixed. It
+never contains row values, any auth word (`unauthorized`, `not logged in`,
+`jwt`, `token`, `session expired`, `authentication failed`, `invalid_grant`,
+`pgrst301`/`303`, `captcha_failed`) or any transient word (`timeout`,
+`unavailable`, `schema cache`).
+
+### Desktop write stop
+
+The desktop sends `x-sporely-sync-identity: 2` and
+`x-sporely-client-version: <app version>` on every Data API and media-worker
+request. Migration `20261014120000_sync_client_write_block.sql` adds the
+owner-only table `private.sync_client_write_block(client_version, reason,
+created_at)`, created empty, and a BEFORE INSERT/UPDATE/DELETE row trigger on
+`observations`, `observation_images`, `spore_measurements`,
+`spore_measurement_mosaics`, `spore_measurement_mosaic_tiles`,
+`observation_spore_summaries` and `observation_reference_uses`.
+
+- When `x-sporely-sync-identity` is present and `x-sporely-client-version` is
+  listed in the table, the write is refused with `P0001`, hint
+  `sporely_upgrade_required`, and the message "This version of Sporely Desktop
+  is blocked from uploading. Install the latest version from sporely.no.
+  Nothing was changed in the cloud."
+- The check keys only on the request headers, never on the database role.
+  Requests without the identity header are never affected: web, Android,
+  released desktops, Edge Functions, migrations and plain SQL sessions.
+- With an empty table nothing is blocked. Writes made inside RPCs are covered
+  too, because the request's headers stay visible inside the function.
+- Limit: media-worker requests are not blocked by this table. A blocked build
+  can still upload or delete media bytes, but it cannot write the rows that
+  reference them. Rows are written first, so this costs orphan bytes at worst.
+
+Web and Android never send `desktop_id`, and never send the desktop identity
+or version headers.
+
+### Per-row state machine
+
+For observations, images and measurements. A child waits for its parent's
+committed `cloud_id`.
+
+| State | Event | Action | Next |
+| --- | --- | --- | --- |
+| L0 (key, no `cloud_id`) | parent has no `cloud_id` | defer | L0 |
+| L0 | POST with `sync_key` → 201 | commit `cloud_id` | L2 |
+| L0 | `23505` naming the table's `*_user_sync_key_uidx` | GET by key and owner; parent check; tombstone → existing deletion/restore flow; content equal → link silently; content differs → sync conflict, never PATCH | L2 or conflict |
+| L0 | `23505` on any other constraint, `23503`, `42501`, any other 4xx | plain error; row stays dirty | L0 |
+| L0 | timeout, network error, crash | nothing; the retry repeats the same POST | L0 |
+| L0 or L2 | `P0001` with hint `sporely_upgrade_required` or `sporely_sync_identity_refused`, or a media 426 with `X-Sporely-Error-Code: sporely_upgrade_required` | stop the upload phase for this run; keep rows dirty and downloads working; persistent banner "This version of Sporely can no longer upload. Please install the latest version."; log it as a server/client mismatch | unchanged |
+| L2 (`cloud_id`) | edit | verify `cloud_id`; PATCH by id; never send `sync_key` or `desktop_id` | L2 |
+
+No POST without a committed local key. A cloud-linked row with a NULL key is
+never POSTed, only PATCHed by verified `cloud_id`.
+
+### Adoption and ownership
+
+- Adoption takes the fetched row as the base snapshot.
+- Parent check: an image's `observation_id` must equal its local parent
+  observation's `cloud_id`, and a measurement's `image_id` its local parent
+  image's `cloud_id`. Otherwise it is an identity conflict: no re-parenting,
+  and the row stays dirty.
+- An adopted image reuses the adopted row's reserved `storage_path`. If its
+  bytes were never confirmed, the retry uploads to that same key.
+- The client matches the constraint name, not only SQLSTATE `23505`: the
+  legacy `UNIQUE(desktop_id, user_id)` collision is also `23505`.
+- An image moved to another observation is a new cloud row with a fresh key.
+  The old cloud image is tombstoned, because cloud `observation_id` is
+  immutable.
+- Pull matches by cloud `id`, else by a `sync_key` equal to a local key, never
+  by integer. Conflict detail pairs child rows by cloud id, then by key.
+
+### Cloud not ready
+
+Before uploading, the desktop probes `select=sync_key&limit=0`. If the column
+is missing, it blocks uploads with "cloud not ready", and pull keeps working.
+
+### One-time legacy recovery
+
+An older desktop may have created a cloud row and crashed before storing its
+`cloud_id`. Rows that existed before the upgrade and were never confirmed in
+the cloud carry a one-time local marker. Before such a row's first POST, the
+desktop makes one read-only lookup for same-owner rows with `sync_key IS NULL`
+and `desktop_id` equal to the local id (for images and measurements, also
+restricted to the already-linked parent):
+
+- exactly one match whose uploaded content equals the local row: link it
+  locally; no cloud write;
+- any other outcome: clear the marker and POST as a new keyed row, reporting
+  "possible duplicate of an earlier upload" in the sync summary.
+
+A row found this way is never PATCHed and never deleted. The worst case is a
+visible duplicate, never an overwrite.
+
+### Rollback
+
+No rollback ever restores `desktop_id` links.
 
 ## Normalized reference graph
 
@@ -560,7 +704,7 @@ Canonical desktop image states are `NONE`, `UPLOADED`, `DELETE_PENDING`, and `DE
 
 ### First upload
 
-- Create or find the cloud observation by owner (`user_id`) and stable desktop link (`desktop_id`).
+- Create the cloud observation with its `sync_key`, or adopt it after a `23505` on `observations_user_sync_key_uidx` (see "Per-record sync keys (`sync_key`)"). Never find it by `desktop_id`.
 - Upload only images eligible for a new cloud copy (byte-storage desired) and whose bytes are actually available.
 - Store local cloud links (`cloud_id`) only after confirmation.
 - Save the known-good baseline (`sync snapshot`) after all required child work succeeds.
@@ -610,6 +754,8 @@ When a local image still maps to an active cloud image:
 - never call it stale merely because it was filtered, skipped, or reordered.
 
 ### Lost local `cloud_id` — identity repair
+
+Superseded by "Per-record sync keys (`sync_key`)": a lost `cloud_id` is reconciled by `sync_key`, and only the one-time legacy recovery still reads `desktop_id`. The former rule follows for the record.
 
 When a local row has no `cloud_id` but a unique remote row shares the same `desktop_id`, matches owner scope, and matches image type:
 

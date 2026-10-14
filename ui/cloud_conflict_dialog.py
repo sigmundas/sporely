@@ -1278,7 +1278,7 @@ class CloudConflictDialog(QDialog):
 
             fields = list(comparison.get('fields') or [])
             if status in {'local_only', 'cloud_only', 'same', 'identity_conflict'}:
-                fields = ['desktop_id', 'length_um', 'width_um', 'measurement_type']
+                fields = ['sync_key', 'length_um', 'width_um', 'measurement_type']
             display_fields = [field for field in fields if field not in geometry_fields]
             if (
                 any(field in geometry_fields for field in fields)
@@ -1322,7 +1322,7 @@ class CloudConflictDialog(QDialog):
                         'measurement_type': self.tr('Measurement type'),
                         'measured_at': self.tr('Measured at'),
                         'image_id': self.tr('Owning image'),
-                        'desktop_id': self.tr('Measurement identity'),
+                        'sync_key': self.tr('Measurement identity'),
                     }
                     values = [
                         labels.get(field, field.replace('_', ' ').title()),

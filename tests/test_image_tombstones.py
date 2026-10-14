@@ -1104,14 +1104,19 @@ def test_record_remote_image_tombstones_records_local_metadata_and_keeps_files(
     assert original_path.exists()
 
 
-def test_record_remote_image_tombstones_matches_local_image_by_desktop_id(
+def _record_lost_link_tombstone(
     monkeypatch,
     tmp_path,
+    *,
+    local_sync_key,
+    remote_sync_key,
+    remote_desktop_id,
 ):
-    db_path = tmp_path / "remote_tombstone_desktop_id.sqlite"
+    db_path = tmp_path / "remote_tombstone_lost_link.sqlite"
     conn = sqlite3.connect(db_path)
     try:
         _create_image_tombstone_test_db(conn)
+        conn.execute("ALTER TABLE images ADD COLUMN sync_key TEXT")
         images_root = db_path.parent / "images"
         image_path = images_root / "observation-1" / "image.jpg"
         original_path = images_root / "observation-1" / "originals" / "image-original.jpg"
@@ -1126,10 +1131,10 @@ def test_record_remote_image_tombstones_matches_local_image_by_desktop_id(
         conn.execute(
             """
             INSERT INTO images (
-                id, observation_id, cloud_id, filepath, original_filepath, image_type
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                id, observation_id, cloud_id, filepath, original_filepath, image_type, sync_key
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (11, 1, None, str(image_path), str(original_path), "field"),
+            (11, 1, None, str(image_path), str(original_path), "field", local_sync_key),
         )
         conn.commit()
     finally:
@@ -1141,7 +1146,8 @@ def test_record_remote_image_tombstones_matches_local_image_by_desktop_id(
         [
             {
                 "id": "cloud-image-1",
-                "desktop_id": 11,
+                "desktop_id": remote_desktop_id,
+                "sync_key": remote_sync_key,
                 "observation_id": "cloud-obs-1",
                 "deleted_at": "2026-05-01 10:00:00",
                 "storage_path": "user/cloud-obs-1/cloud-image-1.jpg",
@@ -1166,6 +1172,16 @@ def test_record_remote_image_tombstones_matches_local_image_by_desktop_id(
     finally:
         conn.close()
 
+    assert image_path.exists()
+    assert original_path.exists()
+    return tombstone, image_path, original_path
+
+
+def test_record_remote_image_tombstones_matches_a_lost_link_by_sync_key(monkeypatch, tmp_path):
+    key = "3e680f54-ee78-41dc-881a-0fca440a0677"
+    tombstone, image_path, original_path = _record_lost_link_tombstone(
+        monkeypatch, tmp_path, local_sync_key=key, remote_sync_key=key, remote_desktop_id=999,
+    )
     assert tombstone == (
         "cloud-image-1",
         "2026-05-01 10:00:00",
@@ -1176,8 +1192,26 @@ def test_record_remote_image_tombstones_matches_local_image_by_desktop_id(
         str(image_path),
         str(original_path),
     )
-    assert image_path.exists()
-    assert original_path.exists()
+
+
+def test_record_remote_image_tombstones_never_matches_by_desktop_id(monkeypatch, tmp_path):
+    # Another desktop's row may carry this desktop's integer id: never a match.
+    tombstone, _image_path, _original_path = _record_lost_link_tombstone(
+        monkeypatch, tmp_path,
+        local_sync_key="3e680f54-ee78-41dc-881a-0fca440a0677",
+        remote_sync_key=None,
+        remote_desktop_id=11,
+    )
+    assert tombstone == (
+        "cloud-image-1",
+        "2026-05-01 10:00:00",
+        "user/cloud-obs-1/cloud-image-1.jpg",
+        "cloud-obs-1",
+        1,
+        None,
+        None,
+        None,
+    )
 
 
 def test_tombstoned_local_images_are_hidden_from_active_image_reads(monkeypatch, tmp_path):

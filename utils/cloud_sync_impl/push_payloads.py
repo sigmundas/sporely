@@ -163,12 +163,8 @@ def _observation_compare_payload(record: dict | None, *, local: bool) -> dict:
         'id',
         row.get('cloud_id') if local else row.get('id'),
     )
-    payload['desktop_id'] = _normalize_observation_field_value(
-        'desktop_id',
-        row.get('id') if local else row.get('desktop_id'),
-    )
     for field in _SNAPSHOT_OBS_FIELDS:
-        if field in {'id', 'desktop_id'}:
+        if field == 'id':
             continue
         if field not in payload:
             payload[field] = _normalize_observation_field_value(field, row.get(field))
@@ -193,9 +189,8 @@ def _baseline_observation_compare_payload(record: dict | None) -> dict:
     row = dict(record or {})
     payload = _observation_push_payload(row, local=False)
     payload['id'] = _normalize_observation_field_value('id', row.get('id'))
-    payload['desktop_id'] = _normalize_observation_field_value('desktop_id', row.get('desktop_id'))
     for field in _SNAPSHOT_OBS_FIELDS:
-        if field in {'id', 'desktop_id'}:
+        if field == 'id':
             continue
         if field not in payload:
             payload[field] = _normalize_observation_field_value(field, row.get(field))
@@ -295,7 +290,7 @@ def _analyze_observation_field_changes(local_obs: dict | None, remote_obs: dict 
     shared_same_fields: list[str] = []
 
     for field in _SNAPSHOT_OBS_FIELDS:
-        if field in {'id', 'desktop_id'}:
+        if field == 'id':
             continue
         baseline_value = baseline_payload.get(field)
         local_value = local_payload.get(field)

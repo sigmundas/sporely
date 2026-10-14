@@ -211,7 +211,10 @@ def test_import_remote_images_resolves_calibration_uuid_to_local_calibration_id(
     )
 
     assert captured["kwargs"]["calibration_id"] == 1
-    assert desktop_id_calls == [("cloud-img-1", 23)]
+    # Pull never writes an identity onto the cloud row (per-record sync keys);
+    # a keyless cloud row stays keyless locally.
+    assert desktop_id_calls == []
+    assert captured["kwargs"]["sync_key"] is None
 
 
 def test_pull_calibrations_reconciles_images_from_stored_snapshots(monkeypatch, tmp_path, capsys):

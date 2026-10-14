@@ -38,12 +38,9 @@ def _is_generated_cloud_image(image_row: dict | None) -> bool:
     row = dict(image_row or {})
     notes = str(row.get('notes') or '').strip().lower()
     filename = str(row.get('original_filename') or '').strip().lower()
-    desktop_id = _safe_int(row.get('desktop_id'))
     if notes.startswith('generated media'):
         return True
     if filename.startswith('cloud_extra_'):
-        return True
-    if desktop_id < 0:
         return True
     return False
 

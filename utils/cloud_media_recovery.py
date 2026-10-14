@@ -132,7 +132,7 @@ def build_recovery_plan(
         flags = set(record.get("flags") or [])
         if record.get("has_local_tombstone"):
             errors.append(f"image {image_id}: intentional tombstone is pending")
-        if flags & {"duplicate_desktop_id", "duplicate_observation_type_order", "multiple_fallback_candidates"}:
+        if flags & {"duplicate_sync_key", "duplicate_observation_type_order", "multiple_fallback_candidates"}:
             errors.append(f"image {image_id}: duplicate or ambiguous cloud identity")
         if record.get("possible_match_ids") or record.get("duplicate_cloud_ids"):
             errors.append(f"image {image_id}: fallback or duplicate candidates exist")
@@ -142,7 +142,7 @@ def build_recovery_plan(
         state = str(record.get("primary_state") or "")
         if state == MISSING_STATE and cloud_id is None:
             status = "ready_create"
-        elif cloud_id and record.get("match_method") in {"desktop_id", "cloud_id"}:
+        elif cloud_id and record.get("match_method") in {"sync_key", "cloud_id"}:
             if record.get("derivative_status") == "exists":
                 status = "already_complete"
             elif not str((record.get("cloud") or {}).get("storage_path") or "").strip():
@@ -405,7 +405,7 @@ def verify_recovery(
             row.get("primary_state") != "healthy_cloud_image"
             or row.get("derivative_status") != "exists"
             or row.get("duplicate_cloud_ids")
-            or "duplicate_desktop_id" in set(row.get("flags") or [])
+            or "duplicate_sync_key" in set(row.get("flags") or [])
         ):
             failures.append(row)
         elif local_id in AUDITED_TARGET_IMAGE_IDS and (

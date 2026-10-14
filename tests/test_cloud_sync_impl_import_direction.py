@@ -82,6 +82,8 @@ OWNER_LAYERS: dict[str, int] = {
     # Child (image, measurement) create identity builds on the observation
     # owner's key match and sits below the anchor, image and measurement pushes.
     "utils.cloud_sync_impl.child_identity": 5,
+    # Pull pairing by sync_key (key holder lookup) sits on the pure values.
+    "utils.cloud_sync_impl.pull_identity": 1,
 }
 
 #: Owner modules allowed to import the facade at runtime (transitional; each

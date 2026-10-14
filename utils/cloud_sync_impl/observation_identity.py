@@ -55,7 +55,7 @@ SYNC_KEY_UNIQUE_INDEXES = {
 LEGACY_RECOVERY_MARKER_COLUMN = 'legacy_recovery_pending'
 
 # The create payload never carries these; the server or a later step owns them.
-_CREATE_COMPARE_EXCLUDED_FIELDS = frozenset({'id', 'desktop_id', 'region_id'})
+_CREATE_COMPARE_EXCLUDED_FIELDS = frozenset({'id', 'region_id'})
 
 
 def is_sync_key_unique_violation(error: Exception, table: str) -> bool:

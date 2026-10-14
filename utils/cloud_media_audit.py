@@ -25,6 +25,7 @@ from utils.cloud_sync import (
     SporelyCloudClient,
     measurement_qualifies_for_public_spore_anchor,
 )
+from utils.cloud_sync_impl.reconciliation.values import _normalize_sync_key_value
 
 
 INCIDENT_BOUNDARY = "2026-08-03T00:00:00+00:00"
@@ -52,11 +53,13 @@ PRIMARY_STATES = (
 )
 
 LOCAL_IMAGE_FIELDS = (
-    "id", "observation_id", "cloud_id", "image_type", "sort_order", "filepath",
+    "id", "observation_id", "cloud_id", "sync_key", "image_type", "sort_order", "filepath",
     "original_filepath", "source_role", "file_purpose", "synced_at",
 )
+# ``desktop_id`` is reported as found, never used to match: rows pair by
+# cloud id, then by ``sync_key``.
 CLOUD_IMAGE_FIELDS = (
-    "id", "desktop_id", "observation_id", "image_type", "sort_order",
+    "id", "sync_key", "desktop_id", "observation_id", "image_type", "sort_order",
     "storage_path", "original_storage_path", "deleted_at", "purged_at",
     "original_filename", "upload_mode", "upload_variant", "stored_bytes",
     "source_width", "source_height", "stored_width", "stored_height",
@@ -115,6 +118,11 @@ def _int(value: Any) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _sync_key(row: dict | None) -> str:
+    """A row's ``sync_key`` in canonical form, or ``''``."""
+    return _normalize_sync_key_value((row or {}).get("sync_key")) or ""
 
 
 def _pick(row: dict | None, fields: tuple[str, ...]) -> dict | None:
@@ -557,11 +565,11 @@ def build_audit_report(
         obs_id, cloud_obs_id = _int(observation.get("id")), _text(observation.get("cloud_id"))
         obs_cloud_rows = sorted(cloud_by_obs.get(cloud_obs_id, []), key=lambda row: _text(row.get("id")))
         by_cloud_id = {_text(row.get("id")): row for row in obs_cloud_rows}
-        by_desktop: dict[int, list[dict]] = defaultdict(list)
+        by_key: dict[str, list[dict]] = defaultdict(list)
         by_shape: dict[tuple[str, int], list[dict]] = defaultdict(list)
         for row in obs_cloud_rows:
-            if _int(row.get("desktop_id")):
-                by_desktop[_int(row.get("desktop_id"))].append(row)
+            if _sync_key(row):
+                by_key[_sync_key(row)].append(row)
             by_shape[(_text(row.get("image_type")).lower(), _int(row.get("sort_order")))].append(row)
         used: set[str] = set()
         obs_local = sorted(
@@ -571,14 +579,14 @@ def build_audit_report(
         for local in obs_local:
             local_id, linked_id = _int(local.get("id")), _text(local.get("cloud_id"))
             linked_row = by_cloud_id.get(linked_id) if linked_id else None
-            desktop_rows = by_desktop.get(local_id, [])
+            key_rows = by_key.get(_sync_key(local), []) if _sync_key(local) else []
             duplicate_ids = sorted({
-                _text(row.get("id")) for row in desktop_rows
-                if _text(row.get("id")) and (len(desktop_rows) > 1 or (linked_row and row is not linked_row))
+                _text(row.get("id")) for row in key_rows
+                if _text(row.get("id")) and (len(key_rows) > 1 or (linked_row and row is not linked_row))
             })
             cloud, match_method = linked_row, "cloud_id" if linked_row else None
-            if cloud is None and len(desktop_rows) == 1:
-                cloud, match_method = desktop_rows[0], "desktop_id"
+            if cloud is None and len(key_rows) == 1:
+                cloud, match_method = key_rows[0], "sync_key"
             fallback_rows = [] if cloud else _fallback_candidates(local, obs_cloud_rows)
             possible_ids = [_text(row.get("id")) for row in fallback_rows]
             if cloud:
@@ -669,7 +677,7 @@ def build_audit_report(
                     "cloud_derivative_unverified": derivative in {STORAGE_UNAUTHORIZED, STORAGE_UNAVAILABLE, STORAGE_UNSUPPORTED},
                     "cloud_original_unverified": original in {STORAGE_UNAUTHORIZED, STORAGE_UNAVAILABLE, STORAGE_UNSUPPORTED},
                     "multiple_fallback_candidates": len(possible_ids) > 1,
-                    "duplicate_desktop_id": bool(duplicate_ids),
+                    "duplicate_sync_key": bool(duplicate_ids),
                     "duplicate_observation_type_order": len(by_shape[(_text(local.get("image_type")).lower(), _int(local.get("sort_order")))]) > 1,
                 }.items() if enabled
             })
@@ -685,9 +693,9 @@ def build_audit_report(
             derivative_totals.update([derivative])
             original_totals.update([original])
             duplicate_ids = sorted({
-                _text(row.get("id")) for row in by_desktop.get(_int(cloud.get("desktop_id")), [])
+                _text(row.get("id")) for row in by_key.get(_sync_key(cloud), [])
                 if _text(row.get("id")) != cloud_id
-            }) if _int(cloud.get("desktop_id")) else []
+            }) if _sync_key(cloud) else []
             shape_duplicates = [
                 row for row in by_shape[(_text(cloud.get("image_type")).lower(), _int(cloud.get("sort_order")))]
                 if _text(row.get("id")) != cloud_id

@@ -37,6 +37,10 @@ class FakeReader:
         return self.storage.get(key, "not_applicable" if not key else "exists")
 
 
+# Image 11's key: an unlinked local row pairs with its cloud row by sync_key.
+KEY_11 = "0f0e0d0c-0b0a-4908-8706-050403020100"
+
+
 def make_db(tmp_path: Path, *, tombstone=False, excluded=False, target_type="microscope"):
     db = tmp_path / "db.sqlite"
     source1, source2 = tmp_path / "one.jpg", tmp_path / "two.jpg"
@@ -48,7 +52,7 @@ def make_db(tmp_path: Path, *, tombstone=False, excluded=False, target_type="mic
             spore_data_visibility TEXT, synced_at TEXT);
         CREATE TABLE images (id INTEGER PRIMARY KEY, observation_id INTEGER, cloud_id TEXT,
             filepath TEXT, original_filepath TEXT, image_type TEXT, sort_order INTEGER,
-            notes TEXT, source_role TEXT, file_purpose TEXT, synced_at TEXT);
+            notes TEXT, source_role TEXT, file_purpose TEXT, synced_at TEXT, sync_key TEXT);
         CREATE TABLE spore_measurements (id INTEGER PRIMARY KEY, image_id INTEGER,
             desktop_id INTEGER, length_um REAL, width_um REAL, measurement_type TEXT);
         CREATE TABLE image_tombstones (local_image_id INTEGER, deleted_cloud_id TEXT,
@@ -56,8 +60,8 @@ def make_db(tmp_path: Path, *, tombstone=False, excluded=False, target_type="mic
         CREATE TABLE settings (key TEXT, value TEXT);
     """)
     conn.execute("INSERT INTO observations VALUES (7, 'cloud-7', 'Mycena', 'haematopus', 'public', NULL)")
-    conn.execute("INSERT INTO images VALUES (11,7,NULL,?,NULL,?,3,NULL,'local_canonical','source',NULL)", (str(source1), target_type))
-    conn.execute("INSERT INTO images VALUES (12,7,'healthy-12',?,NULL,'field',0,NULL,'local_canonical','source',NULL)", (str(source2),))
+    conn.execute("INSERT INTO images VALUES (11,7,NULL,?,NULL,?,3,NULL,'local_canonical','source',NULL,?)", (str(source1), target_type, KEY_11))
+    conn.execute("INSERT INTO images VALUES (12,7,'healthy-12',?,NULL,'field',0,NULL,'local_canonical','source',NULL,NULL)", (str(source2),))
     conn.execute("INSERT INTO spore_measurements VALUES (21,11,21,10,5,'manual')")
     conn.execute("INSERT INTO settings VALUES ('sporely_cloud_image_file_sig_7_11','abc123')")
     if tombstone:
@@ -122,7 +126,7 @@ def test_unreadable_and_tombstoned_sources_abort_before_writes(tmp_path):
 
 def test_duplicate_or_ambiguous_rows_abort(tmp_path):
     db, _, healthy = make_db(tmp_path)
-    duplicate = {"id": "dup", "observation_id": "cloud-7", "desktop_id": 11,
+    duplicate = {"id": "dup", "observation_id": "cloud-7", "sync_key": KEY_11,
                  "image_type": "microscope", "sort_order": 3, "storage_path": "dup-key", "deleted_at": None}
     duplicate2 = dict(duplicate, id="dup2")
     with pytest.raises(RecoveryError, match="duplicate or ambiguous"):
@@ -206,7 +210,7 @@ def test_failed_upload_leaves_local_link_unchanged(tmp_path):
 
 def test_partial_success_reuses_existing_row_without_duplicate_creation(tmp_path):
     db, _, healthy = make_db(tmp_path)
-    partial = {"id": "partial-11", "observation_id": "cloud-7", "desktop_id": 11,
+    partial = {"id": "partial-11", "observation_id": "cloud-7", "sync_key": KEY_11,
                "image_type": "microscope", "sort_order": 3, "storage_path": None, "deleted_at": None}
     recovery_plan = build_recovery_plan(db, FakeReader([healthy, partial]), 7,
                                        audited_observation_id=7, audited_target_ids=[11])
@@ -236,7 +240,7 @@ def test_row_created_but_local_link_failed_is_reused_on_retry(tmp_path):
     first = FakeCloud()
     result = apply_recovery(recovery_plan, first, FakeWriter(fail=True))
     assert result[0]["status"] == "failed"
-    complete = {"id": "new-11", "observation_id": "cloud-7", "desktop_id": 11,
+    complete = {"id": "new-11", "observation_id": "cloud-7", "sync_key": KEY_11,
                 "image_type": "microscope", "sort_order": 3,
                 "storage_path": first.keys[0], "deleted_at": None}
     healthy = {"id": "healthy-12", "observation_id": "cloud-7", "desktop_id": 12,
@@ -254,7 +258,7 @@ def test_row_created_but_local_link_failed_is_reused_on_retry(tmp_path):
 
 def test_already_complete_is_not_uploaded_twice_and_reconciles_link(tmp_path):
     db, _, healthy = make_db(tmp_path)
-    complete = {"id": "complete-11", "observation_id": "cloud-7", "desktop_id": 11,
+    complete = {"id": "complete-11", "observation_id": "cloud-7", "sync_key": KEY_11,
                 "image_type": "microscope", "sort_order": 3, "storage_path": "complete-key", "deleted_at": None}
     recovery_plan = build_recovery_plan(db, FakeReader([healthy, complete], storage={"healthy-key": "exists", "complete-key": "exists"}), 7,
                                        audited_observation_id=7, audited_target_ids=[11])
@@ -313,7 +317,7 @@ def test_final_verification_detects_required_failures(monkeypatch, tmp_path, cha
     }
     if change == "missing_row": row["primary_state"] = "cloud_row_missing_local_file_available"
     if change == "missing_object": row["derivative_status"] = "missing"
-    if change == "duplicate": row["flags"] = ["duplicate_desktop_id"]
+    if change == "duplicate": row["flags"] = ["duplicate_sync_key"]
     if change == "measurement": row["cloud_measurement_count"] = 0
     monkeypatch.setattr("utils.cloud_media_recovery.AUDITED_TARGET_IMAGE_IDS", (11,))
     monkeypatch.setattr("utils.cloud_media_recovery.load_local_inventory", lambda *a, **k: {})

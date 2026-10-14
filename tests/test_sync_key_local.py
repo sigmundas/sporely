@@ -311,7 +311,7 @@ def test_measurement_pull_insert_stores_null_key_without_minting(installation, m
     assert rows == [(image_id, "cloud-measurement-1", None)]
 
 
-def test_every_image_pull_add_image_call_passes_explicit_null_key():
+def test_every_image_pull_add_image_call_stores_the_cloud_key_and_never_mints():
     source = Path(cloud_sync.__file__).parent / "cloud_sync_impl" / "image_pull.py"
     calls = [
         node for node in ast.walk(ast.parse(source.read_text(encoding="utf-8")))
@@ -323,7 +323,8 @@ def test_every_image_pull_add_image_call_passes_explicit_null_key():
     for call in calls:
         keyword = next((kw for kw in call.keywords if kw.arg == "sync_key"), None)
         assert keyword is not None, f"add_image at line {call.lineno} would mint"
-        assert isinstance(keyword.value, ast.Constant) and keyword.value.value is None
+        # Stage 5: pull stores the cloud row's key (NULL stays NULL).
+        assert isinstance(keyword.value, ast.Call) and keyword.value.func.id == "remote_sync_key"
 
 
 # ── Fork paths ───────────────────────────────────────────────────────────────

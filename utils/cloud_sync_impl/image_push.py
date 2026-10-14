@@ -199,17 +199,17 @@ def _remote_image_compare_payload(
     include_ai_crop: bool = True,
     include_upload_meta: bool = True,
 ) -> dict:
-    """``_remote_image_payload`` without ``desktop_id``, for push comparisons.
+    """``_remote_image_payload`` without ``sync_key``, for push comparisons.
 
-    ``desktop_id`` is retired as an identity and never sent, so a keyed row
-    carries NULL there; comparing it would re-PATCH the row on every sync.
+    ``sync_key`` is identity, not content: it is never sent on a PATCH, and a
+    legacy cloud row has none, so comparing it would re-PATCH on every sync.
     """
     payload = _remote_image_payload(
         remote_image,
         include_ai_crop=include_ai_crop,
         include_upload_meta=include_upload_meta,
     )
-    payload.pop('desktop_id', None)
+    payload.pop('sync_key', None)
     return payload
 
 
@@ -433,9 +433,6 @@ def _reconcile_metadata_only_linked_images(
 
     for image_row in ImageDB.get_images_for_observation(obs_local_id):
         img = dict(image_row or {})
-        img['portable_cloud_identity_pending'] = bool(
-            obs.get('portable_cloud_identity_pending')
-        )
         local_image_id = _safe_int(img.get('id'))
         if local_image_id <= 0 or not should_push_local_image_to_cloud(img):
             continue
@@ -774,9 +771,6 @@ def _push_images_for_observation(
             _increment_sync_summary(_cloud_sync_current_summary(), 'images_checked')
             img = dict(item.get('image_row') or {})
             img.update(dict(item.get('cloud_upload_meta') or {}))
-            img['portable_cloud_identity_pending'] = bool(
-                obs.get('portable_cloud_identity_pending')
-            )
             if observation_index and observation_total:
                 _emit_progress(
                     progress_cb,

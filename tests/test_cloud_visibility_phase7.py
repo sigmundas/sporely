@@ -933,21 +933,12 @@ def test_narrow_select_projection_constants_match_live_schema():
     assert "gallery_rotation" in cloud_sync._SPORE_MEASUREMENT_SELECT_COLUMNS
 
 
-def test_set_image_desktop_id_scopes_patch_to_user(monkeypatch):
+def test_client_has_no_desktop_id_writers():
+    # Per-record sync keys: no client writes an identity onto a cloud row.
     client = cloud_sync.SporelyCloudClient("token", "user-123")
-    patched_payloads = []
-
-    monkeypatch.setattr(client, "_patch", lambda path, payload: patched_payloads.append((path, dict(payload))))
-
-    client.set_image_desktop_id("cloud-img-1", 77)
-
-    # Only a keyless row: the server refuses desktop_id beside a sync_key.
-    assert patched_payloads == [
-        (
-            "observation_images?id=eq.cloud-img-1&user_id=eq.user-123&sync_key=is.null",
-            {"desktop_id": 77},
-        )
-    ]
+    for name in ("set_image_desktop_id", "set_measurement_desktop_id", "set_desktop_id",
+                 "_find_cloud_observation", "_find_cloud_image"):
+        assert not hasattr(client, name), name
 
 
 def test_soft_delete_image_scopes_patch_to_user(monkeypatch):
@@ -1339,7 +1330,6 @@ def test_push_pending_image_tombstones_runs_before_active_image_push(monkeypatch
     # Widened signature: post-2a1ebe3/56fee93 upload_image_file receives
     # observation_id=/image_id= kwargs; the old fixed 5-arg lambda TypeErrors.
     monkeypatch.setattr(client, "upload_image_file", lambda *args, **kwargs: order.append("upload_file") or kwargs.get("storage_path") or (args[3] if len(args) > 3 else None))
-    monkeypatch.setattr(client, "set_image_desktop_id", lambda cloud_image_id, desktop_id: order.append("set_desktop_id"))
     monkeypatch.setattr(client, "_patch", lambda *args, **kwargs: order.append("patch_storage"))
     monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: False)
@@ -1397,7 +1387,6 @@ def test_push_images_for_observation_leaves_image_pending_when_worker_upload_fai
         lambda *args, **kwargs: order.append("upload_file") or (_ for _ in ()).throw(cloud_sync.CloudSyncError("Worker upload failed")),
     )
     monkeypatch.setattr(client, "push_image_metadata", lambda *args, **kwargs: order.append("push_metadata") or "cloud-image-1")
-    monkeypatch.setattr(client, "set_image_desktop_id", lambda *args, **kwargs: order.append("set_desktop_id"))
     monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: False)
     # Post commit 2a1ebe3, the failure path reserves the metadata row then
@@ -3507,7 +3496,7 @@ def test_import_remote_images_preserves_original_filename(monkeypatch, tmp_path)
     assert Path(captured["filepath"]).name == "cloud_1.jpg"
 
 
-def test_import_remote_images_preserves_metadata_and_sets_desktop_id(monkeypatch, tmp_path):
+def test_import_remote_images_preserves_metadata_without_identity_write(monkeypatch, tmp_path):
     temp_root = tmp_path / "sync-meta"
     temp_root.mkdir()
     captured = {}
@@ -3607,7 +3596,7 @@ def test_import_remote_images_preserves_metadata_and_sets_desktop_id(monkeypatch
     assert captured["file_purpose"] == "cache"
     assert captured["original_mime_type"] is None
     assert captured["working_mime_type"] == "image/jpeg"
-    assert desktop_id_calls == [("cloud-img-1", 23)]
+    assert desktop_id_calls == []  # no identity write-back
     assert any(
         sql == "UPDATE images SET cloud_id = ?, synced_at = ? WHERE id = ?"
         and params[0] == "cloud-img-1"
@@ -3713,7 +3702,7 @@ def test_import_remote_images_creates_metadata_only_microscope_anchor_without_do
     )
     assert image_row[8] is not None
     assert download_calls == []
-    assert desktop_id_calls == [("cloud-image-1", 1)]
+    assert desktop_id_calls == []  # no identity write-back
     assert "Missing storage path" not in output
 
 
@@ -3877,7 +3866,7 @@ def test_import_remote_images_leaves_working_mime_type_null_for_unknown_extensio
     assert captured["file_purpose"] == "cache"
     assert captured["original_mime_type"] is None
     assert captured["working_mime_type"] is None
-    assert desktop_id_calls == [("cloud-img-2", 24)]
+    assert desktop_id_calls == []  # no identity write-back
 
 
 def test_import_remote_images_uses_passed_client_and_marks_deferred_materialization(
@@ -4311,7 +4300,7 @@ def test_pull_all_existing_observation_records_remote_deleted_rows(monkeypatch, 
 
 
 @pytest.mark.parametrize("linked_by_cloud_id", [True, False])
-def test_get_conflict_detail_ignores_tombstoned_image_changes_for_cloud_id_and_desktop_id(
+def test_get_conflict_detail_ignores_tombstoned_image_changes_for_cloud_id_and_sync_key(
     monkeypatch,
     linked_by_cloud_id,
 ):
@@ -4333,7 +4322,7 @@ def test_get_conflict_detail_ignores_tombstoned_image_changes_for_cloud_id_and_d
         "images": [
             {
                 "id": "cloud-image-1",
-                "desktop_id": 11,
+                "sync_key": "3e680f54-ee78-41dc-881a-0fca440a0677",
                 "sort_order": 0,
                 "image_type": "field",
                 "original_filename": "image.jpg",
@@ -4351,6 +4340,7 @@ def test_get_conflict_detail_ignores_tombstoned_image_changes_for_cloud_id_and_d
         {
             "id": 11,
             "cloud_id": "cloud-image-1" if linked_by_cloud_id else None,
+            "sync_key": "3e680f54-ee78-41dc-881a-0fca440a0677",
             "filepath": "/tmp/image.jpg",
             "image_type": "field",
             "sort_order": 0,
@@ -4367,7 +4357,7 @@ def test_get_conflict_detail_ignores_tombstoned_image_changes_for_cloud_id_and_d
     remote_images = [
         {
             "id": "cloud-image-1",
-            "desktop_id": 11,
+            "sync_key": "3e680f54-ee78-41dc-881a-0fca440a0677",
             "sort_order": 0,
             "image_type": "field",
             "original_filename": "image.jpg",

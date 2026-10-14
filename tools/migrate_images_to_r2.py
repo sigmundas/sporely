@@ -91,9 +91,9 @@ def migrate_images(dry_run: bool = False, limit: int | None = None) -> int:
 
     for row in rows:
         local_image_id = int(row.get("id") or 0)
+        # Only the local cloud_id links a row; integer ids are never cloud
+        # identities, so an unlinked row is left to a normal sync.
         observation_cloud_id = str(row.get("observation_cloud_id") or "").strip()
-        if not observation_cloud_id and row.get("observation_id"):
-            observation_cloud_id = str(client._find_cloud_observation(int(row["observation_id"])) or "").strip()
         if not observation_cloud_id:
             print(f"[skip] image {local_image_id}: observation has no cloud id")
             skipped += 1
@@ -106,14 +106,6 @@ def migrate_images(dry_run: bool = False, limit: int | None = None) -> int:
             continue
 
         cloud_image_id = str(row.get("image_cloud_id") or "").strip()
-        if not cloud_image_id:
-            try:
-                _img_row = client._find_cloud_image(local_image_id, observation_cloud_id)
-            except ImageIdentityConflictError as exc:
-                print(f"[conflict] image {local_image_id} obs {observation_cloud_id}: {exc} — skipping")
-                skipped += 1
-                continue
-            cloud_image_id = str((_img_row or {}).get("id") or "").strip()
         provisional_cloud_image_id = cloud_image_id or str(local_image_id)
         storage_key = _normalize_cloud_media_key(
             client._build_storage_path(observation_cloud_id, provisional_cloud_image_id, str(upload_path))

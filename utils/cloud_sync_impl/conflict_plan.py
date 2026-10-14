@@ -29,7 +29,10 @@ from utils.cloud_sync_impl.reconciliation.location_provenance import (
     provenance_pair,
     row_carries_provenance,
 )
-from utils.cloud_sync_impl.reconciliation.values import _normalize_observation_float_value
+from utils.cloud_sync_impl.reconciliation.values import (
+    _normalize_observation_float_value,
+    _normalize_sync_key_value,
+)
 from utils.cloud_sync_impl.reconciliation.asymmetry import (
     _asymmetry_fingerprint_local_image,
     _asymmetry_fingerprint_local_measurement,
@@ -149,6 +152,7 @@ def _location_bundle_expectation(fingerprint: dict | None) -> dict:
 
 def _conflict_plan_local_image_fingerprint(row: dict | None) -> dict:
     payload = _local_image_snapshot_payload(row or {})
+    payload['sync_key'] = _normalize_sync_key_value((row or {}).get('sync_key'))
     payload['__local_id'] = _safe_int((row or {}).get('id'))
     payload['__cloud_id'] = str((row or {}).get('cloud_id') or '').strip() or None
     return payload
@@ -157,7 +161,6 @@ def _conflict_plan_local_image_fingerprint(row: dict | None) -> dict:
 def _conflict_plan_remote_image_fingerprint(row: dict | None) -> dict:
     payload = _remote_image_payload(row or {})
     payload['__cloud_id'] = str((row or {}).get('id') or '').strip() or None
-    payload['__desktop_id'] = _safe_int((row or {}).get('desktop_id'))
     return payload
 
 
@@ -171,7 +174,6 @@ def _conflict_plan_local_measurement_fingerprint(row: dict | None) -> dict:
 def _conflict_plan_remote_measurement_fingerprint(row: dict | None) -> dict:
     payload = _remote_measurement_snapshot_payload(row or {})
     payload['__cloud_id'] = str((row or {}).get('id') or '').strip() or None
-    payload['__desktop_id'] = _safe_int((row or {}).get('desktop_id'))
     return payload
 
 
@@ -231,17 +233,24 @@ def _find_local_image_fingerprint(baseline_images: list[dict], *, local_id: int 
     return None
 
 
-def _find_remote_image_fingerprint(baseline_images: list[dict], *, cloud_id: str | None,
-                                   local_id: int | None) -> dict | None:
+def _find_by_cloud_id_then_key(rows: list[dict], *, cloud_id: str | None,
+                               sync_key: str | None) -> dict | None:
+    """A remote fingerprint by cloud id, else by ``sync_key`` (never by integer)."""
     if cloud_id:
-        for row in baseline_images:
+        for row in rows:
             if str(row.get('__cloud_id') or '') == str(cloud_id):
                 return row
-    if local_id:
-        for row in baseline_images:
-            if _safe_int(row.get('__desktop_id')) == int(local_id):
+    key = _normalize_sync_key_value(sync_key)
+    if key:
+        for row in rows:
+            if _normalize_sync_key_value(row.get('sync_key')) == key:
                 return row
     return None
+
+
+def _find_remote_image_fingerprint(baseline_images: list[dict], *, cloud_id: str | None,
+                                   sync_key: str | None) -> dict | None:
+    return _find_by_cloud_id_then_key(baseline_images, cloud_id=cloud_id, sync_key=sync_key)
 
 
 def _find_local_measurement_fingerprint(rows: list[dict], *, local_id: int | None,
@@ -258,16 +267,8 @@ def _find_local_measurement_fingerprint(rows: list[dict], *, local_id: int | Non
 
 
 def _find_remote_measurement_fingerprint(rows: list[dict], *, cloud_id: str | None,
-                                         local_id: int | None) -> dict | None:
-    if cloud_id:
-        for row in rows:
-            if str(row.get('__cloud_id') or '') == str(cloud_id):
-                return row
-    if local_id:
-        for row in rows:
-            if _safe_int(row.get('__desktop_id')) == int(local_id):
-                return row
-    return None
+                                         sync_key: str | None) -> dict | None:
+    return _find_by_cloud_id_then_key(rows, cloud_id=cloud_id, sync_key=sync_key)
 
 
 _CONFLICT_PLAN_BASELINE_SCHEMA_VERSION = 1
@@ -368,10 +369,10 @@ def _verify_plan_baseline(
         for row in remote_images or []
         if str(row.get('id') or '').strip()
     }
-    current_remote_image_by_desktop = {
-        _safe_int(row.get('desktop_id')): _conflict_plan_remote_image_fingerprint(row)
+    current_remote_image_by_key = {
+        key: _conflict_plan_remote_image_fingerprint(row)
         for row in remote_images or []
-        if _safe_int(row.get('desktop_id'))
+        if (key := _normalize_sync_key_value(row.get('sync_key')))
     }
     current_local_measurement_by_local = {
         _safe_int(row.get('id')): _conflict_plan_local_measurement_fingerprint(row)
@@ -388,10 +389,10 @@ def _verify_plan_baseline(
         for row in remote_measurements or []
         if str(row.get('id') or '').strip()
     }
-    current_remote_measurement_by_desktop = {
-        _safe_int(row.get('desktop_id')): _conflict_plan_remote_measurement_fingerprint(row)
+    current_remote_measurement_by_key = {
+        key: _conflict_plan_remote_measurement_fingerprint(row)
         for row in remote_measurements or []
-        if _safe_int(row.get('desktop_id'))
+        if (key := _normalize_sync_key_value(row.get('sync_key')))
     }
 
     for item in items:
@@ -409,13 +410,14 @@ def _verify_plan_baseline(
                 )
                 if current != expected_local:
                     raise CloudSyncError(_plan_drift_message())
+            local_key = _normalize_sync_key_value((expected_local or {}).get('sync_key'))
             expected_remote = _find_remote_image_fingerprint(
-                baseline_remote_images, cloud_id=cloud_id, local_id=local_id,
+                baseline_remote_images, cloud_id=cloud_id, sync_key=local_key,
             )
             if expected_remote is not None:
                 current = (
                     current_remote_image_by_cloud.get(cloud_id or '') if cloud_id
-                    else current_remote_image_by_desktop.get(local_id)
+                    else current_remote_image_by_key.get(local_key or '')
                 )
                 if current != expected_remote:
                     raise CloudSyncError(_plan_drift_message())
@@ -430,16 +432,48 @@ def _verify_plan_baseline(
                 )
                 if current != expected_local:
                     raise CloudSyncError(_plan_drift_message())
+            local_key = _normalize_sync_key_value((expected_local or {}).get('sync_key'))
             expected_remote = _find_remote_measurement_fingerprint(
-                baseline_remote_measurements, cloud_id=cloud_id, local_id=local_id,
+                baseline_remote_measurements, cloud_id=cloud_id, sync_key=local_key,
             )
             if expected_remote is not None:
                 current = (
                     current_remote_measurement_by_cloud.get(cloud_id or '') if cloud_id
-                    else current_remote_measurement_by_desktop.get(local_id)
+                    else current_remote_measurement_by_key.get(local_key or '')
                 )
                 if current != expected_remote:
                     raise CloudSyncError(_plan_drift_message())
+
+
+def _sync_key_pairing_conflict(
+    local_row: dict | None,
+    remote_row: dict | None,
+    *,
+    local_rows: list[dict] | None,
+    remote_rows: list[dict] | None,
+) -> str:
+    """Why a reviewed (local, cloud) pair contradicts the rows' ``sync_key``s, or ``''``.
+
+    A key either side carries must not pair it with a different row on the
+    other side. Keys of a cloud-linked pair may legitimately differ (a row
+    created before keys, or linked from an older import), so differing keys
+    alone are no conflict.
+    """
+    local_key = _normalize_sync_key_value((local_row or {}).get('sync_key'))
+    remote_key = _normalize_sync_key_value((remote_row or {}).get('sync_key'))
+    local_id = _safe_int((local_row or {}).get('id'))
+    remote_id = str((remote_row or {}).get('id') or '').strip()
+    if local_key:
+        for row in remote_rows or []:
+            other_id = str(row.get('id') or '').strip()
+            if other_id and other_id != remote_id and _normalize_sync_key_value(row.get('sync_key')) == local_key:
+                return f'disagree: the local row\'s sync key belongs to cloud row {other_id}'
+    if remote_key:
+        for row in local_rows or []:
+            other_id = _safe_int(row.get('id'))
+            if other_id and other_id != local_id and _normalize_sync_key_value(row.get('sync_key')) == remote_key:
+                return f'disagree: the cloud row\'s sync key belongs to local row {other_id}'
+    return ''
 
 
 def _validate_plan_identity_state(
@@ -462,18 +496,8 @@ def _validate_plan_identity_state(
             raise CloudSyncError(
                 f'Image identity conflict: multiple local images share cloud ID {cid}'
             )
-    # duplicate cloud desktop_ids
-    remote_desktop_counts: dict[int, int] = {}
-    for row in remote_images or []:
-        did = _safe_int(row.get('desktop_id'))
-        if did:
-            remote_desktop_counts[did] = remote_desktop_counts.get(did, 0) + 1
-    for did, count in remote_desktop_counts.items():
-        if count > 1:
-            raise CloudSyncError(
-                f'Image identity conflict: multiple cloud images reference local image {did}'
-            )
-    # contradictory cross-references for every affected image
+    # contradictory cross-references for every affected image: a sync_key
+    # both sides carry must pair the same rows the reviewed link pairs.
     local_by_cloud = {
         str(row.get('cloud_id') or '').strip(): row
         for row in local_images or []
@@ -484,32 +508,26 @@ def _validate_plan_identity_state(
         for row in remote_images or []
         if str(row.get('id') or '').strip()
     }
-    remote_by_desktop = {
-        _safe_int(row.get('desktop_id')): row
-        for row in remote_images or []
-        if _safe_int(row.get('desktop_id'))
+    local_by_local = {
+        _safe_int(row.get('id')): row
+        for row in local_images or []
+        if _safe_int(row.get('id'))
     }
     for item in items:
         if item.get('kind') not in {'image', 'image_metadata', 'measurement'}:
             continue
         local_id = _safe_int(item.get('local_id')) or None
         cloud_id = str(item.get('cloud_id') or '').strip() or None
-        if item.get('kind') in {'image', 'image_metadata'}:
-            if cloud_id and cloud_id in remote_by_cloud and local_id:
-                remote_row = remote_by_cloud[cloud_id]
-                remote_desktop = _safe_int(remote_row.get('desktop_id'))
-                if remote_desktop and remote_desktop != local_id:
-                    raise CloudSyncError(
-                        f'Image identity conflict: cloud image {cloud_id} references '
-                        f'local image {remote_desktop}, not {local_id}'
-                    )
-            if local_id and local_id in remote_by_desktop and cloud_id:
-                candidate_cloud = str(remote_by_desktop[local_id].get('id') or '').strip()
-                if candidate_cloud and candidate_cloud != cloud_id:
-                    raise CloudSyncError(
-                        f'Image identity conflict: local image {local_id} is referenced '
-                        f'by cloud image {candidate_cloud}, not {cloud_id}'
-                    )
+        if item.get('kind') in {'image', 'image_metadata'} and local_id and cloud_id:
+            conflict = _sync_key_pairing_conflict(
+                local_by_local.get(local_id), remote_by_cloud.get(cloud_id),
+                local_rows=local_images, remote_rows=remote_images,
+            )
+            if conflict:
+                raise CloudSyncError(
+                    f'Image identity conflict: local image {local_id} and cloud image '
+                    f'{cloud_id} {conflict}'
+                )
     # ── Measurement identity guards (A2) ──────────────────────────────────
     # 1. duplicate local measurement cloud_ids
     local_meas_cloud_counts: dict[str, int] = {}
@@ -523,19 +541,7 @@ def _validate_plan_identity_state(
                 f'Measurement identity conflict: multiple local measurements share cloud ID {cid}. '
                 'Refresh the comparison and repair the link before applying.'
             )
-    # 2. duplicate cloud measurement desktop_ids
-    remote_meas_desktop_counts: dict[int, int] = {}
-    for row in remote_measurements or []:
-        did = _safe_int(row.get('desktop_id'))
-        if did:
-            remote_meas_desktop_counts[did] = remote_meas_desktop_counts.get(did, 0) + 1
-    for did, count in remote_meas_desktop_counts.items():
-        if count > 1:
-            raise CloudSyncError(
-                f'Measurement identity conflict: multiple cloud measurements reference local '
-                f'measurement {did}. Refresh the comparison and repair the link before applying.'
-            )
-    # 3. cross-referenced measurement contradiction
+    # 3. cross-referenced measurement contradiction (a shared sync_key)
     local_meas_by_cloud = {
         str(row.get('cloud_id') or '').strip(): row
         for row in local_measurements or []
@@ -545,11 +551,6 @@ def _validate_plan_identity_state(
         str(row.get('id') or '').strip(): row
         for row in remote_measurements or []
         if str(row.get('id') or '').strip()
-    }
-    remote_meas_by_desktop = {
-        _safe_int(row.get('desktop_id')): row
-        for row in remote_measurements or []
-        if _safe_int(row.get('desktop_id'))
     }
     local_meas_by_local = {
         _safe_int(row.get('id')): row
@@ -576,24 +577,16 @@ def _validate_plan_identity_state(
             )
         # 6. cross-referenced contradiction for matched measurements
         if side == 'matched' and local_id and cloud_id:
-            remote = remote_meas_by_cloud.get(cloud_id)
-            if remote is not None:
-                remote_desktop = _safe_int(remote.get('desktop_id'))
-                if remote_desktop and remote_desktop != local_id:
-                    raise CloudSyncError(
-                        f'Measurement identity conflict: cloud measurement {cloud_id} '
-                        f'references local measurement {remote_desktop}, not {local_id}. '
-                        'Refresh the comparison before applying.'
-                    )
-            reverse = remote_meas_by_desktop.get(local_id)
-            if reverse is not None:
-                reverse_cloud = str(reverse.get('id') or '').strip()
-                if reverse_cloud and reverse_cloud != cloud_id:
-                    raise CloudSyncError(
-                        f'Measurement identity conflict: local measurement {local_id} is '
-                        f'referenced by cloud measurement {reverse_cloud}, not {cloud_id}. '
-                        'Refresh the comparison before applying.'
-                    )
+            conflict = _sync_key_pairing_conflict(
+                local_meas_by_local.get(local_id), remote_meas_by_cloud.get(cloud_id),
+                local_rows=local_measurements, remote_rows=remote_measurements,
+            )
+            if conflict:
+                raise CloudSyncError(
+                    f'Measurement identity conflict: local measurement {local_id} and '
+                    f'cloud measurement {cloud_id} {conflict}. '
+                    'Refresh the comparison before applying.'
+                )
         # 7. measurement moved to a different image after review
         if side == 'matched' and local_id:
             local_row = local_meas_by_local.get(local_id)
@@ -823,9 +816,11 @@ def _reconcile_verification_pending_op(
                  if str(r.get('id') or '').strip() == cid),
                 None,
             )
-        if not remote_row and lid:
+        local_key = _normalize_sync_key_value((local_row or {}).get('sync_key'))
+        if not remote_row and local_key:
             remote_row = next(
-                (r for r in remote_images if _safe_int(r.get('desktop_id')) == lid),
+                (r for r in remote_images
+                 if _normalize_sync_key_value(r.get('sync_key')) == local_key),
                 None,
             )
         if not local_row and not remote_row:
@@ -871,9 +866,11 @@ def _reconcile_verification_pending_op(
                  if str(r.get('id') or '').strip() == cid),
                 None,
             )
-        if not remote_row and lid:
+        local_key = _normalize_sync_key_value((local_row or {}).get('sync_key'))
+        if not remote_row and local_key:
             remote_row = next(
-                (r for r in remote_measurements if _safe_int(r.get('desktop_id')) == lid),
+                (r for r in remote_measurements
+                 if _normalize_sync_key_value(r.get('sync_key')) == local_key),
                 None,
             )
         if not local_row and not remote_row:
@@ -1048,7 +1045,8 @@ def _material_image_expected_state(row: dict | None, *, side: str) -> dict:
     else:
         stable = {
             'cloud_id': str(row.get('id') or '').strip() or None,
-            'local_id': _safe_int(row.get('desktop_id')) or None,
+            # A cloud row never names a local row: integer ids are local.
+            'local_id': None,
             'observation_id': str(row.get('observation_id') or '').strip() or None,
         }
     payload = {
@@ -1075,7 +1073,8 @@ def _material_measurement_expected_state(row: dict | None, *, side: str) -> dict
     else:
         stable = {
             'cloud_id': str(row.get('id') or '').strip() or None,
-            'local_id': _safe_int(row.get('desktop_id')) or None,
+            # A cloud row never names a local row: integer ids are local.
+            'local_id': None,
             'owning_local_image_id': None,
             'owning_cloud_image_id': str(row.get('image_id') or '').strip() or None,
         }
@@ -1122,7 +1121,8 @@ def _intended_after_image_from_remote(row: dict | None) -> dict:
         'material_local': {
             'side': 'local',
             'stable': {
-                'local_id': _safe_int(row.get('desktop_id')) or None,
+                # Unknown until the import creates the local row.
+                'local_id': None,
                 'cloud_id': str(row.get('id') or '').strip() or None,
                 'observation_id': None,
             },
@@ -1161,7 +1161,8 @@ def _intended_after_measurement_from_remote(row: dict | None) -> dict:
         'material_local': {
             'side': 'local',
             'stable': {
-                'local_id': _safe_int(row.get('desktop_id')) or None,
+                # Unknown until the import creates the local row.
+                'local_id': None,
                 'cloud_id': str(row.get('id') or '').strip() or None,
                 'owning_local_image_id': None,
                 'owning_cloud_image_id': str(row.get('image_id') or '').strip() or None,

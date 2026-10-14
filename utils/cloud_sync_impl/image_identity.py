@@ -1,9 +1,12 @@
 """Image and observation push identity, mixed into ``SporelyCloudClient``;
 the client class stays in the facade.
 
-Owns local image ``cloud_id`` repair (``_reconcile_local_image_cloud_id``),
-the portable cloud identity guard, and the client methods that decide which
-existing cloud row an observation or image push targets.
+Owns local image ``cloud_id`` repair (``_reconcile_local_image_cloud_id``)
+and the client methods that decide which existing cloud row an observation or
+image push targets. Only the verified local ``cloud_id`` is a push target;
+``desktop_id`` is never looked up (portable imports mint fresh keys, so their
+``portable_cloud_identity_pending`` flag no longer gates anything and stays
+only until cleanup).
 
 Relocated verbatim from ``utils/cloud_sync.py`` (the compatibility facade)
 in Stage S5 of the cloud-sync extraction.
@@ -67,144 +70,6 @@ def _reconcile_local_image_cloud_id(
         conn.close()
 
 
-def _portable_cloud_identity_pending_for_observation(observation_id: int) -> bool:
-    """Return the persistent portable identity guard without assuming migration state."""
-    conn = get_connection()
-    try:
-        try:
-            table_info = list(conn.execute('PRAGMA table_info(observations)'))
-        except (TypeError, sqlite3.Error):
-            return False
-        if 'portable_cloud_identity_pending' not in {str(info[1]) for info in table_info}:
-            return False
-        row = conn.execute(
-            'SELECT portable_cloud_identity_pending FROM observations WHERE id=?',
-            (int(observation_id),),
-        ).fetchone()
-        return bool(row and row[0])
-    finally:
-        conn.close()
-
-
-def _finalize_portable_cloud_identity_guard(
-    client: SporelyCloudClient,
-    obs_local_id: int,
-) -> bool:
-    """Publish collision-free destination reverse IDs, then retire the guard."""
-    connection = get_connection()
-    connection.row_factory = sqlite3.Row
-    try:
-        if 'portable_cloud_identity_pending' not in {
-            str(info[1]) for info in connection.execute('PRAGMA table_info(observations)')
-        }:
-            return False
-        observation_row = connection.execute(
-            "SELECT id, cloud_id, portable_cloud_identity_pending "
-            "FROM observations WHERE id=?",
-            (int(obs_local_id),),
-        ).fetchone()
-        if (
-            observation_row is None
-            or not bool(observation_row['portable_cloud_identity_pending'])
-            or not str(observation_row['cloud_id'] or '').strip()
-        ):
-            return False
-        image_rows = [dict(row) for row in connection.execute(
-            """
-            SELECT id, cloud_id, image_type FROM images
-            WHERE observation_id = ?
-              AND COALESCE(source_role, '') != 'cloud_recovery_cache'
-              AND COALESCE(file_purpose, '') != 'cache'
-            ORDER BY id
-            """,
-            (int(obs_local_id),),
-        )]
-        if any(not str(row.get('cloud_id') or '').strip() for row in image_rows):
-            return False
-        measurement_rows = [dict(row) for row in connection.execute(
-            """
-            SELECT measurement.id, measurement.cloud_id
-            FROM spore_measurements AS measurement
-            JOIN images AS image ON image.id = measurement.image_id
-            WHERE image.observation_id = ?
-              AND COALESCE(image.source_role, '') != 'cloud_recovery_cache'
-              AND COALESCE(image.file_purpose, '') != 'cache'
-            ORDER BY measurement.id
-            """,
-            (int(obs_local_id),),
-        )]
-        if any(not str(row.get('cloud_id') or '').strip() for row in measurement_rows):
-            return False
-    finally:
-        connection.close()
-
-    observation_cloud_id = str(observation_row['cloud_id']).strip()
-    observation_match = client._find_cloud_observation(int(obs_local_id))
-    if observation_match and str(observation_match) != observation_cloud_id:
-        return False
-
-    image_matches: dict[int, str] = {}
-    for image in image_rows:
-        image_id = int(image['id'])
-        image_cloud_id = str(image['cloud_id']).strip()
-        candidates = client._get(
-            f'observation_images?desktop_id=eq.{image_id}'
-            f'&user_id=eq.{client.user_id}&select=id'
-        )
-        candidate_ids = {
-            str(row.get('id') or '').strip()
-            for row in (candidates or [])
-            if str(row.get('id') or '').strip()
-        }
-        if candidate_ids and candidate_ids != {image_cloud_id}:
-            return False
-        image_matches[image_id] = image_cloud_id if candidate_ids else ''
-
-    measurement_matches: dict[int, str] = {}
-    for measurement in measurement_rows:
-        measurement_id = int(measurement['id'])
-        measurement_cloud_id = str(measurement['cloud_id']).strip()
-        rows = client._get(
-            f'spore_measurements?desktop_id=eq.{measurement_id}'
-            f'&user_id=eq.{client.user_id}&select=id'
-        )
-        candidate_ids = {
-            str(row.get('id') or '').strip()
-            for row in (rows or [])
-            if str(row.get('id') or '').strip()
-        }
-        if candidate_ids and candidate_ids != {measurement_cloud_id}:
-            return False
-        measurement_matches[measurement_id] = (
-            measurement_cloud_id if candidate_ids else ''
-        )
-
-    # The observation's reverse link is never written: desktop_id is retired
-    # as an observation identity, and the server refuses it on keyed rows.
-    for image in image_rows:
-        image_id = int(image['id'])
-        if not image_matches[image_id]:
-            client.set_image_desktop_id(str(image['cloud_id']).strip(), image_id)
-    for measurement in measurement_rows:
-        measurement_id = int(measurement['id'])
-        if not measurement_matches[measurement_id]:
-            client.set_measurement_desktop_id(
-                str(measurement['cloud_id']).strip(), measurement_id
-            )
-
-    connection = get_connection()
-    try:
-        cursor = connection.execute(
-            "UPDATE observations SET portable_cloud_identity_pending=0 "
-            "WHERE id=? AND portable_cloud_identity_pending=1",
-            (int(obs_local_id),),
-        )
-        connection.commit()
-        return int(cursor.rowcount or 0) == 1
-    finally:
-        connection.close()
-
-
 class CloudSyncPushIdentityMixin:
     """Observation and image push identity methods of ``SporelyCloudClient``."""
 
@@ -246,39 +111,6 @@ class CloudSyncPushIdentityMixin:
             f"observation {obs.get('id')}: linked cloud observation {local_cloud_id} "
             f'was not found; refusing to patch it blindly or create a new row'
         )
-
-    def _find_cloud_image(
-        self,
-        desktop_id: int,
-        obs_cloud_id: str,
-        image_type: str | None = None,
-    ) -> dict | None:
-        """Reverse-link (``desktop_id``) recovery lookup for one image.
-
-        Returns a dict with ``id`` and ``deleted_at`` for the single
-        same-owner, same-observation cloud image carrying this
-        ``desktop_id``, or ``None``.  Multiple matches mean cloud-side
-        duplicates; silently picking one could route a push at the wrong
-        row, so that case raises :class:`ImageIdentityConflictError`.
-        """
-        q = (
-            f'observation_images?desktop_id=eq.{desktop_id}'
-            f'&user_id=eq.{self.user_id}'
-            f'&observation_id=eq.{obs_cloud_id}'
-            f'&select=id,deleted_at'
-            f'&order=id.asc'
-        )
-        if image_type:
-            q += f'&image_type=eq.{image_type}'
-        rows = self._get(q)
-        if len(rows) > 1:
-            raise ImageIdentityConflictError(
-                f'image desktop_id={desktop_id}: {len(rows)} cloud images '
-                f'carry this desktop_id in observation {obs_cloud_id} '
-                f'({", ".join(str(r.get("id")) for r in rows)}); '
-                f'refusing to choose among duplicates'
-            )
-        return dict(rows[0]) if rows else None
 
     def _resolve_existing_image_for_push(
         self,

@@ -198,6 +198,7 @@ from utils.cloud_sync import (
     CloudSyncError,
     SporelyCloudClient,
     cloud_observation_uses_privacy_slot,
+    remote_observations_not_on_this_desktop,
     cloud_media_materialization_state_for_observation,
     build_cloud_ai_state_from_observation_identifications,
     _cloud_identification_prediction_taxon,
@@ -3168,7 +3169,7 @@ class ObservationsTab(QWidget):
             species_display = species_raw or species_guess or "sp."
             cloud_id = _normalize_external_publication_id(obs.get("id"))
             linked_local_id = _normalize_external_publication_id(
-                obs.get("desktop_id") or obs.get("local_id") or obs.get("observation_id")
+                obs.get("local_id") or obs.get("observation_id")
             )
             local_obs = ObservationDB.get_observation(linked_local_id) if linked_local_id else None
 
@@ -3269,7 +3270,9 @@ class ObservationsTab(QWidget):
         try:
             client = self._window_cloud_client()
             if client is not None:
-                remote_rows = client.pull_web_observations(after_iso=None) or []
+                remote_rows = remote_observations_not_on_this_desktop(
+                    client.pull_web_observations(after_iso=None) or []
+                )
             else:
                 remote_rows = []
         except Exception as exc:
@@ -12840,15 +12843,11 @@ class ObservationsTab(QWidget):
                     "UPDATE images SET cloud_id = ?, synced_at = ? WHERE id = ?",
                     (cloud_image_id, synced_at, int(local_image_id)),
                 )
-                try:
-                    client.set_image_desktop_id(cloud_image_id, int(local_image_id))
-                except Exception:
-                    pass
             conn.commit()
         finally:
             conn.close()
-        # The observation's desktop_id is never written: it is retired as an
-        # identity, and the server refuses it on keyed rows. cloud_id links it.
+        # No identity is written onto the cloud rows: the local cloud_id links
+        # them.
 
     def _open_cloud_observation_editor(self, row_data: dict) -> None:
         if not isinstance(row_data, dict):

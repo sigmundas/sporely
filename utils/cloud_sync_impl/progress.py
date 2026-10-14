@@ -411,7 +411,7 @@ class CloudSyncProfiler:
 def summarize_blocked_write_attempts(attempts) -> str:
     """Compress a raw list of blocked writer names into ``name ×N`` groups.
 
-    A single leaky path (e.g. ``set_image_desktop_id``) can fire hundreds of
+    A single leaky path (e.g. ``set_image_storage_path``) can fire hundreds of
     times per run; printing the name once with a count is what the user
     actually reads.
     """

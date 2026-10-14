@@ -251,7 +251,8 @@ def test_create_local_from_remote_imports_measurements_from_cloud_anchored_image
         "2026-05-01T12:00:00Z",
         None,
     )
-    assert desktop_id_calls == [("cloud-measurement-1", 1)]
+    # Pull never writes an identity onto a cloud row (per-record sync keys).
+    assert desktop_id_calls == []
 
 
 def test_import_remote_measurements_skips_when_image_missing_and_cannot_materialize(monkeypatch, tmp_path):
@@ -1083,7 +1084,8 @@ def test_import_remote_measurements_imports_from_metadata_only_microscope_anchor
         "2026-05-04T12:00:00Z",
     )
     assert download_calls == []
-    assert desktop_id_calls == [("cloud-measurement-4", 1)]
+    # Pull never writes an identity onto a cloud row (per-record sync keys).
+    assert desktop_id_calls == []
 
 
 def test_import_remote_measurements_groups_generated_mosaic_skips(monkeypatch, tmp_path):

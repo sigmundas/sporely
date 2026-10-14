@@ -36,6 +36,7 @@ from utils.cloud_sync_impl.progress import (
     _cloud_sync_current_summary,
     _increment_sync_summary,
 )
+from utils.cloud_sync_impl.reconciliation.values import _normalize_sync_key_value
 
 
 def _local_tombstoned_cloud_image_ids(cloud_image_ids: list[str] | tuple[str, ...] | set[str] | None = None) -> set[str]:
@@ -100,8 +101,12 @@ def _record_remote_image_tombstones(
             if has_cloud_id
             else None
         )
-        local_desktop_image_sql = (
-            f"SELECT {', '.join(select_columns)} FROM images WHERE id = ? LIMIT 1"
+        # The lost-link fallback pairs by sync_key, never by a cloud
+        # desktop_id: an integer id names a different row on another desktop.
+        local_keyed_image_sql = (
+            f"SELECT {', '.join(select_columns)} FROM images WHERE sync_key = ? LIMIT 1"
+            if "sync_key" in image_columns
+            else None
         )
 
         for remote_image in tombstone_rows:
@@ -115,13 +120,12 @@ def _record_remote_image_tombstones(
             local_image_row = None
             if local_image_sql:
                 local_image_row = cursor.execute(local_image_sql, (cloud_image_id,)).fetchone()
-            if local_image_row is None:
-                desktop_image_id = _safe_int(remote_image.get("desktop_id"))
-                if desktop_image_id > 0:
-                    local_image_row = cursor.execute(
-                        local_desktop_image_sql,
-                        (desktop_image_id,),
-                    ).fetchone()
+            remote_sync_key = _normalize_sync_key_value(remote_image.get("sync_key"))
+            if local_image_row is None and local_keyed_image_sql and remote_sync_key:
+                local_image_row = cursor.execute(
+                    local_keyed_image_sql,
+                    (remote_sync_key,),
+                ).fetchone()
 
             image_type = None
             filepath = None

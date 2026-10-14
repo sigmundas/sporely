@@ -296,8 +296,9 @@ def test_image_reads_include_ingest_method_and_drop_it_on_a_pre_migration_target
 
     client._get = _get
     assert client.pull_image_metadata("obs-1") == [{"id": "img-1", "deleted_at": None}]
-    assert paths[0].endswith(",ingest_method")
+    assert ",ingest_method" in paths[0]
     assert "ingest_method" not in paths[1]
+    assert paths[1].endswith(",sync_key"), "the key column is kept"
 
 
 # ── Three-way bundle rules ──────────────────────────────────────────────────

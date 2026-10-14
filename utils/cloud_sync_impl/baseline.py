@@ -22,7 +22,10 @@ from utils.cloud_sync_impl.common import (
 )
 from utils.cloud_sync_impl.image_policy import should_pull_cloud_image_to_desktop
 from utils.cloud_sync_impl.progress import _cloud_sync_current_profiler
-from utils.cloud_sync_impl.reconciliation.asymmetry import _reconcile_accepted_asymmetry
+from utils.cloud_sync_impl.reconciliation.asymmetry import (
+    _counterpart_ids,
+    _reconcile_accepted_asymmetry,
+)
 from utils.cloud_sync_impl.reconciliation.identity import (
     _remote_identity_claim,
     TAXON_IDENTITY_SYNC_FIELD,
@@ -35,6 +38,7 @@ from utils.cloud_sync_impl.reconciliation.location_provenance import (
 from utils.cloud_sync_impl.reconciliation.values import (
     _normalize_image_captured_at_for_cloud,
     _normalize_snapshot_value,
+    _normalize_sync_key_value,
     _SNAPSHOT_IMG_FIELDS,
     _SNAPSHOT_IMG_PASSIVE_FIELDS,
     _SNAPSHOT_MEAS_FIELDS,
@@ -156,6 +160,7 @@ def _cloud_observation_snapshot(
                 passive_value = _normalize_cloud_media_key(image.get(field))
                 if passive_value:
                     image_payload[field] = _normalize_snapshot_value(passive_value)
+            _record_sync_key(image_payload, image)
             images_part.append(image_payload)
         payload['images'] = images_part
     if include_measurements:
@@ -165,16 +170,15 @@ def _cloud_observation_snapshot(
             filtered_measurements,
             key=lambda row: (
                 str(row.get('image_id') or ''),
-                _safe_int(row.get('desktop_id')),
                 str(row.get('id') or ''),
             ),
         ):
-            measurements_part.append(
-                {
-                    field: _normalize_snapshot_value(measurement.get(field))
-                    for field in _SNAPSHOT_MEAS_FIELDS
-                }
-            )
+            measurement_payload = {
+                field: _normalize_snapshot_value(measurement.get(field))
+                for field in _SNAPSHOT_MEAS_FIELDS
+            }
+            _record_sync_key(measurement_payload, measurement)
+            measurements_part.append(measurement_payload)
         payload['measurements'] = measurements_part
     # ── Accepted-asymmetry section ────────────────────────────────────────
     # Only include the section when meaningful; older readers ignore it.
@@ -183,6 +187,18 @@ def _cloud_observation_snapshot(
             accepted_asymmetry
         )
     return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
+
+
+def _record_sync_key(part: dict, row: dict | None) -> None:
+    """Record a cloud row's ``sync_key`` in its baseline entry, when it has one.
+
+    The key pairs a baseline row with its local row when the local
+    ``cloud_id`` is missing; it is identity, never compared as content. A
+    snapshot without the key means the cloud row had none (or predates keys).
+    """
+    sync_key = _normalize_sync_key_value((row or {}).get('sync_key'))
+    if sync_key:
+        part['sync_key'] = sync_key
 
 
 def _normalize_accepted_asymmetry_for_snapshot(raw: dict | None) -> dict:
@@ -421,31 +437,14 @@ def _store_remote_snapshot(
                 )
             except Exception:
                 current_local_measurements = []
-        # Determine matched IDs (counterpart appearance) from remote state.
-        matched_local_image_ids = {
-            _safe_int(row.get('desktop_id'))
-            for row in images if _safe_int(row.get('desktop_id'))
-        } | {
-            _safe_int(row.get('id')) for row in current_local_images
-            if str(row.get('cloud_id') or '').strip()
-        }
-        matched_cloud_image_ids = {
-            str(row.get('cloud_id') or '').strip()
-            for row in current_local_images
-            if str(row.get('cloud_id') or '').strip()
-        }
-        matched_local_measurement_ids = {
-            _safe_int(row.get('desktop_id'))
-            for row in measurements if _safe_int(row.get('desktop_id'))
-        } | {
-            _safe_int(row.get('id')) for row in current_local_measurements
-            if str(row.get('cloud_id') or '').strip()
-        }
-        matched_cloud_measurement_ids = {
-            str(row.get('cloud_id') or '').strip()
-            for row in current_local_measurements
-            if str(row.get('cloud_id') or '').strip()
-        }
+        # Determine matched IDs (counterpart appearance): a local cloud_id
+        # link or a shared sync_key, never a cloud desktop_id.
+        matched_local_image_ids, matched_cloud_image_ids = _counterpart_ids(
+            current_local_images, images,
+        )
+        matched_local_measurement_ids, matched_cloud_measurement_ids = _counterpart_ids(
+            current_local_measurements, measurements,
+        )
         # Ordinary sync path: additions_from_caller is None → we only prune.
         # Plan-resolver path: additions_from_caller carries new entries → they
         # are added on top of the pruned survivors.

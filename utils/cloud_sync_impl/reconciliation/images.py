@@ -8,26 +8,30 @@ from __future__ import annotations
 
 import json
 
-from utils.cloud_sync_impl.reconciliation.values import _SNAPSHOT_IMG_FIELDS
+from utils.cloud_sync_impl.reconciliation.values import (
+    _SNAPSHOT_IMG_FIELDS,
+    _normalize_sync_key_value,
+)
 
 
 def _image_compare_key(image_row: dict | None) -> str:
+    """Pair rows by cloud id, then by ``sync_key``; never by a local id."""
     row = dict(image_row or {})
     cloud_id = str(row.get('id') or '').strip()
-    desktop_id = str(row.get('desktop_id') or '').strip()
+    sync_key = _normalize_sync_key_value(row.get('sync_key'))
     filename = str(row.get('original_filename') or '').strip()
     image_type = str(row.get('image_type') or '').strip()
     if filename:
         if cloud_id:
             return f'cloud:{cloud_id}'
-        if desktop_id:
-            return f'desktop:{desktop_id}'
+        if sync_key:
+            return f'key:{sync_key}'
         suffix = f':{image_type}' if image_type else ''
         return f'name:{filename}{suffix}'
     if cloud_id:
         return f'cloud:{cloud_id}'
-    if desktop_id:
-        return f'desktop:{desktop_id}'
+    if sync_key:
+        return f'key:{sync_key}'
     return json.dumps(row, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
 
 
@@ -35,11 +39,11 @@ def _image_identity_keys(image_row: dict | None) -> set[str]:
     row = dict(image_row or {})
     keys: set[str] = set()
     cloud_id = str(row.get('id') or '').strip()
-    desktop_id = str(row.get('desktop_id') or '').strip()
+    sync_key = _normalize_sync_key_value(row.get('sync_key'))
     if cloud_id:
         keys.add(f'cloud:{cloud_id}')
-    if desktop_id:
-        keys.add(f'desktop:{desktop_id}')
+    if sync_key:
+        keys.add(f'key:{sync_key}')
     return keys
 
 
@@ -56,7 +60,7 @@ def _image_metadata_payload(image_row: dict | None) -> dict:
     return {
         field: row.get(field)
         for field in _SNAPSHOT_IMG_FIELDS
-        if field not in {'id', 'desktop_id', 'sort_order', 'storage_path', 'original_filename'}
+        if field not in {'id', 'sort_order', 'storage_path', 'original_filename'}
         and field not in hidden_fields
     }
 
