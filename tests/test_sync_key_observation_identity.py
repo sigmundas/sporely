@@ -1157,3 +1157,122 @@ def test_adoption_keeps_the_fetched_row_as_baseline_and_pulls_a_later_edit(two_d
     )
     assert _observation_errors(result) == []
     assert cloud.observation_writes() == []
+
+
+# ── The no-write link is committed crash-safely (restart regressions) ─────
+
+
+def _crash_around_link_commit(monkeypatch, *, after: bool) -> None:
+    """Kill the process just before or just after the local link commit."""
+    commit = cloud_sync._commit_linked_observation
+
+    def crashing(*args, **kwargs):
+        if not after:
+            raise _Killed()
+        commit(*args, **kwargs)
+        raise _Killed()
+
+    monkeypatch.setattr(cloud_sync, "_commit_linked_observation", crashing)
+
+
+def _crashed_proven_create(two_desktops, monkeypatch) -> tuple[FakePostgrest, int]:
+    cloud = FakePostgrest()
+    local_id = _create()
+    _make_proven(local_id)
+    monkeypatch.setenv(fault_injection.SYNC_FAULT_ENV_VAR, "after_insert")
+    with pytest.raises(_Killed):
+        _push(cloud.client())
+    monkeypatch.delenv(fault_injection.SYNC_FAULT_ENV_VAR)
+    return cloud, local_id
+
+
+def _stored_baseline(cloud_id) -> dict:
+    return cloud_sync._parse_cloud_observation_snapshot(
+        cloud_sync._load_cloud_observation_snapshot(str(cloud_id))
+    ).get("observation") or {}
+
+
+def test_restart_after_the_link_commit_keeps_the_pending_selection_and_baseline(two_desktops, monkeypatch):
+    cloud, local_id = _crashed_proven_create(two_desktops, monkeypatch)
+    _crash_around_link_commit(monkeypatch, after=True)
+    with pytest.raises(_Killed):
+        _push(cloud.client())
+    monkeypatch.undo()  # the restarted process: real code, fresh client
+    two_desktops["A"].activate(monkeypatch)
+    monkeypatch.setattr(cloud_sync, "_sleep_supabase_backoff", lambda attempt: None)
+
+    local = _local(local_id)
+    cloud_id = cloud.rows_for()[0]["id"]
+    assert str(local["cloud_id"]) == str(cloud_id)
+    assert local["sync_status"] == "dirty", "the unfinished selection stays queued"
+    assert _stored_baseline(cloud_id).get("id") is not None, "the judged row survived the restart"
+
+    cloud.requests.clear()
+    assert _push(cloud.client())["errors"] == []
+    rows = cloud.rows_for()
+    assert len(rows) == 1 and rows[0]["selected_sporely_taxon_id"] == 4242
+    assert _rpcs(cloud) == ["rpc/set_observation_selected_taxon_v2"]
+    assert not [w for w in cloud.observation_writes() if w["method"] in {"POST", "PATCH"}]
+    assert _local(local_id)["sync_status"] == "synced"
+
+
+def test_restart_after_the_link_commit_never_overwrites_a_competing_selection(two_desktops, monkeypatch):
+    cloud, local_id = _crashed_proven_create(two_desktops, monkeypatch)
+    _crash_around_link_commit(monkeypatch, after=True)
+    with pytest.raises(_Killed):
+        _push(cloud.client())
+    monkeypatch.undo()
+    two_desktops["A"].activate(monkeypatch)
+    monkeypatch.setattr(cloud_sync, "_sleep_supabase_backoff", lambda attempt: None)
+    cloud_id = cloud.rows_for()[0]["id"]
+    cloud.edit_elsewhere(cloud_id, selected_sporely_taxon_id=77)  # while the desktop was down
+
+    for _attempt in range(2):
+        cloud.requests.clear()
+        result = _push(cloud.client())
+        assert any("needs review" in str(error) for error in result["errors"]), result["errors"]
+        assert cloud.rows_for()[0]["selected_sporely_taxon_id"] == 77
+        assert _rpcs(cloud) == []
+        assert len(cloud.rows_for()) == 1
+
+
+def test_restart_before_the_link_commit_leaves_the_row_unlinked_and_retry_adopts(two_desktops, monkeypatch):
+    cloud, local_id = _crashed_proven_create(two_desktops, monkeypatch)
+    _crash_around_link_commit(monkeypatch, after=False)
+    with pytest.raises(_Killed):
+        _push(cloud.client())
+    monkeypatch.undo()
+    two_desktops["A"].activate(monkeypatch)
+    monkeypatch.setattr(cloud_sync, "_sleep_supabase_backoff", lambda attempt: None)
+    cloud_id = cloud.rows_for()[0]["id"]
+    assert _local(local_id)["cloud_id"] is None
+    assert _stored_baseline(cloud_id) == {}
+
+    assert _push(cloud.client())["errors"] == []
+    assert str(_local(local_id)["cloud_id"]) == str(cloud_id)
+    assert _local(local_id)["sync_status"] == "dirty"
+    assert _push(cloud.client())["errors"] == []
+    assert cloud.rows_for()[0]["selected_sporely_taxon_id"] == 4242
+    assert len(cloud.rows_for()) == 1
+
+
+def test_restart_after_a_legacy_link_commit_keeps_link_baseline_and_marker_state(two_desktops, monkeypatch):
+    cloud = FakePostgrest()
+    local_id = _create(notes="uploaded by v0.9.25 before it crashed")
+    _mark_legacy(local_id)
+    legacy = cloud.insert_legacy_row(**_legacy_copy(local_id))
+    _crash_around_link_commit(monkeypatch, after=True)
+    with pytest.raises(_Killed):
+        _push(cloud.client())
+    monkeypatch.undo()
+    two_desktops["A"].activate(monkeypatch)
+    monkeypatch.setattr(cloud_sync, "_sleep_supabase_backoff", lambda attempt: None)
+
+    local = _local(local_id)
+    assert str(local["cloud_id"]) == str(legacy["id"])
+    assert local["legacy_recovery_pending"] == 0 and local["sync_status"] == "synced"
+    assert _stored_baseline(legacy["id"]).get("notes") == "uploaded by v0.9.25 before it crashed"
+    cloud.requests.clear()
+    assert _push(cloud.client())["errors"] == []
+    assert cloud.observation_writes() == [] and _rpcs(cloud) == []
+    assert cloud.rows_for() == [legacy]

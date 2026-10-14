@@ -221,9 +221,11 @@ def adopt_observation_by_sync_key(client, obs: dict, sync_key: str) -> tuple[str
     return cloud_id, remote
 
 
-# Rows linked without a write (adoption, legacy recovery) keep the row they
-# were judged on as their sync baseline. A re-read for the snapshot could
-# carry a competing edit in as baseline, unapplied and unreviewed.
+# A link made without a cloud write (adoption, legacy recovery) is committed
+# locally in one transaction with its baseline and pending status, by the
+# facade's ``_commit_linked_observation``. These record, for the rest of the
+# run, that the row's local state is already final: push_all must neither
+# restamp it nor replace its baseline with a fresh read.
 _ADOPTED_BASES_ATTR = '_adopted_observation_bases'
 
 
@@ -236,41 +238,34 @@ def remember_adopted_base(client, cloud_id: str, remote: dict) -> None:
 
 
 def take_adopted_base(client, cloud_id: str) -> dict | None:
-    """The fetched row a link was judged on, once; ``None`` otherwise."""
+    """The fetched row a committed link was judged on, once; ``None`` otherwise."""
     bases = getattr(client, _ADOPTED_BASES_ATTR, None)
     if not isinstance(bases, dict):
         return None
     return bases.pop(str(cloud_id), None)
 
 
-def _commit_legacy_recovery_outcome(local_id: int, cloud_id: str | None) -> None:
-    """Clear the one-time marker, linking ``cloud_id`` in the same transaction."""
+def _clear_legacy_recovery_marker(local_id: int) -> None:
     connection = get_connection()
     try:
-        if cloud_id:
-            connection.execute(
-                f'UPDATE observations SET cloud_id = ?, {LEGACY_RECOVERY_MARKER_COLUMN} = 0 '
-                'WHERE id = ?',
-                (str(cloud_id), int(local_id)),
-            )
-        else:
-            connection.execute(
-                f'UPDATE observations SET {LEGACY_RECOVERY_MARKER_COLUMN} = 0 WHERE id = ?',
-                (int(local_id),),
-            )
+        connection.execute(
+            f'UPDATE observations SET {LEGACY_RECOVERY_MARKER_COLUMN} = 0 WHERE id = ?',
+            (int(local_id),),
+        )
         connection.commit()
     finally:
         connection.close()
 
 
-def recover_legacy_observation(client, obs: dict) -> tuple[str | None, bool]:
+def recover_legacy_observation(client, obs: dict) -> tuple[dict | None, bool]:
     """One-time lookup for an older desktop's lost upload of ``obs``.
 
-    Returns ``(cloud_id, False)`` when exactly one keyless same-owner row
-    carries this local id and equals the local content: the row is linked
-    locally and nothing is written to the cloud. Otherwise clears the marker
-    and returns ``(None, True)``: a possible duplicate. The caller then POSTs a new
-    keyed row. A row found here is never PATCHed or deleted.
+    Returns ``(remote_row, False)`` when exactly one keyless same-owner row
+    carries this local id and equals the local content. Nothing is written,
+    locally or to the cloud: the caller commits the link, its baseline and
+    the cleared marker together. Otherwise clears the marker and returns
+    ``(None, True)``: a possible duplicate. The caller then POSTs a new keyed
+    row. A row found here is never PATCHed or deleted.
     """
     if not bool(obs.get(LEGACY_RECOVERY_MARKER_COLUMN)):
         return None, False
@@ -279,20 +274,12 @@ def recover_legacy_observation(client, obs: dict) -> tuple[str | None, bool]:
         client, f'sync_key=is.null&desktop_id=eq.{local_id}', limit=2,
     )
     if len(rows) == 1 and observation_create_content_matches(obs, dict(rows[0] or {})):
-        cloud_id = str(rows[0].get('id') or '').strip()
-        if cloud_id:
-            _commit_legacy_recovery_outcome(local_id, cloud_id)
-            remember_adopted_base(client, cloud_id, rows[0])
-            print(
-                f'[cloud_sync] legacy recovery: obs {local_id} linked to cloud {cloud_id} '
-                f'(no cloud write)',
-                flush=True,
-            )
-            return cloud_id, False
+        if str(rows[0].get('id') or '').strip():
+            return dict(rows[0]), False
     # No match, several matches or different content: an earlier upload may
     # still exist under a row this lookup cannot prove, so every outcome
     # other than a link is reported as a possible duplicate.
-    _commit_legacy_recovery_outcome(local_id, None)
+    _clear_legacy_recovery_marker(local_id)
     print(
         f'[cloud_sync] legacy recovery: obs {local_id} not linked '
         f'(matches={len(rows)}); uploading as a new row, possible duplicate '

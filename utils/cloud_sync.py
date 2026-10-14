@@ -544,7 +544,7 @@ from utils.cloud_sync_impl.observation_identity import (  # noqa: F401  (facade 
     SYNC_KEY_UNIQUE_INDEXES,
     _CREATE_COMPARE_EXCLUDED_FIELDS,
     _ADOPTED_BASES_ATTR,
-    _commit_legacy_recovery_outcome,
+    _clear_legacy_recovery_marker,
     _timestamp,
     create_location_pair,
     interrupted_identity_step,
@@ -2133,6 +2133,59 @@ def _remaining_local_changes_after_remote_merge(
         if str(field or '').strip() not in non_blocking_fields
     }
     return bool(blocking_local_only_fields or field_changes.get('conflict_fields') or local_media_changed)
+
+
+def _commit_linked_observation(client, obs: dict, cloud_id: str, remote: dict) -> None:
+    """Commit a link made without a cloud write, crash-safely.
+
+    One local transaction stores the ``cloud_id``, the fetched ``remote`` row
+    the link was judged on as the sync baseline, the status, and the cleared
+    legacy marker. A crash before it leaves the row unlinked (L0), and the
+    retry repeats the same read-only decision; a crash after it leaves a
+    linked row whose baseline and pending work survive the restart. The
+    status is ``dirty`` while the create's identity step is unfinished
+    (``interrupted_identity_step``), so the selection still goes out through
+    the ordinary push, never as part of the link.
+    """
+    local_id = int(obs['id'])
+    cloud_value = str(cloud_id or '').strip()
+    images = [dict(row or {}) for row in (client.pull_image_metadata(cloud_value) or [])]
+    measurements = list(_pull_remote_measurements_for_images(
+        client,
+        [str(row.get('id') or '').strip() for row in images if str(row.get('id') or '').strip()],
+    ))
+    snapshot = _cloud_observation_snapshot(dict(remote or {}), images, measurements)
+    parsed = _parse_cloud_observation_snapshot(snapshot)
+    if parsed:
+        snapshot = json.dumps(parsed, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
+    pending_identity = interrupted_identity_step(obs, remote)
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            'INSERT INTO settings (key, value) VALUES (?, ?) '
+            'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+            (_cloud_observation_snapshot_key(cloud_value), snapshot),
+        )
+        update_observation_sync_state(
+            cursor,
+            local_id,
+            cloud_id=cloud_value,
+            sync_status='dirty' if pending_identity else 'synced',
+            synced_at=datetime.now(timezone.utc).isoformat(),
+            clear_sync_error_state=True,
+        )
+        if LEGACY_RECOVERY_MARKER_COLUMN in {
+            str(row[1]) for row in cursor.execute('PRAGMA table_info(observations)')
+        }:
+            cursor.execute(
+                f'UPDATE observations SET {LEGACY_RECOVERY_MARKER_COLUMN} = 0 WHERE id = ?',
+                (local_id,),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    remember_adopted_base(client, cloud_value, remote)
 
 
 def _record_upload_block(reason: str | None) -> None:
@@ -4429,20 +4482,23 @@ def resolve_conflict_keep_local(
             'raw_error': str(exc),
         }
     _adopt_merge_filled_ai_fields_locally(local_id, local_obs, merged_obs)
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        update_observation_sync_state(
-            cursor,
-            int(local_id),
-            cloud_id=cloud_id,
-            sync_status='synced',
-            synced_at=datetime.now(timezone.utc).isoformat(),
-            clear_sync_error_state=True,
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    # A link made without a cloud write is already committed with its
+    # baseline and status (_commit_linked_observation): never restamp it.
+    if take_adopted_base(client, cloud_id) is None:
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            update_observation_sync_state(
+                cursor,
+                int(local_id),
+                cloud_id=cloud_id,
+                sync_status='synced',
+                synced_at=datetime.now(timezone.utc).isoformat(),
+                clear_sync_error_state=True,
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     should_push_images = prepare_images_cb is not None
     stored_local_media_signature = _load_local_cloud_media_signature(int(local_id))
@@ -7299,8 +7355,15 @@ class SporelyCloudClient(
                 f"observation {obs.get('id')}: no committed sync key; "
                 f'refusing to create a cloud row'
             )
-        recovered_id, possible_duplicate = recover_legacy_observation(self, obs)
-        if recovered_id:
+        recovered, possible_duplicate = recover_legacy_observation(self, obs)
+        if recovered is not None:
+            recovered_id = str(recovered.get('id') or '').strip()
+            _commit_linked_observation(self, obs, recovered_id, recovered)
+            print(
+                f"[cloud_sync] legacy recovery: obs {obs.get('id')} linked to cloud "
+                f'{recovered_id} (no cloud write)',
+                flush=True,
+            )
             _increment_sync_summary(summary, 'observations_adopted')
             return recovered_id
         if possible_duplicate:
@@ -7322,13 +7385,13 @@ class SporelyCloudClient(
             )
             consume_confirmed_location_precision(obs.get('id'))
             _increment_sync_summary(summary, 'observations_adopted')
-            # Linked with no write: the fetched row is the baseline (see
-            # take_adopted_base). An unfinished identity step is not sent
-            # here: set_observation_selected_taxon_v2 has no precondition,
-            # so a selection made since this read would be overwritten.
-            # push_all leaves the row dirty instead, and the next push sends
-            # it only after its three-way check against this baseline.
-            remember_adopted_base(self, cloud_id, remote)
+            # Linked with no cloud write. An unfinished identity step is not
+            # sent here: set_observation_selected_taxon_v2 has no
+            # precondition, so a selection made since this read would be
+            # overwritten. The row is committed dirty instead, and the next
+            # push sends it only after its three-way check against the
+            # fetched row, committed as the baseline in the same transaction.
+            _commit_linked_observation(self, obs, cloud_id, remote)
             return cloud_id
         sync_fault_point('after_insert', table='observations')
         consume_confirmed_location_precision(obs.get('id'))
@@ -9714,30 +9777,28 @@ def push_all(
             adopted_base = take_adopted_base(client, cloud_id)
             _adopt_merge_filled_ai_fields_locally(obs.get('id'), push_payload, merged_payload)
 
-            # Update local record with cloud_id and sync_status
+            # Update local record with cloud_id and sync_status. A link made
+            # without a cloud write is already committed, with its baseline
+            # and status, by _commit_linked_observation: never restamp it.
             previous_status = str(obs.get('sync_status') or '').strip().lower()
-            conn2 = get_connection()
-            cursor2 = conn2.cursor()
-            update_observation_sync_state(
-                cursor2,
-                int(obs['id']),
-                cloud_id=cloud_id,
-                sync_status='synced',
-                synced_at=datetime.now(timezone.utc).isoformat(),
-                clear_sync_error_state=True,
-            )
-            conn2.commit()
-            conn2.close()
+            if adopted_base is None:
+                conn2 = get_connection()
+                cursor2 = conn2.cursor()
+                update_observation_sync_state(
+                    cursor2,
+                    int(obs['id']),
+                    cloud_id=cloud_id,
+                    sync_status='synced',
+                    synced_at=datetime.now(timezone.utc).isoformat(),
+                    clear_sync_error_state=True,
+                )
+                conn2.commit()
+                conn2.close()
             if identity_review_pending:
                 # The other fields went out; the identity disagreement did
                 # not, and must stay visible until the owner resolves it.
                 _set_observation_sync_state(int(obs['id']), cloud_id, dirty=True, synced_at=None)
                 _set_observation_conflict_review_pending(int(obs['id']))
-            elif adopted_base is not None and interrupted_identity_step(obs, adopted_base):
-                # Adopted an interrupted create whose identity step never ran:
-                # keep it dirty so the next push sends the selection as an
-                # ordinary local change, checked against the adopted baseline.
-                _set_observation_sync_state(int(obs['id']), cloud_id, dirty=True)
             if previous_status == 'dirty':
                 print(
                     f"[cloud_sync] sync_status transition obs {obs['id']}: dirty→synced "
@@ -10208,8 +10269,7 @@ def push_all(
                 # as baseline; anything since then is a remote change.
                 if adopted_base is None:
                     _store_remote_snapshot(client, cloud_id)
-                else:
-                    _store_remote_snapshot(client, cloud_id, remote=adopted_base)
+                # else: the judged row was committed as the baseline with the link.
 
             # A refusal inside a step that reports instead of raising (media,
             # measurements) still stops the upload phase, with this row dirty.
