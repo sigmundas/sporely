@@ -309,8 +309,20 @@ def forget_judged_child_rows(client) -> None:
         setattr(client, _JUDGED_CHILD_ROWS_ATTR, {})
 
 
-def _with_judged_child_rows(client, table: str, rows: list[dict]) -> list[dict]:
-    """``rows`` with each judged child replaced by its judged row, once."""
+_JUDGED_CHILD_PARENT_COLUMNS = {
+    'observation_images': 'observation_id',
+    'spore_measurements': 'image_id',
+}
+
+
+def _with_judged_child_rows(
+    client, table: str, rows: list[dict], parent_ids: set[str],
+) -> list[dict]:
+    """``rows`` with each judged child of ``parent_ids`` as its judged row, once.
+
+    A judged child missing from the later read (deleted or purged since the
+    adoption read) is kept as judged, so its removal stays a remote change.
+    """
     judged = getattr(client, _JUDGED_CHILD_ROWS_ATTR, None)
     if not isinstance(judged, dict) or not judged:
         return rows
@@ -318,6 +330,10 @@ def _with_judged_child_rows(client, table: str, rows: list[dict]) -> list[dict]:
     for row in rows:
         key = (str(table), str((row or {}).get('id') or '').strip())
         result.append(dict(judged.pop(key)) if key in judged else row)
+    parent_column = _JUDGED_CHILD_PARENT_COLUMNS[str(table)]
+    for key in [key for key in judged if key[0] == str(table)]:
+        if str(judged[key].get(parent_column) or '').strip() in parent_ids:
+            result.append(dict(judged.pop(key)))
     return result
 
 
@@ -355,7 +371,10 @@ def _store_remote_snapshot(
         )
     else:
         images = []
-    images = _with_judged_child_rows(client, 'observation_images', images)
+    images = (
+        _with_judged_child_rows(client, 'observation_images', images, {cloud_value})
+        if include_images else images
+    )
     if include_measurements:
         if remote_measurements is not None:
             measurements = [dict(row or {}) for row in remote_measurements]
@@ -364,7 +383,10 @@ def _store_remote_snapshot(
                 client,
                 [str(row.get('id') or '').strip() for row in images if str(row.get('id') or '').strip()],
             ))
-        measurements = _with_judged_child_rows(client, 'spore_measurements', measurements)
+        measurements = _with_judged_child_rows(
+            client, 'spore_measurements', measurements,
+            {str(row.get('id') or '').strip() for row in images if str(row.get('id') or '').strip()},
+        )
     else:
         measurements = []
     # ── B3 + final Fix 2: reconcile accepted-asymmetry on every schema-2

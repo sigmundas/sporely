@@ -1053,6 +1053,9 @@ def _push_images_for_observation(
                                 f'uncertain for image {local_image_id}; keeping cloud '
                                 f'image {img_cloud_id} and reserved key {storage_path}'
                             )
+                            # A transient error aborts the push after the
+                            # observation was stamped synced: keep it dirty.
+                            mark_observation_media_dirty(_safe_int(obs.get('id')))
                         elif reserved_image_row and img_cloud_id:
                             try:
                                 client._storage_remove([
@@ -1064,8 +1067,23 @@ def _push_images_for_observation(
                                     f'observation_images?id=eq.{img_cloud_id}'
                                     f'&user_id=eq.{client.user_id}'
                                 )
+                        elif (
+                            promotion_reserved_key
+                            and img_cloud_id
+                            and _upload_outcome_uncertain(upload_exc)
+                        ):
+                            # The bytes may have landed. Keep the reserved key
+                            # and its pending marker: the retry resumes the
+                            # promotion and uploads to the same key.
+                            print(
+                                f'[cloud_sync] Observation {obs["id"]}: upload outcome '
+                                f'uncertain for promoted image {local_image_id}; keeping '
+                                f'reserved key {promotion_reserved_key} on cloud image '
+                                f'{img_cloud_id}'
+                            )
+                            mark_observation_media_dirty(_safe_int(obs.get('id')))
                         elif promotion_reserved_key and img_cloud_id:
-                            # Promotion failure: restore the clean metadata
+                            # Definite failure: restore the clean metadata
                             # anchor (conditional NULL rollback + partial
                             # object cleanup). The anchor row is kept.
                             _rollback_anchor_promotion(

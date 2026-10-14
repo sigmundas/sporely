@@ -471,6 +471,7 @@ from utils.cloud_sync_impl.baseline import (  # noqa: F401  (facade re-export)
     _normalize_accepted_asymmetry_entry,
     _normalize_accepted_asymmetry_for_snapshot,
     _parse_cloud_observation_snapshot,
+    _JUDGED_CHILD_PARENT_COLUMNS,
     _JUDGED_CHILD_ROWS_ATTR,
     _store_cloud_observation_snapshot,
     _store_remote_snapshot,
@@ -9413,8 +9414,38 @@ def push_all(
 ) -> dict:
     """Push all unsynced / dirty observations (and optionally images) to cloud.
 
-    Returns a summary dict with counts.
+    Returns a summary dict with counts. Judged child rows (adoption
+    baselines) belong to this push only: they are dropped on every exit,
+    including an exception, so a later pull never stores one as a baseline.
     """
+    try:
+        return _push_all_once(
+            client,
+            progress_cb=progress_cb,
+            sync_images=sync_images,
+            prepare_images_cb=prepare_images_cb,
+            progress_state=progress_state,
+            remote_obs=remote_obs,
+            sync_calibrations=sync_calibrations,
+            full_pull=full_pull,
+            verify_stamped_measurements=verify_stamped_measurements,
+        )
+    finally:
+        forget_judged_child_rows(client)
+
+
+def _push_all_once(
+    client: SporelyCloudClient,
+    progress_cb: ProgressCallback | None = None,
+    sync_images: bool = True,
+    prepare_images_cb: PreparedImagesCallback | None = None,
+    progress_state: dict | None = None,
+    remote_obs: list[dict] | None = None,
+    sync_calibrations: bool = True,
+    full_pull: bool = True,
+    verify_stamped_measurements: bool = True,
+) -> dict:
+    """One push; see :func:`push_all`."""
     conn = get_connection()
     conn.row_factory = __import__('sqlite3').Row
     cursor = conn.cursor()
@@ -10514,8 +10545,6 @@ def push_all(
     sync_summary = _cloud_sync_current_summary()
     if sync_summary is not None:
         result['sync_summary'] = dict(sync_summary)
-    # A judged child row never becomes a later (pull-side) baseline.
-    forget_judged_child_rows(client)
     return result
 
 
@@ -10856,6 +10885,9 @@ def pull_all(
     account. If no observation actually changed remotely, the pull returns
     early after logging a `no-op fast path` line.
     """
+    # Push judgments never become pull-side baselines (push_all drops them on
+    # every exit; this covers a pull after any other push-side caller).
+    forget_judged_child_rows(client)
     # Pull preflight: EXIF backfill, candidate build, and the bulk image /
     # measurement fetches all run before the first per-observation progress
     # update. On a no-change sync these were part of the silent gap that left the

@@ -67,6 +67,8 @@ class ChildCloud:
         # requests.Timeout on the next media PUT.
         self.timeout_on_media_put: str | None = None
         self.after_get = None  # callable(table, filters) run after answering a GET
+        self.media_upgrade_required = False  # every media PUT answers 426
+        self.fail_get = None  # callable(table, filters) -> error response or None
         self._next_id = 5000
 
     # ── wiring ──────────────────────────────────────────────────────────
@@ -113,6 +115,9 @@ class ChildCloud:
             if self.kill_on_media_put:
                 self.kill_on_media_put = False
                 raise _Killed()
+            if self.media_upgrade_required:
+                return _FakeResponse(426, {"error": "upgrade"},
+                                     {"X-Sporely-Error-Code": "sporely_upgrade_required"})
             timeout, self.timeout_on_media_put = self.timeout_on_media_put, None
             if timeout == "before":
                 raise requests.Timeout("media upload timed out before the bytes landed")
@@ -146,6 +151,9 @@ class ChildCloud:
             return _FakeResponse(201, [])
         filters = [(k, v) for k, v in params if k not in {"select", "order", "limit", "offset"}]
         if method == "GET":
+            failure = self.fail_get(table, filters) if self.fail_get is not None else None
+            if failure is not None:
+                return failure
             response = self._get(table, params, filters)
             if self.after_get is not None:
                 self.after_get(table, filters)
@@ -1016,3 +1024,104 @@ def test_an_adopted_child_keeps_its_fetched_row_as_baseline(
     stored = images if table == "observation_images" else measurements
     assert len(stored) == 1
     assert stored[0][field] == judged, "the baseline is the judged row, not a later read"
+
+
+# ── Review round 2: promotion timeouts, vanished judged rows, push scope ─
+
+
+@pytest.mark.parametrize("when", ["before", "after"])
+def test_a_promotion_upload_timeout_keeps_the_reserved_key_for_the_retry(two_desktops, tmp_path, when):
+    cloud = ChildCloud()
+    _obs_id, image_id, _measurement_id = _create_full(tmp_path)  # anchor first, then promotion
+    cloud.timeout_on_media_put = when
+    try:
+        _push(cloud.client())
+    except cloud_sync.CloudSyncError as exc:
+        assert "Media upload failed" in str(exc)
+
+    [anchor] = cloud.rows("observation_images")
+    reserved_key = anchor["storage_path"]
+    assert reserved_key, "the promotion's reservation is kept"
+    assert str(_row("images", image_id)["cloud_id"]) == str(anchor["id"])
+    assert set(cloud.objects) == ({reserved_key} if when == "after" else set())
+
+    assert _push(cloud.client())["errors"] == []
+    [row] = cloud.rows("observation_images")
+    assert (row["id"], row["storage_path"]) == (anchor["id"], reserved_key), "same row, same key"
+    assert set(cloud.objects) == {reserved_key, cloud_sync.media_variant_key(reserved_key, "thumb")}
+
+
+@pytest.mark.parametrize("vanish", ["deleted", "purged"])
+def test_a_judged_image_that_vanishes_before_the_baseline_stays_in_it(
+    two_desktops, monkeypatch, tmp_path, vanish,
+):
+    cloud = ChildCloud()
+    obs_id = _observation()
+    _image(obs_id, tmp_path, image_type="field")
+    _copy_database(two_desktops["A"], two_desktops["B"])
+    assert _push(cloud.client())["errors"] == []
+    judged_id = cloud.rows("observation_images")[0]["id"]
+
+    def vanish_after_adoption_read(read_table, filters):
+        if read_table == "observation_images" and any(
+            column == "sync_key" and value.startswith("eq.") for column, value in filters
+        ):
+            cloud.after_get = None
+            if vanish == "deleted":
+                cloud.edit_elsewhere("observation_images", judged_id, deleted_at=_now())
+            else:
+                cloud.tables["observation_images"].clear()
+
+    two_desktops["B"].activate(monkeypatch)
+    cloud.after_get = vanish_after_adoption_read
+    _push(cloud.client())
+
+    images, _measurements = _stored_children(obs_id)
+    assert [str(image["id"]) for image in images] == [str(judged_id)], (
+        "the removal after the adoption read stays a remote change against the judged baseline"
+    )
+
+
+def test_judged_rows_never_outlive_an_interrupted_push(two_desktops, monkeypatch, tmp_path):
+    cloud = ChildCloud()
+    obs_id = _observation()
+    _image(obs_id, tmp_path, image_type="field")
+    _copy_database(two_desktops["A"], two_desktops["B"])
+    assert _push(cloud.client())["errors"] == []
+
+    two_desktops["B"].activate(monkeypatch)
+    adopted = {}
+
+    def note_adoption_read(read_table, filters):
+        if read_table == "observation_images" and any(
+            column == "sync_key" and value.startswith("eq.") for column, value in filters
+        ):
+            adopted["read"] = True
+
+    def fail_listing_after_adoption(read_table, filters):
+        # The baseline's child read fails after the adoption judged a row.
+        if adopted and read_table == "observation_images" and any(
+            column == "observation_id" for column, _ in filters
+        ):
+            return _error(400, "22P02", "listing refused")
+        return None
+
+    cloud.after_get = note_adoption_read
+    cloud.fail_get = fail_listing_after_adoption
+    client = cloud.client()
+    result = _push(client)
+    assert any("listing refused" in str(error) for error in result["errors"]), result["errors"]
+    assert adopted, "the adoption judged a row before the push stopped short of its baseline"
+    assert not getattr(client, "_judged_child_rows", {}), "dropped when the push ends"
+
+    cloud.fail_get = None
+    cloud.media_upgrade_required = True
+    _image(obs_id, tmp_path / "later", image_type="field", name="b.jpg")
+
+    # sync_all catches the refusal and goes on to pull with the same client.
+    result = cloud_sync.sync_all(
+        client, sync_images=True, prepare_images_cb=_prepare_all,
+        materialize_remote_images=False, full_pull=False,
+    )
+    assert result.get("upload_blocked") == "upgrade_required"
+    assert not getattr(client, "_judged_child_rows", {})
