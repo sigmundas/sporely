@@ -6,6 +6,7 @@ import time
 import pytest
 
 from utils import cloud_sync
+from utils.cloud_sync_impl import child_identity
 
 
 def _client(monkeypatch, *, existing_id="cloud-image-1"):
@@ -35,9 +36,14 @@ def test_push_serializes_capture_time_without_touching_created_at(monkeypatch):
         lambda path, payload: posts.append(dict(payload)) or [{"id": "cloud-image-new"}],
     )
 
+    monkeypatch.setattr(
+        child_identity, "committed_parent_cloud_id", lambda table, row: "cloud-observation-1",
+    )
     client.push_image_metadata(
         {
             "id": 7,
+            "observation_id": 1,
+            "sync_key": "0f6a1c0e-5d1b-4b8e-9a52-6e0f3c2b7a41",
             "image_type": "microscope",
             "captured_at": "2026-07-12T19:45:00+02:00",
         },

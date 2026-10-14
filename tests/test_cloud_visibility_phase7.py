@@ -941,8 +941,12 @@ def test_set_image_desktop_id_scopes_patch_to_user(monkeypatch):
 
     client.set_image_desktop_id("cloud-img-1", 77)
 
+    # Only a keyless row: the server refuses desktop_id beside a sync_key.
     assert patched_payloads == [
-        ("observation_images?id=eq.cloud-img-1&user_id=eq.user-123", {"desktop_id": 77})
+        (
+            "observation_images?id=eq.cloud-img-1&user_id=eq.user-123&sync_key=is.null",
+            {"desktop_id": 77},
+        )
     ]
 
 
@@ -1480,7 +1484,6 @@ def test_push_images_for_observation_skips_already_synced_image_without_uploadin
         cloud_sync,
         "_prepared_item_remote_payload",
         lambda *args, **kwargs: {
-            "desktop_id": 11,
             "storage_path": storage_path,
             "original_filename": "synced.jpg",
             "image_type": "field",
@@ -1491,7 +1494,6 @@ def test_push_images_for_observation_skips_already_synced_image_without_uploadin
         cloud_sync,
         "_remote_image_payload",
         lambda *args, **kwargs: {
-            "desktop_id": 11,
             "storage_path": storage_path,
             "original_filename": "synced.jpg",
             "image_type": "field",
@@ -3282,7 +3284,10 @@ def test_unchecked_image_that_is_not_an_fk_anchor_follows_normal_removal_path(
         )
 
 
-def test_metadata_anchor_repairs_stale_local_image_cloud_id(monkeypatch, tmp_path):
+def test_metadata_anchor_never_recreates_or_relinks_a_stale_local_image_cloud_id(monkeypatch, tmp_path):
+    # A linked image whose cloud row is gone is never re-created (no
+    # resurrection) and never re-linked to another row by desktop_id (retired
+    # as an identity). It fails visibly and stays linked for the deletion flow.
     db_path = _init_push_all_sync_db(tmp_path)
     with sqlite3.connect(db_path) as conn:
         conn.execute(
@@ -3309,17 +3314,16 @@ def test_metadata_anchor_repairs_stale_local_image_cloud_id(monkeypatch, tmp_pat
         )
     monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
-    client = _PushAllImageClient(
-        remote_images=[{
-            "id": "repaired-image-id",
-            "observation_id": "cloud-obs-1",
-            "desktop_id": 11,
-            "image_type": "microscope",
-            "storage_path": None,
-            "original_storage_path": None,
-            "deleted_at": None,
-        }],
-    )
+    other_device_row = {
+        "id": "other-device-image-id",
+        "observation_id": "cloud-obs-1",
+        "desktop_id": 11,
+        "image_type": "microscope",
+        "storage_path": None,
+        "original_storage_path": None,
+        "deleted_at": None,
+    }
+    client = _PushAllImageClient(remote_images=[dict(other_device_row)])
 
     result = cloud_sync._ensure_metadata_only_microscope_images_for_observation(
         client, 1, "cloud-obs-1",
@@ -3329,100 +3333,11 @@ def test_metadata_anchor_repairs_stale_local_image_cloud_id(monkeypatch, tmp_pat
         local_cloud_id = conn.execute(
             "SELECT cloud_id FROM images WHERE id = 11"
         ).fetchone()[0]
-    assert result["cloud_ids"] == ["repaired-image-id"]
-    assert local_cloud_id == "repaired-image-id"
+    assert result["cloud_ids"] == []
+    assert result["failed"] == 1
+    assert local_cloud_id == "stale-image-id"
+    assert client.remote_images == [other_device_row]
     assert client.upload_image_calls == []
-
-
-def test_observation_435_fixture_repairs_47_unchecked_spores(monkeypatch, tmp_path):
-    """Database regression: stale ids on 47 spores across unchecked sources."""
-    db_path = _init_push_all_sync_db(tmp_path)
-    image_ids = (1276, 1283)
-    with sqlite3.connect(db_path) as conn:
-        conn.execute(
-            "INSERT INTO observations (id, cloud_id, spore_data_visibility) VALUES (435, '730', 'public')"
-        )
-        for image_id in image_ids:
-            conn.execute(
-                """
-                INSERT INTO images (id, observation_id, cloud_id, filepath, image_type, sort_order)
-                VALUES (?, 435, ?, ?, 'microscope', ?)
-                """,
-                (
-                    image_id,
-                    f"stale-image-{image_id}",
-                    str(tmp_path / f"unchecked-{image_id}.jpg"),
-                    image_id,
-                ),
-            )
-        for offset in range(47):
-            image_id = image_ids[offset % 2]
-            conn.execute(
-                """
-                INSERT INTO spore_measurements
-                    (id, image_id, cloud_id, length_um, width_um, measurement_type,
-                     p1_x, p1_y, p2_x, p2_y, p3_x, p3_y, p4_x, p4_y)
-                VALUES (?, ?, ?, 10.0, 5.0, 'spore', 1, 1, 11, 1, 1, 6, 11, 6)
-                """,
-                (1000 + offset, image_id, f"stale-measure-{offset}"),
-            )
-        conn.execute(
-            "INSERT INTO settings (key, value) VALUES (?, ?)",
-            ("artsobs_publish_excluded_image_ids_435", json.dumps(list(image_ids))),
-        )
-    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
-    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
-
-    class RepairClient(_PushAllImageClient):
-        def _post(self, path, payload):
-            assert path == "observation_images"
-            row = dict(payload)
-            row["id"] = f"anchor-{payload['desktop_id']}"
-            self.remote_images.append(row)
-            return [row]
-
-        def _get(self, path):
-            return []
-
-        def push_measurement(self, meas, cloud_image_id, remote_measurement_cache=None):
-            existing = (remote_measurement_cache or {}).get(
-                f"desktop:{int(meas['id'])}"
-            )
-            if existing:
-                return str(existing.get("id"))
-            cloud_id = f"measure-{meas['id']}"
-            self.measurement_push_calls.append((int(meas["id"]), str(cloud_image_id)))
-            self.remote_measurements.append({
-                "id": cloud_id,
-                "desktop_id": int(meas["id"]),
-                "image_id": str(cloud_image_id),
-            })
-            return cloud_id
-
-    client = RepairClient()
-    cloud_sync._push_measurements_for_observation(client, 435)
-
-    with sqlite3.connect(db_path) as conn:
-        image_links = dict(conn.execute("SELECT id, cloud_id FROM images WHERE observation_id = 435"))
-        measurement_links = conn.execute(
-            "SELECT cloud_id FROM spore_measurements ORDER BY id"
-        ).fetchall()
-    remote_image_ids = {str(row["id"]) for row in client.remote_images}
-    assert len(client.remote_images) == 2
-    assert all(row["storage_path"] is None for row in client.remote_images)
-    assert client.upload_image_calls == []
-    assert len(client.remote_measurements) == 47
-    assert all(row["image_id"] in remote_image_ids for row in client.remote_measurements)
-    assert set(image_links.values()) == remote_image_ids
-    assert all(str(row[0]).startswith("measure-") for row in measurement_links)
-
-    # A repeated repair validates and reuses both anchors and measurements.
-    first_image_count = len(client.remote_images)
-    first_measurement_count = len(client.remote_measurements)
-    client.measurement_push_calls.clear()
-    cloud_sync._push_measurements_for_observation(client, 435)
-    assert len(client.remote_images) == first_image_count
-    assert len(client.remote_measurements) == first_measurement_count
 
 
 def test_get_conflict_detail_ignores_file_size_differences(monkeypatch):

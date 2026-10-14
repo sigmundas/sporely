@@ -273,14 +273,15 @@ class CloudRecoveryAdapter:
     ) -> None:
         rows = self.client.get_read_only(
             f"observation_images?id=eq.{cloud_image_id}&select="
-            "id,observation_id,desktop_id,storage_path&limit=2"
+            "id,observation_id,storage_path&limit=2"
         )
         if len(rows) != 1:
             raise RecoveryError("Created cloud image row could not be uniquely confirmed")
         row = dict(rows[0] or {})
         if (
+            # desktop_id is retired as an identity and no longer sent: the
+            # row id returned by this create is the identity checked here.
             str(row.get("observation_id") or "") != str(cloud_observation_id)
-            or int(row.get("desktop_id") or 0) != int(local_image_id)
             or _normalize_cloud_media_key(row.get("storage_path"))
             != _normalize_cloud_media_key(storage_path)
         ):

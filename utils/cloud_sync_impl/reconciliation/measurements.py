@@ -52,8 +52,9 @@ _MEASUREMENT_FLOAT_ABS_TOL = 1e-9
 _MEASUREMENT_FLOAT_REL_TOL = 1e-9
 
 
+# desktop_id is retired as an identity and never sent, so it is not compared:
+# a keyed row carries NULL there and would otherwise re-PATCH on every sync.
 _MEASUREMENT_SYNC_FIELDS = [
-    'desktop_id',
     'image_id',
     'length_um',
     'width_um',

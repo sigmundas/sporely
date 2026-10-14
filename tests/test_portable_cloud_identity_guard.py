@@ -59,12 +59,15 @@ def test_portable_image_guard_applies_to_child_identity(monkeypatch):
     monkeypatch.setattr(client, "_set_observation_media_keys", lambda *args: None)
     monkeypatch.setattr(cloud_sync, "_apply_image_sample_fields_to_push_payload", lambda *args, **kwargs: None)
     monkeypatch.setattr(cloud_sync, "_explicit_image_restore_source", lambda _image_id: "")
+    monkeypatch.setattr(cloud_sync, "committed_parent_cloud_id", lambda table, row: "new-observation")
     image = {
         "id": 92,
+        "observation_id": 91,
         "cloud_id": None,
         "filepath": "/tmp/imported.jpg",
         "image_type": "field",
         "portable_cloud_identity_pending": 1,
+        "sync_key": "5d4c3b2a-1f0e-4d9c-8b7a-6f5e4d3c2b1a",
     }
 
     cloud_id = client.push_image_metadata(image, "new-observation", "user-1/key")
@@ -73,6 +76,7 @@ def test_portable_image_guard_applies_to_child_identity(monkeypatch):
     assert calls["get"] == []
     assert calls["patch"] == []
     assert "desktop_id" not in calls["post"][0][1]
+    assert calls["post"][0][1]["sync_key"] == image["sync_key"]
 
 
 def test_portable_measurement_guard_ignores_desktop_cache_and_posts_without_reverse_id(
@@ -80,6 +84,7 @@ def test_portable_measurement_guard_ignores_desktop_cache_and_posts_without_reve
 ):
     client, calls = _client(monkeypatch)
     monkeypatch.setattr(client, "_measurement_supports_media_keys", lambda: False)
+    monkeypatch.setattr(cloud_sync, "committed_parent_cloud_id", lambda table, row: "new-cloud-image")
     measurement = {
         "id": 93,
         "cloud_id": None,
@@ -88,6 +93,7 @@ def test_portable_measurement_guard_ignores_desktop_cache_and_posts_without_reve
         "width_um": 5.0,
         "measurement_type": "manual",
         "portable_cloud_identity_pending": 1,
+        "sync_key": "6e5d4c3b-2a1f-4e0d-9c8b-7a6f5e4d3c2b",
     }
     collision = {
         "id": "source-cloud-measurement",
@@ -107,72 +113,20 @@ def test_portable_measurement_guard_ignores_desktop_cache_and_posts_without_reve
     assert "desktop_id" not in calls["post"][0][1]
 
 
-def test_portable_image_guard_disables_preparation_time_desktop_reassociation(
-    monkeypatch,
-):
-    client, _calls = _client(monkeypatch)
-    monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
-    monkeypatch.setattr(
-        client, "_observation_images_support_upload_metadata", lambda: False
-    )
-    monkeypatch.setattr(
-        cloud_sync.ImageDB,
-        "get_images_for_observation",
-        lambda _observation_id: [
-            {
-                "id": 92,
-                "cloud_id": None,
-                "filepath": "/tmp/imported.jpg",
-                "image_type": "field",
-            }
-        ],
-    )
-    monkeypatch.setattr(cloud_sync, "should_push_local_image_to_cloud", lambda _img: True)
-    reconciled = []
-    monkeypatch.setattr(
-        cloud_sync,
-        "_reconcile_local_image_cloud_id",
-        lambda *args, **kwargs: reconciled.append((args, kwargs)) or True,
-    )
-
-    associated = cloud_sync._associate_persisted_cloud_images(
-        client,
-        {
-            "id": 91,
-            "cloud_id": "new-observation",
-            "portable_cloud_identity_pending": 1,
-        },
-        [
-            {
-                "id": "unrelated-cloud-image",
-                "desktop_id": 92,
-                "observation_id": "new-observation",
-                "image_type": "field",
-            }
-        ],
-    )
-
-    assert associated == set()
-    assert reconciled == []
-
-
 def test_portable_image_guard_selects_only_verified_direct_cache_identity():
-    desktop_collision = {"id": "unrelated", "desktop_id": 92}
+    # desktop_id is retired as an identity: an unlinked image has no listed
+    # candidate at all, and a linked one only its verified cloud_id row.
     direct_match = {"id": "fresh-image", "desktop_id": None}
+    desktop_collision = {"id": "unrelated", "desktop_id": 92}
+    existing_by_id = {"fresh-image": direct_match, "unrelated": desktop_collision}
 
     assert cloud_sync._select_remote_image_identity_candidate(
-        local_image_id=92,
         local_cloud_id="",
-        existing_by_id={"fresh-image": direct_match},
-        existing_by_desktop_id={92: desktop_collision},
-        portable_identity_pending=True,
+        existing_by_id=existing_by_id,
     ) is None
     assert cloud_sync._select_remote_image_identity_candidate(
-        local_image_id=92,
         local_cloud_id="fresh-image",
-        existing_by_id={"fresh-image": direct_match},
-        existing_by_desktop_id={92: desktop_collision},
-        portable_identity_pending=True,
+        existing_by_id=existing_by_id,
     ) == direct_match
 
 
@@ -184,9 +138,8 @@ def test_portable_image_guard_applies_to_public_spore_metadata_anchor(monkeypatc
     monkeypatch.setattr(
         cloud_sync, "_cancel_microscope_anchor_tombstones", lambda *args: None
     )
-    monkeypatch.setattr(
-        cloud_sync, "_reconcile_local_image_cloud_id", lambda *args, **kwargs: True
-    )
+    monkeypatch.setattr(cloud_sync, "_commit_anchor_link", lambda *args: None)
+    monkeypatch.setattr(cloud_sync, "committed_parent_cloud_id", lambda table, row: "new-observation")
     monkeypatch.setattr(
         cloud_sync, "_set_cloud_image_metadata_only_state", lambda *args: None
     )
@@ -206,10 +159,12 @@ def test_portable_image_guard_applies_to_public_spore_metadata_anchor(monkeypatc
         "new-observation",
         {
             "id": 92,
+            "observation_id": 91,
             "cloud_id": None,
             "filepath": "",
             "image_type": "microscope",
             "portable_cloud_identity_pending": 1,
+            "sync_key": "4c3b2a1f-0e9d-4c8b-a7a6-5f4e3d2c1b0a",
         },
         remote_images=[
             {

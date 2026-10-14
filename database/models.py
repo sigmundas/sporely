@@ -16,6 +16,7 @@ from .schema import (
     get_reference_connection,
     get_images_dir,
     get_calibrations_dir,
+    LEGACY_RECOVERY_MARKER_COLUMN,
     new_sync_key,
     save_app_settings,
 )
@@ -244,6 +245,7 @@ _CLOUD_SQLITE_SETTING_PREFIXES = (
     "sporely_cloud_image_file_sig_",
     "sporely_cloud_local_media_sig_obs_",
     "sporely_cloud_explicit_image_restore_source_",
+    "sporely_cloud_child_create_pending_obs_",
 )
 _CLOUD_SQLITE_SETTING_KEYS = {
     "sporely_cloud_media_signature_v1",
@@ -335,6 +337,46 @@ def _table_columns(cursor, table_name: str) -> set[str]:
         return {str(row[1] or "") for row in cursor.fetchall()}
     except sqlite3.OperationalError:
         return set()
+
+
+def _fork_image_sync_identity(cursor, image_id: int) -> None:
+    """Make an image's measurements and sync keys those of new records.
+
+    For an image that becomes a new cloud row (moved, or republished after a
+    cloud delete): its measurements lose their ``cloud_id``, and the image and
+    its measurements get fresh sync keys and a cleared legacy-recovery
+    marker. The caller clears the image's own ``cloud_id``.
+    """
+    image_columns = _table_columns(cursor, "images")
+    measurement_columns = _table_columns(cursor, "spore_measurements")
+    if "sync_key" in image_columns:
+        cursor.execute(
+            "UPDATE images SET sync_key = ? WHERE id = ?", (new_sync_key(), image_id),
+        )
+    if LEGACY_RECOVERY_MARKER_COLUMN in image_columns:
+        cursor.execute(
+            f"UPDATE images SET {LEGACY_RECOVERY_MARKER_COLUMN} = 0 WHERE id = ?", (image_id,),
+        )
+    if "cloud_id" in measurement_columns:
+        cursor.execute(
+            "UPDATE spore_measurements SET cloud_id = NULL WHERE image_id = ?", (image_id,),
+        )
+    if LEGACY_RECOVERY_MARKER_COLUMN in measurement_columns:
+        cursor.execute(
+            f"UPDATE spore_measurements SET {LEGACY_RECOVERY_MARKER_COLUMN} = 0 "
+            f"WHERE image_id = ?",
+            (image_id,),
+        )
+    if "sync_key" in measurement_columns:
+        measurement_ids = [
+            row[0] for row in cursor.execute(
+                "SELECT id FROM spore_measurements WHERE image_id = ?", (image_id,),
+            ).fetchall()
+        ]
+        cursor.executemany(
+            "UPDATE spore_measurements SET sync_key = ? WHERE id = ?",
+            [(new_sync_key(), measurement_id) for measurement_id in measurement_ids],
+        )
 
 
 def update_observation_sync_state(
@@ -2825,7 +2867,13 @@ class ImageDB:
 
     @staticmethod
     def clear_image_cloud_sync_state(image_id: int) -> bool:
-        """Clear the cloud link from a local image so it can be republished."""
+        """Clear the cloud link from a local image so it can be republished.
+
+        Republishing creates new cloud rows: the deleted cloud image keeps its
+        immutable ``sync_key`` and its measurements, so the image and its
+        measurements become forks with fresh keys and no ``cloud_id``, like an
+        image move. They are never legacy-recovery candidates.
+        """
         try:
             image_id = int(image_id)
         except (TypeError, ValueError):
@@ -2858,10 +2906,12 @@ class ImageDB:
                 f'UPDATE images SET {", ".join(updates)} WHERE id = ?',
                 (image_id,),
             )
+            changed = bool(cursor.rowcount and cursor.rowcount > 0)
+            _fork_image_sync_identity(cursor, image_id)
             if observation_id:
                 _touch_observation(cursor, observation_id, mark_dirty=True)
             conn.commit()
-            return bool(cursor.rowcount and cursor.rowcount > 0)
+            return changed
         except Exception:
             conn.rollback()
             raise
@@ -2902,8 +2952,6 @@ class ImageDB:
                 (source_id,),
             ).fetchone()
             source_cloud_id = str(source_cloud_row[0] or "").strip() if source_cloud_row else ""
-            image_has_sync_key = "sync_key" in _table_columns(cursor, "images")
-            measurement_has_sync_key = "sync_key" in _table_columns(cursor, "spore_measurements")
 
             moved = 0
             for image_id in clean_ids:
@@ -2941,10 +2989,6 @@ class ImageDB:
                     )
 
                 cursor.execute(
-                    "UPDATE spore_measurements SET cloud_id = NULL WHERE image_id = ?",
-                    (image_id,),
-                )
-                cursor.execute(
                     """
                     UPDATE images
                     SET observation_id = ?, sort_order = ?, cloud_id = NULL, synced_at = NULL
@@ -2954,22 +2998,7 @@ class ImageDB:
                 )
                 # The moved image and its measurements become new cloud rows,
                 # so they are forks: each gets a fresh sync key.
-                if image_has_sync_key:
-                    cursor.execute(
-                        "UPDATE images SET sync_key = ? WHERE id = ?",
-                        (new_sync_key(), image_id),
-                    )
-                if measurement_has_sync_key:
-                    measurement_ids = [
-                        row[0] for row in cursor.execute(
-                            "SELECT id FROM spore_measurements WHERE image_id = ?",
-                            (image_id,),
-                        ).fetchall()
-                    ]
-                    cursor.executemany(
-                        "UPDATE spore_measurements SET sync_key = ? WHERE id = ?",
-                        [(new_sync_key(), measurement_id) for measurement_id in measurement_ids],
-                    )
+                _fork_image_sync_identity(cursor, image_id)
                 next_sort_order += 1
                 moved += 1
 

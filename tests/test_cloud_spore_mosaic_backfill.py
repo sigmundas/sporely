@@ -61,7 +61,8 @@ def _init_backfill_db(tmp_path: Path) -> Path:
             ai_crop_x1 REAL, ai_crop_y1 REAL,
             ai_crop_x2 REAL, ai_crop_y2 REAL,
             ai_crop_source_w INTEGER, ai_crop_source_h INTEGER,
-            ai_crop_is_custom INTEGER
+            ai_crop_is_custom INTEGER,
+            sync_key TEXT
         );
         CREATE TABLE spore_measurements (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -594,13 +595,16 @@ class _RecordingClient:
     def _observation_images_support_ai_crop_custom(self):
         return True
 
-    def _find_cloud_image(self, desktop_id: int, obs_cloud_id: str, image_type=None) -> dict | None:
-        self.calls.append(('_find_cloud_image', desktop_id))
+    def pull_image_metadata(self, obs_cloud_id: str, include_deleted_for_sync: bool = False) -> list[dict]:
+        self.calls.append(('pull_image_metadata', obs_cloud_id))
         if self._existing is None:
-            return None
+            return []
         if isinstance(self._existing, dict):
-            return self._existing
-        return {"id": self._existing, "deleted_at": None}
+            return [dict(self._existing)]
+        return [{
+            "id": self._existing, "observation_id": obs_cloud_id,
+            "image_type": "microscope", "storage_path": None, "deleted_at": None,
+        }]
 
     def _post(self, path: str, payload):
         self.calls.append(('_post', (path, payload)))
@@ -631,6 +635,7 @@ def test_ensure_metadata_only_creates_row_with_null_storage_path(db, monkeypatch
         filepath='/tmp/does-not-need-to-exist.jpg',
         image_type='microscope',
         cloud_id=None,
+        sync_key='1b2c3d4e-5f60-4718-8293-a4b5c6d7e8f9',
         sort_order=0,
         micro_category='spores',
         objective_name='100x',
@@ -667,7 +672,8 @@ def test_ensure_metadata_only_creates_row_with_null_storage_path(db, monkeypatch
     assert payload['image_type'] == 'microscope'
     assert payload['observation_id'] == '745'
     assert payload['user_id'] == 'user-uuid'
-    assert payload['desktop_id'] == image_id
+    assert 'desktop_id' not in payload
+    assert payload['sync_key'] == '1b2c3d4e-5f60-4718-8293-a4b5c6d7e8f9'
     # Metadata fields carried through:
     for expected in ('sort_order', 'micro_category', 'objective_name',
                      'scale_microns_per_pixel', 'mount_medium', 'sample_type',
@@ -709,35 +715,40 @@ def test_ensure_metadata_only_short_circuits_when_row_already_linked(db, monkeyp
 
     assert result == 'pre-existing-uuid'
     # The non-null local id is validated remotely; no duplicate is written.
-    assert client.calls == [('_find_cloud_image', image_id)]
+    assert client.calls == [('pull_image_metadata', '745')]
     stdout, _stderr = capfd.readouterr()
     assert 'Mosaic image metadata: linked' in stdout
 
 
-def test_ensure_metadata_only_reuses_remote_row_by_desktop_id(db, monkeypatch, capfd):
+def test_ensure_metadata_only_never_reuses_a_remote_row_by_desktop_id(db, monkeypatch, capfd):
+    # desktop_id is retired as an identity: another device's row carrying this
+    # local id is never linked. The unlinked image creates its own keyed row.
     obs_local = _insert_obs(db, cloud_id='745', spore_data_visibility='public')
     image_id = _insert_image(
         db, observation_id=obs_local, filepath='/tmp/x.jpg',
         image_type='microscope', cloud_id=None,
+        sync_key='2c3d4e5f-6071-4829-93a4-b5c6d7e8f901',
     )
     _insert_measurement(db, image_id=image_id, length_um=10.0, width_um=5.0, measurement_type='manual')
     image_row = _select_image(db, image_id)
 
-    client = _RecordingClient(existing_cloud_id='remote-uuid-9')
+    client = _RecordingClient(
+        existing_cloud_id={
+            "id": "remote-uuid-9", "desktop_id": image_id, "observation_id": "745",
+            "image_type": "microscope", "storage_path": None, "deleted_at": None,
+        },
+        post_id='cloud-img-own',
+    )
 
     result = cloud_sync._ensure_metadata_only_microscope_image_for_public_spores(
         client, obs_local, '745', image_row,
     )
 
-    assert result == 'remote-uuid-9'
-    # Lookup happened, no POST created a duplicate.
-    assert ('_find_cloud_image', image_id) in client.calls
+    assert result == 'cloud-img-own'
     posts = [c for c in client.calls if c[0] == '_post']
-    assert posts == []
-    # Local cloud_id updated.
-    assert _select_image(db, image_id).get('cloud_id') == 'remote-uuid-9'
-    stdout, _stderr = capfd.readouterr()
-    assert '(validated)' in stdout
+    assert len(posts) == 1 and 'desktop_id' not in posts[0][1][1]
+    assert not [c for c in client.calls if c[0] == '_patch']
+    assert _select_image(db, image_id).get('cloud_id') == 'cloud-img-own'
 
 
 def test_unchecked_measured_cloud_backed_image_preserves_both_storage_paths(db, monkeypatch):
@@ -829,6 +840,7 @@ def test_ensure_metadata_only_missing_source_file_still_creates_row(db, capfd):
         db, observation_id=obs_local,
         filepath='/definitely/does/not/exist.jpg',
         image_type='microscope', cloud_id=None,
+        sync_key='3d4e5f60-7182-4930-a4b5-c6d7e8f90a12',
     )
     _insert_measurement(db, image_id=image_id, length_um=10.0, width_um=5.0, measurement_type='manual')
     image_row = _select_image(db, image_id)

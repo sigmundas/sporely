@@ -79,6 +79,9 @@ OWNER_LAYERS: dict[str, int] = {
     # create identity (adoption, legacy recovery) sits above the payloads.
     "utils.cloud_sync_impl.fault_injection": 0,
     "utils.cloud_sync_impl.observation_identity": 3,
+    # Child (image, measurement) create identity builds on the observation
+    # owner's key match and sits below the anchor, image and measurement pushes.
+    "utils.cloud_sync_impl.child_identity": 4,
 }
 
 #: Owner modules allowed to import the facade at runtime (transitional; each

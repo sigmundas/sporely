@@ -10,10 +10,15 @@ found nothing and a later normal push POSTed a duplicate cloud image.
 The canonical resolver under test is
 ``SporelyCloudClient._resolve_existing_image_for_push``:
 
-* verified local ``cloud_id`` is the primary identity (PATCH, never POST);
-* remote ``desktop_id`` in the same observation is the recovery identity;
-* direct/reverse disagreement or an ambiguous reverse match raises
+* verified local ``cloud_id`` is the only push target (PATCH, never POST);
+* ``desktop_id`` is retired as an identity (per-record sync keys, Stage 4):
+  it is never looked up, released or written, so another row's
+  ``desktop_id`` can never redirect a push;
+* a linked row that is gone, soft-deleted or under another observation raises
   ``ImageIdentityConflictError`` and must leave the image dirty/retryable.
+
+An unlinked image takes the create path (``create_child_row``), covered with
+two databases and a shared fake cloud in ``tests/test_sync_key_child_identity.py``.
 """
 
 from __future__ import annotations
@@ -147,12 +152,16 @@ def test_local_cloud_id_valid_remote_desktop_id_null(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Test 2: local cloud_id valid, reverse points elsewhere → ImageIdentityConflictError
+# Test 2: another row carrying this local id as desktop_id is ignored
 # ---------------------------------------------------------------------------
 
 
-def test_local_cloud_id_valid_reverse_points_elsewhere(monkeypatch):
-    """Rule C: direct → img-200, reverse → img-201 → conflict."""
+def _desktop_id_lookups(calls) -> list[str]:
+    return [p for p in calls["cloud"].get_paths if "desktop_id=" in p]
+
+
+def test_local_cloud_id_valid_ignores_a_desktop_id_match_elsewhere(monkeypatch):
+    """Another device's row with desktop_id=42 never redirects or blocks the PATCH."""
     client, calls = _make_client(
         monkeypatch,
         [
@@ -161,87 +170,58 @@ def test_local_cloud_id_valid_reverse_points_elsewhere(monkeypatch):
         ],
     )
 
-    with pytest.raises(cloud_sync.ImageIdentityConflictError):
-        client.push_image_metadata(_local_img(42, cloud_id="img-200"), OBS_CLOUD_ID, "")
+    cloud_id = client.push_image_metadata(_local_img(42, cloud_id="img-200"), OBS_CLOUD_ID, "")
 
-    assert calls["patch"] == []
+    assert cloud_id == "img-200"
+    assert [p for p, _ in calls["patch"]] == [f"observation_images?id=eq.img-200&user_id=eq.{USER}"]
+    assert all("desktop_id" not in body for _, body in calls["patch"])
     assert calls["post"] == []
+    assert _desktop_id_lookups(calls) == []
 
 
 # ---------------------------------------------------------------------------
-# Test 3: no cloud_id, unique desktop_id in SAME observation → reuse (PATCH)
+# Test 3: an unlinked image never looks up or reuses a desktop_id row
 # ---------------------------------------------------------------------------
 
 
-def test_no_cloud_id_unique_desktop_id_same_observation(monkeypatch):
-    """Rule B: no direct link + exactly one reverse match in same observation → PATCH."""
-    client, calls = _make_client(
-        monkeypatch,
-        [{"id": "img-300", "desktop_id": 77, "user_id": USER, "observation_id": OBS_CLOUD_ID, "deleted_at": None}],
-    )
-
-    cloud_id = client.push_image_metadata(_local_img(77, cloud_id=None), OBS_CLOUD_ID, "")
-
-    assert cloud_id == "img-300"
-    assert any("observation_images?id=eq.img-300" in p for p, _ in calls["patch"])
-    assert calls["post"] == []
-
-
-# ---------------------------------------------------------------------------
-# Test 4: no cloud_id, unique desktop_id in ANOTHER observation → POST
-# ---------------------------------------------------------------------------
-
-
-def test_no_cloud_id_unique_desktop_id_other_observation(monkeypatch):
-    """Global desktop_id check catches rows in other observations — conflict, no POST."""
-    client, calls = _make_client(
-        monkeypatch,
-        [{"id": "img-300", "desktop_id": 77, "user_id": USER, "observation_id": "cloud-obs-OTHER", "deleted_at": None}],
-    )
-
-    with pytest.raises(cloud_sync.ImageIdentityConflictError):
-        client.push_image_metadata(_local_img(77, cloud_id=None), OBS_CLOUD_ID, "")
-
-    assert calls["patch"] == []
-    assert calls["post"] == []
-
-
-# ---------------------------------------------------------------------------
-# Test 5: no cloud_id, multiple desktop matches (same observation) → ImageIdentityConflictError
-# ---------------------------------------------------------------------------
-
-
-def test_multiple_desktop_id_matches_same_observation(monkeypatch):
-    """Rule B: ambiguous reverse match → conflict, no PATCH or POST."""
-    client, calls = _make_client(
-        monkeypatch,
+@pytest.mark.parametrize(
+    "remote_rows",
+    [
+        [{"id": "img-300", "desktop_id": 77, "observation_id": OBS_CLOUD_ID, "deleted_at": None}],
+        [{"id": "img-300", "desktop_id": 77, "observation_id": "cloud-obs-OTHER", "deleted_at": None}],
         [
-            {"id": "img-400", "desktop_id": 55, "user_id": USER, "observation_id": OBS_CLOUD_ID, "deleted_at": None},
-            {"id": "img-401", "desktop_id": 55, "user_id": USER, "observation_id": OBS_CLOUD_ID, "deleted_at": None},
+            {"id": "img-400", "desktop_id": 77, "observation_id": OBS_CLOUD_ID, "deleted_at": None},
+            {"id": "img-401", "desktop_id": 77, "observation_id": OBS_CLOUD_ID, "deleted_at": None},
         ],
+        [{"id": "img-600", "desktop_id": 77, "observation_id": OBS_CLOUD_ID, "deleted_at": "2026-01-01T00:00:00Z"}],
+    ],
+    ids=["same-observation", "other-observation", "ambiguous", "soft-deleted"],
+)
+def test_unlinked_image_never_looks_up_or_reuses_desktop_id_rows(monkeypatch, remote_rows):
+    """No cloud_id: the resolver answers "create" without any desktop_id read."""
+    client, calls = _make_client(
+        monkeypatch, [{**row, "user_id": USER} for row in remote_rows],
     )
 
-    with pytest.raises(cloud_sync.ImageIdentityConflictError):
-        client.push_image_metadata(_local_img(55, cloud_id=None), OBS_CLOUD_ID, "")
-
-    assert calls["patch"] == []
-    assert calls["post"] == []
+    assert client._resolve_existing_image_for_push(_local_img(77, cloud_id=None), OBS_CLOUD_ID) is None
+    assert calls["cloud"].get_paths == []
+    assert calls["patch"] == [] and calls["post"] == []
 
 
 # ---------------------------------------------------------------------------
-# Test 6: local cloud_id points to missing/invisible row → POST
+# Test 6: local cloud_id points to missing/invisible row → conflict, no write
 # ---------------------------------------------------------------------------
 
 
 def test_local_cloud_id_points_to_missing_row(monkeypatch):
-    """Rule D/G: unverifiable direct link + no reverse match → POST."""
+    """A linked row whose cloud copy is gone is never POSTed or PATCHed blindly."""
     client, calls = _make_client(monkeypatch, [])
 
-    cloud_id = client.push_image_metadata(_local_img(88, cloud_id="img-GONE"), OBS_CLOUD_ID, "")
+    with pytest.raises(cloud_sync.ImageIdentityConflictError, match="not found"):
+        client.push_image_metadata(_local_img(88, cloud_id="img-GONE"), OBS_CLOUD_ID, "")
 
-    assert cloud_id == "new-cloud-image-id"
     assert calls["patch"] == []
-    assert len(calls["post"]) == 1
+    assert calls["post"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -261,54 +241,6 @@ def test_cloud_id_soft_deleted_no_restore_intent(monkeypatch):
 
     assert calls["patch"] == []
     assert calls["post"] == []
-
-
-# ---------------------------------------------------------------------------
-# Test 8: desktop_id resolves to soft-deleted row, no restore intent → error
-# ---------------------------------------------------------------------------
-
-
-def test_desktop_id_resolves_to_soft_deleted_no_restore_intent(monkeypatch):
-    """Soft-deleted reverse match without explicit restore intent → conflict."""
-    client, calls = _make_client(
-        monkeypatch,
-        [{"id": "img-600", "desktop_id": 33, "user_id": USER, "observation_id": OBS_CLOUD_ID, "deleted_at": "2026-01-01T00:00:00Z"}],
-    )
-
-    with pytest.raises(cloud_sync.ImageIdentityConflictError, match="soft-deleted"):
-        client.push_image_metadata(_local_img(33, cloud_id=None), OBS_CLOUD_ID, "")
-
-    assert calls["patch"] == []
-    assert calls["post"] == []
-
-
-# ---------------------------------------------------------------------------
-# Test 9: explicit restore: release, new row POSTed, marker cleared
-# ---------------------------------------------------------------------------
-
-
-def test_explicit_restore_releases_and_creates_new_row(monkeypatch):
-    """Restore intent: PATCH release of old desktop_id, POST new row, clear marker."""
-    cleared: list[int] = []
-    client, calls = _make_client(
-        monkeypatch,
-        [{"id": "img-700", "desktop_id": 44, "user_id": USER, "observation_id": OBS_CLOUD_ID, "deleted_at": None}],
-    )
-    # Override the defaults from _make_client
-    monkeypatch.setattr(cloud_sync, "_explicit_image_restore_source", lambda image_id: "img-700")
-    monkeypatch.setattr(
-        cloud_sync, "_clear_explicit_image_restore_source", lambda image_id: cleared.append(int(image_id))
-    )
-
-    cloud_id = client.push_image_metadata(_local_img(44, cloud_id=None), OBS_CLOUD_ID, "")
-
-    assert cloud_id == "new-cloud-image-id"
-    release_patches = [p for p, body in calls["patch"] if body == {"desktop_id": None}]
-    assert len(release_patches) == 1
-    assert "img-700" in release_patches[0]
-    assert "user_id=eq." in release_patches[0]
-    assert len(calls["post"]) == 1
-    assert cleared == [44]
 
 
 # ---------------------------------------------------------------------------
@@ -374,62 +306,21 @@ def test_image_identity_conflict_error_is_cloud_sync_error():
 
 
 # ---------------------------------------------------------------------------
-# Test 13: soft-deleted reverse match == restore source → no conflict raised
+# Test 13: restore intent never releases or PATCHes the deleted source row
 # ---------------------------------------------------------------------------
 
 
-def test_explicit_restore_with_deleted_source_row_bypasses_deletion_guard(monkeypatch):
-    """Deletion guard must not raise when the soft-deleted reverse match IS the restore source."""
-    cleared: list[int] = []
+def test_restore_source_is_never_released_or_patched(monkeypatch):
+    """A restore republishes as a new keyed row: the deleted row is left alone."""
     client, calls = _make_client(
         monkeypatch,
         [{"id": "img-700", "desktop_id": 44, "user_id": USER, "observation_id": OBS_CLOUD_ID, "deleted_at": "2026-07-21T10:00:00Z"}],
     )
     monkeypatch.setattr(cloud_sync, "_explicit_image_restore_source", lambda image_id: "img-700")
-    monkeypatch.setattr(
-        cloud_sync, "_clear_explicit_image_restore_source", lambda image_id: cleared.append(int(image_id))
-    )
 
-    # Must not raise even though the reverse-matched row is soft-deleted
-    cloud_id = client.push_image_metadata(_local_img(44, cloud_id=None), OBS_CLOUD_ID, "")
-
-    assert cloud_id == "new-cloud-image-id"
-    # Release PATCH (desktop_id: None) must fire on img-700
-    release_patches = [p for p, body in calls["patch"] if body == {"desktop_id": None}]
-    assert len(release_patches) == 1, "restore release PATCH must fire"
-    assert "img-700" in release_patches[0]
-    assert "user_id=eq." in release_patches[0]
-    # New row POSTed (not a PATCH to update img-700)
-    assert len(calls["post"]) == 1, "POST for new row must fire"
-
-
-# ---------------------------------------------------------------------------
-# Test 14: direct-leg restore — local cloud_id == restore source (soft-deleted)
-# ---------------------------------------------------------------------------
-
-
-def test_explicit_restore_via_direct_cloud_id_link(monkeypatch):
-    """Direct leg: soft-deleted row found via cloud_id == restore_source_id → no conflict."""
-    cleared: list[int] = []
-    client, calls = _make_client(
-        monkeypatch,
-        [{"id": "img-800", "desktop_id": 55, "user_id": USER, "observation_id": "obs-X", "deleted_at": "2026-07-21T10:00:00Z"}],
-    )
-    monkeypatch.setattr(cloud_sync, "_explicit_image_restore_source", lambda image_id: "img-800")
-    monkeypatch.setattr(
-        cloud_sync, "_clear_explicit_image_restore_source", lambda image_id: cleared.append(int(image_id))
-    )
-
-    # img has cloud_id pointing directly at the tombstoned row
-    cloud_id = client.push_image_metadata(_local_img(55, cloud_id="img-800"), OBS_CLOUD_ID, "")
-
-    assert cloud_id == "new-cloud-image-id"
-    # Release PATCH must fire on img-800
-    release_patches = [p for p, body in calls["patch"] if body == {"desktop_id": None}]
-    assert len(release_patches) == 1, "restore release PATCH must fire on direct leg"
-    assert "img-800" in release_patches[0]
-    # POST for new row must fire (not updating the deleted row)
-    assert len(calls["post"]) == 1, "POST for new row must fire"
+    assert client._resolve_existing_image_for_push(_local_img(44, cloud_id=None), OBS_CLOUD_ID) is None
+    assert calls["patch"] == [] and calls["post"] == []
+    assert _desktop_id_lookups(calls) == []
 
 
 # ---------------------------------------------------------------------------
@@ -449,119 +340,3 @@ def test_direct_cloud_id_points_to_another_observation_raises_conflict(monkeypat
 
     assert calls["patch"] == []
     assert calls["post"] == []
-
-
-# ---------------------------------------------------------------------------
-# Test 16: desktop_id exists in another observation → conflict before POST
-# ---------------------------------------------------------------------------
-
-
-def test_desktop_id_exists_in_another_observation_raises_conflict_before_post(monkeypatch):
-    """Finding 3A: global desktop_id found in another obs → conflict, no POST."""
-    client, calls = _make_client(
-        monkeypatch,
-        [{"id": "img-901", "desktop_id": 50, "user_id": USER, "observation_id": "other-obs", "image_type": "field", "deleted_at": None}],
-    )
-
-    with pytest.raises(cloud_sync.ImageIdentityConflictError):
-        client.push_image_metadata(_local_img(50, cloud_id=None), OBS_CLOUD_ID, "")
-
-    assert calls["post"] == []
-
-
-# ---------------------------------------------------------------------------
-# Test 17: desktop_id exists as soft-deleted → conflict before POST
-# ---------------------------------------------------------------------------
-
-
-def test_desktop_id_exists_as_soft_deleted_raises_conflict(monkeypatch):
-    """Finding 3A: global desktop_id soft-deleted → conflict, no POST."""
-    client, calls = _make_client(
-        monkeypatch,
-        [{"id": "img-902", "desktop_id": 51, "user_id": USER, "observation_id": OBS_CLOUD_ID, "image_type": "field", "deleted_at": "2026-07-01T00:00:00Z"}],
-    )
-
-    with pytest.raises(cloud_sync.ImageIdentityConflictError):
-        client.push_image_metadata(_local_img(51, cloud_id=None), OBS_CLOUD_ID, "")
-
-    assert calls["post"] == []
-
-
-# ---------------------------------------------------------------------------
-# Test 18: multiple global desktop_id matches → conflict
-# ---------------------------------------------------------------------------
-
-
-def test_multiple_global_desktop_id_matches_raises_conflict(monkeypatch):
-    """Finding 3A: ambiguous global desktop_id → conflict."""
-    client, calls = _make_client(
-        monkeypatch,
-        [
-            {"id": "img-903", "desktop_id": 52, "user_id": USER, "observation_id": "other-obs-1", "image_type": "field", "deleted_at": None},
-            {"id": "img-904", "desktop_id": 52, "user_id": USER, "observation_id": "other-obs-2", "image_type": "field", "deleted_at": None},
-        ],
-    )
-
-    with pytest.raises(cloud_sync.ImageIdentityConflictError):
-        client.push_image_metadata(_local_img(52, cloud_id=None), OBS_CLOUD_ID, "")
-
-
-# ---------------------------------------------------------------------------
-# Test 19: POST 23505 unique violation → ImageIdentityConflictError
-# ---------------------------------------------------------------------------
-
-
-def test_23505_race_surfaced_as_identity_conflict(monkeypatch):
-    """Finding 3B: 23505 from POST is wrapped as ImageIdentityConflictError."""
-    client, calls = _make_client(monkeypatch, [])
-
-    def _raising_post(path, payload):
-        raise cloud_sync.CloudSyncError("23505 duplicate key value violates unique constraint")
-
-    monkeypatch.setattr(client, "_post", _raising_post)
-
-    with pytest.raises(cloud_sync.ImageIdentityConflictError):
-        client.push_image_metadata(_local_img(53, cloud_id=None), OBS_CLOUD_ID, "")
-
-
-# ---------------------------------------------------------------------------
-# Test 20: anchor helper propagates ImageIdentityConflictError (not swallowed)
-# ---------------------------------------------------------------------------
-
-
-def test_anchor_helper_propagates_identity_conflict_zero_post(monkeypatch):
-    """Finding 6: ImageIdentityConflictError from _find_cloud_image propagates."""
-    import types
-
-    # Patch DB gate so the helper reaches the _find_cloud_image branch.
-    monkeypatch.setattr(
-        cloud_sync, "microscope_image_requires_public_spore_anchor", lambda image_id: True
-    )
-
-    post_calls: list = []
-
-    def _raise_conflict(desktop_id, obs_cloud_id, image_type=None):
-        raise cloud_sync.ImageIdentityConflictError("injected conflict")
-
-    client = types.SimpleNamespace(
-        user_id=USER,
-        _find_cloud_image=_raise_conflict,
-        _post=lambda path, payload: post_calls.append((path, payload)) or [{"id": "should-not-reach"}],
-        push_image_metadata=lambda *a, **kw: None,
-    )
-
-    image_row = {
-        "id": 60,
-        "cloud_id": None,
-        "filepath": "/tmp/m.jpg",
-        "image_type": "microscope",
-        "sort_order": 0,
-        "observation_id": 1,
-    }
-
-    with pytest.raises(cloud_sync.ImageIdentityConflictError):
-        cloud_sync._ensure_metadata_only_microscope_image_for_public_spores(
-            client, 1, OBS_CLOUD_ID, image_row,
-        )
-
-    assert post_calls == [], "POST must not fire when identity conflict raised"

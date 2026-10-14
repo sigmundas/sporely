@@ -142,6 +142,33 @@ class ObservationAdoptionConflictError(CloudSyncError):
         self.remote = dict(remote or {})
 
 
+class ChildAdoptionConflictError(CloudSyncError):
+    """An image or measurement create hit a keyed cloud row it cannot link.
+
+    Raised after a ``23505`` on the table's ``*_user_sync_key_uidx`` when the
+    row fetched by key and owner sits under another parent (``reason`` is
+    ``'parent'``: never re-parented), was deleted in the cloud (``'deleted'``:
+    never resurrected), or differs from the local row (``'content'``). Also
+    raised for a linked row whose cloud copy is gone or sits under another
+    parent. The caller never PATCHes the row; the local row stays unlinked or
+    untouched, and dirty.
+    """
+
+    def __init__(self, text: str, *, table: str, cloud_id: str = '', reason: str = ''):
+        super().__init__(text)
+        self.table = str(table or '')
+        self.cloud_id = str(cloud_id or '')
+        self.reason = str(reason or '')
+
+
+class ChildParentNotLinkedError(CloudSyncError):
+    """A child row's parent has no committed ``cloud_id`` equal to the target.
+
+    Children are created only under a parent whose ``cloud_id`` is committed
+    locally; until then the child is deferred and stays dirty.
+    """
+
+
 def raise_if_upload_refused(client) -> None:
     """Stop upload work once ``client`` has seen an upload refusal this run."""
     check = getattr(client, '_check_upload_refusal', None)

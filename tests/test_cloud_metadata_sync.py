@@ -7,6 +7,7 @@ import pytest
 
 from database import models
 from utils import cloud_sync
+from utils.cloud_sync_impl import child_identity
 
 
 @pytest.fixture(autouse=True)
@@ -859,9 +860,12 @@ def test_push_image_metadata_marks_reencoded_uploads_as_exif_safe(monkeypatch):
         lambda path, payload: posted_payloads.append({"path": path, "payload": dict(payload)}) or [{"id": "cloud-image-11"}],
     )
 
+    monkeypatch.setattr(child_identity, "committed_parent_cloud_id", lambda table, row: "cloud-obs-1")
     cloud_id = client.push_image_metadata(
         {
             "id": 11,
+            "observation_id": 1,
+            "sync_key": "7c1a5bd2-46a3-4f0e-9d65-3f2b9b0d6c11",
             "filepath": "/tmp/source.jpg",
             "sort_order": 0,
             "upload_mode": "full",

@@ -17,11 +17,13 @@ from utils.cloud_sync_impl.anchors import (
     _ensure_metadata_anchors_for_public_spore_observation,
 )
 from utils.cloud_sync_impl.common import (
-    _CLOUD_SYNC_IN_BATCH_SIZE,
     _join_select_columns,
     _safe_int,
 )
+from utils.cloud_sync_impl.child_identity import clear_legacy_marker
 from utils.cloud_sync_impl.errors import (
+    CloudSyncError,
+    CloudUploadRefusedError,
     is_cloud_auth_error,
     is_cloud_temporary_unavailable_error,
 )
@@ -92,15 +94,10 @@ def _build_remote_measurement_identity_cache(remote_measurements: list[dict] | N
 
 
 def _measurement_push_lookup_keys(measurement_row: dict | None) -> list[str]:
+    """Cache keys a push may target: the verified ``cloud_id`` only."""
     row = dict(measurement_row or {})
-    keys: list[str] = []
     cloud_id = str(row.get('cloud_id') or '').strip()
-    if cloud_id:
-        keys.append(f'cloud:{cloud_id}')
-    desktop_id = _safe_int(row.get('id'))
-    if desktop_id > 0:
-        keys.append(f'desktop:{desktop_id}')
-    return keys
+    return [f'cloud:{cloud_id}'] if cloud_id else []
 
 
 def fetch_remote_measurement_identity_cache(
@@ -121,9 +118,12 @@ def _push_measurements_for_observation(
 ) -> None:
     """Push all spore measurements for an observation's microscope images to the cloud.
 
-    Only images that have a cloud_id (i.e. have been synced) are included.
-    Measurements are upserted by desktop_id; stale cloud rows for images that
-    still exist locally are cleaned up.
+    Only measurements whose image has a committed cloud_id are included: a
+    child waits for its parent. Each row goes through the state machine of
+    ``SporelyCloudClient.push_measurement`` (PATCH by verified cloud_id, or
+    create with its sync_key). A linked row whose cloud copy is gone is never
+    re-created. Per-row failures leave those rows untouched and are raised
+    together after the loop, so the caller keeps the observation dirty.
     """
     push_start = _cloud_sync_perf_counter()
     conn = get_connection()
@@ -150,11 +150,7 @@ def _push_measurements_for_observation(
         cursor = conn.cursor()
         cursor.execute(
             '''
-            SELECT m.id, m.image_id, m.length_um, m.width_um, m.measurement_type,
-                   m.gallery_rotation,
-                   m.p1_x, m.p1_y, m.p2_x, m.p2_y,
-                   m.p3_x, m.p3_y, m.p4_x, m.p4_y,
-                   m.measured_at, m.cloud_id,
+            SELECT m.*,
                    i.cloud_id AS image_cloud_id
             FROM spore_measurements m
             JOIN images i ON i.id = m.image_id
@@ -213,62 +209,9 @@ def _push_measurements_for_observation(
         ),
     )
 
-    stale_link_candidates = [
-        meas
-        for meas in measurements
-        if str(meas.get('cloud_id') or '').strip()
-        and f"cloud:{str(meas.get('cloud_id') or '').strip()}" not in remote_measurement_cache
-        and f"desktop:{_safe_int(meas.get('id'))}" not in remote_measurement_cache
-    ]
-    getter = getattr(client, '_get', None)
-    if stale_link_candidates and callable(getter):
-        desktop_ids = sorted({
-            _safe_int(meas.get('id'))
-            for meas in stale_link_candidates
-            if _safe_int(meas.get('id')) > 0
-        })
-        for start in range(0, len(desktop_ids), _CLOUD_SYNC_IN_BATCH_SIZE):
-            chunk = desktop_ids[start:start + _CLOUD_SYNC_IN_BATCH_SIZE]
-            rows = getter(
-                f'spore_measurements?desktop_id=in.({",".join(str(value) for value in chunk)})'
-                f'&user_id=eq.{client.user_id}'
-                f'&select={_SPORE_MEASUREMENT_SELECT_COLUMNS}'
-            )
-            remote_measurement_cache.update(
-                _build_remote_measurement_identity_cache(rows)
-            )
-
-    stale_local_measurement_ids = [
-        _safe_int(meas.get('id'))
-        for meas in stale_link_candidates
-        if f"cloud:{str(meas.get('cloud_id') or '').strip()}" not in remote_measurement_cache
-        and f"desktop:{_safe_int(meas.get('id'))}" not in remote_measurement_cache
-        and _safe_int(meas.get('id')) > 0
-    ]
-    if stale_local_measurement_ids:
-        conn = get_connection()
-        try:
-            placeholders = ','.join('?' for _ in stale_local_measurement_ids)
-            conn.execute(
-                f'UPDATE spore_measurements SET cloud_id = NULL '
-                f'WHERE id IN ({placeholders})',
-                stale_local_measurement_ids,
-            )
-            conn.commit()
-        finally:
-            conn.close()
-        stale_id_set = set(stale_local_measurement_ids)
-        for meas in measurements:
-            if _safe_int(meas.get('id')) in stale_id_set:
-                meas['cloud_id'] = None
-        print(
-            f'[cloud_sync] Observation {obs_local_id}: cleared '
-            f'{len(stale_local_measurement_ids)} stale local measurement cloud id(s)',
-            flush=True,
-        )
-
     pushed_cloud_ids: set[str] = set()
     local_id_stamp_failures: list[int] = []
+    push_failures: list[str] = []
     for meas in measurements:
         cloud_image_id = str(meas.get('image_cloud_id') or '').strip()
         if not cloud_image_id:
@@ -280,9 +223,14 @@ def _push_measurements_for_observation(
                 remote_measurement_cache=remote_measurement_cache,
             )
         except Exception as e:
-            if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
+            if (
+                is_cloud_auth_error(e)
+                or is_cloud_temporary_unavailable_error(e)
+                or isinstance(e, CloudUploadRefusedError)
+            ):
                 raise
             print(f'[cloud_sync] Measurement {meas["id"]} push failed: {e}')
+            push_failures.append(f'measurement {meas["id"]}: {e}')
             continue
 
         pushed_cloud_ids.add(cloud_meas_id)
@@ -304,6 +252,7 @@ def _push_measurements_for_observation(
                         'UPDATE spore_measurements SET cloud_id = ? WHERE id = ?',
                         (normalized_cloud_meas_id, int(meas['id'])),
                     )
+                    clear_legacy_marker(conn, 'spore_measurements', int(meas['id']))
                     conn.commit()
                 finally:
                     conn.close()
@@ -329,4 +278,9 @@ def _push_measurements_for_observation(
         ),
         flush=True,
     )
+    if push_failures:
+        raise CloudSyncError(
+            f'obs {int(obs_local_id)}: {len(push_failures)} measurement(s) not synced: '
+            + '; '.join(push_failures)
+        )
     _finalize_portable_cloud_identity_guard(client, int(obs_local_id))

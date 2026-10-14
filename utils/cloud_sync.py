@@ -112,6 +112,8 @@ from utils.cloud_sync_impl.errors import (  # noqa: F401  (facade re-export)
     CloudSyncError,
     CloudTemporarilyUnavailableError,
     IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE,
+    ChildAdoptionConflictError,
+    ChildParentNotLinkedError,
     CloudUploadRefusedError,
     CloudWriteRejectedError,
     raise_if_upload_refused,
@@ -201,6 +203,7 @@ from utils.cloud_sync_impl.progress import (  # noqa: F401  (facade re-export)
     _sync_summary_value,
     _trace_progress_gap,
     format_sync_summary,
+    _append_identity_bits,
     partition_download_from_cloud_issues,
     summarize_blocked_write_attempts,
     summarize_sync_change_activity,
@@ -569,6 +572,7 @@ from utils.sync_client_identity import (
 )
 from utils.cloud_sync_impl.anchors import (  # noqa: F401  (facade re-export)
     _cancel_microscope_anchor_tombstones,
+    _commit_anchor_link,
     _ensure_metadata_anchors_for_public_spore_observation,
     _ensure_metadata_only_microscope_image_for_public_spores,
     _ensure_metadata_only_microscope_images_for_observation,
@@ -676,9 +680,34 @@ from utils.cloud_sync_impl.image_pull import (  # noqa: F401  (facade re-export)
     _update_image_columns_without_touching_observation,
     cloud_media_materialization_state_for_observation,
 )
+from utils.cloud_sync_impl.child_identity import (  # noqa: F401  (facade re-export)
+    CHILD_CREATE_PENDING_SETTING_PREFIX,
+    CHILD_TABLES,
+    ChildTable,
+    _ADOPTED_CHILD_ROWS_ATTR,
+    _child_create_pending_key,
+    _clear_legacy_marker_now,
+    _has_settings_table,
+    _spec,
+    adopt_child_by_sync_key,
+    clear_child_create_pending,
+    clear_legacy_marker,
+    committed_parent_cloud_id,
+    create_child_row,
+    judge_child_row,
+    mark_child_create_pending,
+    read_child_rows,
+    recover_legacy_child,
+    redirty_interrupted_child_creates,
+    remember_adopted_child,
+    require_committed_parent,
+    take_adopted_child,
+)
 from utils.cloud_sync_impl.image_push import (  # noqa: F401  (facade re-export)
-    _associate_persisted_cloud_images,
+    _IMAGE_CREATE_COMPARE_EXCLUDED_KEYS,
+    _image_create_content_matches,
     _local_image_source_bytes_unchanged,
+    _remote_image_compare_payload,
     _lookup_unlisted_remote_image_storage_path,
     _prepared_item_remote_payload,
     _push_images_for_observation,
@@ -4484,8 +4513,9 @@ def resolve_conflict_keep_local(
     _adopt_merge_filled_ai_fields_locally(local_id, local_obs, merged_obs)
     # A link made without a cloud write is already committed with its
     # baseline and status (_commit_linked_observation): never restamp it,
-    # and never replace that judged baseline with a later read (below).
-    linked_without_write = take_adopted_base(client, cloud_id) is not None
+    # and never replace that judged row with a later read (below).
+    adopted_base = take_adopted_base(client, cloud_id)
+    linked_without_write = adopted_base is not None
     if not linked_without_write:
         conn = get_connection()
         try:
@@ -4579,8 +4609,11 @@ def resolve_conflict_keep_local(
             flush=True,
         )
 
-    if not linked_without_write:
+    # The judged observation row stays the baseline; children are re-read.
+    if adopted_base is None:
         _store_remote_snapshot(client, cloud_id)
+    else:
+        _store_remote_snapshot(client, cloud_id, remote=adopted_base)
     _refresh_local_cloud_media_signature(int(local_id))
     return {'local_id': int(local_id), 'cloud_id': cloud_id}
 
@@ -4703,7 +4736,8 @@ def resolve_conflict_merge(
     _adopt_merge_filled_ai_fields_locally(local_id, local_obs, merged_obs)
     # As in keep-local: a link made without a cloud write is already
     # committed with its judged baseline and status; never restamp or re-read.
-    linked_without_write = take_adopted_base(client, cloud_id) is not None
+    adopted_base = take_adopted_base(client, cloud_id)
+    linked_without_write = adopted_base is not None
     if not linked_without_write:
         conn = get_connection()
         try:
@@ -4737,8 +4771,11 @@ def resolve_conflict_merge(
             mark_observation_dirty(int(local_id))
             raise CloudSyncError(f'Could not fully upload images for observation {local_id}')
 
-    if not linked_without_write:
+    # The judged observation row stays the baseline; children are re-read.
+    if adopted_base is None:
         _store_remote_snapshot(client, cloud_id)
+    else:
+        _store_remote_snapshot(client, cloud_id, remote=adopted_base)
     _refresh_local_cloud_media_signature(int(local_id))
     return {'local_id': int(local_id), 'cloud_id': cloud_id, 'warnings': warnings}
 
@@ -7521,10 +7558,8 @@ class SporelyCloudClient(
             payload.pop('calibration_uuid', None)
         payload['observation_id']    = obs_cloud_id
         payload['user_id']           = self.user_id
-        if bool(img.get('portable_cloud_identity_pending')):
-            payload.pop('desktop_id', None)
-        else:
-            payload['desktop_id'] = img['id']
+        # desktop_id is retired as an identity, and sync_key is immutable and
+        # sent only by the create: an existing row is PATCHed with neither.
         # A local image reaching the push path is active (local tombstones are
         # filtered by the caller). Clear a stale remote soft-delete so its
         # measurements become visible again through public RPCs.
@@ -7590,16 +7625,27 @@ class SporelyCloudClient(
             self._patch(f'observation_images?id=eq.{existing_id}&user_id=eq.{self.user_id}', payload)
             cloud_id = existing_id
         else:
-            try:
-                rows = self._post('observation_images', payload)
-                cloud_id = rows[0]['id']
-            except CloudSyncError as e:
-                if '23505' in str(e) or 'unique' in str(e).lower():
-                    raise ImageIdentityConflictError(
-                        f"POST to observation_images hit unique constraint for image {img['id']}; "
-                        "a concurrent race or stale global lookup; image left dirty"
-                    ) from e
-                raise
+            # State L0: POST with the committed key, or link this database's
+            # own copy without a write (recorded for the caller, which then
+            # reuses its reserved storage_path and never deletes it).
+            cloud_id, adopted = create_child_row(
+                self,
+                'observation_images',
+                img,
+                payload,
+                parent_cloud_id=obs_cloud_id,
+                content_matches=lambda remote: _image_create_content_matches(self, img, remote),
+                summary=_cloud_sync_current_summary(),
+            )
+            if adopted is not None:
+                # Linked without a write: no observation media-key PATCH either.
+                remember_adopted_child(self, 'observation_images', cloud_id, adopted)
+                normalized_key = _normalize_cloud_media_key(adopted.get('storage_path'))
+                if normalized_key:
+                    self._cloud_image_storage_key_cache[str(cloud_id)] = normalized_key
+                if restore_source_id:
+                    _clear_explicit_image_restore_source(img['id'])
+                return cloud_id
         if cloud_id and restore_source_id:
             _clear_explicit_image_restore_source(img['id'])
         normalized_key = _normalize_cloud_media_key(payload.get('storage_path'))
@@ -8225,9 +8271,14 @@ class SporelyCloudClient(
             raise
 
     def set_measurement_desktop_id(self, cloud_measurement_id: str, desktop_id: int) -> None:
-        """Write the local SQLite measurement ID back to the cloud row for future dedup."""
+        """Write the local SQLite measurement ID back to a keyless cloud row.
+
+        Never onto a keyed row: the server refuses ``desktop_id`` beside a
+        ``sync_key``, so the filter leaves such a row untouched.
+        """
         self._patch(
-            f'spore_measurements?id=eq.{cloud_measurement_id}&user_id=eq.{self.user_id}',
+            f'spore_measurements?id=eq.{cloud_measurement_id}&user_id=eq.{self.user_id}'
+            f'&sync_key=is.null',
             {'desktop_id': desktop_id},
         )
 
@@ -8434,9 +8485,14 @@ class SporelyCloudClient(
         return rows if isinstance(rows, list) else []
 
     def set_image_desktop_id(self, cloud_image_id: str, desktop_id: int) -> None:
-        """Write the local SQLite image ID back to the cloud image row."""
+        """Write the local SQLite image ID back to a keyless cloud image row.
+
+        Never onto a keyed row: the server refuses ``desktop_id`` beside a
+        ``sync_key``, so the filter leaves such a row untouched.
+        """
         self._patch(
-            f'observation_images?id=eq.{cloud_image_id}&user_id=eq.{self.user_id}',
+            f'observation_images?id=eq.{cloud_image_id}&user_id=eq.{self.user_id}'
+            f'&sync_key=is.null',
             {'desktop_id': desktop_id},
         )
 
@@ -8464,7 +8520,16 @@ class SporelyCloudClient(
         remote_measurement_cache: dict[str, dict] | None = None,
         sync_summary: dict[str, int] | None = None,
     ) -> str:
-        """Upsert one spore measurement row. Returns cloud UUID."""
+        """Create or update one spore measurement row. Returns cloud UUID.
+
+        Linked (L2): the row is verified by its ``cloud_id`` under
+        ``cloud_image_id`` and PATCHed by id only when it differs; it is never
+        re-parented, and never re-created when its cloud copy is gone
+        (:class:`ChildAdoptionConflictError`). Unlinked (L0): created with its
+        committed ``sync_key`` under a committed parent image, or linked to
+        this database's own copy without a write (``create_child_row``). The
+        payload never carries ``desktop_id``.
+        """
         summary = sync_summary or _cloud_sync_current_summary()
         storage_key = ''
         include_media_keys = False
@@ -8480,91 +8545,75 @@ class SporelyCloudClient(
             include_media_keys=include_media_keys,
         )
         payload['user_id'] = self.user_id
+        payload.pop('desktop_id', None)
 
-        portable_identity_pending = bool(meas.get('portable_cloud_identity_pending'))
-        if portable_identity_pending:
-            payload.pop('desktop_id', None)
+        def content_matches(remote_row: dict) -> bool:
+            return _measurement_payloads_match(
+                meas,
+                remote_row,
+                cloud_image_id=cloud_image_id,
+                image_storage_key=storage_key,
+                include_media_keys=include_media_keys,
+            )
 
+        local_measurement_id = int(meas.get('id') or 0)
+        local_cloud_id = str(meas.get('cloud_id') or '').strip()
+        if not local_cloud_id:
+            cloud_id, adopted = create_child_row(
+                self,
+                'spore_measurements',
+                meas,
+                payload,
+                parent_cloud_id=cloud_image_id,
+                content_matches=content_matches,
+                summary=summary,
+            )
+            if adopted is None:
+                _increment_sync_summary(summary, 'measurements_patched')
+            return cloud_id
+
+        remote_row = None
         if remote_measurement_cache is not None:
-            lookup_keys = _measurement_push_lookup_keys(meas)
-            if portable_identity_pending:
-                cloud_id = str(meas.get('cloud_id') or '').strip()
-                lookup_keys = [f'cloud:{cloud_id}'] if cloud_id else []
-            for lookup_key in lookup_keys:
-                cached_row = remote_measurement_cache.get(lookup_key)
-                if cached_row is None:
-                    continue
-                existing_id = str(cached_row.get('id') or '').strip()
-                if existing_id:
-                    if _measurement_payloads_match(
-                        meas,
-                        cached_row,
-                        cloud_image_id=cloud_image_id,
-                        image_storage_key=storage_key,
-                        include_media_keys=include_media_keys,
-                    ):
-                        _increment_sync_summary(summary, 'measurements_skipped_noop')
-                        return existing_id
-                    diff_fields = _measurement_push_diff_fields(
-                        meas,
-                        cached_row,
-                        cloud_image_id=cloud_image_id,
-                        image_storage_key=storage_key,
-                        include_media_keys=include_media_keys,
-                    )
-                    if diff_fields:
-                        print(
-                            f'[cloud_sync] Measurement {int(meas.get("id") or 0)} '
-                            f'push diff fields: {", ".join(diff_fields)}'
-                        )
-                    self._patch(f'spore_measurements?id=eq.{existing_id}', payload)
-                    _increment_sync_summary(summary, 'measurements_patched')
-                    return existing_id
-            rows = self._post('spore_measurements', payload)
-            _increment_sync_summary(summary, 'measurements_patched')
-            return rows[0]['id']
-
-        if portable_identity_pending:
-            local_cloud_id = str(meas.get('cloud_id') or '').strip()
+            remote_row = remote_measurement_cache.get(f'cloud:{local_cloud_id}')
+        if remote_row is None:
             rows = self._get(
                 f'spore_measurements?id=eq.{local_cloud_id}&user_id=eq.{self.user_id}'
-                f'&select={_SPORE_MEASUREMENT_SELECT_COLUMNS}'
-            ) if local_cloud_id else []
-        else:
-            rows = self._get(
-            f'spore_measurements?desktop_id=eq.{payload["desktop_id"]}&user_id=eq.{self.user_id}&select={_SPORE_MEASUREMENT_SELECT_COLUMNS}'
+                f'&select={_SPORE_MEASUREMENT_SELECT_COLUMNS}&limit=1'
             )
-        if rows:
-            remote_row = dict(rows[0] or {})
-            existing_id = str(remote_row.get('id') or '').strip()
-            if existing_id:
-                if _measurement_payloads_match(
-                    meas,
-                    remote_row,
-                    cloud_image_id=cloud_image_id,
-                    image_storage_key=storage_key,
-                    include_media_keys=include_media_keys,
-                ):
-                    _increment_sync_summary(summary, 'measurements_skipped_noop')
-                    return existing_id
-                diff_fields = _measurement_push_diff_fields(
-                    meas,
-                    remote_row,
-                    cloud_image_id=cloud_image_id,
-                    image_storage_key=storage_key,
-                    include_media_keys=include_media_keys,
-                )
-                if diff_fields:
-                    print(
-                        f'[cloud_sync] Measurement {int(meas.get("id") or 0)} '
-                        f'push diff fields: {", ".join(diff_fields)}'
-                    )
-                self._patch(f'spore_measurements?id=eq.{existing_id}', payload)
-                _increment_sync_summary(summary, 'measurements_patched')
-                return existing_id
-        rows = self._post('spore_measurements', payload)
+            remote_row = dict(rows[0] or {}) if rows else None
+        if remote_row is None:
+            raise ChildAdoptionConflictError(
+                f'measurement {local_measurement_id}: linked cloud measurement '
+                f'{local_cloud_id} was not found; refusing to patch it blindly or '
+                f'create a new row',
+                table='spore_measurements', cloud_id=local_cloud_id, reason='missing',
+            )
+        remote_image_id = str(remote_row.get('image_id') or '').strip()
+        if remote_image_id != str(cloud_image_id or '').strip():
+            raise ChildAdoptionConflictError(
+                f'measurement {local_measurement_id}: linked cloud measurement '
+                f'{local_cloud_id} sits under image {remote_image_id or "none"}, not '
+                f'{cloud_image_id}; never re-parented',
+                table='spore_measurements', cloud_id=local_cloud_id, reason='parent',
+            )
+        if content_matches(remote_row):
+            _increment_sync_summary(summary, 'measurements_skipped_noop')
+            return local_cloud_id
+        diff_fields = _measurement_push_diff_fields(
+            meas,
+            remote_row,
+            cloud_image_id=cloud_image_id,
+            image_storage_key=storage_key,
+            include_media_keys=include_media_keys,
+        )
+        if diff_fields:
+            print(
+                f'[cloud_sync] Measurement {local_measurement_id} '
+                f'push diff fields: {", ".join(diff_fields)}'
+            )
+        self._patch(f'spore_measurements?id=eq.{local_cloud_id}', payload)
         _increment_sync_summary(summary, 'measurements_patched')
-        return rows[0]['id']
+        return local_cloud_id
 
     def delete_cloud_measurements_for_image(self, cloud_image_id: str) -> None:
         """Delete all cloud spore_measurements rows for one image."""
@@ -9373,6 +9422,14 @@ def push_all(
     preflight_start = _cloud_sync_perf_counter()
     print("[cloud_sync] observation preflight: start", flush=True)
     _emit_progress(progress_cb, "Checking local observation changes…", progress_state)
+
+    interrupted = redirty_interrupted_child_creates()
+    if interrupted:
+        print(
+            f"[cloud_sync] observation preflight: re-dirtied observations with an "
+            f"interrupted image create: {interrupted}",
+            flush=True,
+        )
 
     media_scan_start = _cloud_sync_perf_counter()
     _mark_cloud_observations_dirty_for_media_changes()
@@ -10274,10 +10331,13 @@ def push_all(
                     )
             else:
                 # A row linked without a write keeps the row it was judged on
-                # as baseline; anything since then is a remote change.
+                # as its observation baseline; anything since then is a remote
+                # change. Its child rows are re-read: this run may have
+                # created or linked them under it.
                 if adopted_base is None:
                     _store_remote_snapshot(client, cloud_id)
-                # else: the judged row was committed as the baseline with the link.
+                else:
+                    _store_remote_snapshot(client, cloud_id, remote=adopted_base)
 
             # A refusal inside a step that reports instead of raising (media,
             # measurements) still stops the upload phase, with this row dirty.

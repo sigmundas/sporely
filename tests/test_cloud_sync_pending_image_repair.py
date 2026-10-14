@@ -5,13 +5,16 @@ image rows kept ``cloud_id IS NULL``:
 
 * the dirty-scan must only treat rows that cloud sync would actually push as
   pending (publish-excluded / duplicate-path / missing-file rows must not
-  re-dirty an observation forever), and
-* a metadata-only association of an existing remote cloud image must persist the
-  local ``cloud_id`` (no bytes uploaded, no temporary WebP candidate encoded),
-  so a second sync does not re-dirty the same observation.
+  re-dirty an observation forever).
+
+A local row that lost its ``cloud_id`` is no longer re-associated by
+``desktop_id`` (retired as an identity): its create finds this database's own
+cloud row by ``sync_key`` (tests/test_sync_key_child_identity.py).
 """
 
 from __future__ import annotations
+
+import pytest
 
 import json
 import sqlite3
@@ -197,8 +200,11 @@ def test_explicit_tombstone_restore_inserts_new_cloud_identity(monkeypatch):
     posts: list[tuple[str, dict]] = []
     cleared: list[int] = []
 
-    monkeypatch.setattr(client, "_find_cloud_image", lambda desktop_id, obs_cloud_id, **kw: {"id": "cloud-image-4857", "deleted_at": None})
+    monkeypatch.setattr(client, "_get", lambda path: pytest.fail(f"unexpected lookup: {path}"))
     monkeypatch.setattr(client, "_patch", lambda path, payload: patches.append((path, dict(payload))))
+    monkeypatch.setattr(
+        cloud_sync, "committed_parent_cloud_id", lambda table, row: "cloud-observation-704",
+    )
     monkeypatch.setattr(
         client,
         "_post",
@@ -221,21 +227,21 @@ def test_explicit_tombstone_restore_inserts_new_cloud_identity(monkeypatch):
         lambda image_id: cleared.append(int(image_id)),
     )
 
+    # The restore forked the image: no cloud_id and a fresh key, so it is a
+    # new keyed row. The deleted source row is never released or PATCHed.
+    fresh_key = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d"
     cloud_id = client.push_image_metadata(
-        {"id": 4997, "filepath": "/tmp/P8030011.jpg", "image_type": "field"},
+        {"id": 4997, "observation_id": 704, "sync_key": fresh_key,
+         "filepath": "/tmp/P8030011.jpg", "image_type": "field"},
         "cloud-observation-704",
         "user-123/cloud-observation-704/P8030011.webp",
     )
 
     assert cloud_id == "cloud-image-new"
-    assert patches == [
-        (
-            "observation_images?id=eq.cloud-image-4857&user_id=eq.user-123",
-            {"desktop_id": None},
-        )
-    ]
+    assert patches == []
     assert len(posts) == 1
-    assert posts[0][1]["desktop_id"] == 4997
+    assert "desktop_id" not in posts[0][1]
+    assert posts[0][1]["sync_key"] == fresh_key
     assert posts[0][1]["deleted_at"] is None
     assert cleared == [4997]
 
@@ -443,106 +449,6 @@ def test_dirty_scan_redirties_genuinely_pending_image(tmp_path, monkeypatch):
     )
 
     assert _sync_status(db_path, 12) == "dirty"
-
-
-def test_metadata_only_association_persists_local_cloud_id_without_upload(tmp_path, monkeypatch):
-    """A previously-synced image whose local cloud_id was lost is re-linked to
-    the matching remote image without uploading bytes, and the link persists so
-    a second dirty-scan does not re-dirty the observation."""
-    db_path = _create_sync_db(tmp_path)
-    image_file = tmp_path / "field.jpg"
-    image_file.write_bytes(b"field-bytes")
-
-    conn = sqlite3.connect(db_path)
-    try:
-        conn.execute(
-            "INSERT INTO observations (id, cloud_id, sync_status, synced_at) VALUES (?, ?, ?, ?)",
-            (377, "cloud-obs-377", "synced", "2026-05-01T00:00:00Z"),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-    _insert_image(
-        db_path, id=5, observation_id=377, cloud_id=None, filepath=str(image_file),
-        source_role="local_canonical", file_purpose="field", image_type="field", sort_order=0,
-        synced_at="2026-05-01T00:00:00Z",
-    )
-
-    _patch_db_connections(monkeypatch, db_path)
-    monkeypatch.setattr(cloud_sync, "is_full_resolution_original_sync_enabled", lambda: False)
-
-    remote_row = {
-        "id": "cloud-image-5",
-        "desktop_id": 5,
-        "observation_id": "cloud-obs-377",
-        "storage_path": "users/user-123/cloud-obs-377/field.webp",
-        "image_type": "field",
-        "sort_order": 0,
-    }
-    client = _MemorySyncClient([remote_row])
-
-    result = cloud_sync._push_images_for_observation(client, {"id": 377}, "cloud-obs-377")
-
-    assert result is True
-    # No image bytes were uploaded — only the local association was repaired.
-    assert client.upload_image_calls == []
-    # Local row now points at the existing remote cloud image.
-    assert _cloud_id(db_path, 5) == "cloud-image-5"
-
-    # A second dirty-scan must not re-dirty the observation.
-    # These tests exercise the dirty-scan itself; run in explicit media-upload
-    # mode so the gate does not turn the call into a no-op.
-    cloud_sync._mark_cloud_observations_dirty_for_pending_local_images(
-        include_pending_local_media_uploads=True,
-    )
-    assert _sync_status(db_path, 377) == "synced"
-
-
-def test_remote_first_pass_skips_temp_preparation_for_metadata_only_association(tmp_path, monkeypatch):
-    """When a remote match exists for an orphaned local row, the upload
-    preparation callback must not be asked to encode a temp WebP candidate for
-    it (no bytes uploaded), and the local cloud_id is restored."""
-    db_path = _create_sync_db(tmp_path)
-    image_file = tmp_path / "field.jpg"
-    image_file.write_bytes(b"field-bytes")
-
-    _insert_image(
-        db_path, id=7, observation_id=389, cloud_id=None, filepath=str(image_file),
-        source_role="local_canonical", file_purpose="field", image_type="field", sort_order=0,
-        synced_at="2026-05-01T00:00:00Z",
-    )
-
-    _patch_db_connections(monkeypatch, db_path)
-    monkeypatch.setattr(cloud_sync, "is_full_resolution_original_sync_enabled", lambda: False)
-
-    remote_row = {
-        "id": "cloud-image-7",
-        "desktop_id": 7,
-        "observation_id": "cloud-obs-389",
-        "storage_path": "users/user-123/cloud-obs-389/field.webp",
-        "image_type": "field",
-        "sort_order": 0,
-    }
-    client = _MemorySyncClient([remote_row])
-
-    prepare_calls: list[dict] = []
-
-    def fake_prepare(observation, progress_cb=None):
-        skip_ids = observation.get(cloud_sync.CLOUD_SYNC_SKIP_PREPARE_IMAGE_IDS_KEY)
-        prepare_calls.append({"skip_ids": skip_ids})
-        # The remote-first pass already associated image 7, so nothing is left
-        # to encode/upload.
-        return [], None, []
-
-    result = cloud_sync._push_images_for_observation(
-        client, {"id": 389}, "cloud-obs-389", prepare_images_cb=fake_prepare
-    )
-
-    assert result is True
-    assert client.upload_image_calls == []
-    assert _cloud_id(db_path, 7) == "cloud-image-7"
-    # The prepare callback was told to skip image 7 (no temp candidate encoded).
-    assert prepare_calls and prepare_calls[0]["skip_ids"] == [7]
 
 
 def test_p11_recheck_prepares_and_uploads_only_the_tombstoned_target(
@@ -763,39 +669,6 @@ def test_actual_upload_when_no_remote_match_exists(tmp_path, monkeypatch, capsys
     assert _cloud_id(db_path, 9)  # got a fresh cloud id
     assert "actual_upload=True" in output
     assert "Uploading cloud image request" in output
-
-
-def test_metadata_only_path_does_not_log_actual_upload(tmp_path, monkeypatch, capsys):
-    db_path = _create_sync_db(tmp_path)
-    image_file = tmp_path / "field.jpg"
-    image_file.write_bytes(b"field-bytes")
-
-    _insert_image(
-        db_path, id=11, observation_id=434, cloud_id=None, filepath=str(image_file),
-        source_role="local_canonical", file_purpose="field", image_type="field", sort_order=0,
-        synced_at="2026-05-01T00:00:00Z",
-    )
-
-    _patch_db_connections(monkeypatch, db_path)
-    monkeypatch.setattr(cloud_sync, "is_full_resolution_original_sync_enabled", lambda: False)
-
-    remote_row = {
-        "id": "cloud-image-11",
-        "desktop_id": 11,
-        "observation_id": "cloud-obs-434",
-        "storage_path": "users/user-123/cloud-obs-434/field.webp",
-        "image_type": "field",
-        "sort_order": 0,
-    }
-    client = _MemorySyncClient([remote_row])
-
-    result = cloud_sync._push_images_for_observation(client, {"id": 434}, "cloud-obs-434")
-    output = capsys.readouterr().out
-
-    assert result is True
-    assert client.upload_image_calls == []
-    assert "actual_upload=True" not in output
-    assert "Uploading cloud image request" not in output
 
 
 def _set_sync_status(db_path: Path, observation_id: int, status: str) -> None:

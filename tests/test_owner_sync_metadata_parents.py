@@ -34,6 +34,7 @@ from tests.test_cloud_media_measurement_mosaic_chain import (
     _ID_FILTER,
     _add_microscope_image,
     _image_cloud_id,
+    _image_sync_key,
     _observation_status,
     _write_microscope_source,
     db,  # noqa: F401  (fixture)
@@ -184,7 +185,7 @@ def test_excluded_cheilocystidia_image_gets_an_owner_sync_parent_and_all_three_u
 
     assert result["errors"] == []
     assert harness.client.uploaded_bytes == [], "image bytes stay out of the cloud"
-    [parent] = harness.client.rows_for_desktop_id(12)
+    [parent] = harness.client.rows_for_sync_key(_image_sync_key(db_path, 12))
     assert parent.get("storage_path") in (None, "")
     assert parent["image_type"] == "microscope"
     assert parent["metadata_purpose"] == cloud_sync.METADATA_PURPOSE_OWNER_SYNC
@@ -207,7 +208,7 @@ def test_private_observation_still_syncs_owner_measurements(db, monkeypatch):
     _set_spore_visibility(db_path, "private")
     harness = _harness(monkeypatch, db_path, tmp_path)
     harness.run()
-    [parent] = harness.client.rows_for_desktop_id(12)
+    [parent] = harness.client.rows_for_sync_key(_image_sync_key(db_path, 12))
     assert parent["metadata_purpose"] == cloud_sync.METADATA_PURPOSE_OWNER_SYNC
     assert len(harness.client.pushed_measurements) == 3
 
@@ -218,7 +219,7 @@ def test_without_the_server_capability_no_owner_sync_parent_is_created(db, monke
     _seed_917_image(db_path, tmp_path)
     harness = _harness(monkeypatch, db_path, tmp_path, capability=False)
     harness.run()
-    assert harness.client.rows_for_desktop_id(12) == []
+    assert harness.client.rows_for_sync_key(_image_sync_key(db_path, 12)) == []
     assert harness.client.pushed_measurements == []
 
 
@@ -235,12 +236,12 @@ def test_second_sync_is_idempotent(db, monkeypatch):
     harness.run()
 
     assert harness.client.created_image_cloud_ids == created, "no second parent"
-    assert len(harness.client.rows_for_desktop_id(12)) == 1
+    assert len(harness.client.rows_for_sync_key(_image_sync_key(db_path, 12))) == 1
     assert [p for p in harness.client.patches if "metadata_purpose" in p[1]] == [], \
         "an unchanged purpose is never re-written"
     assert [
-        {k: r[k] for k in ("id", "desktop_id", "image_id")} for r in harness.client.remote_measurements
-    ] == [{k: r[k] for k in ("id", "desktop_id", "image_id")} for r in remote_measurements]
+        {k: r[k] for k in ("id", "_local_id", "image_id")} for r in harness.client.remote_measurements
+    ] == [{k: r[k] for k in ("id", "_local_id", "image_id")} for r in remote_measurements]
     assert harness.client.uploaded_bytes == []
 
 
@@ -249,23 +250,23 @@ def test_purpose_follows_the_public_spore_intent_both_ways(db, monkeypatch):
     _seed_917_image(db_path, tmp_path)
     harness = _harness(monkeypatch, db_path, tmp_path)
     harness.run()
-    [parent] = harness.client.rows_for_desktop_id(12)
+    [parent] = harness.client.rows_for_sync_key(_image_sync_key(db_path, 12))
     assert parent["metadata_purpose"] == "owner_sync"
 
     _add_measurements(db_path, image_id=12, rows=[(7700, 10.0, 6.0, 100.0, 140.0)], measurement_type="spores")
     _mark_dirty(db_path)
     harness.run()
-    assert harness.client.rows_for_desktop_id(12)[0]["metadata_purpose"] == "public_microscopy"
+    assert harness.client.rows_for_sync_key(_image_sync_key(db_path, 12))[0]["metadata_purpose"] == "public_microscopy"
     assert [int(r["id"]) for rows in harness.mosaic_source_rows for r in rows] == [7700], \
         "only the spore measurement is mosaic material"
 
     _delete_local_measurements(db_path, [7700])
     harness.client.remote_measurements = [
-        r for r in harness.client.remote_measurements if int(r["desktop_id"]) != 7700
+        r for r in harness.client.remote_measurements if int(r["_local_id"]) != 7700
     ]
     _mark_dirty(db_path)
     harness.run()
-    assert harness.client.rows_for_desktop_id(12)[0]["metadata_purpose"] == "owner_sync"
+    assert harness.client.rows_for_sync_key(_image_sync_key(db_path, 12))[0]["metadata_purpose"] == "owner_sync"
 
 
 # ── Retirement ───────────────────────────────────────────────────────────────
@@ -288,7 +289,7 @@ def test_parent_is_retired_once_no_device_has_measurements(db, monkeypatch):
     _seed_917_image(db_path, tmp_path)
     harness = _harness(monkeypatch, db_path, tmp_path, real_tombstones=True)
     harness.run()
-    [parent] = harness.client.rows_for_desktop_id(12)
+    [parent] = harness.client.rows_for_sync_key(_image_sync_key(db_path, 12))
 
     _delete_local_cheilocystidia(db_path)
     harness.client.remote_measurements = []  # the cloud has none on it either
@@ -301,7 +302,7 @@ def test_parent_is_retired_once_no_device_has_measurements(db, monkeypatch):
 
     assert harness.client.soft_deleted == [str(parent["id"])]
     assert models.list_pending_image_tombstones() == []
-    assert harness.client.rows_for_desktop_id(12)[0]["deleted_at"]
+    assert harness.client.rows_for_sync_key(_image_sync_key(db_path, 12))[0]["deleted_at"]
     assert harness.client.uploaded_bytes == []
 
 
@@ -318,7 +319,7 @@ def test_parent_is_not_retired_while_the_cloud_still_carries_measurements(db, mo
     harness.run()
 
     assert harness.client.soft_deleted == []
-    assert not harness.client.rows_for_desktop_id(12)[0].get("deleted_at")
+    assert not harness.client.rows_for_sync_key(_image_sync_key(db_path, 12))[0].get("deleted_at")
 
 
 def test_public_microscopy_parent_is_never_retired_by_this_path(db, monkeypatch):
@@ -326,7 +327,7 @@ def test_public_microscopy_parent_is_never_retired_by_this_path(db, monkeypatch)
     _seed_917_image(db_path, tmp_path)
     harness = _harness(monkeypatch, db_path, tmp_path, real_tombstones=True)
     harness.run()
-    parent = harness.client.rows_for_desktop_id(12)[0]
+    parent = harness.client.rows_for_sync_key(_image_sync_key(db_path, 12))[0]
     parent["metadata_purpose"] = "public_microscopy"  # e.g. a legacy spore anchor
 
     _delete_local_cheilocystidia(db_path)
@@ -367,7 +368,7 @@ def test_fresh_profile_download_reconstructs_all_three(db, monkeypatch, tmp_path
     harness.run()
     remote_images = [dict(r) for r in harness.client.remote_images]
     remote_measurements = [dict(r) for r in harness.client.remote_measurements]
-    parent_cloud_id = str(harness.client.rows_for_desktop_id(12)[0]["id"])
+    parent_cloud_id = str(harness.client.rows_for_sync_key(_image_sync_key(db_path, 12))[0]["id"])
 
     fresh_dir = tmp_path_factory.mktemp("fresh-profile")
     fresh_db = fresh_dir / "sporely.db"
@@ -485,6 +486,6 @@ def test_public_spore_only_parent_is_marked_without_any_prior_probe(db, monkeypa
     assert getattr(harness.client, "_metadata_purpose_supported", None) is None
     harness.run()
 
-    [parent] = harness.client.rows_for_desktop_id(12)
+    [parent] = harness.client.rows_for_sync_key(_image_sync_key(db_path, 12))
     assert parent.get("storage_path") in (None, "")
     assert parent["metadata_purpose"] == cloud_sync.METADATA_PURPOSE_PUBLIC_MICROSCOPY

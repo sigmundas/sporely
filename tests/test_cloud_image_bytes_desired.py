@@ -9,8 +9,6 @@ Artsobs publication-exclusion key:
     ``SporelyCloudClient.upload_original_image_file`` raise
     ``CloudImageBytesNotDesiredError`` for images the user has unchecked
     unless ``recovery_authorized=True``.
-  * ``_associate_persisted_cloud_images`` repairs identity even for
-    unchecked (undesired) images.
   * ``prepare_images_cb=None`` fallback and metadata-only sync paths must
     not bypass the byte gate.
   * ``set_image_cloud_selected`` writes to the NEW key while preserving the
@@ -350,6 +348,7 @@ def test_unchecked_microscope_with_public_measurements_keeps_anchor(
             "observation_id": 500,
             "image_type": "microscope",
             "filepath": str(fpath),
+            "sync_key": "8e9f0a1b-2c3d-4e5f-8a6b-7c8d9e0f1a2b",
         },
         remote_images=[],
     )
@@ -463,62 +462,6 @@ def test_existing_checked_cloud_image_stays_linked_without_reupload(
     )
     assert decision["pending"] is False
     assert decision["reason"] == cloud_sync.PENDING_REASON_ALREADY_SYNCED
-
-
-# ---------------------------------------------------------------------------
-# 6. Lost local cloud_id + unique matching remote desktop_id: repair happens
-#    without a byte upload — even for an unchecked image.
-# ---------------------------------------------------------------------------
-
-
-def test_identity_repair_runs_for_unchecked_image_without_upload(
-    monkeypatch, tmp_path
-):
-    db_path = _init_db(tmp_path)
-    _patch_db(monkeypatch, db_path)
-    _seed_observation(db_path)
-    fpath = _write_image(tmp_path / "unchecked-linked.jpg")
-    _seed_image(
-        db_path,
-        image_id=61,
-        obs_id=500,
-        filepath=str(fpath),
-        image_type="field",
-        cloud_id=None,
-        synced=True,
-    )
-    _set_storage_excluded(db_path, 500, [61])
-    assert cloud_image_bytes_desired(500, 61) is False
-
-    class _RepairClient(_FakeClient):
-        def __init__(self):
-            super().__init__(user_id="user-x")
-
-        def _observation_images_support_ai_crop(self):
-            return False
-
-        def _observation_images_support_upload_metadata(self):
-            return False
-
-    remote_row = {
-        "id": "cloud-img-61",
-        "desktop_id": 61,
-        "observation_id": "cloud-500",
-        "user_id": "user-x",
-        "storage_path": "user-x/cloud-500/img61.webp",
-        "image_type": "field",
-        "sort_order": 61,
-        "notes": "",
-    }
-    associated = cloud_sync._associate_persisted_cloud_images(
-        _RepairClient(),
-        {"id": 500, "cloud_id": "cloud-500", "user_id": "user-x"},
-        [remote_row],
-    )
-    assert 61 in associated
-    row = models.ImageDB.get_image(61)
-    assert row is not None
-    assert row["cloud_id"] == "cloud-img-61"
 
 
 # ---------------------------------------------------------------------------

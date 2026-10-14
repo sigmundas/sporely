@@ -20,7 +20,6 @@ from utils.cloud_sync_impl.errors import (
     ImageIdentityConflictError,
     ObservationIdentityConflictError,
 )
-from utils.cloud_sync_impl.sync_state import _explicit_image_restore_source
 
 
 def _reconcile_local_image_cloud_id(
@@ -289,128 +288,51 @@ class CloudSyncPushIdentityMixin:
     ) -> str | None:
         """Canonical owner of image push identity resolution.
 
-        Returns the cloud image id to PATCH, or ``None`` when creating a
-        new cloud image is permitted.
+        The local direct link (``img['cloud_id']``) is the only push target:
+        once it verifies against an existing same-owner row under the same
+        cloud observation, that row is PATCHed by id. ``desktop_id`` is
+        retired as an identity and is never looked up here; a lost
+        ``cloud_id`` is recovered by the create path through ``sync_key``
+        (``23505`` adoption) or the one-time legacy recovery.
 
-        Raises :class:`ImageIdentityConflictError` on ambiguity or
-        soft-delete conflict without explicit restore intent.
+        Returns the cloud image id to PATCH, or ``None`` when the image has
+        no ``cloud_id`` and the caller may create it (L0).
+
+        Raises :class:`ImageIdentityConflictError` when the linked row is
+        gone, sits under another observation (never re-parented) or is
+        soft-deleted (never resurrected): a cloud-linked row is never POSTed
+        and never PATCHed blindly.
         """
-        restore_source_id = _explicit_image_restore_source(img['id'])
         local_cloud_id = str(img.get('cloud_id') or '').strip()
-
-        verified_direct: dict | None = None
-        if local_cloud_id:
-            candidate: dict | None = None
-            if remote_row is not None:
-                r_id = str(remote_row.get('id') or '').strip()
-                r_obs = str(remote_row.get('observation_id') or '').strip()
-                if r_id == local_cloud_id and r_obs == obs_cloud_id:
-                    candidate = dict(remote_row)
-            if candidate is None:
-                rows = self._get(
-                    f'observation_images?id=eq.{local_cloud_id}'
-                    f'&user_id=eq.{self.user_id}'
-                    f'&select=id,desktop_id,deleted_at,observation_id'
-                    f'&limit=1'
-                )
-                candidate = dict(rows[0]) if rows else None
-            if candidate is not None:
-                if candidate.get('deleted_at') and local_cloud_id != restore_source_id:
-                    raise ImageIdentityConflictError(
-                        f'image {local_cloud_id} is soft-deleted and no explicit '
-                        f'restore intent exists; not safe to PATCH'
-                    )
-                if str(candidate.get('observation_id') or '') != str(obs_cloud_id) and local_cloud_id != restore_source_id:
-                    raise ImageIdentityConflictError(
-                        f"local cloud_id {local_cloud_id!r} points to a cloud image in observation "
-                        f"{candidate.get('observation_id')!r}, not {obs_cloud_id!r}; "
-                        "refusing to reparent"
-                    )
-                verified_direct = candidate
-
-        if bool(img.get('portable_cloud_identity_pending')):
-            return str(verified_direct.get('id') or '').strip() if verified_direct else None
-
-        # Reverse leg — raises on ambiguity.
-        recovered_row = self._find_cloud_image(
-            img['id'], obs_cloud_id, image_type=img.get('image_type')
-        )
-        recovered_id = str(recovered_row['id']) if recovered_row else ''
-        if recovered_row and recovered_row.get('deleted_at') and recovered_id != restore_source_id:
-            raise ImageIdentityConflictError(
-                f'image {recovered_id} is soft-deleted and no explicit '
-                f'restore intent exists'
-            )
-
-        verified_direct_id = str(verified_direct.get('id') or '').strip() if verified_direct else ''
-
-        # Restore release: release old soft-deleted row's desktop identity so
-        # a fresh POST can claim it, then treat as new.
-        for candidate_id in {verified_direct_id, recovered_id}:
-            if candidate_id and restore_source_id and candidate_id == restore_source_id:
-                self._patch(
-                    f'observation_images?id=eq.{restore_source_id}'
-                    f'&user_id=eq.{self.user_id}',
-                    {'desktop_id': None},
-                )
-                if candidate_id == verified_direct_id:
-                    verified_direct = None
-                    verified_direct_id = ''
-                if candidate_id == recovered_id:
-                    recovered_row = None
-                    recovered_id = ''
-                break
-
-        if verified_direct_id and recovered_id and verified_direct_id != recovered_id:
-            raise ImageIdentityConflictError(
-                f"image {img['id']}: direct link cloud_id={verified_direct_id} "
-                f'and reverse link desktop_id match={recovered_id} resolve to '
-                f'different cloud images; refusing to patch either or create a third'
-            )
-
-        if verified_direct_id:
-            return verified_direct_id
-        if recovered_id:
-            return recovered_id
-
-        # When a restore release was processed above, the desktop_id was just
-        # cleared on the cloud row — the global check would find a stale state
-        # and incorrectly raise. Skip it; the POST is intentional here.
-        if restore_source_id:
+        if not local_cloud_id:
             return None
-
-        # Global same-user desktop_id check before permitting POST.
-        global_rows = self._get(
-            f'observation_images?desktop_id=eq.{img["id"]}&user_id=eq.{self.user_id}'
-            f'&select=id,observation_id,image_type,deleted_at&order=id.asc'
-        )
-        if global_rows:
-            if len(global_rows) > 1:
-                raise ImageIdentityConflictError(
-                    f"desktop_id {img['id']} matches {len(global_rows)} cloud images "
-                    f"across observations; ambiguous — refusing to POST duplicate"
-                )
-            row = global_rows[0]
-            if row.get('deleted_at'):
-                raise ImageIdentityConflictError(
-                    f"desktop_id {img['id']} exists as soft-deleted cloud image "
-                    f"{row['id']} in observation {row['observation_id']}; "
-                    "not safe to POST duplicate"
-                )
-            if str(row.get('observation_id') or '') != str(obs_cloud_id):
-                raise ImageIdentityConflictError(
-                    f"desktop_id {img['id']} belongs to cloud image {row['id']} "
-                    f"in observation {row['observation_id']}, not {obs_cloud_id}; "
-                    "cannot POST duplicate"
-                )
-            local_image_type = img.get('image_type')
-            if row.get('image_type') and local_image_type and row.get('image_type') != local_image_type:
-                raise ImageIdentityConflictError(
-                    f"desktop_id {img['id']} exists as {row['image_type']} in cloud "
-                    f"but local image_type is {local_image_type}"
-                )
-            raise ImageIdentityConflictError(
-                f"unexpected: global lookup found {row['id']} but obs-scoped reverse was empty"
+        candidate: dict | None = None
+        if remote_row is not None:
+            r_id = str(remote_row.get('id') or '').strip()
+            r_obs = str(remote_row.get('observation_id') or '').strip()
+            if r_id == local_cloud_id and r_obs == str(obs_cloud_id):
+                candidate = dict(remote_row)
+        if candidate is None:
+            rows = self._get(
+                f'observation_images?id=eq.{local_cloud_id}'
+                f'&user_id=eq.{self.user_id}'
+                f'&select=id,deleted_at,observation_id'
+                f'&limit=1'
             )
-
-        return None
+            candidate = dict(rows[0]) if rows else None
+        if candidate is None:
+            raise ImageIdentityConflictError(
+                f"image {img.get('id')}: linked cloud image {local_cloud_id} was not "
+                f'found; refusing to patch it blindly or create a new row'
+            )
+        if candidate.get('deleted_at'):
+            raise ImageIdentityConflictError(
+                f'image {local_cloud_id} is soft-deleted in the cloud; not safe to PATCH'
+            )
+        if str(candidate.get('observation_id') or '') != str(obs_cloud_id):
+            raise ImageIdentityConflictError(
+                f"local cloud_id {local_cloud_id!r} points to a cloud image in observation "
+                f"{candidate.get('observation_id')!r}, not {obs_cloud_id!r}; "
+                "refusing to reparent"
+            )
+        return str(candidate.get('id') or '').strip() or local_cloud_id
