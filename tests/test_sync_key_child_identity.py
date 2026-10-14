@@ -435,6 +435,31 @@ def test_kill_after_the_child_insert_adopts_it_on_retry(two_desktops, monkeypatc
         assert str(row["image_id"]) == str(cloud.rows("observation_images")[0]["id"])
 
 
+@pytest.mark.parametrize("sample_type", ["Not_set", "Spore_print"])
+def test_kill_after_an_image_insert_adopts_it_when_the_push_normalized_its_sample_fields(
+    two_desktops, monkeypatch, tmp_path, sample_type,
+):
+    # Prepare Images stores sample_type 'Not_set' on every field photo; the push
+    # sends it normalized (NULL), and a legacy 'Spore_print' moves to sample_source.
+    # Adoption must compare what the create uploaded, not the raw local column.
+    cloud = ChildCloud()
+    obs_id = _observation()
+    image_id = _image(obs_id, tmp_path, image_type="field", sample_type=sample_type)
+    _fault(monkeypatch, "after_insert:observation_images")
+    with pytest.raises(_Killed):
+        _push(cloud.client())
+    [posted] = cloud.rows("observation_images")
+    assert posted["sample_type"] != sample_type, "the create sent the normalized value"
+
+    _fault(monkeypatch, None)
+    result, summary = _push_summary(cloud.client())
+
+    assert result["errors"] == []
+    [row] = cloud.rows("observation_images")
+    assert str(_row("images", image_id)["cloud_id"]) == str(row["id"])
+    assert summary["images_adopted"] == 1
+
+
 @pytest.mark.parametrize("table", ["observation_images", "spore_measurements"])
 def test_timeout_after_a_successful_child_insert_adopts_without_a_duplicate(two_desktops, tmp_path, table):
     cloud = ChildCloud()

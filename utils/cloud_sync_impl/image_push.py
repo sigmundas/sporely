@@ -77,7 +77,10 @@ from utils.cloud_sync_impl.reconciliation.values import (
     _normalize_snapshot_value,
     _parse_sync_timestamp,
 )
-from utils.cloud_sync_impl.sample_source import _cloud_to_desktop_sample_source
+from utils.cloud_sync_impl.sample_source import (
+    _cloud_to_desktop_sample_source,
+    _split_legacy_sample_type_into_source,
+)
 from utils.cloud_sync_impl.status_messages import _format_cloud_sync_observation_status
 from utils.cloud_sync_impl.sync_state import (
     mark_observation_media_dirty,
@@ -236,6 +239,18 @@ def _image_create_content_matches(client, img: dict, remote: dict) -> bool:
     actual = _remote_image_compare_payload(
         remote, include_ai_crop=include_ai_crop, include_upload_meta=False,
     )
+    # The create sends the sample fields normalized (``'Not_set'`` becomes
+    # NULL; a legacy ``sample_type='Spore_print'`` moves to ``sample_source``),
+    # so compare what it uploaded rather than the raw local columns.
+    condition, source = _split_legacy_sample_type_into_source(
+        img.get('sample_type'), img.get('sample_source'),
+    )
+    expected['sample_type'] = _normalize_snapshot_value(condition)
+    expected['sample_source'] = _normalize_snapshot_value(_cloud_to_desktop_sample_source(source))
+    if source and not client._observation_images_support_sample_source():
+        # An older cloud without the column receives no sample_source.
+        expected.pop('sample_source', None)
+        actual.pop('sample_source', None)
     if not _image_calibration_uuid(img):
         expected.pop('calibration_uuid', None)
         actual.pop('calibration_uuid', None)
