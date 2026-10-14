@@ -1276,3 +1276,32 @@ def test_restart_after_a_legacy_link_commit_keeps_link_baseline_and_marker_state
     assert _push(cloud.client())["errors"] == []
     assert cloud.observation_writes() == [] and _rpcs(cloud) == []
     assert cloud.rows_for() == [legacy]
+
+
+def test_keep_local_adoption_keeps_the_judged_baseline_against_a_competing_selection(two_desktops, monkeypatch):
+    cloud, local_id = _crashed_proven_create(two_desktops, monkeypatch)
+    cloud_id = cloud.rows_for()[0]["id"]
+
+    def select_elsewhere_after_adoption_read(filters):
+        if any(column == "sync_key" for column, _ in filters):
+            cloud.after_get = None
+            cloud.edit_elsewhere(cloud_id, selected_sporely_taxon_id=77)
+
+    cloud.after_get = select_elsewhere_after_adoption_read
+    cloud.requests.clear()
+    cloud_sync.resolve_conflict_keep_local(cloud.client(), local_id)
+    assert _rpcs(cloud) == [], "keep-local adoption never writes the selection"
+    assert cloud.rows_for()[0]["selected_sporely_taxon_id"] == 77
+    local = _local(local_id)
+    assert str(local["cloud_id"]) == str(cloud_id) and local["sync_status"] == "dirty"
+    assert _stored_baseline(cloud_id).get("selected_sporely_taxon_id") is None, (
+        "the judged row stays the baseline; the later read never replaces it"
+    )
+
+    for _attempt in range(2):
+        cloud.requests.clear()
+        result = _push(cloud.client())
+        assert any("needs review" in str(error) for error in result["errors"]), result["errors"]
+        assert cloud.rows_for()[0]["selected_sporely_taxon_id"] == 77
+        assert _rpcs(cloud) == []
+        assert len(cloud.rows_for()) == 1

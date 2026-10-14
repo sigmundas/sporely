@@ -4483,8 +4483,10 @@ def resolve_conflict_keep_local(
         }
     _adopt_merge_filled_ai_fields_locally(local_id, local_obs, merged_obs)
     # A link made without a cloud write is already committed with its
-    # baseline and status (_commit_linked_observation): never restamp it.
-    if take_adopted_base(client, cloud_id) is None:
+    # baseline and status (_commit_linked_observation): never restamp it,
+    # and never replace that judged baseline with a later read (below).
+    linked_without_write = take_adopted_base(client, cloud_id) is not None
+    if not linked_without_write:
         conn = get_connection()
         try:
             cursor = conn.cursor()
@@ -4577,7 +4579,8 @@ def resolve_conflict_keep_local(
             flush=True,
         )
 
-    _store_remote_snapshot(client, cloud_id)
+    if not linked_without_write:
+        _store_remote_snapshot(client, cloud_id)
     _refresh_local_cloud_media_signature(int(local_id))
     return {'local_id': int(local_id), 'cloud_id': cloud_id}
 
@@ -4698,20 +4701,24 @@ def resolve_conflict_merge(
             'warnings': warnings,
         }
     _adopt_merge_filled_ai_fields_locally(local_id, local_obs, merged_obs)
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        update_observation_sync_state(
-            cursor,
-            int(local_id),
-            cloud_id=cloud_id,
-            sync_status='synced',
-            synced_at=datetime.now(timezone.utc).isoformat(),
-            clear_sync_error_state=True,
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    # As in keep-local: a link made without a cloud write is already
+    # committed with its judged baseline and status; never restamp or re-read.
+    linked_without_write = take_adopted_base(client, cloud_id) is not None
+    if not linked_without_write:
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            update_observation_sync_state(
+                cursor,
+                int(local_id),
+                cloud_id=cloud_id,
+                sync_status='synced',
+                synced_at=datetime.now(timezone.utc).isoformat(),
+                clear_sync_error_state=True,
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     # Push images if needed
     should_push_images = prepare_images_cb is not None
@@ -4730,7 +4737,8 @@ def resolve_conflict_merge(
             mark_observation_dirty(int(local_id))
             raise CloudSyncError(f'Could not fully upload images for observation {local_id}')
 
-    _store_remote_snapshot(client, cloud_id)
+    if not linked_without_write:
+        _store_remote_snapshot(client, cloud_id)
     _refresh_local_cloud_media_signature(int(local_id))
     return {'local_id': int(local_id), 'cloud_id': cloud_id, 'warnings': warnings}
 
