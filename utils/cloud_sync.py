@@ -114,6 +114,7 @@ from utils.cloud_sync_impl.errors import (  # noqa: F401  (facade re-export)
     IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE,
     CloudUploadRefusedError,
     CloudWriteRejectedError,
+    raise_if_upload_refused,
     ImageIdentityConflictError,
     ObservationAdoptionConflictError,
     ObservationIdentityConflictError,
@@ -543,6 +544,7 @@ from utils.cloud_sync_impl.observation_identity import (  # noqa: F401  (facade 
     SYNC_KEY_UNIQUE_INDEXES,
     _CREATE_COMPARE_EXCLUDED_FIELDS,
     _commit_legacy_recovery_outcome,
+    create_location_pair,
     _read_observations,
     adopt_observation_by_sync_key,
     is_sync_key_unique_violation,
@@ -2132,13 +2134,6 @@ def _record_upload_block(reason: str | None) -> None:
     value = str(reason or '')
     if str(get_app_settings().get(UPLOAD_BLOCK_SETTING) or '') != value:
         update_app_settings({UPLOAD_BLOCK_SETTING: value})
-
-
-def _raise_if_upload_refused(client) -> None:
-    """Stop the upload phase once this client has seen an upload refusal."""
-    check = getattr(client, '_check_upload_refusal', None)
-    if callable(check):
-        check()
 
 
 def _format_review_needed_error(local_id: int, cloud_id: str, reasons: list[str] | None = None) -> str:
@@ -4062,6 +4057,21 @@ _MISSING_INGEST_METHOD_COLUMN_PATTERN = re.compile(
     r"column \S*ingest_method does not exist"
     r"|could not find the '?ingest_method'? column"
 )
+#: RPCs that only read. After an upload refusal every other RPC fails fast
+#: without a request, like a row write; these keep downloads working.
+_UPLOAD_REFUSAL_READ_RPCS = frozenset({
+    'community_spore_taxon_summary',
+    'get_community_spore_dataset',
+    'get_public_curated_reference_set',
+    'get_public_observation',
+    'get_public_reference_contribution_v2',
+    'list_my_reference_sharing',
+    'list_reference_library_feed',
+    'search_community_spore_datasets',
+    'search_public_curated_reference_sets',
+    'search_public_reference_contributions_v2',
+    'search_public_reference_values',
+})
 _MISSING_SYNC_KEY_COLUMN_PATTERN = re.compile(
     r"column \S*sync_key does not exist"
     r"|could not find the '?sync_key'? column"
@@ -5857,6 +5867,7 @@ class SporelyCloudClient(
         if self._media_worker is None:
             self._media_worker = CloudflareMediaWorkerClient.from_access_token(self.access_token)
             self._media_worker.on_upgrade_required = self._latch_media_upload_refusal
+            self._media_worker.before_write = self._check_upload_refusal
         return self._media_worker
 
     # ── Upload refusal and readiness ────────────────────────────────────
@@ -6552,6 +6563,9 @@ class SporelyCloudClient(
         rpc_name = str(function_name or '').strip()
         if not rpc_name:
             raise CloudSyncError('Missing RPC function name')
+        if rpc_name not in _UPLOAD_REFUSAL_READ_RPCS:
+            # Every RPC not known to be a read is treated as a write.
+            self._check_upload_refusal()
         resp = self._request_with_refresh(
             'POST',
             f'{SUPABASE_URL}/rest/v1/rpc/{rpc_name}',
@@ -7302,9 +7316,8 @@ class SporelyCloudClient(
             )
             consume_confirmed_location_precision(obs.get('id'))
             _increment_sync_summary(summary, 'observations_adopted')
-            # Finish the interrupted create: the identity step follows the
-            # INSERT, so a crash between them leaves it to this retry.
-            self._sync_observation_selected_taxon(cloud_id, obs, remote_obs=remote)
+            # Linked silently, with no write: the content (identity included)
+            # equals the local row, or adoption raised a conflict instead.
             return cloud_id
         sync_fault_point('after_insert', table='observations')
         consume_confirmed_location_precision(obs.get('id'))
@@ -9382,7 +9395,7 @@ def push_all(
             progress_state,
         )
         try:
-            _raise_if_upload_refused(client)
+            raise_if_upload_refused(client)
             cloud_id = str(obs.get('cloud_id') or '').strip()
             had_existing_cloud = bool(cloud_id)
             stored_snapshot = _load_cloud_observation_snapshot(cloud_id) if cloud_id else ''
@@ -10177,7 +10190,7 @@ def push_all(
 
             # A refusal inside a step that reports instead of raising (media,
             # measurements) still stops the upload phase, with this row dirty.
-            _raise_if_upload_refused(client)
+            raise_if_upload_refused(client)
             pushed += 1
         except ObservationAdoptionConflictError as e:
             # Sync conflict, never a PATCH: the row stays unlinked (L0) and

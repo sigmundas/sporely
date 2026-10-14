@@ -685,6 +685,9 @@ class CloudflareMediaWorkerClient:
         # raised, so the owner can stop its upload phase even when a caller
         # wraps or swallows the error.
         self.on_upgrade_required: Callable[[str], None] | None = None
+        # Called before every upload or delete; may raise to stop the write
+        # (the owner's upload refusal). Downloads and probes never call it.
+        self.before_write: Callable[[], None] | None = None
 
     @classmethod
     def from_access_token(
@@ -869,6 +872,10 @@ class CloudflareMediaWorkerClient:
         if not normalized:
             raise ValueError("Missing media key")
         url = f"{self.base_url}/upload/{self._encode_object_key(normalized)}"
+        if method.upper() in {"PUT", "POST", "DELETE"}:
+            before_write = getattr(self, "before_write", None)
+            if callable(before_write):
+                before_write()
         headers = None
         if method.upper() in {"PUT", "POST"}:
             headers = _build_worker_upload_headers(

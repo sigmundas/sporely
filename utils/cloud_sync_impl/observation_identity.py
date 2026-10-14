@@ -30,6 +30,12 @@ from utils.cloud_sync_impl.errors import (
     CloudWriteRejectedError,
     ObservationAdoptionConflictError,
 )
+from utils.cloud_sync_impl.reconciliation.location_provenance import (
+    LOCATION_SOURCE_FIELD,
+    LOCATION_STATUS_FIELD,
+    location_pair_is_writable,
+    provenance_pair,
+)
 from utils.cloud_sync_impl.push_payloads import (
     _observation_compare_payload,
     _observation_push_payload,
@@ -73,17 +79,47 @@ def local_sync_key(row: dict | None) -> str:
         return ''
 
 
-def observation_create_content_matches(obs: dict, remote: dict) -> bool:
-    """Whether ``remote`` holds every value a create of ``obs`` uploads.
+def create_location_pair(client, obs: dict) -> tuple[str | None, str | None]:
+    """The location pair a create of ``obs`` sends, as ``_post_new_observation`` does.
 
-    A proven local Sporely identity must equal the remote selection, or the
-    remote must have none yet: the create sets it in a step after the
-    INSERT, so an interrupted create leaves it unset, never different.
+    A writable attributed pair travels with the coordinates in the INSERT;
+    otherwise neither field is sent and the row is created with NULL/NULL.
+    """
+    payload = _observation_push_payload(obs, local=True)
+    source, status = provenance_pair(obs)
+    if (
+        not getattr(client, '_observation_location_provenance_unsupported', False)
+        and location_pair_is_writable(
+            source, status, payload.get('gps_latitude'), payload.get('gps_longitude'),
+        )
+    ):
+        return source, status
+    return None, None
+
+
+def observation_create_content_matches(
+    obs: dict,
+    remote: dict,
+    *,
+    location_pair: tuple[str | None, str | None] | None = None,
+) -> bool:
+    """Whether ``remote`` holds exactly what a create of ``obs`` uploads.
+
+    Fails closed on every difference, including the taxonomy selection: the
+    remote must carry the proven local Sporely identity, or none when the
+    local row asserts none. A cleared or changed selection is a difference,
+    never an interrupted create to finish. ``location_pair`` is the pair the
+    create sent (see :func:`create_location_pair`); ``None`` skips the pair,
+    for rows written by older desktops that never uploaded it.
     """
     identity = TaxonIdentity.from_row(obs)
-    if identity.is_proven_sporely:
-        remote_taxon_id = _normalize_observation_int_value(remote.get('selected_sporely_taxon_id'))
-        if remote_taxon_id is not None and remote_taxon_id != identity.sporely_taxon_id:
+    expected_taxon_id = identity.sporely_taxon_id if identity.is_proven_sporely else None
+    remote_taxon_id = _normalize_observation_int_value(remote.get('selected_sporely_taxon_id'))
+    if remote_taxon_id != expected_taxon_id:
+        return False
+    if location_pair is not None:
+        remote_pair = (remote.get(LOCATION_SOURCE_FIELD), remote.get(LOCATION_STATUS_FIELD))
+        if tuple(location_pair) != remote_pair:
             return False
     create_fields = set(_observation_push_payload(obs, local=True)) - _CREATE_COMPARE_EXCLUDED_FIELDS
     local_payload = _observation_compare_payload(obs, local=True)
@@ -123,7 +159,9 @@ def adopt_observation_by_sync_key(client, obs: dict, sync_key: str) -> tuple[str
     cloud_id = str(remote.get('id') or '').strip()
     if not cloud_id:
         raise CloudSyncError(f"observation {obs.get('id')}: adopted row has no id")
-    if not observation_create_content_matches(obs, remote):
+    if not observation_create_content_matches(
+        obs, remote, location_pair=create_location_pair(client, obs),
+    ):
         raise ObservationAdoptionConflictError(
             f"observation {obs.get('id')}: its cloud copy {cloud_id} (same sync key) "
             f'differs from the local row; needs review',
@@ -159,7 +197,7 @@ def recover_legacy_observation(client, obs: dict) -> tuple[str | None, bool]:
     Returns ``(cloud_id, False)`` when exactly one keyless same-owner row
     carries this local id and equals the local content: the row is linked
     locally and nothing is written to the cloud. Otherwise clears the marker
-    and returns ``(None, possible_duplicate)``; the caller then POSTs a new
+    and returns ``(None, True)``: a possible duplicate. The caller then POSTs a new
     keyed row. A row found here is never PATCHed or deleted.
     """
     if not bool(obs.get(LEGACY_RECOVERY_MARKER_COLUMN)):
@@ -178,13 +216,14 @@ def recover_legacy_observation(client, obs: dict) -> tuple[str | None, bool]:
                 flush=True,
             )
             return cloud_id, False
+    # No match, several matches or different content: an earlier upload may
+    # still exist under a row this lookup cannot prove, so every outcome
+    # other than a link is reported as a possible duplicate.
     _commit_legacy_recovery_outcome(local_id, None)
-    possible_duplicate = bool(rows)
-    if possible_duplicate:
-        print(
-            f'[cloud_sync] legacy recovery: obs {local_id} not linked '
-            f'(matches={len(rows)}); uploading as a new row, possible duplicate '
-            f'of an earlier upload',
-            flush=True,
-        )
-    return None, possible_duplicate
+    print(
+        f'[cloud_sync] legacy recovery: obs {local_id} not linked '
+        f'(matches={len(rows)}); uploading as a new row, possible duplicate '
+        f'of an earlier upload',
+        flush=True,
+    )
+    return None, True

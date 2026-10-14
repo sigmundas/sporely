@@ -34,6 +34,7 @@ from database import schema
 from database.models import ObservationDB
 from utils import cloud_sync
 from utils import sync_client_identity
+from utils import taxon_identity
 from utils.cloud_sync_impl import fault_injection
 from utils.r2_storage import CloudflareMediaWorkerClient, MediaUpgradeRequiredError
 
@@ -61,6 +62,12 @@ class _FakeResponse:
 
     def json(self):
         return json.loads(self.text) if self.text else None
+
+    def iter_content(self, chunk_size=1):
+        yield self.content
+
+    def close(self):
+        pass
 
 
 def _error(status: int, code: str, message: str, hint: str | None = None) -> _FakeResponse:
@@ -124,6 +131,8 @@ class FakePostgrest:
             "method": method.upper(), "table": table, "path": path,
             "params": params, "headers": dict(headers), "payload": copy.deepcopy(payload),
         })
+        if table == "rpc":
+            return self._rpc(path.split("/", 1)[1], dict(payload or {}), headers)
         if table != "observations":
             return self._other_table(method.upper(), path)
         filters = [(k, v) for k, v in params if k not in {"select", "order", "limit", "offset"}]
@@ -147,6 +156,23 @@ class FakePostgrest:
             self.rows = [r for r in self.rows if r not in matched]
             return _FakeResponse(204)
         return _error(405, "PGRST000", "unsupported")
+
+    _WRITE_RPCS = frozenset({
+        "set_observation_selected_taxon_v2", "set_observation_identification_v2",
+        "set_observation_location",
+    })
+
+    def _rpc(self, name: str, payload: dict, headers: dict) -> _FakeResponse:
+        if name in self._WRITE_RPCS:
+            refusal = self._write_block_refusal(headers)
+            if refusal is not None:
+                return refusal
+        if name == "set_observation_selected_taxon_v2":
+            self.edit_elsewhere(
+                int(payload["p_observation_id"]),
+                selected_sporely_taxon_id=payload["p_sporely_taxon_id"],
+            )
+        return _FakeResponse(200, None)
 
     def _other_table(self, method: str, path: str) -> _FakeResponse:
         if method == "GET":
@@ -443,6 +469,11 @@ def test_the_fault_hook_is_inert_unless_set_and_scoped_by_table(monkeypatch):
 
 
 def _copy_database(source: _Installation, target: _Installation) -> None:
+    # Fold the WAL into the main file first, as copying a closed library does.
+    with sqlite3.connect(source.root / "mushrooms.db") as connection:
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    for suffix in ("-wal", "-shm"):
+        (target.root / f"mushrooms.db{suffix}").unlink(missing_ok=True)
     shutil.copyfile(source.root / "mushrooms.db", target.root / "mushrooms.db")
 
 
@@ -775,6 +806,19 @@ def test_legacy_recovery_with_several_matches_posts_and_never_touches_them(two_d
     assert summary["observations_possible_duplicate"] == 1
 
 
+def test_legacy_recovery_with_no_match_posts_and_reports_a_possible_duplicate(two_desktops):
+    cloud = FakePostgrest()
+    local_id = _create()
+    _mark_legacy(local_id)
+
+    summary = cloud_sync._new_sync_summary()
+    with cloud_sync._cloud_sync_summary_scope(summary):
+        assert _push(cloud.client())["errors"] == []
+    assert len(cloud.rows_for()) == 1
+    assert _local(local_id)["legacy_recovery_pending"] == 0
+    assert summary["observations_possible_duplicate"] == 1
+
+
 def test_unmarked_rows_never_make_the_legacy_lookup(two_desktops):
     cloud = FakePostgrest()
     local_id = _create()
@@ -837,3 +881,136 @@ def test_imported_forks_are_never_legacy_recovery_candidates():
     portable_row = {"legacy_recovery_pending": 1}
     portable_import._clear_legacy_recovery_marker(portable_row)
     assert portable_row["legacy_recovery_pending"] == 0
+
+
+# ── Adoption compares the uploaded content, identity and provenance included ─
+
+
+def _make_proven(local_id: int, taxon_id: int = 4242) -> None:
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        connection.execute(
+            "UPDATE observations SET sporely_taxon_id = ?, taxon_identity_state = ?, "
+            "taxon_identity_proof = ? WHERE id = ?",
+            (taxon_id, taxon_identity.STATE_SPORELY, taxon_identity.PROOF_TAXONOMY_V2_ARTIFACT, local_id),
+        )
+
+
+def test_adoption_of_a_copy_whose_selection_was_cleared_is_a_conflict(two_desktops, monkeypatch):
+    cloud = FakePostgrest()
+    local_id = _create()
+    _make_proven(local_id)
+    _copy_database(two_desktops["A"], two_desktops["B"])
+    _push(cloud.client())
+    row = cloud.rows_for()[0]
+    assert row["selected_sporely_taxon_id"] == 4242, "the create's identity step ran"
+    cloud.edit_elsewhere(row["id"], selected_sporely_taxon_id=None)  # cleared on the web
+    expected = cloud.rows_for()
+
+    two_desktops["B"].activate(monkeypatch)
+    cloud.requests.clear()
+    result = _push(cloud.client())
+    assert any("needs review" in str(error) for error in result["errors"])
+    assert cloud.rows_for() == expected, "a cleared selection is never re-asserted"
+    assert not [r for r in cloud.requests if r["table"] == "rpc"]
+    assert [w["method"] for w in cloud.observation_writes()] == ["POST"]
+    assert _local(local_id)["cloud_id"] is None
+
+
+def test_adoption_with_a_different_uploaded_location_pair_is_a_conflict(two_desktops, monkeypatch):
+    cloud = FakePostgrest()
+    local_id = _create(
+        gps_latitude=61.0, gps_longitude=9.0,
+        location_source="image_exif", location_status="acquired",
+    )
+    _copy_database(two_desktops["A"], two_desktops["B"])
+    _push(cloud.client())
+    row = cloud.rows_for()[0]
+    assert (row["location_source"], row["location_status"]) == ("image_exif", "acquired")
+    cloud.edit_elsewhere(row["id"], location_source="manual")
+    expected = cloud.rows_for()
+
+    two_desktops["B"].activate(monkeypatch)
+    result = _push(cloud.client())
+    assert any("needs review" in str(error) for error in result["errors"])
+    assert cloud.rows_for() == expected
+    assert _local(local_id)["cloud_id"] is None
+
+
+def test_adoption_with_the_same_location_pair_links(two_desktops, monkeypatch):
+    cloud = FakePostgrest()
+    local_id = _create(
+        gps_latitude=61.0, gps_longitude=9.0,
+        location_source="image_exif", location_status="acquired",
+    )
+    _copy_database(two_desktops["A"], two_desktops["B"])
+    _push(cloud.client())
+
+    two_desktops["B"].activate(monkeypatch)
+    assert _push(cloud.client())["errors"] == []
+    assert str(_local(local_id)["cloud_id"]) == str(cloud.rows_for()[0]["id"])
+
+
+# ── The refusal stops every later upload, not only row POST/PATCH ─────────
+
+
+def test_refusal_stops_writing_rpcs_but_not_read_rpcs(two_desktops):
+    cloud = FakePostgrest()
+    client = cloud.client()
+    client._latch_upload_refusal("sporely_upgrade_required", "blocked")
+    sent = len(cloud.requests)
+    for call in (
+        lambda: client.set_observation_selected_taxon("1001", 7),
+        lambda: client._rpc("set_observation_location", {}),
+        lambda: client._rpc("sync_reference_work", {}),
+        lambda: client._rpc("an_rpc_added_later", {}),
+    ):
+        with pytest.raises(cloud_sync.CloudUploadRefusedError):
+            call()
+    assert len(cloud.requests) == sent, "no refused write reached the server"
+    client._rpc("list_reference_library_feed", {})
+    assert len(cloud.requests) == sent + 1, "read RPCs keep downloads working"
+
+
+def test_refusal_stops_media_uploads_and_deletes_but_not_downloads(tmp_path):
+    client = cloud_sync.SporelyCloudClient("token", USER_ID)
+    worker = client._get_media_worker()
+    sent = []
+
+    def request(method, url, **kwargs):
+        sent.append(method)
+        return _FakeResponse(200, {"key": "u/x/a.webp"})
+
+    worker._session.request = request
+    client._latch_upload_refusal("sporely_upgrade_required", "blocked")
+    source = tmp_path / "a.webp"
+    source.write_bytes(b"bytes")
+    with pytest.raises(cloud_sync.CloudUploadRefusedError):
+        worker.put_file(source, "u/x/a.webp", content_type="image/webp")
+    with pytest.raises(cloud_sync.CloudUploadRefusedError):
+        worker.delete_object("u/x/a.webp")
+    assert sent == []
+    worker.download_to_file("u/x/a.webp", tmp_path / "out.webp")
+    assert sent == ["GET"]
+
+
+def test_calibration_push_stops_on_a_refusal_swallowed_by_an_earlier_step(two_desktops, monkeypatch):
+    from utils.cloud_sync_impl import calibrations
+
+    cloud = FakePostgrest()
+    client = cloud.client()
+    rows = [
+        {"calibration_uuid": str(uuid.uuid4()), "objective_name": f"obj {i}"} for i in range(3)
+    ]
+    monkeypatch.setattr(calibrations, "_load_local_calibration_rows", lambda: rows)
+    visited = []
+
+    def find_remote(calibration_uuid):
+        visited.append(calibration_uuid)
+        # An earlier step refused and reported instead of raising.
+        client._latch_upload_refusal("sporely_upgrade_required", "blocked")
+        return None
+
+    monkeypatch.setattr(client, "find_remote_calibration", find_remote)
+    with pytest.raises(cloud_sync.CloudUploadRefusedError):
+        calibrations.push_calibrations(client, remote_calibrations=[])
+    assert len(visited) <= 1

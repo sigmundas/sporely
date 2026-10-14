@@ -142,6 +142,13 @@ class ObservationAdoptionConflictError(CloudSyncError):
         self.remote = dict(remote or {})
 
 
+def raise_if_upload_refused(client) -> None:
+    """Stop upload work once ``client`` has seen an upload refusal this run."""
+    check = getattr(client, '_check_upload_refusal', None)
+    if callable(check):
+        check()
+
+
 class CloudUploadRefusedError(CloudSyncError):
     """The server refused this client's uploads (write stop or identity guard).
 
