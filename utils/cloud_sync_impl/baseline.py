@@ -287,6 +287,40 @@ def _local_observation_id_by_cloud_id(cloud_id: str) -> int:
     return 0
 
 
+# Child rows (images, measurements) linked without a write in this push are
+# judged on the row the adoption fetched. That row, not a later read, is their
+# baseline: an edit made elsewhere after the adoption GET stays a remote change.
+_JUDGED_CHILD_ROWS_ATTR = '_judged_child_rows'
+
+
+def remember_judged_child_row(client, table: str, row: dict) -> None:
+    rows = getattr(client, _JUDGED_CHILD_ROWS_ATTR, None)
+    if not isinstance(rows, dict):
+        rows = {}
+        setattr(client, _JUDGED_CHILD_ROWS_ATTR, rows)
+    cloud_id = str((row or {}).get('id') or '').strip()
+    if cloud_id:
+        rows[(str(table), cloud_id)] = dict(row)
+
+
+def forget_judged_child_rows(client) -> None:
+    """Drop judged rows a push did not store; they never outlive the push."""
+    if isinstance(getattr(client, _JUDGED_CHILD_ROWS_ATTR, None), dict):
+        setattr(client, _JUDGED_CHILD_ROWS_ATTR, {})
+
+
+def _with_judged_child_rows(client, table: str, rows: list[dict]) -> list[dict]:
+    """``rows`` with each judged child replaced by its judged row, once."""
+    judged = getattr(client, _JUDGED_CHILD_ROWS_ATTR, None)
+    if not isinstance(judged, dict) or not judged:
+        return rows
+    result = []
+    for row in rows:
+        key = (str(table), str((row or {}).get('id') or '').strip())
+        result.append(dict(judged.pop(key)) if key in judged else row)
+    return result
+
+
 def _store_remote_snapshot(
     client: "SporelyCloudClient",
     cloud_id: str,
@@ -321,6 +355,7 @@ def _store_remote_snapshot(
         )
     else:
         images = []
+    images = _with_judged_child_rows(client, 'observation_images', images)
     if include_measurements:
         if remote_measurements is not None:
             measurements = [dict(row or {}) for row in remote_measurements]
@@ -329,6 +364,7 @@ def _store_remote_snapshot(
                 client,
                 [str(row.get('id') or '').strip() for row in images if str(row.get('id') or '').strip()],
             ))
+        measurements = _with_judged_child_rows(client, 'spore_measurements', measurements)
     else:
         measurements = []
     # ── B3 + final Fix 2: reconcile accepted-asymmetry on every schema-2

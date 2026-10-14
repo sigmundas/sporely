@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from database.models import mark_observation_sync_dirty
 from database.schema import get_connection
 
+from utils.cloud_sync_impl.baseline import remember_judged_child_row
 from utils.cloud_sync_impl.errors import (
     ChildAdoptionConflictError,
     ChildParentNotLinkedError,
@@ -366,6 +367,7 @@ def create_child_row(
     )
     if recovered is not None:
         cloud_id = str(recovered.get('id') or '').strip()
+        remember_judged_child_row(client, spec.cloud_table, recovered)
         print(
             f'[cloud_sync] legacy recovery: {spec.label} {local_id} linked to cloud '
             f'{cloud_id} (no cloud write)',
@@ -393,6 +395,7 @@ def create_child_row(
             parent_cloud_id=parent_cloud_id, content_matches=content_matches,
         )
         cloud_id = str(remote.get('id') or '').strip()
+        remember_judged_child_row(client, spec.cloud_table, remote)
         print(
             f'[cloud_sync] {spec.label} {local_id}: create already landed; adopted '
             f'cloud {cloud_id} by sync key (no PATCH)',

@@ -13,6 +13,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+import requests
+
 from database.models import ImageDB
 from database.schema import get_connection
 from utils.original_sync_policy import (
@@ -21,7 +23,7 @@ from utils.original_sync_policy import (
     is_full_resolution_original_upload_too_large,
     resolve_full_original_upload_source,
 )
-from utils.r2_storage import media_variant_key
+from utils.r2_storage import CloudflareWorkerError, media_variant_key
 
 from utils.cloud_sync_impl.child_identity import (
     clear_child_create_pending,
@@ -91,6 +93,26 @@ from utils.cloud_sync_impl.tombstones import (
     _push_pending_image_tombstones,
     _tombstoned_cloud_image_warning,
 )
+
+
+def _upload_outcome_uncertain(error: BaseException) -> bool:
+    """Whether bytes may have landed: a timeout, a lost connection or a worker 5xx.
+
+    A definite refusal (a worker 4xx, a local preparation error, the byte
+    gate) means nothing was stored, and a row created by this attempt may be
+    rolled back.
+    """
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, (requests.Timeout, requests.ConnectionError)):
+            return True
+        if isinstance(current, CloudflareWorkerError):
+            status = current.status_code
+            return status is None or int(status) >= 500
+        current = current.__cause__ or current.__context__
+    return False
 
 
 def should_push_local_image_to_cloud(image_row: dict | None) -> bool:
@@ -1017,8 +1039,21 @@ def _push_images_for_observation(
                                 observation_id=_safe_int(obs.get('id')),
                                 image_id=local_image_id,
                             )
-                    except Exception:
-                        if reserved_image_row and img_cloud_id:
+                    except Exception as upload_exc:
+                        if (
+                            reserved_image_row
+                            and img_cloud_id
+                            and _upload_outcome_uncertain(upload_exc)
+                        ):
+                            # The bytes may have landed. Keep the row and its
+                            # reserved key: the retry repeats the create,
+                            # adopts this row and uploads to the same key.
+                            print(
+                                f'[cloud_sync] Observation {obs["id"]}: upload outcome '
+                                f'uncertain for image {local_image_id}; keeping cloud '
+                                f'image {img_cloud_id} and reserved key {storage_path}'
+                            )
+                        elif reserved_image_row and img_cloud_id:
                             try:
                                 client._storage_remove([
                                     storage_path,

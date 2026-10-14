@@ -63,6 +63,10 @@ class ChildCloud:
         self.refuse_posts: dict[str, _FakeResponse] = {}
         self.timeout_after_next_insert: set[str] = set()
         self.kill_on_media_put = False
+        # "before" (nothing stored) or "after" (stored, answer lost): a
+        # requests.Timeout on the next media PUT.
+        self.timeout_on_media_put: str | None = None
+        self.after_get = None  # callable(table, filters) run after answering a GET
         self._next_id = 5000
 
     # ── wiring ──────────────────────────────────────────────────────────
@@ -109,9 +113,14 @@ class ChildCloud:
             if self.kill_on_media_put:
                 self.kill_on_media_put = False
                 raise _Killed()
+            timeout, self.timeout_on_media_put = self.timeout_on_media_put, None
+            if timeout == "before":
+                raise requests.Timeout("media upload timed out before the bytes landed")
             data = kwargs.get("data")
             body = data.read() if hasattr(data, "read") else bytes(data or b"")
             self.objects[key] = len(body)
+            if timeout == "after":
+                raise requests.Timeout("media upload answer lost after the bytes landed")
             return _FakeResponse(200, {"key": key})
         if method.upper() == "DELETE":
             self.objects.pop(key, None)
@@ -137,7 +146,10 @@ class ChildCloud:
             return _FakeResponse(201, [])
         filters = [(k, v) for k, v in params if k not in {"select", "order", "limit", "offset"}]
         if method == "GET":
-            return self._get(table, params, filters)
+            response = self._get(table, params, filters)
+            if self.after_get is not None:
+                self.after_get(table, filters)
+            return response
         if method == "POST":
             return self._post(table, dict(payload or {}))
         if method == "PATCH":
@@ -884,3 +896,123 @@ def test_two_desktops_keep_every_child_under_its_own_parent(two_desktops, monkey
     assert len(cloud.rows("spore_measurements")) == 2
     assert {r["desktop_id"] for table in _TABLES for r in cloud.rows(table)} == {None}
     _no_desktop_id_and_no_key_patches(cloud)
+
+
+# ── Review round 1: uncertain uploads, deleted anchors, judged baselines ─
+
+
+@pytest.mark.parametrize("when", ["before", "after"])
+def test_an_upload_timeout_keeps_the_reserved_row_and_key_for_the_retry(two_desktops, tmp_path, when):
+    cloud = ChildCloud()
+    obs_id = _observation()
+    image_id = _image(obs_id, tmp_path, image_type="field")
+    cloud.timeout_on_media_put = when
+
+    # Classified as transient (the push stops) or as an image failure (the
+    # observation stays dirty); either way it is surfaced, never swallowed.
+    try:
+        result = _push(cloud.client())
+    except cloud_sync.CloudSyncError as exc:
+        assert "Media upload failed" in str(exc)
+    else:
+        assert any("Media upload failed" in str(error) for error in result["errors"]), result["errors"]
+
+    [reserved] = cloud.rows("observation_images")
+    assert reserved["storage_path"]
+    assert cloud.writes("observation_images", "DELETE") == [], "the reservation is never rolled back"
+    assert set(cloud.objects) == ({reserved["storage_path"]} if when == "after" else set())
+    assert _row("images", image_id)["cloud_id"] is None
+
+    assert _push(cloud.client())["errors"] == []
+    [row] = cloud.rows("observation_images")
+    assert (row["id"], row["storage_path"]) == (reserved["id"], reserved["storage_path"])
+    assert set(cloud.objects) == {row["storage_path"], cloud_sync.media_variant_key(row["storage_path"], "thumb")}
+    assert str(_row("images", image_id)["cloud_id"]) == str(row["id"])
+
+
+def test_a_definite_upload_refusal_still_rolls_back_the_new_row(two_desktops, tmp_path):
+    cloud = ChildCloud()
+    obs_id = _observation()
+    _image(obs_id, tmp_path, image_type="field")
+    real_media = cloud.media
+
+    def refuse_put(method, url, **kwargs):
+        if method.upper() == "PUT":
+            return _FakeResponse(400, {"error": "bad_request", "message": "rejected"})
+        return real_media(method, url, **kwargs)
+
+    client = cloud.client()
+    client._get_media_worker()._session.request = refuse_put
+    assert _push(client)["errors"]
+    assert cloud.rows("observation_images") == []
+    assert [w["method"] for w in cloud.writes("observation_images")] == ["POST", "DELETE"]
+
+
+def test_a_linked_anchor_deleted_in_the_cloud_is_never_resurrected(two_desktops, tmp_path):
+    cloud = ChildCloud()
+    obs_id, image_id, _measurement_id = _create_full(tmp_path)
+    assert _push(cloud.client())["errors"] == []
+    [image_row] = cloud.rows("observation_images")
+    cloud.edit_elsewhere("observation_images", image_row["id"], deleted_at=_now())
+    deleted = cloud.rows("observation_images")
+    ObservationDB.update_observation(obs_id, notes="edited after the web delete")
+
+    cloud.requests.clear()
+    # The anchor step itself refuses, whoever reaches it first ...
+    client = cloud.client()
+    anchors = cloud_sync._ensure_metadata_only_microscope_images_for_observation(
+        client, obs_id, str(_row("observations", obs_id)["cloud_id"]),
+    )
+    assert anchors["failed"] == 1
+    assert any("never resurrected" in failure for failure in anchors["failures"])
+    # ... and a full push holds the observation for review.
+    result = _push(client)
+    assert result["errors"]
+
+    assert cloud.rows("observation_images") == deleted
+    assert not [w for w in cloud.writes("observation_images", "PATCH")
+                if "deleted_at" in (w["payload"] or {})]
+    assert str(_row("images", image_id)["cloud_id"]) == str(image_row["id"])
+
+
+def _stored_children(obs_id: int) -> tuple[list[dict], list[dict]]:
+    cloud_id = str(_row("observations", obs_id)["cloud_id"])
+    parsed = cloud_sync._parse_cloud_observation_snapshot(
+        cloud_sync._load_cloud_observation_snapshot(cloud_id)
+    )
+    return list(parsed.get("images") or []), list(parsed.get("measurements") or [])
+
+
+@pytest.mark.parametrize(
+    "table, edit, field",
+    [("observation_images", {"notes": "edited on the web"}, "notes"),
+     ("spore_measurements", {"length_um": 12.5}, "length_um")],
+)
+def test_an_adopted_child_keeps_its_fetched_row_as_baseline(
+    two_desktops, monkeypatch, tmp_path, table, edit, field,
+):
+    cloud = ChildCloud()
+    if table == "observation_images":
+        obs_id = _observation()
+        _image(obs_id, tmp_path, image_type="field")
+    else:
+        obs_id, _image_id, _measurement_id = _create_full(tmp_path)
+    _copy_database(two_desktops["A"], two_desktops["B"])
+    assert _push(cloud.client())["errors"] == []
+    judged = cloud.rows(table)[0][field]
+
+    def edit_after_adoption_read(read_table, filters):
+        if read_table == table and any(column == "sync_key" and value.startswith("eq.")
+                                       for column, value in filters):
+            cloud.after_get = None
+            cloud.edit_elsewhere(table, cloud.rows(table)[0]["id"], **edit)
+
+    two_desktops["B"].activate(monkeypatch)
+    cloud.after_get = edit_after_adoption_read
+    assert _push(cloud.client())["errors"] == []
+
+    assert cloud.rows(table)[0][field] == edit[field], "the edit landed after the adoption read"
+    images, measurements = _stored_children(obs_id)
+    stored = images if table == "observation_images" else measurements
+    assert len(stored) == 1
+    assert stored[0][field] == judged, "the baseline is the judged row, not a later read"

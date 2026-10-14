@@ -430,6 +430,15 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
                 table='observation_images', cloud_id=existing_local_cloud_id,
                 reason='missing' if candidate is None else 'parent',
             )
+        if str(candidate.get('deleted_at') or '').strip():
+            # Deleted in the cloud: never resurrected by an ordinary sync. An
+            # explicit restore republishes the image as a new keyed row.
+            raise ChildAdoptionConflictError(
+                f'image {local_image_id}: linked cloud image {existing_local_cloud_id} '
+                f'was deleted in the cloud; never resurrected',
+                table='observation_images', cloud_id=existing_local_cloud_id,
+                reason='deleted',
+            )
         remote_row = candidate
 
     payload = _metadata_only_microscope_image_payload(
@@ -473,12 +482,6 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
             local_image_id,
             not bool(_normalize_cloud_media_key(remote_row.get('storage_path'))),
         )
-        if str(remote_row.get('deleted_at') or '').strip():
-            client._patch(
-                f'observation_images?id=eq.{remote_cloud_id}'
-                f'&user_id=eq.{client.user_id}',
-                {'deleted_at': None},
-            )
         print(
             f'[cloud_sync] Mosaic image metadata: linked '
             f'local_image={local_image_id} cloud_image={remote_cloud_id} (validated)',

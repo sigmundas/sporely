@@ -471,8 +471,12 @@ from utils.cloud_sync_impl.baseline import (  # noqa: F401  (facade re-export)
     _normalize_accepted_asymmetry_entry,
     _normalize_accepted_asymmetry_for_snapshot,
     _parse_cloud_observation_snapshot,
+    _JUDGED_CHILD_ROWS_ATTR,
     _store_cloud_observation_snapshot,
     _store_remote_snapshot,
+    _with_judged_child_rows,
+    forget_judged_child_rows,
+    remember_judged_child_row,
 )
 from utils.cloud_sync_impl.identity_state import (  # noqa: F401  (facade re-export)
     IDENTITY_APPLY_APPLIED,
@@ -706,6 +710,7 @@ from utils.cloud_sync_impl.child_identity import (  # noqa: F401  (facade re-exp
 from utils.cloud_sync_impl.image_push import (  # noqa: F401  (facade re-export)
     _IMAGE_CREATE_COMPARE_EXCLUDED_KEYS,
     _image_create_content_matches,
+    _upload_outcome_uncertain,
     _local_image_source_bytes_unchanged,
     _remote_image_compare_payload,
     _lookup_unlisted_remote_image_storage_path,
@@ -9423,6 +9428,8 @@ def push_all(
     print("[cloud_sync] observation preflight: start", flush=True)
     _emit_progress(progress_cb, "Checking local observation changes…", progress_state)
 
+    # Judged child rows belong to this push's baselines only.
+    forget_judged_child_rows(client)
     interrupted = redirty_interrupted_child_creates()
     if interrupted:
         print(
@@ -10507,6 +10514,8 @@ def push_all(
     sync_summary = _cloud_sync_current_summary()
     if sync_summary is not None:
         result['sync_summary'] = dict(sync_summary)
+    # A judged child row never becomes a later (pull-side) baseline.
+    forget_judged_child_rows(client)
     return result
 
 
