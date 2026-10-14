@@ -1125,3 +1125,45 @@ def test_judged_rows_never_outlive_an_interrupted_push(two_desktops, monkeypatch
     )
     assert result.get("upload_blocked") == "upgrade_required"
     assert not getattr(client, "_judged_child_rows", {})
+
+
+# ── Review round 3: a crashed anchor promotion is rescheduled ────────────
+
+
+@pytest.mark.parametrize("crash", ["after_reservation", "after_bytes"])
+def test_a_crashed_anchor_promotion_resumes_on_the_next_ordinary_sync(
+    two_desktops, monkeypatch, tmp_path, crash,
+):
+    cloud = ChildCloud()
+    obs_id, image_id, _measurement_id = _create_full(tmp_path)  # anchor, then promotion
+    if crash == "after_reservation":
+        cloud.kill_on_media_put = True
+    else:
+        _fault(monkeypatch, "after_upload")
+    with pytest.raises(_Killed):
+        _push(cloud.client())
+    _fault(monkeypatch, None)
+
+    [anchor] = cloud.rows("observation_images")
+    reserved_key = anchor["storage_path"]
+    assert reserved_key, "the promotion reserved its key before the crash"
+    assert str(_row("images", image_id)["cloud_id"]) == str(anchor["id"]), "the anchor is linked"
+    assert _row("observations", obs_id)["sync_status"] == "synced", "stamped before the images"
+    due, reason = cloud_sync._cloud_pending_image_repair_scan_due()
+    assert not due, f"the periodic scan is not due ({reason}); it cannot be what recovers this"
+
+    # A fresh client, as after a restart; no user edit, no forced scan.
+    assert _push(cloud.client())["errors"] == []
+
+    [row] = cloud.rows("observation_images")
+    assert (row["id"], row["storage_path"]) == (anchor["id"], reserved_key), "same row, same key"
+    assert set(cloud.objects) == {reserved_key, cloud_sync.media_variant_key(reserved_key, "thumb")}
+    assert _row("observations", obs_id)["sync_status"] == "synced"
+    assert not cloud_sync._load_pending_image_promotion_key(obs_id, image_id), "promotion confirmed"
+
+    # Settled: the next sync uploads nothing and rewrites nothing.
+    cloud.requests.clear()
+    media_before = list(cloud.media_requests)
+    assert _push(cloud.client())["errors"] == []
+    assert cloud.media_requests == media_before
+    assert cloud.writes("observation_images") == []

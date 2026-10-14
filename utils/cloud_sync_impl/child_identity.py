@@ -133,9 +133,10 @@ def _clear_legacy_marker_now(local_table: str, local_id: int) -> None:
         connection.close()
 
 
-# An image create runs after its observation was already stamped synced, so a
-# crash between the image INSERT and its local link would otherwise wait for
-# the periodic pending-image scan. This marker, set before the request and
+# An image create or anchor promotion runs after its observation was already
+# stamped synced, so a crash before the image's local link commit would
+# otherwise wait for the periodic pending-image scan (which never sees a
+# linked anchor being promoted). This marker, set before the request and
 # cleared with the link commit, makes the next push re-dirty the observation.
 CHILD_CREATE_PENDING_SETTING_PREFIX = 'sporely_cloud_child_create_pending_obs_'
 

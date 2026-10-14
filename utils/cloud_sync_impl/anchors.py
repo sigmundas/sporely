@@ -29,6 +29,7 @@ from utils.cloud_sync_impl.child_identity import (
     clear_child_create_pending,
     clear_legacy_marker,
     create_child_row,
+    mark_child_create_pending,
 )
 from utils.cloud_sync_impl.errors import (
     ChildAdoptionConflictError,
@@ -85,6 +86,10 @@ def _reserve_anchor_promotion_key(
     the next sync re-reads remote state before deciding again.
     """
     normalized_key = _normalize_cloud_media_key(storage_path)
+    # The observation is already stamped synced, and the image is linked, so
+    # no dirty scan would find an interrupted promotion: this marker makes the
+    # next push re-dirty the observation (cleared by the image's link commit).
+    mark_child_create_pending(observation_id)
     _store_pending_image_promotion_key(observation_id, local_image_id, normalized_key)
     if not client.reserve_image_storage_path_for_promotion(cloud_image_id, normalized_key):
         _clear_pending_image_promotion_key(observation_id, local_image_id)
