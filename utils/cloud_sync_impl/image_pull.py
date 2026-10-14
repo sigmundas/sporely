@@ -529,6 +529,8 @@ def _ensure_local_metadata_only_microscope_anchor(
             file_purpose='cache',
             original_mime_type=None,
             working_mime_type=None,
+            # Pulled cloud rows carry no sync key yet (S3); never mint one.
+            sync_key=None,
         )
         local_image_id = _safe_int(created_local_image_id)
         if local_image_id <= 0:
@@ -928,6 +930,8 @@ def _apply_remote_images_to_local(
                 file_purpose='cache',
                 original_mime_type=None,
                 working_mime_type=guess_local_image_mime_type(download_path),
+                # Pulled cloud rows carry no sync key yet (S3); never mint one.
+                sync_key=None,
             )
             _adopt_remote_ingest_method(local_image_id, remote_image)
             download_path = _promote_temp_imported_image_if_needed(
@@ -1182,6 +1186,8 @@ def _import_remote_images(
                     file_purpose='cache',
                     original_mime_type=None,
                     working_mime_type=guess_local_image_mime_type(download_path),
+                    # Pulled cloud rows carry no sync key yet (S3); never mint one.
+                    sync_key=None,
                 )
                 _adopt_remote_ingest_method(local_image_id, image_row)
                 download_path = _promote_temp_imported_image_if_needed(

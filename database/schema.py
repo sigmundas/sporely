@@ -1033,6 +1033,46 @@ def ensure_calibration_uuid_column(cursor: sqlite3.Cursor) -> None:
     )
 
 
+SYNC_KEY_TABLES = ("observations", "images", "spore_measurements")
+
+
+def new_sync_key() -> str:
+    """Return a fresh immutable local record sync key (uuid4)."""
+    return str(uuid.uuid4())
+
+
+def ensure_sync_key_columns(cursor: sqlite3.Cursor) -> None:
+    """Ensure the immutable local record sync key exists on synced tables.
+
+    Rows without a cloud link get a fresh uuid4 key. Rows already linked to
+    the cloud keep NULL: they mirror the cloud row's key, so no device claims
+    a key for a record that already exists in the cloud. Idempotent.
+    """
+    for table in SYNC_KEY_TABLES:
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)
+        )
+        if not cursor.fetchone():
+            continue
+        cursor.execute(f"PRAGMA table_info({table})")
+        columns = {str(row[1] or "") for row in cursor.fetchall()}
+        if "sync_key" not in columns:
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN sync_key TEXT")
+        unlinked = (
+            "(cloud_id IS NULL OR TRIM(cloud_id) = '')" if "cloud_id" in columns else "1"
+        )
+        cursor.execute(
+            f"SELECT id FROM {table} WHERE sync_key IS NULL AND {unlinked} ORDER BY id"
+        )
+        updates = [(new_sync_key(), row[0]) for row in cursor.fetchall()]
+        if updates:
+            cursor.executemany(f"UPDATE {table} SET sync_key = ? WHERE id = ?", updates)
+        cursor.execute(
+            f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{table}_sync_key "
+            f"ON {table}(sync_key) WHERE sync_key IS NOT NULL"
+        )
+
+
 def ensure_calibration_assets_table(cursor: sqlite3.Cursor) -> None:
     """Ensure the local calibration assets table exists."""
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='calibration_assets'")
@@ -2017,6 +2057,9 @@ def init_database(
         )
     except sqlite3.OperationalError:
         pass
+
+    # Runs after every cloud_id column exists so linked rows keep NULL keys.
+    ensure_sync_key_columns(cursor)
 
     conn.commit()
     conn.close()

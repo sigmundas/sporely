@@ -27,6 +27,7 @@ from references.measurement_content import (
     validate_measurement_content,
 )
 from database.reference_sync_state import record_library_mutation_intent
+from database.schema import new_sync_key
 from database.curated_reference_forks import same_fork_provenance, validate_frozen_curated_provenance
 from utils.archive.checksums import sha256_file
 from utils.archive.manifest import ArchiveManifest
@@ -2770,6 +2771,7 @@ def import_portable_payload(
             row["sync_status"] = "local"
             row["folder_path"] = None
             row["portable_cloud_identity_pending"] = 1
+            row["sync_key"] = new_sync_key()
             if row.get("ai_state_json"):
                 row["ai_state_json"] = _rewrite_embedded_identity(
                     row["ai_state_json"],
@@ -2795,6 +2797,7 @@ def import_portable_payload(
                 row["calibration_id"] = calibration_map[int(calibration_id)]
             row["cloud_id"] = None
             row["synced_at"] = None
+            row["sync_key"] = new_sync_key()
             if row.get("lab_metadata"):
                 row["lab_metadata"] = _rewrite_embedded_identity(
                     row["lab_metadata"],
@@ -2818,6 +2821,7 @@ def import_portable_payload(
             row["id"] = measurement_map[source_id]
             row["image_id"] = image_map[source_image_id]
             row["cloud_id"] = None
+            row["sync_key"] = new_sync_key()
             _insert_row(destination_main, "spore_measurements", row)
 
         annotation_rows, annotation_map = _allocate_rows(
