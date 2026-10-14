@@ -1131,7 +1131,7 @@ def test_judged_rows_never_outlive_an_interrupted_push(two_desktops, monkeypatch
 
 
 @pytest.mark.parametrize("crash", ["after_reservation", "after_bytes"])
-def test_a_crashed_anchor_promotion_resumes_on_the_next_ordinary_sync(
+def test_a_twice_crashed_anchor_promotion_resumes_on_the_next_ordinary_sync(
     two_desktops, monkeypatch, tmp_path, crash,
 ):
     cloud = ChildCloud()
@@ -1152,6 +1152,18 @@ def test_a_crashed_anchor_promotion_resumes_on_the_next_ordinary_sync(
     due, reason = cloud_sync._cloud_pending_image_repair_scan_due()
     assert not due, f"the periodic scan is not due ({reason}); it cannot be what recovers this"
 
+    # A second crash, during the resumed promotion, at the same point.
+    if crash == "after_reservation":
+        cloud.kill_on_media_put = True
+    else:
+        _fault(monkeypatch, "after_upload")
+    with pytest.raises(_Killed):
+        _push(cloud.client())
+    _fault(monkeypatch, None)
+    assert [r["storage_path"] for r in cloud.rows("observation_images")] == [reserved_key]
+    assert _row("observations", obs_id)["sync_status"] == "synced", "stamped again before the images"
+    assert not cloud_sync._cloud_pending_image_repair_scan_due()[0]
+
     # A fresh client, as after a restart; no user edit, no forced scan.
     assert _push(cloud.client())["errors"] == []
 
@@ -1160,6 +1172,7 @@ def test_a_crashed_anchor_promotion_resumes_on_the_next_ordinary_sync(
     assert set(cloud.objects) == {reserved_key, cloud_sync.media_variant_key(reserved_key, "thumb")}
     assert _row("observations", obs_id)["sync_status"] == "synced"
     assert not cloud_sync._load_pending_image_promotion_key(obs_id, image_id), "promotion confirmed"
+    assert not cloud_sync.redirty_interrupted_child_creates(), "no retry marker left"
 
     # Settled: the next sync uploads nothing and rewrites nothing.
     cloud.requests.clear()

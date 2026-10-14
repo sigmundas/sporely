@@ -28,6 +28,7 @@ from utils.r2_storage import CloudflareWorkerError, media_variant_key
 from utils.cloud_sync_impl.child_identity import (
     clear_child_create_pending,
     clear_legacy_marker,
+    mark_child_create_pending,
     take_adopted_child,
 )
 from utils.cloud_sync_impl.anchors import (
@@ -1030,6 +1031,11 @@ def _push_images_for_observation(
                         if adopted_row is not None and not storage_path:
                             uploaded_key = ''
                         else:
+                            # Durable retry intent for every byte upload,
+                            # including a resumed promotion: a crash before the
+                            # link commit below re-dirties the observation on
+                            # the next push.
+                            mark_child_create_pending(_safe_int(obs.get('id')))
                             uploaded_key = client.upload_image_file(
                                 upload_path,
                                 obs_cloud_id,
