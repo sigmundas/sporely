@@ -7322,14 +7322,13 @@ class SporelyCloudClient(
             )
             consume_confirmed_location_precision(obs.get('id'))
             _increment_sync_summary(summary, 'observations_adopted')
-            # The fetched row is the baseline (see take_adopted_base). Its
-            # content equals the local row, or adoption raised a conflict.
+            # Linked with no write: the fetched row is the baseline (see
+            # take_adopted_base). An unfinished identity step is not sent
+            # here: set_observation_selected_taxon_v2 has no precondition,
+            # so a selection made since this read would be overwritten.
+            # push_all leaves the row dirty instead, and the next push sends
+            # it only after its three-way check against this baseline.
             remember_adopted_base(self, cloud_id, remote)
-            if interrupted_identity_step(obs, remote):
-                # The crash or timeout fell between the INSERT and the
-                # identity step, on a row nothing has written since: finish
-                # this database's own create.
-                self._sync_observation_selected_taxon(cloud_id, obs, remote_obs=remote)
             return cloud_id
         sync_fault_point('after_insert', table='observations')
         consume_confirmed_location_precision(obs.get('id'))
@@ -9711,6 +9710,8 @@ def push_all(
                 remote_obs=remote,
                 baseline_obs=identity_baseline_obs,
             )
+            # Set when the push linked an existing row without writing it.
+            adopted_base = take_adopted_base(client, cloud_id)
             _adopt_merge_filled_ai_fields_locally(obs.get('id'), push_payload, merged_payload)
 
             # Update local record with cloud_id and sync_status
@@ -9732,6 +9733,11 @@ def push_all(
                 # not, and must stay visible until the owner resolves it.
                 _set_observation_sync_state(int(obs['id']), cloud_id, dirty=True, synced_at=None)
                 _set_observation_conflict_review_pending(int(obs['id']))
+            elif adopted_base is not None and interrupted_identity_step(obs, adopted_base):
+                # Adopted an interrupted create whose identity step never ran:
+                # keep it dirty so the next push sends the selection as an
+                # ordinary local change, checked against the adopted baseline.
+                _set_observation_sync_state(int(obs['id']), cloud_id, dirty=True)
             if previous_status == 'dirty':
                 print(
                     f"[cloud_sync] sync_status transition obs {obs['id']}: dirty→synced "
@@ -10200,7 +10206,6 @@ def push_all(
             else:
                 # A row linked without a write keeps the row it was judged on
                 # as baseline; anything since then is a remote change.
-                adopted_base = take_adopted_base(client, cloud_id)
                 if adopted_base is None:
                     _store_remote_snapshot(client, cloud_id)
                 else:

@@ -127,7 +127,9 @@ def interrupted_identity_step(obs: dict, remote: dict) -> bool:
     True only when the remote has no selection and was never updated since
     its INSERT: the crash or timeout fell between the INSERT and the
     identity RPC. A selection that was set and later cleared bumped
-    ``updated_at`` and is a difference instead.
+    ``updated_at`` and is a difference instead. It only says what the read
+    showed: adoption never writes the selection (the RPC takes no
+    precondition), it leaves the row dirty for the ordinary push.
     """
     identity = TaxonIdentity.from_row(obs)
     return (

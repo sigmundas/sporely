@@ -1023,7 +1023,11 @@ def test_calibration_push_stops_on_a_refusal_swallowed_by_an_earlier_step(two_de
 # ── Interrupted creates with a proven selection; the adoption baseline ────
 
 
-def test_kill_after_insert_with_a_proven_selection_adopts_and_finishes_the_create(two_desktops, monkeypatch):
+def _rpcs(cloud: FakePostgrest) -> list[str]:
+    return [r["path"] for r in cloud.requests if r["table"] == "rpc"]
+
+
+def test_kill_after_insert_with_a_proven_selection_adopts_then_sends_it_as_a_local_change(two_desktops, monkeypatch):
     cloud = FakePostgrest()
     local_id = _create()
     _make_proven(local_id)
@@ -1032,29 +1036,67 @@ def test_kill_after_insert_with_a_proven_selection_adopts_and_finishes_the_creat
         _push(cloud.client())
     assert cloud.rows_for()[0].get("selected_sporely_taxon_id") is None, "killed before the identity step"
 
+    # Retry: adopted with no write at all; the selection stays pending.
     monkeypatch.delenv(fault_injection.SYNC_FAULT_ENV_VAR)
     cloud.requests.clear()
-    result = _push(cloud.client())
-    assert result["errors"] == []
+    assert _push(cloud.client())["errors"] == []
     rows = cloud.rows_for()
-    assert len(rows) == 1 and rows[0]["selected_sporely_taxon_id"] == 4242
-    assert str(_local(local_id)["cloud_id"]) == str(rows[0]["id"])
+    assert len(rows) == 1 and str(_local(local_id)["cloud_id"]) == str(rows[0]["id"])
     assert [w["method"] for w in cloud.observation_writes()] == ["POST"], "never a PATCH"
+    assert _rpcs(cloud) == [], "adoption never writes the selection"
+    assert _local(local_id)["sync_status"] == "dirty"
+
+    # Next push: the ordinary local change, checked against the adopted base.
+    cloud.requests.clear()
+    assert _push(cloud.client())["errors"] == []
+    assert cloud.rows_for()[0]["selected_sporely_taxon_id"] == 4242
+    assert _rpcs(cloud) == ["rpc/set_observation_selected_taxon_v2"]
 
     cloud.requests.clear()
     assert _push(cloud.client())["errors"] == []
-    assert cloud.observation_writes() == [] and not [r for r in cloud.requests if r["table"] == "rpc"]
+    assert cloud.observation_writes() == [] and _rpcs(cloud) == []
 
 
-def test_timeout_after_insert_with_a_proven_selection_adopts_and_finishes_the_create(two_desktops):
+def test_timeout_after_insert_with_a_proven_selection_adopts_then_sends_it(two_desktops):
     cloud = FakePostgrest()
     local_id = _create()
     _make_proven(local_id)
     cloud.timeout_after_next_insert = True
     assert _push(cloud.client())["errors"] == []
-    rows = cloud.rows_for()
-    assert len(rows) == 1 and rows[0]["selected_sporely_taxon_id"] == 4242
-    assert str(_local(local_id)["cloud_id"]) == str(rows[0]["id"])
+    assert len(cloud.rows_for()) == 1
+    assert str(_local(local_id)["cloud_id"]) == str(cloud.rows_for()[0]["id"])
+    assert _push(cloud.client())["errors"] == []
+    assert cloud.rows_for()[0]["selected_sporely_taxon_id"] == 4242
+
+
+def test_a_selection_made_after_the_adoption_read_is_never_overwritten(two_desktops, monkeypatch):
+    cloud = FakePostgrest()
+    local_id = _create()
+    _make_proven(local_id)
+    monkeypatch.setenv(fault_injection.SYNC_FAULT_ENV_VAR, "after_insert")
+    with pytest.raises(_Killed):
+        _push(cloud.client())
+    monkeypatch.delenv(fault_injection.SYNC_FAULT_ENV_VAR)
+    cloud_id = cloud.rows_for()[0]["id"]
+
+    def select_elsewhere_after_adoption_read(filters):
+        if any(column == "sync_key" for column, _ in filters):
+            cloud.after_get = None
+            cloud.edit_elsewhere(cloud_id, selected_sporely_taxon_id=77)  # web picks 77
+
+    cloud.after_get = select_elsewhere_after_adoption_read
+    cloud.requests.clear()
+    _push(cloud.client())
+    assert cloud.rows_for()[0]["selected_sporely_taxon_id"] == 77
+    assert _rpcs(cloud) == []
+
+    for _attempt in range(2):
+        cloud.requests.clear()
+        result = _push(cloud.client())
+        assert any("needs review" in str(error) for error in result["errors"]), result["errors"]
+        assert cloud.rows_for()[0]["selected_sporely_taxon_id"] == 77, "the competing selection survives"
+        assert _rpcs(cloud) == []
+        assert not [w for w in cloud.observation_writes() if w["method"] == "PATCH"]
 
 
 def test_an_untouched_row_with_a_different_selection_is_still_a_conflict(two_desktops, monkeypatch):
