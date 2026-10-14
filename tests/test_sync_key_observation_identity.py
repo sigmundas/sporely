@@ -84,6 +84,7 @@ class FakePostgrest:
         self.requests: list[dict] = []
         self.inject_post_error: _FakeResponse | None = None
         self.timeout_after_next_insert = False
+        self.after_get = None  # callable(filters) run after answering a GET
         self._next_id = 1000
 
     # ── wiring ──────────────────────────────────────────────────────────
@@ -143,7 +144,10 @@ class FakePostgrest:
             return _error(400, "42703", "column observations.sync_key does not exist")
         method = method.upper()
         if method == "GET":
-            return self._get(params, filters)
+            response = self._get(params, filters)
+            if self.after_get is not None:
+                self.after_get(filters)
+            return response
         refusal = self._write_block_refusal(headers)
         if refusal is not None:
             return refusal
@@ -1014,3 +1018,100 @@ def test_calibration_push_stops_on_a_refusal_swallowed_by_an_earlier_step(two_de
     with pytest.raises(cloud_sync.CloudUploadRefusedError):
         calibrations.push_calibrations(client, remote_calibrations=[])
     assert len(visited) <= 1
+
+
+# ── Interrupted creates with a proven selection; the adoption baseline ────
+
+
+def test_kill_after_insert_with_a_proven_selection_adopts_and_finishes_the_create(two_desktops, monkeypatch):
+    cloud = FakePostgrest()
+    local_id = _create()
+    _make_proven(local_id)
+    monkeypatch.setenv(fault_injection.SYNC_FAULT_ENV_VAR, "after_insert")
+    with pytest.raises(_Killed):
+        _push(cloud.client())
+    assert cloud.rows_for()[0].get("selected_sporely_taxon_id") is None, "killed before the identity step"
+
+    monkeypatch.delenv(fault_injection.SYNC_FAULT_ENV_VAR)
+    cloud.requests.clear()
+    result = _push(cloud.client())
+    assert result["errors"] == []
+    rows = cloud.rows_for()
+    assert len(rows) == 1 and rows[0]["selected_sporely_taxon_id"] == 4242
+    assert str(_local(local_id)["cloud_id"]) == str(rows[0]["id"])
+    assert [w["method"] for w in cloud.observation_writes()] == ["POST"], "never a PATCH"
+
+    cloud.requests.clear()
+    assert _push(cloud.client())["errors"] == []
+    assert cloud.observation_writes() == [] and not [r for r in cloud.requests if r["table"] == "rpc"]
+
+
+def test_timeout_after_insert_with_a_proven_selection_adopts_and_finishes_the_create(two_desktops):
+    cloud = FakePostgrest()
+    local_id = _create()
+    _make_proven(local_id)
+    cloud.timeout_after_next_insert = True
+    assert _push(cloud.client())["errors"] == []
+    rows = cloud.rows_for()
+    assert len(rows) == 1 and rows[0]["selected_sporely_taxon_id"] == 4242
+    assert str(_local(local_id)["cloud_id"]) == str(rows[0]["id"])
+
+
+def test_an_untouched_row_with_a_different_selection_is_still_a_conflict(two_desktops, monkeypatch):
+    cloud = FakePostgrest()
+    local_id = _create()
+    _make_proven(local_id)
+    monkeypatch.setenv(fault_injection.SYNC_FAULT_ENV_VAR, "after_insert")
+    with pytest.raises(_Killed):
+        _push(cloud.client())
+    monkeypatch.delenv(fault_injection.SYNC_FAULT_ENV_VAR)
+    row = cloud.rows_for()[0]
+    for stored in cloud.rows:  # a different selection with the timestamps untouched
+        stored["selected_sporely_taxon_id"] = 77
+    result = _push(cloud.client())
+    assert any("needs review" in str(error) for error in result["errors"])
+    assert cloud.rows_for()[0]["selected_sporely_taxon_id"] == 77
+    assert _local(local_id)["cloud_id"] is None and row["id"]
+
+
+def test_adoption_keeps_the_fetched_row_as_baseline_and_pulls_a_later_edit(two_desktops, monkeypatch):
+    cloud = FakePostgrest()
+    local_id = _create(notes="original")
+    _copy_database(two_desktops["A"], two_desktops["B"])
+    _push(cloud.client())
+    cloud_id = cloud.rows_for()[0]["id"]
+
+    armed = {"edited": False}
+
+    def edit_after_adoption_read(filters):
+        if any(column == "sync_key" for column, _ in filters) and not armed["edited"]:
+            armed["edited"] = True  # a competing edit lands right after the adoption read
+            cloud.edit_elsewhere(cloud_id, notes="competing edit")
+
+    cloud.after_get = edit_after_adoption_read
+    two_desktops["B"].activate(monkeypatch)
+    assert _push(cloud.client())["errors"] == []
+    assert armed["edited"]
+    cloud.after_get = None
+    snapshot = cloud_sync._parse_cloud_observation_snapshot(
+        cloud_sync._load_cloud_observation_snapshot(str(cloud_id))
+    )
+    assert snapshot["observation"]["notes"] == "original", "baseline is the row adoption judged"
+
+    # A later local edit of another field must not overwrite the competing
+    # cloud change: against the judged baseline it is a remote-only change.
+    ObservationDB.update_observation(local_id, location="edited on B")
+    result = _push(cloud.client())
+    assert _observation_errors(result) == []
+    row = cloud.rows_for()[0]
+    assert row["notes"] == "competing edit", "the competing cloud edit survives"
+    assert row["location"] == "edited on B"
+    assert _local(local_id)["notes"] == "competing edit", "and is adopted locally"
+
+    # A deep pull agrees and writes nothing.
+    cloud.requests.clear()
+    result = cloud_sync.sync_all(
+        cloud.client(), sync_images=False, materialize_remote_images=False, full_pull=True,
+    )
+    assert _observation_errors(result) == []
+    assert cloud.observation_writes() == []

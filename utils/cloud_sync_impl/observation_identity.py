@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from datetime import datetime
 
 from database.schema import get_connection
 from utils.taxon_identity import TaxonIdentity
@@ -97,25 +98,70 @@ def create_location_pair(client, obs: dict) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _timestamp(value) -> datetime | None:
+    text = str(value or '').strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+
+
+def remote_row_never_updated(remote: dict) -> bool:
+    """Whether the cloud row is exactly as its INSERT left it.
+
+    The server sets ``created_at`` and ``updated_at`` to the same ``now()`` on
+    INSERT and bumps ``updated_at`` on every UPDATE (``trg_observations_updated_at``),
+    so equal timestamps prove no write followed the create: not the create's
+    own identity step, and no edit anywhere else. Missing values fail closed.
+    """
+    created = _timestamp(remote.get('created_at'))
+    updated = _timestamp(remote.get('updated_at'))
+    return created is not None and updated is not None and created == updated
+
+
+def interrupted_identity_step(obs: dict, remote: dict) -> bool:
+    """A proven local selection the create never got to send.
+
+    True only when the remote has no selection and was never updated since
+    its INSERT: the crash or timeout fell between the INSERT and the
+    identity RPC. A selection that was set and later cleared bumped
+    ``updated_at`` and is a difference instead.
+    """
+    identity = TaxonIdentity.from_row(obs)
+    return (
+        identity.is_proven_sporely
+        and _normalize_observation_int_value(remote.get('selected_sporely_taxon_id')) is None
+        and remote_row_never_updated(remote)
+    )
+
+
 def observation_create_content_matches(
     obs: dict,
     remote: dict,
     *,
     location_pair: tuple[str | None, str | None] | None = None,
+    allow_interrupted_identity: bool = False,
 ) -> bool:
     """Whether ``remote`` holds exactly what a create of ``obs`` uploads.
 
     Fails closed on every difference, including the taxonomy selection: the
     remote must carry the proven local Sporely identity, or none when the
-    local row asserts none. A cleared or changed selection is a difference,
-    never an interrupted create to finish. ``location_pair`` is the pair the
-    create sent (see :func:`create_location_pair`); ``None`` skips the pair,
-    for rows written by older desktops that never uploaded it.
+    local row asserts none. With ``allow_interrupted_identity`` (adoption of
+    this database's own keyed row), a missing selection on a row never
+    updated since its INSERT is the create's unfinished identity step, not a
+    difference (see :func:`interrupted_identity_step`); a cleared or changed
+    selection still is. ``location_pair`` is the pair the create sent (see
+    :func:`create_location_pair`); ``None`` skips the pair, for rows written
+    by older desktops that never uploaded it.
     """
     identity = TaxonIdentity.from_row(obs)
     expected_taxon_id = identity.sporely_taxon_id if identity.is_proven_sporely else None
     remote_taxon_id = _normalize_observation_int_value(remote.get('selected_sporely_taxon_id'))
-    if remote_taxon_id != expected_taxon_id:
+    if remote_taxon_id != expected_taxon_id and not (
+        allow_interrupted_identity and interrupted_identity_step(obs, remote)
+    ):
         return False
     if location_pair is not None:
         remote_pair = (remote.get(LOCATION_SOURCE_FIELD), remote.get(LOCATION_STATUS_FIELD))
@@ -160,7 +206,9 @@ def adopt_observation_by_sync_key(client, obs: dict, sync_key: str) -> tuple[str
     if not cloud_id:
         raise CloudSyncError(f"observation {obs.get('id')}: adopted row has no id")
     if not observation_create_content_matches(
-        obs, remote, location_pair=create_location_pair(client, obs),
+        obs, remote,
+        location_pair=create_location_pair(client, obs),
+        allow_interrupted_identity=True,
     ):
         raise ObservationAdoptionConflictError(
             f"observation {obs.get('id')}: its cloud copy {cloud_id} (same sync key) "
@@ -169,6 +217,28 @@ def adopt_observation_by_sync_key(client, obs: dict, sync_key: str) -> tuple[str
             remote=remote,
         )
     return cloud_id, remote
+
+
+# Rows linked without a write (adoption, legacy recovery) keep the row they
+# were judged on as their sync baseline. A re-read for the snapshot could
+# carry a competing edit in as baseline, unapplied and unreviewed.
+_ADOPTED_BASES_ATTR = '_adopted_observation_bases'
+
+
+def remember_adopted_base(client, cloud_id: str, remote: dict) -> None:
+    bases = getattr(client, _ADOPTED_BASES_ATTR, None)
+    if not isinstance(bases, dict):
+        bases = {}
+        setattr(client, _ADOPTED_BASES_ATTR, bases)
+    bases[str(cloud_id)] = dict(remote or {})
+
+
+def take_adopted_base(client, cloud_id: str) -> dict | None:
+    """The fetched row a link was judged on, once; ``None`` otherwise."""
+    bases = getattr(client, _ADOPTED_BASES_ATTR, None)
+    if not isinstance(bases, dict):
+        return None
+    return bases.pop(str(cloud_id), None)
 
 
 def _commit_legacy_recovery_outcome(local_id: int, cloud_id: str | None) -> None:
@@ -210,6 +280,7 @@ def recover_legacy_observation(client, obs: dict) -> tuple[str | None, bool]:
         cloud_id = str(rows[0].get('id') or '').strip()
         if cloud_id:
             _commit_legacy_recovery_outcome(local_id, cloud_id)
+            remember_adopted_base(client, cloud_id, rows[0])
             print(
                 f'[cloud_sync] legacy recovery: obs {local_id} linked to cloud {cloud_id} '
                 f'(no cloud write)',

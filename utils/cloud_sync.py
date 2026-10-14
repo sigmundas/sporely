@@ -543,8 +543,14 @@ from utils.cloud_sync_impl.observation_identity import (  # noqa: F401  (facade 
     LEGACY_RECOVERY_MARKER_COLUMN,
     SYNC_KEY_UNIQUE_INDEXES,
     _CREATE_COMPARE_EXCLUDED_FIELDS,
+    _ADOPTED_BASES_ATTR,
     _commit_legacy_recovery_outcome,
+    _timestamp,
     create_location_pair,
+    interrupted_identity_step,
+    remember_adopted_base,
+    remote_row_never_updated,
+    take_adopted_base,
     _read_observations,
     adopt_observation_by_sync_key,
     is_sync_key_unique_violation,
@@ -7316,8 +7322,14 @@ class SporelyCloudClient(
             )
             consume_confirmed_location_precision(obs.get('id'))
             _increment_sync_summary(summary, 'observations_adopted')
-            # Linked silently, with no write: the content (identity included)
-            # equals the local row, or adoption raised a conflict instead.
+            # The fetched row is the baseline (see take_adopted_base). Its
+            # content equals the local row, or adoption raised a conflict.
+            remember_adopted_base(self, cloud_id, remote)
+            if interrupted_identity_step(obs, remote):
+                # The crash or timeout fell between the INSERT and the
+                # identity step, on a row nothing has written since: finish
+                # this database's own create.
+                self._sync_observation_selected_taxon(cloud_id, obs, remote_obs=remote)
             return cloud_id
         sync_fault_point('after_insert', table='observations')
         consume_confirmed_location_precision(obs.get('id'))
@@ -10186,7 +10198,13 @@ def push_all(
                         remote=_remote_row_without_identity(refreshed_remote),
                     )
             else:
-                _store_remote_snapshot(client, cloud_id)
+                # A row linked without a write keeps the row it was judged on
+                # as baseline; anything since then is a remote change.
+                adopted_base = take_adopted_base(client, cloud_id)
+                if adopted_base is None:
+                    _store_remote_snapshot(client, cloud_id)
+                else:
+                    _store_remote_snapshot(client, cloud_id, remote=adopted_base)
 
             # A refusal inside a step that reports instead of raising (media,
             # measurements) still stops the upload phase, with this row dirty.
