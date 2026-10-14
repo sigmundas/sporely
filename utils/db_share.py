@@ -675,6 +675,9 @@ def _fork_bundle_row(data: dict, dest_columns: set[str], cleared_fields: tuple[s
             data[field] = None
     if "sync_key" in data or "sync_key" in dest_columns:
         data["sync_key"] = new_sync_key()
+    # A forked row is a new record: never a candidate for legacy recovery.
+    if "legacy_recovery_pending" in data or "legacy_recovery_pending" in dest_columns:
+        data["legacy_recovery_pending"] = 0
 
 
 def import_database_bundle(

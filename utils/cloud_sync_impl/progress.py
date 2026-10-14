@@ -787,6 +787,14 @@ def format_sync_summary(sync_summary: dict | None) -> str | None:
     observations_deleted = _sync_summary_value(summary, 'observations_deleted_remote')
     if observations_deleted:
         observation_bits.append(f'{observations_deleted} deleted remotely')
+    observations_adopted = _sync_summary_value(summary, 'observations_adopted')
+    if observations_adopted:
+        observation_bits.append(f'{observations_adopted} linked to their existing cloud copy')
+    possible_duplicates = _sync_summary_value(summary, 'observations_possible_duplicate')
+    if possible_duplicates:
+        observation_bits.append(
+            f'{possible_duplicates} possible duplicate of an earlier upload'
+        )
     if observation_bits:
         lines.append(f"Observations: {'; '.join(observation_bits)}.")
 

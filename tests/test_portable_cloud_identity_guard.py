@@ -37,6 +37,7 @@ def test_portable_observation_guard_forces_new_cloud_identity(monkeypatch):
         "sharing_scope": "public",
         "location_precision": "exact",
         "portable_cloud_identity_pending": 1,
+        "sync_key": "7a6b5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c5d",
     }
 
     cloud_id = client.push_observation(observation)
@@ -45,6 +46,7 @@ def test_portable_observation_guard_forces_new_cloud_identity(monkeypatch):
     assert calls["get"] == []
     assert calls["patch"] == []
     assert "desktop_id" not in calls["post"][0][1]
+    assert calls["post"][0][1]["sync_key"] == observation["sync_key"]
 
 
 def test_portable_image_guard_applies_to_child_identity(monkeypatch):
@@ -305,8 +307,9 @@ def test_portable_guard_clears_only_after_entire_cloud_graph_has_identity(
         connection.commit()
 
     assert cloud_sync._finalize_portable_cloud_identity_guard(client, 1)
+    # The observation's desktop_id is retired as an identity and never
+    # written; the children's reverse links are retired in a later stage.
     assert client.linked == [
-        ("observation", "new-observation", 1),
         ("image", "new-image", 2),
         ("measurement", "new-measurement", 3),
     ]

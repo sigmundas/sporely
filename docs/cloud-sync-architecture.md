@@ -316,9 +316,11 @@ writers; it calls the read-only detail and plan-model owners downward.
 | Remote snapshot storage | `_store_remote_snapshot` (`utils/cloud_sync_impl/baseline.py`), `_store_cloud_observation_snapshot` (`utils/cloud_sync_impl/baseline.py`), `_load_cloud_observation_snapshot` (`utils/cloud_sync_impl/baseline.py`), `_parse_cloud_observation_snapshot` (`utils/cloud_sync_impl/baseline.py`), `_clear_cloud_observation_snapshot` (`utils/cloud_sync_impl/baseline.py`) | Persist/read the known-good baseline | Ad-hoc settings writes | May only run after complete, successful remote reads (section F). **Current code does not wait for required child work**: `push_all` and `materialize_cloud_media_for_observation` store it after a child failure. The target model is in `docs/cloud-sync-orchestration-design.md` |
 | Three-way conflict analysis | `_analyze_observation_push_conflicts` (`utils/cloud_sync_impl/preflight.py`), `ObservationPushConflictReport` (`utils/cloud_sync_impl/reconciliation/report.py`), `build_conflict_plan_baseline` (`utils/cloud_sync_impl/conflict_plan.py`), `get_conflict_detail` (`utils/cloud_sync_impl/conflict_detail.py`) | Compare local vs cloud vs baseline; block writes on both-changed | Push loops writing without preflight | "Needs review" marker: `_set_observation_conflict_review_pending` (L4273) / `_clear_…` (L4290) |
 | Local-vs-cloud change analysis | `_local_has_real_changes_since_snapshot` (`utils/cloud_sync_impl/preflight.py`), `_remote_snapshot_has_meaningful_changes` (L9111), `_clear_observation_dirty_if_no_real_changes` (L4360) | Distinguish real edits from no-op noise | — | Feeds the no-op fast path |
-| Observation push identity resolution | `SporelyCloudClient._resolve_existing_observation_for_push` (`CloudSyncPushIdentityMixin`, `utils/cloud_sync_impl/image_identity.py`), `_find_cloud_observation` (L14818), `ObservationIdentityConflictError` (`utils/cloud_sync_impl/errors.py`) | Decide which existing cloud observation a push targets: verified local `cloud_id` is primary; remote `desktop_id` is recovery; disagreement/ambiguity raises | Callers doing their own `cloud_id`/`desktop_id` fallback logic | See "Observation identity model" below. A missing remote `desktop_id` must never cause a duplicate POST when the local `cloud_id` verifies |
+| Observation push identity resolution | `SporelyCloudClient._resolve_existing_observation_for_push` (`CloudSyncPushIdentityMixin`, `utils/cloud_sync_impl/image_identity.py`), `ObservationIdentityConflictError` (`utils/cloud_sync_impl/errors.py`) | Decide which existing cloud observation a push targets: the verified local `cloud_id` only; a `cloud_id` that does not verify raises (never POST, never PATCH blindly) | Callers doing their own `cloud_id`/`desktop_id` fallback logic | See "Observation identity model" below. `desktop_id` is retired as an observation identity (per-record sync keys) |
+| Observation create identity (state L0) | `SporelyCloudClient._create_observation`; `adopt_observation_by_sync_key`, `recover_legacy_observation`, `is_sync_key_unique_violation` (`utils/cloud_sync_impl/observation_identity.py`); `ObservationAdoptionConflictError` | POST only with the committed local `sync_key`; `23505` on `observations_user_sync_key_uidx` adopts this database's own row (equal content → link; different → conflict, never PATCH); one-time read-only legacy recovery for `legacy_recovery_pending` rows | POSTs without a key; matching on SQLSTATE alone | Every other refusal is a plain error. Conflict resolution links the keyed row first (`_link_sync_key_adoption_conflict`) |
+| Upload gate | `SporelyCloudClient.sync_identity_ready` ("cloud not ready" probe), `_raise_write_rejection` / `_check_upload_refusal` (refusal latch), `sync_all` upload phase, `utils/sync_client_identity.py` (headers, hints, banner reason) | Probe `select=sync_key&limit=0` before uploading; stop the run's upload phase on `P0001` `sporely_upgrade_required` / `sporely_sync_identity_refused` or a media `426`; keep pull | Treating a refusal as an auth or transient error | Reason persisted in `cloud_upload_blocked_reason`; the observations tab shows it until uploads run again |
 | Image push identity resolution | `SporelyCloudClient._resolve_existing_image_for_push`, `_find_cloud_image` (`CloudSyncPushIdentityMixin`, `utils/cloud_sync_impl/image_identity.py`), `ImageIdentityConflictError` (`utils/cloud_sync_impl/errors.py`) | Decide which existing cloud image a push targets: verified local `images.cloud_id` is primary (direct); remote `desktop_id` scoped to the observation is recovery; disagreement raises `ImageIdentityConflictError` (no PATCH/POST, stays dirty) | Callers doing their own `cloud_id`/`desktop_id` fallback logic | Pull-only imports with `cloud_id` set and NULL remote `desktop_id` must not trigger duplicate POSTs; mirrors the two-leg observation identity model |
-| Observation push | `SporelyCloudClient.push_observation` (L15120) | PATCH existing / POST new observation row | Raw transport | Identity via `_resolve_existing_observation_for_push`; POST only when it returns no target |
+| Observation push | `SporelyCloudClient.push_observation` (L15120) | PATCH existing / create new observation row | Raw transport | Identity via `_resolve_existing_observation_for_push`; a row without `cloud_id` goes to `_create_observation`. Payloads never carry `desktop_id`; only the create carries `sync_key` |
 | Observation pull | `pull_all` per-candidate loop (L22251+) | Apply remote updates to clean local rows; import new | — | Conflicted rows are skipped, not overwritten |
 | Taxonomy identity sync | `_remote_identity_claim`, `_classify_identity_sync_change` (`utils/cloud_sync_impl/reconciliation/identity.py`), `_local_identity_columns_for_remote_claim`, `_apply_remote_identity_to_local` (`utils/cloud_sync_impl/identity_state.py`); push and explicit clear via `SporelyCloudClient._sync_observation_selected_taxon` / `_maybe_clear_stale_cloud_identity` / `_verify_identity_clear_landed` (`CloudSyncTaxonIdentityMixin`, `utils/cloud_sync_impl/identity_push.py`) | Map the cloud identity to one conservative local identity (`cloud_selected_unverified`); three-way identity change/conflict detection as the virtual field `taxon_identity` | Copying identity columns as ordinary snapshot fields; PATCHing identity | Contract: "Cloud → desktop taxonomy identity" and "Identity in change detection" |
 | Measurement push/pull | `push_measurement` (L15968), `pull_measurements_for_images` (L15812), `delete_cloud_measurements_for_image` (L16063) | Upsert with semantic no-op detection; paginated pull | — | Measurements may reference metadata-only anchors |
@@ -353,13 +355,13 @@ interchangeable:
    create a third object. No PATCH of either candidate, no POST, no snapshot;
    the observation stays dirty/retryable.
 5. **Download from Cloud legitimately creates local rows with `cloud_id` set
-   while remote `desktop_id` remains NULL** — pull-only performs zero cloud
-   writes, so the reverse link is only healed by a later normal sync
-   (`set_desktop_id` in `pull_all`, or the `desktop_id` field carried by the
-   normal `push_observation` PATCH payload).
-6. **Observation POST is a last resort**, allowed only after direct identity
-   verification and reverse-link recovery both find no target
-   (`_resolve_existing_observation_for_push` returns `None`).
+   while remote `desktop_id` remains NULL.** The observation's `desktop_id` is
+   never healed or sent any more (per-record sync keys): the verified local
+   `cloud_id` is the link.
+6. **Observation POST happens only in state L0** (no `cloud_id`, committed
+   local `sync_key`), through `_create_observation`. A lost `cloud_id` is
+   recovered by `sync_key` adoption after `23505`, or, for rows that predate
+   keys, by the one-time read-only legacy recovery.
 7. **Portable imports temporarily disable reverse identity recovery for the
    whole observation graph.** `observations.portable_cloud_identity_pending`
    is an identity guard, not general import provenance. While set, observation,
@@ -902,8 +904,15 @@ moving the method would split that binding.
 | `image_identity.py` [2] | Local image `cloud_id` repair, the portable cloud identity guard, and observation/image push identity resolution mixed into the client | `_reconcile_local_image_cloud_id`, `_portable_cloud_identity_pending_for_observation`, `_finalize_portable_cloud_identity_guard`, `CloudSyncPushIdentityMixin` (`_resolve_existing_observation_for_push`, `_resolve_existing_image_for_push`, `_find_cloud_image`) |
 | `anchors.py` [7] | Remote side of metadata-only microscope anchors: ensure, owner-sync parents (gated by `_owner_sync_parents_supported`), retirement, anchor tombstone cancellation, and the anchor promotion reserve/rollback helpers | `_ensure_metadata_anchors_for_public_spore_observation`, `_ensure_metadata_only_microscope_images_for_observation`, `_ensure_metadata_only_microscope_image_for_public_spores`, `_observation_has_owner_sync_candidates`, `_retire_unneeded_owner_sync_parent`, `_cancel_microscope_anchor_tombstones`, `_remote_image_row_matches_anchor_payload`, `_metadata_only_microscope_image_payload`, `_METADATA_ONLY_IMG_FIELDS`, `_reserve_anchor_promotion_key`, `_rollback_anchor_promotion` |
 
+### Per-record sync key owners
+
+| Owner | Responsibility | Main symbols |
+|---|---|---|
+| `observation_identity.py` [3] | Observation create identity: named-index `23505` match, adoption by key and owner, create-content equality, one-time legacy recovery | `is_sync_key_unique_violation`, `adopt_observation_by_sync_key`, `observation_create_content_matches`, `recover_legacy_observation`, `SYNC_KEY_UNIQUE_INDEXES` |
+| `fault_injection.py` [0] | `SPORELY_SYNC_FAULT` crash points (`before_request`, `after_insert`, `after_upload`), inert unless the environment variable is set | `sync_fault_point` |
+
 `SporelyCloudClient._find_cloud_observation` stays on the client (the mixin
-reaches it through `self`). Stage S6 moved the local pull-side anchor insert
+reaches it through `self`); no push path calls it any more. Stage S6 moved the local pull-side anchor insert
 `_ensure_local_metadata_only_microscope_anchor` with image pull, and the
 promotion call sites (`_push_images_for_observation`) with image push.
 

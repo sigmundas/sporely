@@ -1073,6 +1073,40 @@ def ensure_sync_key_columns(cursor: sqlite3.Cursor) -> None:
         )
 
 
+LEGACY_RECOVERY_MARKER_COLUMN = "legacy_recovery_pending"
+
+
+def ensure_legacy_recovery_marker_columns(cursor: sqlite3.Cursor) -> None:
+    """Add the one-time legacy-recovery marker to the synced tables.
+
+    When the column is first added, every row without a ``cloud_id`` is
+    marked: it existed before the upgrade and was never confirmed in the
+    cloud, so an older desktop may have created its cloud row and crashed
+    before storing the id. The marker is never set again afterwards; rows
+    created later get the default 0. Idempotent.
+    """
+    for table in SYNC_KEY_TABLES:
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)
+        )
+        if not cursor.fetchone():
+            continue
+        cursor.execute(f"PRAGMA table_info({table})")
+        columns = {str(row[1] or "") for row in cursor.fetchall()}
+        if LEGACY_RECOVERY_MARKER_COLUMN in columns:
+            continue
+        cursor.execute(
+            f"ALTER TABLE {table} ADD COLUMN {LEGACY_RECOVERY_MARKER_COLUMN} "
+            "INTEGER NOT NULL DEFAULT 0"
+        )
+        unlinked = (
+            "(cloud_id IS NULL OR TRIM(cloud_id) = '')" if "cloud_id" in columns else "1"
+        )
+        cursor.execute(
+            f"UPDATE {table} SET {LEGACY_RECOVERY_MARKER_COLUMN} = 1 WHERE {unlinked}"
+        )
+
+
 def ensure_calibration_assets_table(cursor: sqlite3.Cursor) -> None:
     """Ensure the local calibration assets table exists."""
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='calibration_assets'")
@@ -2060,6 +2094,7 @@ def init_database(
 
     # Runs after every cloud_id column exists so linked rows keep NULL keys.
     ensure_sync_key_columns(cursor)
+    ensure_legacy_recovery_marker_columns(cursor)
 
     conn.commit()
     conn.close()

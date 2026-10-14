@@ -180,8 +180,8 @@ def _finalize_portable_cloud_identity_guard(
             measurement_cloud_id if candidate_ids else ''
         )
 
-    if not observation_match:
-        client.set_desktop_id(observation_cloud_id, int(obs_local_id))
+    # The observation's reverse link is never written: desktop_id is retired
+    # as an observation identity, and the server refuses it on keyed rows.
     for image in image_rows:
         image_id = int(image['id'])
         if not image_matches[image_id]:
@@ -216,70 +216,37 @@ class CloudSyncPushIdentityMixin:
     ) -> str | None:
         """Canonical owner of observation push identity resolution.
 
-        Decides which existing cloud observation a push must target:
+        The local direct link (``obs['cloud_id']``) is the only push target:
+        once it verifies against an existing same-owner cloud row, that row
+        is PATCHed by id. ``desktop_id`` is retired as an identity and is
+        never looked up here; a lost ``cloud_id`` is recovered by the create
+        path through ``sync_key`` (``23505`` adoption) or the one-time legacy
+        recovery.
 
-        * The local direct link (``obs['cloud_id']``) is the PRIMARY
-          identity. Once it verifies against an existing same-owner cloud
-          row, that row is the push target — even when the remote
-          ``desktop_id`` is NULL. A NULL reverse link is the normal state
-          for observations imported by Download from Cloud (pull-only
-          performs zero cloud writes, so the reverse link is only healed by
-          a later normal push) and must never cause a duplicate POST.
-        * The remote reverse link (``desktop_id``) is the RECOVERY
-          identity: used when no verified direct link exists, and
-          cross-checked for disagreement when both links resolve.
+        Returns the cloud observation id to PATCH, or ``None`` when the row
+        has no ``cloud_id`` and the caller may create it (L0).
 
-        Returns the cloud observation id to PATCH, or ``None`` when
-        creating a new cloud observation is permitted (no verified direct
-        target and no unambiguous reverse-link match).
-
-        Raises :class:`ObservationIdentityConflictError` when the two links
-        resolve to different rows or the reverse link is ambiguous. Callers
-        must leave the observation dirty/retryable and must not POST.
+        Raises :class:`ObservationIdentityConflictError` when the row carries
+        a ``cloud_id`` that does not verify (deleted remotely, or invisible
+        to this user-scoped client because it belongs to another account): a
+        cloud-linked row is never POSTed, and never PATCHed blindly.
         """
         local_cloud_id = str(obs.get('cloud_id') or '').strip()
-
-        verified_direct_id = ''
-        if local_cloud_id:
-            candidate = None
-            if remote_obs is not None and str(remote_obs.get('id') or '').strip() == local_cloud_id:
-                # Caller-supplied remote rows come from user-scoped queries
-                # (get_observation / list_remote_observations), so a matching
-                # id is already existence- and ownership-verified.
-                candidate = remote_obs
-            else:
-                candidate = self.get_observation(local_cloud_id)
-            if candidate is not None:
-                verified_direct_id = str(candidate.get('id') or '').strip() or local_cloud_id
-
-        portable_identity_pending = bool(obs.get('portable_cloud_identity_pending'))
-        if portable_identity_pending:
-            return verified_direct_id or None
-
-        # The reverse-link lookup runs in both branches: as recovery when the
-        # direct link is unusable, and as a disagreement cross-check when it
-        # verified. Raises on multiple matches.
-        recovered_id = self._find_cloud_observation(obs['id'])
-
-        if verified_direct_id:
-            if recovered_id and str(recovered_id) != verified_direct_id:
-                raise ObservationIdentityConflictError(
-                    f"observation {obs['id']}: direct link cloud_id="
-                    f'{verified_direct_id} and reverse link desktop_id match='
-                    f'{recovered_id} resolve to different cloud observations; '
-                    f'refusing to patch either or create a third'
-                )
-            return verified_direct_id
-
-        if recovered_id:
-            return str(recovered_id)
-
-        # No verified direct target and no reverse-link match: creation is
-        # allowed by the existing contract. A populated but unverifiable
-        # local cloud_id (row deleted remotely, or invisible to this
-        # user-scoped client because it belongs to another account) must
-        # never be patched blindly.
-        return None
+        if not local_cloud_id:
+            return None
+        if remote_obs is not None and str(remote_obs.get('id') or '').strip() == local_cloud_id:
+            # Caller-supplied remote rows come from user-scoped queries
+            # (get_observation / list_remote_observations), so a matching
+            # id is already existence- and ownership-verified.
+            candidate = remote_obs
+        else:
+            candidate = self.get_observation(local_cloud_id)
+        if candidate is not None:
+            return str(candidate.get('id') or '').strip() or local_cloud_id
+        raise ObservationIdentityConflictError(
+            f"observation {obs.get('id')}: linked cloud observation {local_cloud_id} "
+            f'was not found; refusing to patch it blindly or create a new row'
+        )
 
     def _find_cloud_image(
         self,

@@ -112,7 +112,10 @@ from utils.cloud_sync_impl.errors import (  # noqa: F401  (facade re-export)
     CloudSyncError,
     CloudTemporarilyUnavailableError,
     IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE,
+    CloudUploadRefusedError,
+    CloudWriteRejectedError,
     ImageIdentityConflictError,
+    ObservationAdoptionConflictError,
     ObservationIdentityConflictError,
     PRIVACY_SLOT_LIMIT_USER_MESSAGE,
     PartialConflictPlanError,
@@ -528,6 +531,34 @@ from utils.cloud_sync_impl.image_identity import (  # noqa: F401  (facade re-exp
     _reconcile_local_image_cloud_id,
     CloudSyncPushIdentityMixin,
 )
+from utils.cloud_sync_impl.fault_injection import (  # noqa: F401  (facade re-export)
+    SYNC_FAULT_ENV_VAR,
+    SYNC_FAULT_EXIT_CODE,
+    SYNC_FAULT_POINTS,
+    _terminate,
+    sync_fault_point,
+)
+from utils.cloud_sync_impl.observation_identity import (  # noqa: F401  (facade re-export)
+    LEGACY_RECOVERY_MARKER_COLUMN,
+    SYNC_KEY_UNIQUE_INDEXES,
+    _CREATE_COMPARE_EXCLUDED_FIELDS,
+    _commit_legacy_recovery_outcome,
+    _read_observations,
+    adopt_observation_by_sync_key,
+    is_sync_key_unique_violation,
+    local_sync_key,
+    observation_create_content_matches,
+    recover_legacy_observation,
+)
+from utils.sync_client_identity import (
+    UPLOAD_BLOCK_CLOUD_NOT_READY,
+    UPLOAD_BLOCK_SETTING,
+    UPLOAD_BLOCK_UPGRADE_REQUIRED,
+    UPLOAD_REFUSAL_HINTS,
+    set_client_version,
+    sync_identity_headers,
+    upload_block_message,
+)
 from utils.cloud_sync_impl.anchors import (  # noqa: F401  (facade re-export)
     _cancel_microscope_anchor_tombstones,
     _ensure_metadata_anchors_for_public_spore_observation,
@@ -765,6 +796,8 @@ def set_cloud_sync_source_app_version(version: str | None) -> None:
     global _CLOUD_SYNC_SOURCE_APP_VERSION
     text = str(version or "").strip()
     _CLOUD_SYNC_SOURCE_APP_VERSION = text or None
+    # The same version names this build in x-sporely-client-version.
+    set_client_version(text or None)
 
 
 def _current_source_app_version() -> str | None:
@@ -2094,6 +2127,20 @@ def _remaining_local_changes_after_remote_merge(
     return bool(blocking_local_only_fields or field_changes.get('conflict_fields') or local_media_changed)
 
 
+def _record_upload_block(reason: str | None) -> None:
+    """Persist the upload block that keeps the banner up until uploads run."""
+    value = str(reason or '')
+    if str(get_app_settings().get(UPLOAD_BLOCK_SETTING) or '') != value:
+        update_app_settings({UPLOAD_BLOCK_SETTING: value})
+
+
+def _raise_if_upload_refused(client) -> None:
+    """Stop the upload phase once this client has seen an upload refusal."""
+    check = getattr(client, '_check_upload_refusal', None)
+    if callable(check):
+        check()
+
+
 def _format_review_needed_error(local_id: int, cloud_id: str, reasons: list[str] | None = None) -> str:
     reason_text = ', '.join(str(reason or '').strip() for reason in (reasons or []) if str(reason or '').strip())
     base = (
@@ -2453,14 +2500,39 @@ def sync_all(
         with _cloud_sync_phase_scope(profiler, 'list_remote_calibrations'):
             remote_calibrations = client.list_remote_calibrations()
 
-        _set_progress_phase(progress_state, 'calibration_push')
-        with _cloud_sync_phase_scope(profiler, 'push_calibrations'):
-            calibration_push_result = push_calibrations(
-                client,
-                progress_cb=progress_cb,
-                progress_state=progress_state,
-                remote_calibrations=remote_calibrations,
+        # Upload phase gate: a server without the sync_key schema blocks
+        # uploads ("cloud not ready"); an upload refusal (write stop or
+        # identity guard) stops them for the rest of the run. Pull runs
+        # either way, and rows stay dirty for the next sync.
+        upload_block: str | None = None
+        if hasattr(client, '_upload_refusal'):
+            # A refusal stops one run's upload phase; each run asks again, so
+            # a long-lived client uploads once the block is lifted.
+            client._upload_refusal = None
+        readiness_probe = getattr(client, 'sync_identity_ready', None)
+        if callable(readiness_probe) and not readiness_probe():
+            upload_block = UPLOAD_BLOCK_CLOUD_NOT_READY
+            print(
+                '[cloud_sync] uploads blocked: cloud not ready (no sync_key column); '
+                'pull continues',
+                flush=True,
             )
+
+        _set_progress_phase(progress_state, 'calibration_push')
+        calibration_push_result: dict = {'pushed': 0, 'total': 0, 'errors': []}
+        if upload_block is None:
+            try:
+                with _cloud_sync_phase_scope(profiler, 'push_calibrations'):
+                    calibration_push_result = push_calibrations(
+                        client,
+                        progress_cb=progress_cb,
+                        progress_state=progress_state,
+                        remote_calibrations=remote_calibrations,
+                    )
+            except CloudUploadRefusedError:
+                upload_block = UPLOAD_BLOCK_UPGRADE_REQUIRED
+            if upload_block is None and getattr(client, 'upload_refusal', None) is not None:
+                upload_block = UPLOAD_BLOCK_UPGRADE_REQUIRED
 
         safety_pull_due = False
         safety_pull_last = None
@@ -2481,18 +2553,26 @@ def sync_all(
         )
 
         # Phase 1: Push local edits to the cloud
-        with _cloud_sync_phase_scope(profiler, 'push_all'):
-            push_result = push_all(
-                client,
-                progress_cb=progress_cb,
-                sync_images=sync_images,
-                prepare_images_cb=prepare_images_cb,
-                progress_state=progress_state,
-                remote_obs=remote_obs,
-                sync_calibrations=False,
-                full_pull=full_pull,
-                verify_stamped_measurements=verify_stamped_measurements,
-            )
+        push_result: dict = {'pushed': 0, 'total': 0, 'errors': []}
+        if upload_block is None:
+            try:
+                with _cloud_sync_phase_scope(profiler, 'push_all'):
+                    push_result = push_all(
+                        client,
+                        progress_cb=progress_cb,
+                        sync_images=sync_images,
+                        prepare_images_cb=prepare_images_cb,
+                        progress_state=progress_state,
+                        remote_obs=remote_obs,
+                        sync_calibrations=False,
+                        full_pull=full_pull,
+                        verify_stamped_measurements=verify_stamped_measurements,
+                    )
+            except CloudUploadRefusedError:
+                upload_block = UPLOAD_BLOCK_UPGRADE_REQUIRED
+            if upload_block is None and getattr(client, 'upload_refusal', None) is not None:
+                upload_block = UPLOAD_BLOCK_UPGRADE_REQUIRED
+        _record_upload_block(upload_block)
 
         # Refresh after any push-side cloud mutation so pull comparisons see
         # the resulting parent timestamps. A fully-described zero-candidate,
@@ -2742,7 +2822,9 @@ def sync_all(
         )
 
         with _cloud_sync_phase_scope(profiler, 'reference_sync'):
-            reference_result = sync_reference_library(client)
+            reference_result = sync_reference_library(
+                client, pull_only=upload_block is not None
+            )
 
         # Leave the UI on a neutral phase rather than the last per-calibration
         # message while the worker finishes and the table refreshes. The
@@ -2773,6 +2855,9 @@ def sync_all(
         original_sync = push_result.get('original_sync')
         if original_sync is not None:
             result['original_sync'] = original_sync
+        if upload_block is not None:
+            result['upload_blocked'] = upload_block
+            result['upload_blocked_message'] = upload_block_message(upload_block)
         result['sync_summary'] = dict(sync_summary)
         merge_reference_sync_result(result, reference_result)
         return result
@@ -3977,6 +4062,10 @@ _MISSING_INGEST_METHOD_COLUMN_PATTERN = re.compile(
     r"column \S*ingest_method does not exist"
     r"|could not find the '?ingest_method'? column"
 )
+_MISSING_SYNC_KEY_COLUMN_PATTERN = re.compile(
+    r"column \S*sync_key does not exist"
+    r"|could not find the '?sync_key'? column"
+)
 #: PostgREST's "function not found in the schema cache" for a missing RPC.
 _MISSING_SET_OBSERVATION_LOCATION_PATTERN = re.compile(
     r"pgrst202|could not find the function \S*set_observation_location"
@@ -4243,6 +4332,43 @@ def finalize_sync_candidates(
     return manual_candidates, automatic_errors
 
 
+def _link_sync_key_adoption_conflict(
+    client: "SporelyCloudClient",
+    local_id: int,
+    cloud_id: str | None,
+) -> None:
+    """Link an unlinked row to its own keyed cloud copy on explicit resolution.
+
+    The create path never links a cloud copy whose content differs: it
+    raises ``ObservationAdoptionConflictError`` and the row stays unlinked
+    (L0), so an unresolved difference is never PATCHed. When the owner
+    resolves that conflict, the named row is linked first, and only if it
+    carries this row's own ``sync_key`` under this owner. Otherwise nothing
+    changes.
+    """
+    cloud_value = str(cloud_id or '').strip()
+    if not cloud_value:
+        return
+    local_obs = ObservationDB.get_observation(int(local_id)) or {}
+    if str(local_obs.get('cloud_id') or '').strip():
+        return
+    sync_key = local_sync_key(local_obs)
+    if not sync_key:
+        return
+    rows = client._get(
+        f'observations?id=eq.{cloud_value}&user_id=eq.{client.user_id}'
+        f'&sync_key=eq.{sync_key}&select=id&limit=1'
+    )
+    if not rows:
+        return
+    conn = get_connection()
+    try:
+        update_observation_sync_state(conn.cursor(), int(local_id), cloud_id=cloud_value)
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def resolve_conflict_keep_local(
     client: "SporelyCloudClient",
     local_id: int,
@@ -4263,10 +4389,18 @@ def resolve_conflict_keep_local(
 
     merged_obs = _merge_cloud_selected_ai_fields(local_obs, remote_obs)
     try:
-        cloud_id = client.push_observation(
-            merged_obs,
-            remote_obs=remote_obs,
-        )
+        try:
+            cloud_id = client.push_observation(
+                merged_obs,
+                remote_obs=remote_obs,
+            )
+        except ObservationAdoptionConflictError as adoption:
+            # The owner chose this device's copy of its own keyed row: link
+            # it, then PATCH it by its verified id.
+            _link_sync_key_adoption_conflict(client, int(local_id), adoption.cloud_id)
+            local_obs = ObservationDB.get_observation(int(local_id)) or local_obs
+            merged_obs = _merge_cloud_selected_ai_fields(local_obs, adoption.remote)
+            cloud_id = client.push_observation(merged_obs, remote_obs=adoption.remote)
     except Exception as exc:
         if not is_privacy_slot_limit_error(exc):
             raise
@@ -4445,6 +4579,7 @@ def resolve_conflict_merge(
     progress_cb: ProgressCallback | None = None,
 ) -> dict:
     # For merge, keep local observation but add any new images from cloud
+    _link_sync_key_adoption_conflict(client, int(local_id), cloud_id)
     local_obs = ObservationDB.get_observation(int(local_id))
     if not local_obs:
         raise CloudSyncError(f'Local observation {local_id} not found')
@@ -4727,6 +4862,7 @@ def resolve_conflict_plan(
     if selected_plan.get('allow_media_deletion'):
         raise CloudSyncError('Conflict plans cannot authorize media deletion')
 
+    _link_sync_key_adoption_conflict(client, int(local_id), cloud_id)
     local_obs = ObservationDB.get_observation(int(local_id))
     if not local_obs:
         raise CloudSyncError(f'Local observation {local_id} not found')
@@ -5705,7 +5841,12 @@ class SporelyCloudClient(
             'apikey': SUPABASE_KEY,
             'Authorization': f'Bearer {access_token}',
             'Content-Type': 'application/json',
+            **sync_identity_headers(),
         })
+        # First upload refusal (write stop or identity guard) of this client;
+        # every later row write fails fast with it. See _raise_write_rejection.
+        self._upload_refusal: CloudUploadRefusedError | None = None
+        self._sync_identity_ready = False
 
     def _get_r2(self) -> CloudflareR2Client:
         if self._r2 is None:
@@ -5715,7 +5856,82 @@ class SporelyCloudClient(
     def _get_media_worker(self) -> CloudflareMediaWorkerClient:
         if self._media_worker is None:
             self._media_worker = CloudflareMediaWorkerClient.from_access_token(self.access_token)
+            self._media_worker.on_upgrade_required = self._latch_media_upload_refusal
         return self._media_worker
+
+    # ── Upload refusal and readiness ────────────────────────────────────
+
+    def _latch_upload_refusal(self, hint: str, detail: str) -> CloudUploadRefusedError:
+        """Record the first refusal; the run's upload phase stops on it."""
+        error = CloudUploadRefusedError(
+            f'Cloud refused uploads from this Sporely version ({hint}): {detail}',
+            hint=hint,
+        )
+        if getattr(self, '_upload_refusal', None) is None:
+            print(
+                f'[cloud_sync] upload stopped: server/client mismatch hint={hint} '
+                f'(rows stay dirty; downloads continue)',
+                flush=True,
+            )
+            self._upload_refusal = error
+        return error
+
+    def _latch_media_upload_refusal(self, hint: str) -> None:
+        self._latch_upload_refusal(hint, 'media worker answered 426')
+
+    @property
+    def upload_refusal(self) -> CloudUploadRefusedError | None:
+        return getattr(self, '_upload_refusal', None)
+
+    def _check_upload_refusal(self) -> None:
+        refusal = getattr(self, '_upload_refusal', None)
+        if refusal is not None:
+            raise CloudUploadRefusedError(str(refusal), hint=refusal.hint)
+
+    def _raise_write_rejection(self, label: str, resp) -> None:
+        """Raise the typed error for a failed Data API write.
+
+        ``P0001`` with a refusal hint stops the upload phase
+        (:class:`CloudUploadRefusedError`); everything else is a plain
+        :class:`CloudWriteRejectedError` carrying the PostgREST fields.
+        """
+        text = str(getattr(resp, 'text', '') or '')
+        body: dict = {}
+        try:
+            parsed = resp.json()
+            if isinstance(parsed, dict):
+                body = parsed
+        except Exception:
+            body = {}
+        code = str(body.get('code') or '').strip()
+        hint = str(body.get('hint') or '').strip()
+        message = str(body.get('message') or '').strip()
+        if code == 'P0001' and hint in UPLOAD_REFUSAL_HINTS:
+            raise self._latch_upload_refusal(hint, message or text)
+        raise CloudWriteRejectedError(
+            f'{label}: {text}',
+            status_code=int(getattr(resp, 'status_code', 0) or 0),
+            code=code,
+            message=message,
+            hint=hint,
+        )
+
+    def sync_identity_ready(self) -> bool:
+        """Probe the cloud for the ``sync_key`` schema before uploading.
+
+        ``False`` only when the server proves the column is missing ("cloud
+        not ready"); any other failure raises. A positive answer is cached.
+        """
+        if getattr(self, '_sync_identity_ready', False):
+            return True
+        try:
+            self._get('observations?select=sync_key&limit=0')
+        except CloudSyncError as exc:
+            if _MISSING_SYNC_KEY_COLUMN_PATTERN.search(str(exc or '').lower()):
+                return False
+            raise
+        self._sync_identity_ready = True
+        return True
 
     def _using_default_r2_loader(self) -> bool:
         if "_get_r2" in self.__dict__:
@@ -6320,6 +6536,7 @@ class SporelyCloudClient(
         return resp.json()
 
     def _post(self, path: str, payload: dict) -> list:
+        self._check_upload_refusal()
         resp = self._request_with_refresh(
             'POST',
             f'{SUPABASE_URL}/rest/v1/{path}',
@@ -6328,7 +6545,7 @@ class SporelyCloudClient(
             timeout=_SUPABASE_REST_TIMEOUT,
         )
         if not resp.ok:
-            raise CloudSyncError(f'POST {path}: {resp.text}')
+            self._raise_write_rejection(f'POST {path}', resp)
         return resp.json()
 
     def _rpc(self, function_name: str, payload: dict | None = None):
@@ -6342,7 +6559,7 @@ class SporelyCloudClient(
             timeout=_SUPABASE_REST_TIMEOUT,
         )
         if not resp.ok:
-            raise CloudSyncError(f'RPC {rpc_name}: {resp.text}')
+            self._raise_write_rejection(f'RPC {rpc_name}', resp)
         if not resp.content:
             return None
         return resp.json()
@@ -6651,6 +6868,7 @@ class SporelyCloudClient(
         )
 
     def _patch(self, path: str, payload: dict) -> None:
+        self._check_upload_refusal()
         resp = self._request_with_refresh(
             'PATCH',
             f'{SUPABASE_URL}/rest/v1/{path}',
@@ -6659,7 +6877,7 @@ class SporelyCloudClient(
             timeout=_SUPABASE_REST_TIMEOUT,
         )
         if not resp.ok:
-            raise CloudSyncError(f'PATCH {path}: {resp.text}')
+            self._raise_write_rejection(f'PATCH {path}', resp)
 
     def _patch_with_precondition(self, path: str, payload: dict) -> list[dict]:
         """Like ``_patch``, but for a PATCH whose ``path`` already carries an
@@ -6677,6 +6895,7 @@ class SporelyCloudClient(
         successful update; treating an empty result as success would
         silently overwrite or ignore a concurrent write to the same column.
         """
+        self._check_upload_refusal()
         resp = self._request_with_refresh(
             'PATCH',
             f'{SUPABASE_URL}/rest/v1/{path}',
@@ -6685,7 +6904,7 @@ class SporelyCloudClient(
             timeout=_SUPABASE_REST_TIMEOUT,
         )
         if not resp.ok:
-            raise CloudSyncError(f'PATCH {path}: {resp.text}')
+            self._raise_write_rejection(f'PATCH {path}', resp)
         try:
             rows = resp.json()
         except Exception:
@@ -6693,6 +6912,7 @@ class SporelyCloudClient(
         return rows if isinstance(rows, list) else []
 
     def _delete(self, path: str) -> None:
+        self._check_upload_refusal()
         resp = self._request_with_refresh(
             'DELETE',
             f'{SUPABASE_URL}/rest/v1/{path}',
@@ -6700,7 +6920,7 @@ class SporelyCloudClient(
             timeout=_SUPABASE_REST_TIMEOUT,
         )
         if not resp.ok:
-            raise CloudSyncError(f'DELETE {path}: {resp.text}')
+            self._raise_write_rejection(f'DELETE {path}', resp)
 
     def _storage_remove(self, storage_paths: list[str]) -> None:
         cleaned = []
@@ -6993,10 +7213,8 @@ class SporelyCloudClient(
         obs = _guard_local_location_precision(obs, *guard_refs)
         payload = _observation_push_payload(obs, local=True)
         payload['user_id'] = self.user_id
-        if bool(obs.get('portable_cloud_identity_pending')):
-            payload.pop('desktop_id', None)
-        else:
-            payload['desktop_id'] = obs['id']
+        # desktop_id is retired as an identity, and sync_key is immutable and
+        # sent only by the create: an existing row is PATCHed with neither.
 
         existing_id = self._resolve_existing_observation_for_push(obs, remote_obs=remote_obs)
         if existing_id:
@@ -7044,9 +7262,51 @@ class SporelyCloudClient(
                 baseline_obs=baseline_obs,
             )
             return existing_id
+        return self._create_observation(obs, payload, summary)
+
+    def _create_observation(self, obs: dict, payload: dict, summary: dict | None) -> str:
+        """State L0 (key, no ``cloud_id``): create, adopt or recover the row.
+
+        POST only with the committed local ``sync_key``. A ``23505`` on
+        ``observations_user_sync_key_uidx`` adopts this database's own row
+        (``adopt_observation_by_sync_key``); any other refusal propagates as
+        a plain error and the row stays dirty. A timeout, network error or
+        crash changes nothing: the retry repeats the same POST.
+        """
+        sync_key = local_sync_key(obs)
+        if not sync_key:
+            raise CloudSyncError(
+                f"observation {obs.get('id')}: no committed sync key; "
+                f'refusing to create a cloud row'
+            )
+        recovered_id, possible_duplicate = recover_legacy_observation(self, obs)
+        if recovered_id:
+            _increment_sync_summary(summary, 'observations_adopted')
+            return recovered_id
+        if possible_duplicate:
+            _increment_sync_summary(summary, 'observations_possible_duplicate')
         # New observation: never invent a region_id.
         payload.pop('region_id', None)
-        rows = _post_new_observation(self, payload, obs)
+        payload['sync_key'] = sync_key
+        sync_fault_point('before_request', table='observations')
+        try:
+            rows = _post_new_observation(self, payload, obs)
+        except CloudWriteRejectedError as exc:
+            if not is_sync_key_unique_violation(exc, 'observations'):
+                raise
+            cloud_id, remote = adopt_observation_by_sync_key(self, obs, sync_key)
+            print(
+                f"[cloud_sync] obs {obs.get('id')}: create already landed; adopted "
+                f'cloud {cloud_id} by sync key (no PATCH)',
+                flush=True,
+            )
+            consume_confirmed_location_precision(obs.get('id'))
+            _increment_sync_summary(summary, 'observations_adopted')
+            # Finish the interrupted create: the identity step follows the
+            # INSERT, so a crash between them leaves it to this retry.
+            self._sync_observation_selected_taxon(cloud_id, obs, remote_obs=remote)
+            return cloud_id
+        sync_fault_point('after_insert', table='observations')
         consume_confirmed_location_precision(obs.get('id'))
         _increment_sync_summary(summary, 'observations_patched')
         cloud_id = rows[0]['id']
@@ -7324,6 +7584,7 @@ class SporelyCloudClient(
             f'&user_id=eq.{self.user_id}'
             f'&storage_path=is.null'
         )
+        self._check_upload_refusal()
         resp = self._request_with_refresh(
             'PATCH',
             f'{SUPABASE_URL}/rest/v1/{path}',
@@ -7332,7 +7593,7 @@ class SporelyCloudClient(
             timeout=_SUPABASE_REST_TIMEOUT,
         )
         if not resp.ok:
-            raise CloudSyncError(f'PATCH {path}: {resp.text}')
+            self._raise_write_rejection(f'PATCH {path}', resp)
         rows = resp.json() or []
         return bool(rows)
 
@@ -7358,6 +7619,7 @@ class SporelyCloudClient(
             f'&user_id=eq.{self.user_id}'
             f'&storage_path=eq.{_encode_postgrest_filter_value(normalized_key)}'
         )
+        self._check_upload_refusal()
         resp = self._request_with_refresh(
             'PATCH',
             f'{SUPABASE_URL}/rest/v1/{path}',
@@ -7366,7 +7628,7 @@ class SporelyCloudClient(
             timeout=_SUPABASE_REST_TIMEOUT,
         )
         if not resp.ok:
-            raise CloudSyncError(f'PATCH {path}: {resp.text}')
+            self._raise_write_rejection(f'PATCH {path}', resp)
         rows = resp.json() or []
         return bool(rows)
 
@@ -7529,6 +7791,8 @@ class SporelyCloudClient(
                 if is_webp_support_required_for_cloud_media_upload_error(exc):
                     raise CloudSyncError(WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE) from exc
                 raise CloudSyncError(f'Media upload failed: {exc}') from exc
+            # Bytes stored; the image row has not yet confirmed them.
+            sync_fault_point('after_upload', table='observation_images')
 
             # Generate the single cloud thumbnail variant used by web and desktop.
             try:
@@ -9118,6 +9382,7 @@ def push_all(
             progress_state,
         )
         try:
+            _raise_if_upload_refused(client)
             cloud_id = str(obs.get('cloud_id') or '').strip()
             had_existing_cloud = bool(cloud_id)
             stored_snapshot = _load_cloud_observation_snapshot(cloud_id) if cloud_id else ''
@@ -9910,8 +10175,37 @@ def push_all(
             else:
                 _store_remote_snapshot(client, cloud_id)
 
+            # A refusal inside a step that reports instead of raising (media,
+            # measurements) still stops the upload phase, with this row dirty.
+            _raise_if_upload_refused(client)
             pushed += 1
+        except ObservationAdoptionConflictError as e:
+            # Sync conflict, never a PATCH: the row stays unlinked (L0) and
+            # dirty until the owner resolves it against the named cloud copy.
+            obs_local_id_for_review = int(obs['id'])
+            errors.append(_format_review_needed_error(
+                obs_local_id_for_review, e.cloud_id,
+                ['push_blocked', 'cloud copy with the same sync key differs'],
+            ))
+            _set_observation_conflict_review_pending(obs_local_id_for_review)
+            print(
+                f"[cloud_sync] conflict push blocked: obs={obs_local_id_for_review} "
+                f"categories=['sync_key_adoption'] action=review_required",
+                flush=True,
+            )
+            _emit_progress(
+                progress_cb,
+                _format_cloud_sync_observation_status(
+                    obs,
+                    f"Observation {i + 1}/{max(1, total)} needs review before syncing",
+                ),
+                progress_state,
+            )
+            _advance_progress(progress_state, 1)
         except CloudSyncError as e:
+            if isinstance(e, CloudUploadRefusedError):
+                mark_observation_dirty(int(obs['id']))
+                raise
             if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
                 raise
             raw_error = f"obs {obs['id']}: {e}"
@@ -10712,27 +11006,14 @@ def pull_all(
                     remote_measurements=remote_measurements,
                     materialize_remote_images=materialize_remote_images,
                 )
-                if cloud_id and not pull_only:
-                    client.set_desktop_id(cloud_id, local_id)
                 _refresh_local_cloud_media_signature(local_id)
                 pulled += 1
                 imported_local_ids.append(int(local_id))
             else:
                 local_id = int(local_obs['id'])
-                portable_identity_pending = bool(
-                    local_obs.get('portable_cloud_identity_pending')
-                )
-                if (
-                    cloud_id
-                    and int(remote.get('desktop_id') or 0) != local_id
-                    and not pull_only
-                    and not portable_identity_pending
-                ):
-                    try:
-                        client.set_desktop_id(cloud_id, local_id)
-                    except Exception as exc:
-                        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
-                            raise
+                # No client writes an identity onto an existing cloud row: the
+                # observation's desktop_id is never healed (the server refuses
+                # it on keyed rows). The local cloud_id is the link.
                 local_dirty = str(local_obs.get('sync_status') or '').strip().lower() == 'dirty'
                 if local_dirty and cloud_id and _clear_observation_dirty_if_no_real_changes(local_id, cloud_id):
                     local_obs = ObservationDB.get_observation(local_id) or local_obs

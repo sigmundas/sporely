@@ -10,12 +10,18 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Iterable, Mapping
+from typing import Callable, Iterable, Mapping
 from urllib.parse import quote, urlparse
 from xml.sax.saxutils import escape as xml_escape
 import warnings
 
 import requests
+
+from utils.sync_client_identity import (
+    UPGRADE_REQUIRED_HINT,
+    media_response_requires_upgrade,
+    sync_identity_headers,
+)
 
 
 R2_BUCKET_NAME = "sporely-media"
@@ -87,6 +93,10 @@ class CloudflareWorkerError(RuntimeError):
         }
         self.details = self.payload.get("details") if isinstance(self.payload.get("details"), dict) else self.payload.get("details")
         self.error = self.payload.get("error")
+
+
+class MediaUpgradeRequiredError(CloudflareWorkerError):
+    """The media worker refused this client version (HTTP 426)."""
 
 
 def _load_simple_env_file(env_path: Path) -> bool:
@@ -668,6 +678,13 @@ class CloudflareMediaWorkerClient:
         self.base_url = str(base_url or media_worker_base_url()).strip().rstrip("/")
         self.public_base_url = str(public_base_url or R2_PUBLIC_BASE_URL).strip().rstrip("/")
         self._session = session or requests.Session()
+        session_headers = getattr(self._session, "headers", None)
+        if session_headers is not None:
+            session_headers.update(sync_identity_headers())
+        # Called with the refusal hint before MediaUpgradeRequiredError is
+        # raised, so the owner can stop its upload phase even when a caller
+        # wraps or swallows the error.
+        self.on_upgrade_required: Callable[[str], None] | None = None
 
     @classmethod
     def from_access_token(
@@ -879,6 +896,21 @@ class CloudflareMediaWorkerClient:
             setattr(response, "_sporely_request_headers", safe_headers)
         except Exception:
             pass
+        if media_response_requires_upgrade(
+            getattr(response, "status_code", None), getattr(response, "headers", None)
+        ):
+            callback = getattr(self, "on_upgrade_required", None)
+            if callable(callback):
+                callback(UPGRADE_REQUIRED_HINT)
+            raise MediaUpgradeRequiredError(
+                f"Media {method.upper()} refused: {UPGRADE_REQUIRED_HINT}",
+                status_code=response.status_code,
+                code=UPGRADE_REQUIRED_HINT,
+                request_url=url,
+                request_method=method,
+                response_status=response.status_code,
+                request_headers=safe_headers,
+            )
         return response
 
     @staticmethod

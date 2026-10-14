@@ -102,6 +102,60 @@ class ImageIdentityConflictError(CloudSyncError):
     """
 
 
+class CloudWriteRejectedError(CloudSyncError):
+    """A Data API write answered with a non-2xx PostgREST error.
+
+    Carries the parsed PostgREST fields so callers can match a SQLSTATE and
+    the constraint named in ``message`` (a ``23505`` alone is ambiguous: the
+    legacy ``UNIQUE(desktop_id, user_id)`` collision is also ``23505``). The
+    string form is unchanged from the plain ``CloudSyncError`` it replaces.
+    """
+
+    def __init__(
+        self,
+        text: str,
+        *,
+        status_code: int = 0,
+        code: str = '',
+        message: str = '',
+        hint: str = '',
+    ):
+        super().__init__(text)
+        self.status_code = int(status_code or 0)
+        self.code = str(code or '')
+        self.message = str(message or '')
+        self.hint = str(hint or '')
+
+
+class ObservationAdoptionConflictError(CloudSyncError):
+    """A create hit this database's own cloud row, whose content differs.
+
+    Raised after a ``23505`` on ``observations_user_sync_key_uidx`` when the
+    row fetched by key and owner does not equal the local row. The caller
+    links the row with the fetched content as base and hands it to conflict
+    review; it never PATCHes the row.
+    """
+
+    def __init__(self, text: str, *, cloud_id: str, remote: dict):
+        super().__init__(text)
+        self.cloud_id = str(cloud_id or '')
+        self.remote = dict(remote or {})
+
+
+class CloudUploadRefusedError(CloudSyncError):
+    """The server refused this client's uploads (write stop or identity guard).
+
+    Raised for ``P0001`` with hint ``sporely_upgrade_required`` or
+    ``sporely_sync_identity_refused``, and for the media worker's ``426``.
+    It stops the upload phase for the run; rows stay dirty and pull keeps
+    working. It is neither an auth nor a transient error.
+    """
+
+    def __init__(self, text: str, *, hint: str = ''):
+        super().__init__(text)
+        self.hint = str(hint or '')
+
+
 class CloudSessionAccountMismatchError(AccountMismatchError):
     """Raised when a stale SporelyCloudClient sees on-disk session tokens
     that belong to a different Sporely Cloud user than the one this

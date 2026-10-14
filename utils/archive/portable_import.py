@@ -549,6 +549,11 @@ def _columns(connection: sqlite3.Connection, table: str) -> set[str]:
     return {str(row[1]) for row in connection.execute(pragma)}
 
 
+def _clear_legacy_recovery_marker(row: dict[str, Any]) -> None:
+    """An imported row is a new record: never a candidate for legacy recovery."""
+    row["legacy_recovery_pending"] = 0
+
+
 def _insert_row(connection: sqlite3.Connection, table: str, row: dict[str, Any]) -> None:
     allowed = _columns(connection, table)
     data = {key: value for key, value in row.items() if key in allowed}
@@ -2772,6 +2777,7 @@ def import_portable_payload(
             row["folder_path"] = None
             row["portable_cloud_identity_pending"] = 1
             row["sync_key"] = new_sync_key()
+            _clear_legacy_recovery_marker(row)
             if row.get("ai_state_json"):
                 row["ai_state_json"] = _rewrite_embedded_identity(
                     row["ai_state_json"],
@@ -2798,6 +2804,7 @@ def import_portable_payload(
             row["cloud_id"] = None
             row["synced_at"] = None
             row["sync_key"] = new_sync_key()
+            _clear_legacy_recovery_marker(row)
             if row.get("lab_metadata"):
                 row["lab_metadata"] = _rewrite_embedded_identity(
                     row["lab_metadata"],
@@ -2822,6 +2829,7 @@ def import_portable_payload(
             row["image_id"] = image_map[source_image_id]
             row["cloud_id"] = None
             row["sync_key"] = new_sync_key()
+            _clear_legacy_recovery_marker(row)
             _insert_row(destination_main, "spore_measurements", row)
 
         annotation_rows, annotation_map = _allocate_rows(

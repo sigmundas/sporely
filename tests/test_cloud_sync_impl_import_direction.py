@@ -75,6 +75,10 @@ OWNER_LAYERS: dict[str, int] = {
     "utils.cloud_sync_impl.conflict_detail": 8,
     # Ingestion/location provenance: pure vocabulary and bundle helpers.
     "utils.cloud_sync_impl.reconciliation.location_provenance": 0,
+    # Per-record sync keys: the env-gated crash hook is a leaf; observation
+    # create identity (adoption, legacy recovery) sits above the payloads.
+    "utils.cloud_sync_impl.fault_injection": 0,
+    "utils.cloud_sync_impl.observation_identity": 3,
 }
 
 #: Owner modules allowed to import the facade at runtime (transitional; each

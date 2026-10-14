@@ -359,15 +359,16 @@ class _RecordingClient:
         self.posts: list[tuple[str, dict]] = []
         self.selected_taxon_syncs: list[str] = []
 
-    def _find_cloud_observation(self, _desktop_id):
-        return self._existing
+    def get_observation(self, cloud_id):
+        return {"id": cloud_id} if self._existing and str(cloud_id) == str(self._existing) else None
 
-    # Use the real canonical identity resolver so these payload-shape tests
-    # exercise the production PATCH/POST routing on top of the stubbed
-    # reverse-link lookup above.
+    # Use the real canonical identity resolver and create step so these
+    # payload-shape tests exercise the production PATCH/POST routing: a row
+    # linked by its verified cloud_id is PATCHed, an unlinked row is created.
     _resolve_existing_observation_for_push = (
         cloud_sync.SporelyCloudClient._resolve_existing_observation_for_push
     )
+    _create_observation = cloud_sync.SporelyCloudClient._create_observation
 
     def _patch(self, path, payload):
         self.patches.append((path, dict(payload)))
@@ -394,7 +395,8 @@ def _install_snapshot(monkeypatch, cloud_id, remote_baseline):
 
 def _run_push(monkeypatch, obs, remote_obs, existing_cloud_id="cloud-1"):
     client = _RecordingClient(existing_cloud_id=existing_cloud_id)
-    cloud_sync.SporelyCloudClient.push_observation(client, dict(obs), remote_obs=dict(remote_obs))
+    linked = {**dict(obs), "cloud_id": existing_cloud_id} if existing_cloud_id else dict(obs)
+    cloud_sync.SporelyCloudClient.push_observation(client, linked, remote_obs=dict(remote_obs))
     return client
 
 
@@ -589,6 +591,7 @@ def test_new_observation_post_sends_country_but_never_region(monkeypatch):
     client = _RecordingClient(existing_cloud_id=None)
     obs = {
         "id": 42,
+        "sync_key": "3d6f0a1b-2c4e-4f8a-9b7c-5d6e7f8a9b0c",
         "date": "2026-05-01",
         "gps_latitude": 63.4,
         "gps_longitude": 10.4,

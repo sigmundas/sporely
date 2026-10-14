@@ -730,8 +730,7 @@ def test_phase7_visibility_normalization_sends_private_visibility_to_cloud():
 def test_push_observation_sends_private_visibility_for_local_private(monkeypatch):
     client = cloud_sync.SporelyCloudClient("token", "user-123")
     posted_payloads = []
-
-    monkeypatch.setattr(client, "_find_cloud_observation", lambda desktop_id: None)
+    sync_key = "6f1c2c44-6d7e-4a8b-9c0d-1e2f3a4b5c6d"
 
     def fake_post(path, payload):
         posted_payloads.append((path, dict(payload)))
@@ -742,6 +741,7 @@ def test_push_observation_sends_private_visibility_for_local_private(monkeypatch
     cloud_id = client.push_observation(
         {
             "id": 7,
+            "sync_key": sync_key,
             "sharing_scope": "private",
             "location_public": 0,
             "is_draft": True,
@@ -758,14 +758,15 @@ def test_push_observation_sends_private_visibility_for_local_private(monkeypatch
     assert posted_payloads[0][1]["is_draft"] is True
     assert posted_payloads[0][1]["location_precision"] == "fuzzed"
     assert posted_payloads[0][1]["user_id"] == "user-123"
-    assert posted_payloads[0][1]["desktop_id"] == 7
+    assert posted_payloads[0][1]["sync_key"] == sync_key
+    assert "desktop_id" not in posted_payloads[0][1]
 
 
 def test_push_observation_preserves_public_visibility(monkeypatch):
     client = cloud_sync.SporelyCloudClient("token", "user-123")
     patched_payloads = []
 
-    monkeypatch.setattr(client, "_find_cloud_observation", lambda desktop_id: "cloud-obs-2")
+    monkeypatch.setattr(client, "get_observation", lambda cloud_id: {"id": cloud_id})
 
     def fake_patch(path, payload):
         patched_payloads.append((path, dict(payload)))
@@ -775,6 +776,7 @@ def test_push_observation_preserves_public_visibility(monkeypatch):
     cloud_id = client.push_observation(
         {
             "id": 8,
+            "cloud_id": "cloud-obs-2",
             "sharing_scope": "public",
             "location_public": 1,
             "is_draft": False,
@@ -791,6 +793,8 @@ def test_push_observation_preserves_public_visibility(monkeypatch):
     assert patched_payloads[0][1]["location_public"] is True
     assert patched_payloads[0][1]["is_draft"] is False
     assert patched_payloads[0][1]["location_precision"] == "exact"
+    assert "desktop_id" not in patched_payloads[0][1]
+    assert "sync_key" not in patched_payloads[0][1]
 
 
 def test_observation_push_diff_fields_normalize_bool_float_json_and_visibility():
@@ -861,7 +865,6 @@ def test_push_observation_skips_noop_patch_when_remote_matches_after_normalizati
     client = cloud_sync.SporelyCloudClient("token", "user-123")
     patched_payloads = []
 
-    monkeypatch.setattr(client, "_find_cloud_observation", lambda desktop_id: "cloud-obs-1")
     monkeypatch.setattr(client, "_patch", lambda path, payload: patched_payloads.append((path, dict(payload))))
     monkeypatch.setattr(client, "_post", lambda *args, **kwargs: pytest.fail("no-op observation sync should not POST"))
     summary = cloud_sync._new_sync_summary()
@@ -869,6 +872,7 @@ def test_push_observation_skips_noop_patch_when_remote_matches_after_normalizati
         cloud_id = client.push_observation(
             {
                 "id": 7,
+                "cloud_id": "cloud-obs-1",
                 "date": "2026-05-01T12:34:56Z",
                 "genus": "Agaricus",
                 "species": "campestris",

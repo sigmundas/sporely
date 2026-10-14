@@ -535,9 +535,12 @@ def test_new_observation_insert_carries_a_known_pair_and_omits_an_unknown_one(pe
         gps_latitude=62.0, gps_longitude=8.0,
     )
     assert _sync(cloud)["errors"] == []
-    posts = {post["desktop_id"]: post for post in cloud.posts}
-    assert _pair(posts[attributed]) == ("image_exif", "acquired")
-    assert not set(_PAIR) & set(posts[unknown])
+    posts = {post["sync_key"]: post for post in cloud.posts}
+    assert all("desktop_id" not in post for post in cloud.posts)
+    attributed_key = models.ObservationDB.get_observation(attributed)["sync_key"]
+    unknown_key = models.ObservationDB.get_observation(unknown)["sync_key"]
+    assert _pair(posts[attributed_key]) == ("image_exif", "acquired")
+    assert not set(_PAIR) & set(posts[unknown_key])
     assert cloud.location_rpcs() == []
 
     writes = cloud.writes

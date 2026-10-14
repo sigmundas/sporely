@@ -12,7 +12,7 @@ from utils.cloud_sync_impl.errors import PullOnlyModeError
 
 _PULL_ONLY_BLOCKED_CLIENT_METHODS = frozenset({
     '_patch', '_post', '_delete', '_storage_remove',
-    'push_observation', 'push_image_metadata', 'push_measurement',
+    'push_observation', '_create_observation', 'push_image_metadata', 'push_measurement',
     'upload_image_file', 'upload_original_image_file',
     'set_image_storage_path', 'set_image_desktop_id', 'set_desktop_id',
     'set_observation_selected_taxon', 'clear_observation_selected_taxon',
@@ -53,6 +53,13 @@ _PULL_ONLY_ALLOWED_READ_METHODS = frozenset({
     # Observation reads
     'list_remote_observations',
     'get_observation',
+    # Per-record sync keys: the "cloud not ready" probe is a read; the
+    # refusal helpers only raise or record local state.
+    'sync_identity_ready',
+    '_check_upload_refusal',
+    '_latch_upload_refusal',
+    '_latch_media_upload_refusal',
+    '_raise_write_rejection',
     # Calibration reads
     'list_remote_calibrations',
     'find_remote_calibration',

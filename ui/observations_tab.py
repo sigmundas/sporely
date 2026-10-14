@@ -186,6 +186,11 @@ from utils.taxon_text import (
     resolve_observation_taxon_fields,
     split_scientific_name_text,
 )
+from utils.sync_client_identity import (
+    UPLOAD_BLOCK_CLOUD_NOT_READY,
+    UPLOAD_BLOCK_SETTING,
+    UPLOAD_BLOCK_UPGRADE_REQUIRED,
+)
 from utils.cloud_sync import (
     ACCOUNT_MISMATCH_MESSAGE,
     AccountMismatchError,
@@ -3658,7 +3663,31 @@ class ObservationsTab(QWidget):
             message = self.tr("Ready.")
             tone = "info"
 
+        # Persistent until a sync's upload phase runs again (sync_all clears it).
+        upload_block_text = ObservationsTab._cloud_upload_block_text(self, settings.get(UPLOAD_BLOCK_SETTING))
+        if upload_block_text and last_status != "reauth_required":
+            message = (
+                upload_block_text
+                if tone == "info"
+                else f"{upload_block_text}\n{message}"
+            )
+            tone = "warning"
+
         self._status_hint_controller.set_hint(message, tone=tone)
+
+    def _cloud_upload_block_text(self, reason: object) -> str:
+        """The banner for an upload block recorded by the last sync, or ""."""
+        reason_text = str(reason or "").strip()
+        if reason_text == UPLOAD_BLOCK_UPGRADE_REQUIRED:
+            return self.tr(
+                "This version of Sporely can no longer upload. Please install the latest version."
+            )
+        if reason_text == UPLOAD_BLOCK_CLOUD_NOT_READY:
+            return self.tr(
+                "Sporely Cloud is not ready for this version yet. Uploads are paused; "
+                "downloads still work."
+            )
+        return ""
 
     def _set_status_progress_visible(self, visible: bool) -> None:
         visible = bool(visible)
@@ -4304,6 +4333,10 @@ class ObservationsTab(QWidget):
             else:
                 message = self.tr("Sporely Cloud already up to date.")
                 level = "success"
+        upload_block_text = ObservationsTab._cloud_upload_block_text(self, result.get("upload_blocked"))
+        if upload_block_text:
+            message = f"{upload_block_text} {message}"
+            level = "warning"
         reference_notice = ObservationsTab._reference_capability_hold_notice(self, result)
         if reference_notice:
             message = f"{message} {reference_notice}"
@@ -4315,7 +4348,11 @@ class ObservationsTab(QWidget):
         original_summary = format_original_upload_summary(result.get("original_sync"))
         if original_summary:
             message = f"{message}\n{original_summary}"
-        self._record_cloud_sync_status(message, errors=errors, status="warning" if (errors or deleted_count) else "ok")
+        self._record_cloud_sync_status(
+            message,
+            errors=errors,
+            status="warning" if (errors or deleted_count or upload_block_text) else "ok",
+        )
         self._refresh_cloud_sync_idle_hint()
         _cloud_sync_completion_timing("UI summary and idle hint complete", completion_start)
         if not self._cloud_sync_show_status:
@@ -12810,11 +12847,8 @@ class ObservationsTab(QWidget):
             conn.commit()
         finally:
             conn.close()
-
-        try:
-            client.set_desktop_id(cloud_id, int(local_observation_id))
-        except Exception:
-            pass
+        # The observation's desktop_id is never written: it is retired as an
+        # identity, and the server refuses it on keyed rows. cloud_id links it.
 
     def _open_cloud_observation_editor(self, row_data: dict) -> None:
         if not isinstance(row_data, dict):
