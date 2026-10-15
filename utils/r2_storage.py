@@ -17,6 +17,7 @@ import warnings
 
 import requests
 
+from utils.cloud_sync_impl.fault_injection import fault_upload_body
 from utils.sync_client_identity import (
     UPGRADE_REQUIRED_HINT,
     media_response_requires_upgrade,
@@ -745,7 +746,8 @@ class CloudflareMediaWorkerClient:
             response = self._request(
                 "PUT",
                 key=key,
-                data=handle,
+                # Both callers upload observation-image media.
+                data=fault_upload_body(handle, table="observation_images"),
                 content_type=content_type or _content_type_for_path(path),
                 cache_control=cache_control,
                 upload_meta=upload_meta,

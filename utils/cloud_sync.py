@@ -8789,6 +8789,7 @@ class SporelyCloudClient(
             images_delete_start,
             detail=f'cloud_id={cloud_id}',
         )
+        sync_fault_point('between_deletes', table='observations')
         observation_delete_start = _cloud_sync_perf_counter() if _CLOUD_DEBUG_TIMING else None
         self._delete(f'observations?id=eq.{cloud_id}')
         _cloud_timing_log(
