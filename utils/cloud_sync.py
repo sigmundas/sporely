@@ -546,7 +546,10 @@ from utils.cloud_sync_impl.fault_injection import (  # noqa: F401  (facade re-ex
     SYNC_FAULT_ENV_VAR,
     SYNC_FAULT_EXIT_CODE,
     SYNC_FAULT_POINTS,
+    _FaultingUploadBody,
     _terminate,
+    fault_upload_body,
+    sync_fault_armed,
     sync_fault_point,
 )
 from utils.cloud_sync_impl.observation_identity import (  # noqa: F401  (facade re-export)
