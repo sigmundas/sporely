@@ -6532,6 +6532,22 @@ class SporelyCloudClient(
         if payload:
             self._patch(f'observations?id=eq.{obs_cloud_id}', payload)
 
+    def _restore_missing_observation_media_keys(self, obs_cloud_id: str, storage_key: str, sort_order) -> None:
+        """Set the parent's cover keys only when they are missing; never
+        replace a cover the observation already has."""
+        if not obs_cloud_id or sort_order not in (None, 0, '0'):
+            return
+        if not self._observation_supports_media_keys():
+            return
+        columns = [c for c in ('image_key', 'thumb_key') if self._has_column('observations', c)]
+        rows = self._get(
+            f'observations?id=eq.{obs_cloud_id}&user_id=eq.{self.user_id}'
+            f'&select={",".join(columns)}&limit=1'
+        ) or []
+        if not rows or all((rows[0] or {}).get(c) for c in columns):
+            return
+        self._set_observation_media_keys(obs_cloud_id, storage_key, sort_order)
+
     def _cloud_image_storage_key(self, cloud_image_id: str) -> str:
         normalized_id = str(cloud_image_id or '').strip()
         if not normalized_id:
@@ -7778,11 +7794,16 @@ class SporelyCloudClient(
                 summary=_cloud_sync_current_summary(),
             )
             if adopted is not None:
-                # Linked without a write: no observation media-key PATCH either.
+                # Linked without a write to the adopted row.
                 remember_adopted_child(self, 'observation_images', cloud_id, adopted)
                 normalized_key = _normalize_cloud_media_key(adopted.get('storage_path'))
                 if normalized_key:
                     self._cloud_image_storage_key_cache[str(cloud_id)] = normalized_key
+                    # A crash between this create and the parent's media-key
+                    # PATCH leaves the parent without a cover.
+                    self._restore_missing_observation_media_keys(
+                        obs_cloud_id, normalized_key, img.get('sort_order'),
+                    )
                 if restore_source_id:
                     _clear_explicit_image_restore_source(img['id'])
                 return cloud_id

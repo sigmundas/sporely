@@ -430,9 +430,32 @@ def test_kill_after_the_child_insert_adopts_it_on_retry(two_desktops, monkeypatc
         assert set(cloud.objects) == {
             row["storage_path"], cloud_sync.media_variant_key(row["storage_path"], "thumb"),
         }, "the adopted image's bytes went to its reserved key: one object"
+        [parent] = cloud.rows("observations")
+        assert parent["image_key"] == row["storage_path"], "the crash lost the cover; the retry restores it"
+        assert parent["thumb_key"] == cloud_sync.media_variant_key(row["storage_path"], "thumb")
     else:
         assert [w["method"] for w in retry_writes] == ["POST"], "adoption never PATCHes"
         assert str(row["image_id"]) == str(cloud.rows("observation_images")[0]["id"])
+
+
+def test_image_adoption_keeps_a_cover_the_observation_already_has(two_desktops, monkeypatch, tmp_path):
+    cloud = ChildCloud()
+    local_table, local_id = _create_for("observation_images", tmp_path)
+    _fault(monkeypatch, "after_insert:observation_images")
+    with pytest.raises(_Killed):
+        _push(cloud.client())
+    [parent] = cloud.rows("observations")
+    cloud.edit_elsewhere("observations", parent["id"], image_key="other/cover.webp",
+                         thumb_key="other/thumb_cover.webp")
+
+    _fault(monkeypatch, None)
+    result, _summary = _push_summary(cloud.client())
+
+    assert result["errors"] == []
+    assert [w for w in cloud.writes("observations", "PATCH")
+            if "image_key" in (w["payload"] or {})] == [], "an existing cover is never replaced"
+    [parent] = cloud.rows("observations")
+    assert parent["image_key"] == "other/cover.webp"
 
 
 @pytest.mark.parametrize("sample_type", ["Not_set", "Spore_print"])

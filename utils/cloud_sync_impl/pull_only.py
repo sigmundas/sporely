@@ -18,6 +18,7 @@ _PULL_ONLY_BLOCKED_CLIENT_METHODS = frozenset({
     'set_observation_selected_taxon', 'clear_observation_selected_taxon',
     'set_observation_location',
     'set_image_original_storage_path',
+    '_restore_missing_observation_media_keys',
     'reserve_image_storage_path_for_promotion',
     'release_image_storage_path_reservation',
     'soft_delete_image', 'delete_cloud_observation',
