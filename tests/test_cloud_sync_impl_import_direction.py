@@ -84,6 +84,9 @@ OWNER_LAYERS: dict[str, int] = {
     "utils.cloud_sync_impl.child_identity": 5,
     # Pull pairing by sync_key (key holder lookup) sits on the pure values.
     "utils.cloud_sync_impl.pull_identity": 1,
+    # Durable observation-delete intent reuses the child owner's settings
+    # helper and sits above it.
+    "utils.cloud_sync_impl.observation_delete": 6,
 }
 
 #: Owner modules allowed to import the facade at runtime (transitional; each
