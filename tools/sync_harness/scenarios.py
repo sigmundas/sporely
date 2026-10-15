@@ -316,6 +316,45 @@ def new_microscope_observation(ctx):
         _log_local_state(ctx, "after-sync")
 
 
+def new_observation_without_images(ctx):
+    """Click "+ New", continue from an empty Prepare Images, then Create
+    Observation. args: sync"""
+    from ui.image_import_dialog import ImageImportDialog
+    from ui.observations_tab import ObservationDetailsDialog
+    a = ctx.args
+    ctx.wait(1500)
+    before = {r["id"] for r in _query("select id from observations")}
+
+    def prepare(dlg):
+        ctx.wait(1500)
+        ctx.result["pi_images"] = len(getattr(dlg, "import_results", []) or [])
+        ctx.shot("prepare-images-empty", dlg)
+        ctx.click(dlg.next_btn, "Prepare Images continue")
+
+    def details(dlg):
+        ctx.wait(1500)
+        ctx.shot("details-new-no-images", dlg)
+        ctx.click(dlg.submit_observation_btn, "Create Observation")
+
+    ctx.on_modal(lambda m: isinstance(m, ImageImportDialog), _guarded(ctx, prepare), "prepare-images-empty")
+    ctx.on_modal(lambda m: isinstance(m, ObservationDetailsDialog), _guarded(ctx, details), "details-new-no-images")
+    ctx.click(ctx.w.observations_tab.new_btn, "+ New")
+    ctx.wait(4000)
+    pending = [r["name"] for r in ctx.modal_rules]
+    if pending:
+        raise RuntimeError(f"dialogs not reached: {pending}")
+    ctx.wait(1500)
+    created = sorted({r["id"] for r in _query("select id from observations")} - before)
+    if len(created) != 1:
+        raise RuntimeError(f"expected one new observation, got {created}")
+    ctx.result["new_observation"] = created[0]
+    ctx.result["new_images"] = _query("select id from images where observation_id=?", (created[0],))
+    _log_local_state(ctx, "after-create")
+    if a.get("sync"):
+        _sync_now(ctx)
+        _log_local_state(ctx, "after-sync")
+
+
 # ---------------------------------------------------------------------------
 # Spore measurement creation in the Measure tab
 # ---------------------------------------------------------------------------
