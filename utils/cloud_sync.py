@@ -704,6 +704,7 @@ from utils.cloud_sync_impl.child_identity import (  # noqa: F401  (facade re-exp
     CHILD_CREATE_PENDING_SETTING_PREFIX,
     CHILD_TABLES,
     ChildTable,
+    LEGACY_LINK_FLAG,
     _ADOPTED_CHILD_ROWS_ATTR,
     _child_create_pending_key,
     _clear_legacy_marker_now,
@@ -715,6 +716,7 @@ from utils.cloud_sync_impl.child_identity import (  # noqa: F401  (facade re-exp
     clear_legacy_marker,
     committed_parent_cloud_id,
     create_child_row,
+    is_legacy_link,
     judge_child_row,
     mark_child_create_pending,
     read_child_rows,
@@ -723,6 +725,16 @@ from utils.cloud_sync_impl.child_identity import (  # noqa: F401  (facade re-exp
     remember_adopted_child,
     require_committed_parent,
     take_adopted_child,
+)
+from utils.cloud_sync_impl.observation_delete import (  # noqa: F401  (facade re-export)
+    PENDING_OBSERVATION_DELETE_PREFIX,
+    _COMPLETED_ATTR,
+    _locally_linked,
+    clear_observation_delete_pending,
+    mark_observation_delete_pending,
+    pending_observation_delete_ids,
+    pending_observation_deletes,
+    retry_pending_observation_deletes,
 )
 from utils.cloud_sync_impl.image_push import (  # noqa: F401  (facade re-export)
     _IMAGE_CREATE_COMPARE_EXCLUDED_KEYS,
@@ -3408,8 +3420,11 @@ def _find_local_observation_for_remote_cached(
 def remote_observations_not_on_this_desktop(remote_rows: list[dict] | None) -> list[dict]:
     """Cloud observations no local row holds by cloud id or by ``sync_key``."""
     by_cloud_id, by_sync_key = _load_local_observation_lookup()
+    pending_deletes = pending_observation_delete_ids()
     unheld: list[dict] = []
     for remote in remote_rows or []:
+        if str((remote or {}).get('id') or '').strip() in pending_deletes:
+            continue
         local_obs, key_outcome = _find_local_observation_for_remote_cached(
             remote, by_cloud_id, by_sync_key,
         )
@@ -6533,20 +6548,31 @@ class SporelyCloudClient(
             self._patch(f'observations?id=eq.{obs_cloud_id}', payload)
 
     def _restore_missing_observation_media_keys(self, obs_cloud_id: str, storage_key: str, sort_order) -> None:
-        """Set the parent's cover keys only when they are missing; never
-        replace a cover the observation already has."""
+        """Set the parent's cover keys only when it has none at all (the
+        footprint of a crash before its media-key PATCH). A cover the
+        observation has, even a partial one, is never touched, and the PATCH
+        matches only while every cover column is still NULL, so a cover set
+        concurrently is not overwritten."""
         if not obs_cloud_id or sort_order not in (None, 0, '0'):
             return
         if not self._observation_supports_media_keys():
             return
-        columns = [c for c in ('image_key', 'thumb_key') if self._has_column('observations', c)]
+        normalized_key = _normalize_cloud_media_key(storage_key)
+        if not normalized_key:
+            return
+        wanted = {'image_key': normalized_key, 'thumb_key': media_variant_key(normalized_key, 'thumb')}
+        columns = [c for c in wanted if self._has_column('observations', c)]
         rows = self._get(
             f'observations?id=eq.{obs_cloud_id}&user_id=eq.{self.user_id}'
             f'&select={",".join(columns)}&limit=1'
         ) or []
-        if not rows or all((rows[0] or {}).get(c) for c in columns):
+        if not rows or any((rows[0] or {}).get(c) for c in columns):
             return
-        self._set_observation_media_keys(obs_cloud_id, storage_key, sort_order)
+        still_null = ''.join(f'&{c}=is.null' for c in columns)
+        self._patch_with_precondition(
+            f'observations?id=eq.{obs_cloud_id}&user_id=eq.{self.user_id}{still_null}',
+            {c: wanted[c] for c in columns},
+        )
 
     def _cloud_image_storage_key(self, cloud_image_id: str) -> str:
         normalized_id = str(cloud_image_id or '').strip()
@@ -7799,8 +7825,10 @@ class SporelyCloudClient(
                 normalized_key = _normalize_cloud_media_key(adopted.get('storage_path'))
                 if normalized_key:
                     self._cloud_image_storage_key_cache[str(cloud_id)] = normalized_key
+                if normalized_key and not is_legacy_link(adopted):
                     # A crash between this create and the parent's media-key
-                    # PATCH leaves the parent without a cover.
+                    # PATCH leaves the parent without a cover. A legacy link
+                    # receives no write at all.
                     self._restore_missing_observation_media_keys(
                         obs_cloud_id, normalized_key, img.get('sort_order'),
                     )
@@ -9606,6 +9634,9 @@ def _push_all_once(
             f"interrupted image create: {interrupted}",
             flush=True,
         )
+    # A local observation delete whose cloud delete did not complete (crash,
+    # failure or no session) finishes before anything else is pushed.
+    pending_delete_result = retry_pending_observation_deletes(client)
 
     media_scan_start = _cloud_sync_perf_counter()
     _mark_cloud_observations_dirty_for_media_changes()
@@ -9686,7 +9717,11 @@ def _push_all_once(
 
     total = len(observations)
     pushed = 0
-    errors = list(calibration_result.get('errors') or []) + list(tombstone_warnings or [])
+    errors = (
+        list(calibration_result.get('errors') or [])
+        + list(tombstone_warnings or [])
+        + list(pending_delete_result.get('errors') or [])
+    )
     progress_state = progress_state if isinstance(progress_state, dict) else {}
     # Mark the preflight complete before switching to the per-observation
     # phase so the bar sits at the push_observations start value.
@@ -11072,11 +11107,20 @@ def pull_all(
     candidates: list[tuple[dict, dict | None, str]] = []
     candidate_cloud_ids: list[str] = []
     sync_key_skipped = 0
+    pending_deletes = pending_observation_delete_ids(client)
     for remote in remote_obs:
         cloud_id = str(remote.get('id') or '').strip()
         local_obs, key_outcome = _find_local_observation_for_remote_cached(
             remote, local_by_cloud_id, local_by_sync_key,
         )
+        if local_obs is None and cloud_id in pending_deletes:
+            # Deleted here; its cloud delete is still pending. Never re-import.
+            print(
+                f'[cloud_sync] pull: cloud observation {cloud_id} has a pending '
+                f'local delete; not imported',
+                flush=True,
+            )
+            continue
         if local_obs is None and key_outcome != KEY_FREE:
             # The cloud row carries a key a local row already holds: never a
             # second local row. A pending adoption is the upload's to link.

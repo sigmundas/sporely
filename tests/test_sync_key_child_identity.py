@@ -458,6 +458,44 @@ def test_image_adoption_keeps_a_cover_the_observation_already_has(two_desktops, 
     assert parent["image_key"] == "other/cover.webp"
 
 
+def test_image_adoption_leaves_a_partial_cover_alone(two_desktops, monkeypatch, tmp_path):
+    cloud = ChildCloud()
+    _create_for("observation_images", tmp_path)
+    _fault(monkeypatch, "after_insert:observation_images")
+    with pytest.raises(_Killed):
+        _push(cloud.client())
+    [parent] = cloud.rows("observations")
+    cloud.edit_elsewhere("observations", parent["id"], image_key="existing.webp", thumb_key=None)
+
+    _fault(monkeypatch, None)
+    result, _summary = _push_summary(cloud.client())
+
+    assert result["errors"] == []
+    assert [w for w in cloud.writes("observations", "PATCH")
+            if {"image_key", "thumb_key"} & set(w["payload"] or {})] == []
+    [parent] = cloud.rows("observations")
+    assert (parent["image_key"], parent["thumb_key"]) == ("existing.webp", None)
+
+
+def test_cover_restore_never_overwrites_a_cover_set_after_its_read(two_desktops):
+    cloud = ChildCloud()
+    parent = cloud.insert_legacy_row("observations", genus="Parent")
+    client = cloud.client()
+
+    def concurrent_cover(table, filters):
+        # Another client sets a cover between the restore's read and its PATCH.
+        if table == "observations" and ("id", f"eq.{parent['id']}") in filters:
+            cloud.edit_elsewhere("observations", parent["id"], image_key="concurrent.webp")
+            cloud.after_get = None
+    cloud.after_get = concurrent_cover
+
+    client._restore_missing_observation_media_keys(str(parent["id"]), f"{USER_ID}/1/0_new.webp", 0)
+
+    [row] = cloud.rows("observations")
+    assert row["image_key"] == "concurrent.webp"
+    assert row.get("thumb_key") is None, "the conditional PATCH matched no row"
+
+
 @pytest.mark.parametrize("sample_type", ["Not_set", "Spore_print"])
 def test_kill_after_an_image_insert_adopts_it_when_the_push_normalized_its_sample_fields(
     two_desktops, monkeypatch, tmp_path, sample_type,
@@ -879,10 +917,44 @@ def test_legacy_recovery_links_equal_keyless_children_without_any_cloud_write(tw
     assert _row("images", image_id)["legacy_recovery_pending"] == 0
     assert _row("spore_measurements", measurement_id)["legacy_recovery_pending"] == 0
     assert summary["images_adopted"] == 1 and summary["measurements_adopted"] == 1
-    assert set(cloud.objects) == {legacy_image["storage_path"],
-                                  cloud_sync.media_variant_key(legacy_image["storage_path"], "thumb")}, (
-        "the found row's bytes go to its own key; no second object"
+    assert [m for m in cloud.media_requests if m[0] in {"PUT", "DELETE"}] == [], (
+        "a legacy match may be another database's upload: its media are never written"
     )
+    assert [w for w in cloud.writes("observations", "PATCH")
+            if {"image_key", "thumb_key"} & set(w["payload"] or {})] == [], "no parent cover repair either"
+
+    # A later sync does not upload the bytes either.
+    cloud.requests.clear()
+    _push(cloud.client())
+    assert cloud.writes("observation_images") == []
+    assert [m for m in cloud.media_requests if m[0] in {"PUT", "DELETE"}] == []
+
+
+def test_legacy_recovery_of_a_field_image_writes_no_media(two_desktops, tmp_path):
+    # A field photo with no measurements takes the image push path (no anchor).
+    cloud = ChildCloud()
+    obs_id = _observation()
+    image_id = _image(obs_id, tmp_path, image_type="field")
+    cloud.refuse_posts["observation_images"] = _error(400, "22P02", "first run fails")
+    _push(cloud.client())
+    cloud.refuse_posts.clear()
+    obs_cloud = int(_row("observations", obs_id)["cloud_id"])
+    legacy_image = cloud.insert_legacy_row("observation_images", **_legacy_image_copy(image_id, obs_cloud))
+    _mark_legacy("images", image_id)
+    cloud.requests.clear()
+    cloud.media_requests.clear()
+
+    result, summary = _push_summary(cloud.client())
+
+    assert result["errors"] == []
+    assert str(_row("images", image_id)["cloud_id"]) == str(legacy_image["id"])
+    assert summary["images_adopted"] == 1
+    assert cloud.writes("observation_images") == []
+    assert [m for m in cloud.media_requests if m[0] in {"PUT", "DELETE"}] == []
+    assert [w for w in cloud.writes("observations", "PATCH")
+            if {"image_key", "thumb_key"} & set(w["payload"] or {})] == []
+    _push(cloud.client())
+    assert [m for m in cloud.media_requests if m[0] in {"PUT", "DELETE"}] == []
 
 
 def test_legacy_recovery_with_different_content_posts_new_children_and_reports_duplicates(two_desktops, tmp_path):

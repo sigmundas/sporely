@@ -376,7 +376,9 @@ def create_child_row(
         )
         if count_adoption:
             _increment_sync_summary(summary, f'{spec.summary_prefix}_adopted')
-        return cloud_id, recovered
+        # Unlike a sync-key adoption, this row may be another database's
+        # upload: nothing is ever written to it, its media included.
+        return cloud_id, {**recovered, LEGACY_LINK_FLAG: True}
     if possible_duplicate:
         _increment_sync_summary(summary, f'{spec.summary_prefix}_possible_duplicate')
 
@@ -423,6 +425,15 @@ def create_child_row(
 # returns only the id. A row that call linked without a write is recorded
 # here so the caller never deletes, re-reserves or PATCHes it.
 _ADOPTED_CHILD_ROWS_ATTR = '_adopted_child_rows'
+
+# Set on the row ``create_child_row`` returns for a one-time legacy recovery
+# link (never on a stored snapshot). Such a row receives no write of any kind:
+# no confirming byte upload, no parent cover repair.
+LEGACY_LINK_FLAG = '_sporely_legacy_recovery_link'
+
+
+def is_legacy_link(row: dict | None) -> bool:
+    return bool((row or {}).get(LEGACY_LINK_FLAG))
 
 
 def remember_adopted_child(client, table: str, cloud_id: str, remote: dict) -> None:

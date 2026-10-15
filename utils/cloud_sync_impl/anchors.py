@@ -29,6 +29,7 @@ from utils.cloud_sync_impl.child_identity import (
     clear_child_create_pending,
     clear_legacy_marker,
     create_child_row,
+    is_legacy_link,
     mark_child_create_pending,
 )
 from utils.cloud_sync_impl.errors import (
@@ -519,7 +520,11 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
         count_adoption=False,
     )
     adopted_storage_path = _normalize_cloud_media_key((adopted or {}).get('storage_path'))
-    if adopted_storage_path and cloud_image_bytes_desired(obs_local_id, local_image_id, row):
+    if (
+        adopted_storage_path
+        and not is_legacy_link(adopted)
+        and cloud_image_bytes_desired(obs_local_id, local_image_id, row)
+    ):
         # This database's own byte-backed row whose bytes were never confirmed
         # locally: the image upload links it after sending them to its key.
         print(

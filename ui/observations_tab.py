@@ -13366,6 +13366,16 @@ class ObservationsTab(QWidget):
                     )
                     advance_progress(label)
 
+                if cloud_id:
+                    # Durable intent before anything is removed: a crash or a
+                    # failed cloud delete is finished by the next sync, and
+                    # pull never re-imports the observation meanwhile.
+                    from utils.cloud_sync import (
+                        _load_linked_cloud_user_id,
+                        mark_observation_delete_pending,
+                    )
+
+                    mark_observation_delete_pending(cloud_id, _load_linked_cloud_user_id())
                 delete_db_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
                 delete_failures = ObservationDB.delete_observation(
                     obs_id,
@@ -13482,6 +13492,9 @@ class ObservationsTab(QWidget):
                 )
 
                 acknowledge_observation_parent_delete(cloud_user_id, cloud_id)
+            from utils.cloud_sync import clear_observation_delete_pending
+
+            clear_observation_delete_pending(cloud_id)
         except Exception as exc:
             return [self.tr("cloud {id}: {error}").format(id=cloud_id, error=exc)]
         try:

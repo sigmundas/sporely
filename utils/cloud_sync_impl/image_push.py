@@ -28,6 +28,7 @@ from utils.r2_storage import CloudflareWorkerError, media_variant_key
 from utils.cloud_sync_impl.child_identity import (
     clear_child_create_pending,
     clear_legacy_marker,
+    is_legacy_link,
     mark_child_create_pending,
     take_adopted_child,
 )
@@ -1037,7 +1038,13 @@ def _push_images_for_observation(
                         # clean NULL anchor.
                         promotion_reserved_key = pending_promotion_key
                     try:
-                        if adopted_row is not None and not storage_path:
+                        if adopted_row is not None and (
+                            not storage_path or is_legacy_link(adopted_row)
+                        ):
+                            # A row linked as is, or a one-time legacy
+                            # recovery link: that row may be another
+                            # database's upload, so its media are never
+                            # written (no confirming upload).
                             uploaded_key = ''
                         else:
                             # Durable retry intent for every byte upload,
