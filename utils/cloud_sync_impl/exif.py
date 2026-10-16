@@ -355,6 +355,9 @@ def _pull_injected_captured_at_key(image_id: int | str) -> str:
     return f'cloud_image_pull_injected_captured_at:{int(image_id)}'
 
 
+_CLOUD_HELD_CAPTURED_AT = 'cloud'
+
+
 def _record_pull_injected_captured_at(image_id: int | str, remote_captured_at) -> None:
     """Remember the capture time a pull derived for an image the cloud left NULL.
 
@@ -367,7 +370,9 @@ def _record_pull_injected_captured_at(image_id: int | str, remote_captured_at) -
         key = _pull_injected_captured_at_key(image_id)
     except (TypeError, ValueError):
         return
-    value = ''
+    # The cloud held a capture time: record that, so the legacy
+    # observation-datetime fallback never applies to this image.
+    value = _CLOUD_HELD_CAPTURED_AT
     try:
         if remote_captured_at is None:
             conn = get_connection()
@@ -407,6 +412,7 @@ def _captured_at_is_pull_injected(img: dict | None) -> bool:
     except (TypeError, ValueError):
         recorded = None
     if recorded is not None and str(recorded).strip():
+        # 'cloud': the cloud held a capture time at pull; nothing was injected.
         return _local_wall_clock_text(recorded) == local_text
     source_role = str(row.get('source_role') or '').strip().lower()
     file_purpose = str(row.get('file_purpose') or '').strip().lower()

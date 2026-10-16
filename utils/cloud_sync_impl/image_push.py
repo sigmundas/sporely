@@ -419,17 +419,31 @@ def _baseline_images_by_cloud_id(obs_cloud_id: str) -> dict[str, dict]:
     }
 
 
-def _remote_only_image_edits(local_payload: dict, baseline_row: dict | None, remote_payload: dict, **include) -> set[str]:
+def _remote_only_image_edits(
+    local_payload: dict, img: dict | None, baseline_row: dict | None, remote_payload: dict, **include,
+) -> set[str]:
     """Fields only the cloud changed since the baseline (the preflight's
     three-way rule): local still holds the baseline value, the cloud does not.
-    A metadata push must leave them at the cloud value."""
+
+    ``local_payload`` is the unshaped local compare payload. As in the
+    preflight, it is normalized against the BASELINE (blank text over a NULL
+    baseline, a pull-injected capture time) before comparing; a value that
+    normalization withholds equals the baseline. A metadata push must leave
+    these fields at the cloud value.
+    """
     if not baseline_row:
         return set()
     baseline_payload = _remote_image_compare_payload(baseline_row, **include)
+    local = dict(local_payload)
+    _preserve_unedited_remote_image_values(
+        local, img, baseline_row, captured_at_pull_injected=_captured_at_is_pull_injected(img),
+    )
+    for key in set(local_payload) - set(local):
+        local[key] = baseline_payload.get(key)
     return {
         key for key, remote_value in remote_payload.items()
-        if key in local_payload and key in baseline_payload
-        and local_payload[key] == baseline_payload[key]
+        if key in local and key in baseline_payload
+        and local[key] == baseline_payload[key]
         and remote_value != baseline_payload[key]
     }
 
@@ -464,12 +478,8 @@ def _adopt_remote_image_edits_before_baseline(
         if cloud_id not in remote_by_id or cloud_id not in baseline_by_id:
             continue
         local_payload = _prepared_item_remote_payload(img, str(img.get('filepath') or ''), '', **include)
-        _preserve_unedited_remote_image_values(
-            local_payload, img, baseline_by_id[cloud_id],
-            captured_at_pull_injected=_captured_at_is_pull_injected(img),
-        )
         remote_payload = _remote_image_compare_payload(remote_by_id[cloud_id], **include)
-        edits = _remote_only_image_edits(local_payload, baseline_by_id[cloud_id], remote_payload, **include)
+        edits = _remote_only_image_edits(local_payload, img, baseline_by_id[cloud_id], remote_payload, **include)
         fields = [f for f in _ADOPTABLE_IMAGE_FIELDS if f in edits]
         if not fields:
             continue
@@ -587,6 +597,7 @@ def _reconcile_metadata_only_linked_images(
         # keeps at the cloud's (blank text over NULL, a recovery copy's
         # derived file facts) are not drift.
         keys_before = set(expected_payload)
+        unshaped_local = dict(expected_payload)
         _preserve_unedited_remote_image_values(
             expected_payload, img, remote_row,
             captured_at_pull_injected=_captured_at_is_pull_injected(img),
@@ -594,7 +605,7 @@ def _reconcile_metadata_only_linked_images(
         for key in keys_before - set(expected_payload):
             remote_payload.pop(key, None)
         remote_only = _remote_only_image_edits(
-            expected_payload, baseline_by_id.get(local_cloud_id), remote_payload,
+            unshaped_local, img, baseline_by_id.get(local_cloud_id), remote_payload,
             include_ai_crop=include_ai_crop, include_upload_meta=include_upload_meta,
         )
         for key in remote_only:

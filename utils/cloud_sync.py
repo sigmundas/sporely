@@ -613,6 +613,7 @@ from utils.cloud_sync_impl.exif import (  # noqa: F401  (facade re-export)
     _exif_file_signature,
     _inject_obs_exif_into_field_image,
     _load_exif_backfill_state,
+    _CLOUD_HELD_CAPTURED_AT,
     _captured_at_is_pull_injected,
     _load_obs_exif_fallback,
     _local_wall_clock_text,
@@ -4569,6 +4570,17 @@ def _link_reviewed_child_key_pairs(
     )
 
 
+def _store_post_push_snapshot(client: "SporelyCloudClient", cloud_id: str, local_id: int) -> None:
+    """Store the post-push baseline after copying cloud-only image edits into
+    the local rows (so the baseline never moves past a stale local row)."""
+    _store_remote_snapshot(
+        client, cloud_id,
+        before_store_images=lambda rows: _adopt_remote_image_edits_before_baseline(
+            client, cloud_id, int(local_id), rows,
+        ),
+    )
+
+
 def resolve_conflict_keep_local(
     client: "SporelyCloudClient",
     local_id: int,
@@ -4716,7 +4728,7 @@ def resolve_conflict_keep_local(
 
     # The judged observation row stays the baseline; children are re-read.
     if adopted_base is None:
-        _store_remote_snapshot(client, cloud_id)
+        _store_post_push_snapshot(client, cloud_id, int(local_id))
     else:
         _store_remote_snapshot(client, cloud_id, remote=adopted_base)
     _refresh_local_cloud_media_signature(int(local_id))
@@ -4886,7 +4898,7 @@ def resolve_conflict_merge(
 
     # The judged observation row stays the baseline; children are re-read.
     if adopted_base is None:
-        _store_remote_snapshot(client, cloud_id)
+        _store_post_push_snapshot(client, cloud_id, int(local_id))
     else:
         _store_remote_snapshot(client, cloud_id, remote=adopted_base)
     _refresh_local_cloud_media_signature(int(local_id))
@@ -10569,12 +10581,7 @@ def _push_all_once(
                 if adopted_base is None:
                     # Local rows first, so a failure cannot leave the
                     # baseline at a cloud edit the local row lacks.
-                    _store_remote_snapshot(
-                        client, cloud_id,
-                        before_store_images=lambda rows, _obs_id=int(obs['id']): (
-                            _adopt_remote_image_edits_before_baseline(client, cloud_id, _obs_id, rows)
-                        ),
-                    )
+                    _store_post_push_snapshot(client, cloud_id, int(obs['id']))
                 else:
                     _store_remote_snapshot(client, cloud_id, remote=adopted_base)
 

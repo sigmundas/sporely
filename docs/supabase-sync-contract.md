@@ -777,7 +777,7 @@ Canonical desktop image states are `NONE`, `UPLOADED`, `DELETE_PENDING`, and `DE
   local and cloud already agree on it, which the next three-way comparison
   reads as shared. A blocked (conflicting) push adopts nothing. The virtual
   taxon identity field keeps its own adoption rule (see Taxonomy identity).
-- The same holds for linked images: a metadata push leaves fields only the cloud changed since the baseline at the cloud value, and before the post-push baseline is stored, `_adopt_remote_image_edits_before_baseline` copies those cloud-only descriptive edits (notes, objective, mount, stain, sample, contrast, crop mode, measure colour, micro category) into the local row without marking the observation dirty. A field both sides changed stays a conflict.
+- The same holds for linked images: a metadata push leaves fields only the cloud changed since the baseline at the cloud value, and before the post-push baseline is stored, `_adopt_remote_image_edits_before_baseline` copies those cloud-only descriptive edits (notes, objective, mount, stain, sample, contrast, crop mode, measure colour, micro category) into the local row without marking the observation dirty. A field both sides changed stays a conflict. The three-way check, in the push as in the preflight, compares local values normalized against the baseline (blank text over a NULL baseline, the pull-injected capture time). The conflict resolutions "Use this device" and merge store their baseline the same way.
 - Refresh the baseline after success.
 
 ### Both sides changed
@@ -797,7 +797,7 @@ When a local image still maps to an active cloud image:
 - keep the cloud row and file when omitted from `prepared_items` unless an explicit checkbox/context-menu tombstone is pending;
 - patch metadata when necessary, without rewriting cloud values the user did not edit:
   - upload metadata (`upload_mode`, `source_*`, `stored_*`, `stored_bytes`) is sent only by the client that produced the bytes; a metadata patch never NULLs it;
-  - the capture time a pull injected from the observation datetime (recorded at pull) never fills a `captured_at` the cloud row does not hold; a capture time the user sets is sent;
+  - the capture time a pull injected from the observation datetime (recorded at pull) never fills a `captured_at` the cloud row does not hold; a capture time the user sets is sent. For a copy pulled before that record existed, a local capture time equal to the observation datetime is withheld, and only while the cloud value is NULL;
   - for a recovery copy (`cloud_recovery_cache` / `cache`), the local file name never fills an `original_filename` the cloud row does not hold;
 - replace bytes only when the trusted source changed or a missing cloud file is deliberately restored;
 - never call it stale merely because it was filtered, skipped, or reordered.

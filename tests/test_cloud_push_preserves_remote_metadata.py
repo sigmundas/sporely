@@ -498,3 +498,53 @@ def test_local_edit_of_other_field_is_pushed_and_web_edit_kept(monkeypatch):
     # The post-push baseline then brings the web note into the local row.
     _run_post_push_baseline("cloud-obs-9103", 9103, [dict(remote, stain="Melzer")])
     assert _local_image(9203) == {"notes": "web note", "stain": "Melzer", "obs_status": "synced"}
+
+
+def _reconcile_with_baseline(monkeypatch, local_image: dict, baseline_image: dict, remote_image: dict, obs_cloud_id: str):
+    _store_baseline(obs_cloud_id, [baseline_image])
+    client, patches = _client(monkeypatch)
+    monkeypatch.setattr(cloud_sync.ImageDB, "get_images_for_observation", lambda _obs_id: [dict(local_image)])
+    monkeypatch.setattr(cloud_sync, "_stored_local_media_signature_image_stats", lambda _obs_id: {})
+    monkeypatch.setattr(cloud_sync, "_local_image_source_bytes_unchanged", lambda *_args: True)
+    cloud_sync._reconcile_metadata_only_linked_images(client, {"id": local_image["observation_id"]}, obs_cloud_id, [remote_image])
+    return [b for p, b in patches if p.startswith("observation_images?")]
+
+
+def test_blank_local_text_against_null_baseline_does_not_overwrite_web_edit(monkeypatch):
+    local = _pulled_local_image(
+        id=9301, observation_id=9401, cloud_id="c-9301", captured_at=None, crop_mode=None,
+        measure_color=None, notes="", stain="Melzer", synced_at="2026-10-16T00:00:00Z",
+    )
+    base = _cloud_image("c-9301", "o-9401", notes=None)
+    remote = _cloud_image("c-9301", "o-9401", notes="web note")
+
+    bodies = _reconcile_with_baseline(monkeypatch, local, base, remote, "o-9401")
+
+    assert len(bodies) == 1  # the real local edit (stain) is pushed
+    assert bodies[0]["stain"] == "Melzer"
+    assert "notes" not in bodies[0]
+
+
+def test_injected_capture_time_against_null_baseline_does_not_overwrite_web_capture_time(monkeypatch):
+    _record_injected(9302, "2026-10-13 14:30:00")
+    local = _pulled_local_image(
+        id=9302, observation_id=9402, cloud_id="c-9302", crop_mode=None, measure_color=None,
+        stain="Melzer", synced_at="2026-10-16T00:00:00Z",
+    )
+    base = _cloud_image("c-9302", "o-9402")
+    remote = _cloud_image("c-9302", "o-9402", captured_at="2026-10-01T08:00:00+00:00")
+
+    bodies = _reconcile_with_baseline(monkeypatch, local, base, remote, "o-9402")
+
+    assert len(bodies) == 1
+    assert "captured_at" not in bodies[0]
+
+
+def test_cloud_held_capture_time_record_stops_legacy_fallback(monkeypatch):
+    from utils.cloud_sync_impl import exif
+
+    _record_injected(9303, exif._CLOUD_HELD_CAPTURED_AT)
+    monkeypatch.setattr(exif, "_load_obs_exif_fallback", lambda _oid, **_k: (None,) * 4 + ("2026-10-13T14:30:00+00:00",))
+    img = _pulled_local_image(id=9303, captured_at="2026-10-13 14:30:00")
+
+    assert exif._captured_at_is_pull_injected(img) is False

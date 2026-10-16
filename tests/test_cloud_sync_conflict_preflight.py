@@ -1096,6 +1096,30 @@ def test_resolve_keep_local_clears_conflict_marker_and_advances_snapshot(monkeyp
     assert snapshot_writes
 
 
+def test_resolve_keep_local_and_merge_adopt_cloud_only_image_edits_before_baseline(monkeypatch):
+    """Both resolution paths store the baseline through the same hook as
+    push_all, so cloud-only image edits reach the local row first."""
+    import inspect
+
+    hooked = []
+    monkeypatch.setattr(
+        cloud_sync, "_store_remote_snapshot",
+        lambda client, cloud_id, **kw: hooked.append(kw.get("before_store_images")),
+    )
+    adopted = []
+    monkeypatch.setattr(
+        cloud_sync, "_adopt_remote_image_edits_before_baseline",
+        lambda client, cloud_id, local_id, rows: adopted.append((cloud_id, local_id, rows)),
+    )
+    cloud_sync._store_post_push_snapshot(object(), "cloud-obs-1", 1)
+    hooked[0]([{"id": "img"}])
+    assert adopted == [("cloud-obs-1", 1, [{"id": "img"}])]
+    for fn in (cloud_sync.resolve_conflict_keep_local, cloud_sync.resolve_conflict_merge):
+        source = inspect.getsource(fn)
+        assert "_store_post_push_snapshot(client, cloud_id, int(local_id))" in source
+        assert "_store_remote_snapshot(client, cloud_id)\n" not in source
+
+
 def test_resolve_keep_cloud_clears_conflict_marker_without_local_overwrite(monkeypatch, tmp_path):
     """Scenario 9: 'Use Sporely Cloud' resolution applies remote locally + clears the marker."""
     db_path = _init_db(tmp_path)
