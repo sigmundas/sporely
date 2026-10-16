@@ -357,3 +357,144 @@ def test_legacy_pulled_copy_without_record_falls_back_to_observation_datetime(mo
     assert exif._captured_at_is_pull_injected(dict(img, captured_at="2026-10-13 09:15:00")) is False
     # Not a recovery copy: never treated as injected without a record.
     assert exif._captured_at_is_pull_injected(dict(img, source_role=None, file_purpose=None)) is False
+
+
+# ---------------------------------------------------------------------------
+# Cloud-only image edits are adopted locally before the post-push baseline
+# ---------------------------------------------------------------------------
+
+import json  # noqa: E402
+
+from database.schema import get_connection  # noqa: E402
+from utils.cloud_sync_impl import baseline as baseline_mod  # noqa: E402
+from utils.cloud_sync_impl import image_push  # noqa: E402
+
+
+def _insert_local_pulled_image(obs_id: int, image_id: int, cloud_image_id: str, notes, stain=None) -> None:
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM images WHERE id = ?", (image_id,))
+        conn.execute("DELETE FROM observations WHERE id = ?", (obs_id,))
+        conn.execute(
+            "INSERT INTO observations (id, cloud_id, sync_status, date) VALUES (?, ?, 'synced', '2026-10-13')",
+            (obs_id, f"cloud-obs-{obs_id}"),
+        )
+        conn.execute(
+            "INSERT INTO images (id, observation_id, cloud_id, filepath, image_type, sort_order, notes, stain, "
+            "synced_at, source_role, file_purpose) VALUES (?, ?, ?, ?, 'field', 0, ?, ?, ?, "
+            "'cloud_recovery_cache', 'cache')",
+            (image_id, obs_id, cloud_image_id, f"/tmp/{image_id}.webp", notes, stain, "2026-10-16T00:00:00Z"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _local_image(image_id: int) -> dict:
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT notes, stain FROM images WHERE id = ?", (image_id,)).fetchone()
+        status = conn.execute(
+            "SELECT o.sync_status FROM observations o JOIN images i ON i.observation_id = o.id WHERE i.id = ?",
+            (image_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    return {"notes": row[0], "stain": row[1], "obs_status": status[0]}
+
+
+def _cloud_image(cloud_image_id: str, obs_cloud_id: str, **fields) -> dict:
+    row = {
+        "id": cloud_image_id, "observation_id": obs_cloud_id, "sort_order": 0, "image_type": "field",
+        "notes": None, "stain": None, "captured_at": None,
+        "storage_path": f"{USER_ID}/{obs_cloud_id}/{cloud_image_id}.webp",
+    }
+    row.update(fields)
+    return row
+
+
+def _store_baseline(obs_cloud_id: str, images: list[dict]) -> None:
+    baseline_mod._store_cloud_observation_snapshot(
+        obs_cloud_id, json.dumps({"schema_version": 2, "observation": {"id": obs_cloud_id}, "images": images, "measurements": []}),
+    )
+
+
+class _SnapshotClient:
+    user_id = USER_ID
+
+    def __init__(self, obs_cloud_id, images):
+        self._obs = {"id": obs_cloud_id, "user_id": USER_ID}
+        self._images = images
+
+    def get_observation(self, _cid):
+        return dict(self._obs)
+
+    def pull_image_metadata(self, _cid, include_deleted_for_sync=False):
+        return [dict(r) for r in self._images]
+
+    def _observation_images_support_ai_crop(self):
+        return False
+
+
+def _run_post_push_baseline(obs_cloud_id, obs_local_id, remote_images):
+    client = _SnapshotClient(obs_cloud_id, remote_images)
+    baseline_mod._store_remote_snapshot(
+        client, obs_cloud_id, remote_measurements=[],
+        before_store_images=lambda rows: image_push._adopt_remote_image_edits_before_baseline(
+            client, obs_cloud_id, obs_local_id, rows,
+        ),
+    )
+    return json.loads(baseline_mod._load_cloud_observation_snapshot(obs_cloud_id))
+
+
+def test_web_image_edit_reaches_local_row_and_baseline_without_dirtying():
+    _insert_local_pulled_image(9101, 9201, "c-9201", notes="old note")
+    _store_baseline("cloud-obs-9101", [_cloud_image("c-9201", "cloud-obs-9101", notes="old note")])
+
+    snapshot = _run_post_push_baseline(
+        "cloud-obs-9101", 9101, [_cloud_image("c-9201", "cloud-obs-9101", notes="web note")],
+    )
+
+    assert _local_image(9201) == {"notes": "web note", "stain": None, "obs_status": "synced"}
+    assert snapshot["images"][0]["notes"] == "web note"
+
+
+def test_concurrent_local_edit_of_same_field_is_not_adopted_and_conflicts(monkeypatch):
+    _insert_local_pulled_image(9102, 9202, "c-9202", notes="desktop note")
+    base = _cloud_image("c-9202", "cloud-obs-9102", notes="old note")
+    _store_baseline("cloud-obs-9102", [base])
+
+    _run_post_push_baseline("cloud-obs-9102", 9102, [_cloud_image("c-9202", "cloud-obs-9102", notes="web note")])
+    assert _local_image(9202)["notes"] == "desktop note"
+
+    monkeypatch.setattr(cloud_sync, "_local_tombstoned_cloud_image_ids", lambda *_a, **_k: set())
+    report = cloud_sync._analyze_observation_push_conflicts(
+        local_obs={"id": 9102, "cloud_id": "cloud-obs-9102"},
+        local_images=[dict(cloud_sync.ImageDB.get_images_for_observation(9102)[0])],
+        local_measurements_by_cloud_id={},
+        remote_obs={"id": "cloud-obs-9102"},
+        remote_images=[_cloud_image("c-9202", "cloud-obs-9102", notes="web note")],
+        remote_measurements=[],
+        baseline_snapshot={"observation": {"id": "cloud-obs-9102"}, "images": [base], "measurements": []},
+    )
+    assert report.image_conflict_keys == ["cloud:c-9202"]
+
+
+def test_local_edit_of_other_field_is_pushed_and_web_edit_kept(monkeypatch):
+    _insert_local_pulled_image(9103, 9203, "c-9203", notes="old note", stain="Melzer")
+    _store_baseline("cloud-obs-9103", [_cloud_image("c-9203", "cloud-obs-9103", notes="old note")])
+    remote = _cloud_image("c-9203", "cloud-obs-9103", notes="web note")
+    client, patches = _client(monkeypatch)
+    monkeypatch.setattr(cloud_sync, "_stored_local_media_signature_image_stats", lambda _obs_id: {})
+    monkeypatch.setattr(cloud_sync, "_local_image_source_bytes_unchanged", lambda *_args: True)
+
+    cloud_sync._reconcile_metadata_only_linked_images(client, {"id": 9103}, "cloud-obs-9103", [remote])
+
+    bodies = [b for p, b in patches if p.startswith("observation_images?id=eq.c-9203")]
+    assert len(bodies) == 1
+    assert bodies[0]["stain"] == "Melzer"
+    assert "notes" not in bodies[0]
+
+    # The post-push baseline then brings the web note into the local row.
+    _run_post_push_baseline("cloud-obs-9103", 9103, [dict(remote, stain="Melzer")])
+    assert _local_image(9203) == {"notes": "web note", "stain": "Melzer", "obs_status": "synced"}

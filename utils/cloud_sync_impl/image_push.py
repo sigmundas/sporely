@@ -54,6 +54,10 @@ from utils.cloud_sync_impl.image_files import (
     _build_worker_storage_path,
     _file_content_signature,
 )
+from utils.cloud_sync_impl.baseline import (
+    _load_cloud_observation_snapshot,
+    _parse_cloud_observation_snapshot,
+)
 from utils.cloud_sync_impl.exif import _captured_at_is_pull_injected
 from utils.cloud_sync_impl.image_payloads import (
     _preserve_unedited_remote_image_values,
@@ -406,6 +410,81 @@ def _local_image_source_bytes_unchanged(
     return _cmp_key(stored_sig) == _cmp_key(current_sig)
 
 
+def _baseline_images_by_cloud_id(obs_cloud_id: str) -> dict[str, dict]:
+    snapshot = _parse_cloud_observation_snapshot(_load_cloud_observation_snapshot(str(obs_cloud_id or '')))
+    return {
+        str(row.get('id') or '').strip(): dict(row)
+        for row in (snapshot.get('images') or [])
+        if str((row or {}).get('id') or '').strip()
+    }
+
+
+def _remote_only_image_edits(local_payload: dict, baseline_row: dict | None, remote_payload: dict, **include) -> set[str]:
+    """Fields only the cloud changed since the baseline (the preflight's
+    three-way rule): local still holds the baseline value, the cloud does not.
+    A metadata push must leave them at the cloud value."""
+    if not baseline_row:
+        return set()
+    baseline_payload = _remote_image_compare_payload(baseline_row, **include)
+    return {
+        key for key, remote_value in remote_payload.items()
+        if key in local_payload and key in baseline_payload
+        and local_payload[key] == baseline_payload[key]
+        and remote_value != baseline_payload[key]
+    }
+
+
+# Descriptive image fields whose cloud-only edits the push adopts locally
+# (same name in the compare payload and the local images table).
+_ADOPTABLE_IMAGE_FIELDS = (
+    'notes', 'objective_name', 'measure_color', 'mount_medium', 'stain',
+    'sample_type', 'sample_source', 'contrast', 'crop_mode', 'micro_category',
+)
+
+
+def _adopt_remote_image_edits_before_baseline(
+    client, obs_cloud_id: str, obs_local_id: int, remote_rows: list[dict],
+) -> None:
+    """Copy cloud-only image edits into the local rows before the post-push
+    baseline is stored, without marking the observation dirty.
+
+    Without this the stored baseline moves to the cloud value while the local
+    row keeps the old one, and the next push sends the stale local value over
+    the cloud edit. ``remote_rows`` are the post-push rows the baseline
+    records (``_store_remote_snapshot(before_store_images=...)``).
+    """
+    baseline_by_id = _baseline_images_by_cloud_id(obs_cloud_id)
+    remote_by_id = {str(r.get('id') or '').strip(): r for r in remote_rows}
+    if not (set(baseline_by_id) & set(remote_by_id)):
+        return
+    include = {'include_ai_crop': client._observation_images_support_ai_crop(), 'include_upload_meta': False}
+    for image_row in ImageDB.get_images_for_observation(obs_local_id):
+        img = dict(image_row or {})
+        cloud_id = str(img.get('cloud_id') or '').strip()
+        if cloud_id not in remote_by_id or cloud_id not in baseline_by_id:
+            continue
+        local_payload = _prepared_item_remote_payload(img, str(img.get('filepath') or ''), '', **include)
+        _preserve_unedited_remote_image_values(
+            local_payload, img, baseline_by_id[cloud_id],
+            captured_at_pull_injected=_captured_at_is_pull_injected(img),
+        )
+        remote_payload = _remote_image_compare_payload(remote_by_id[cloud_id], **include)
+        edits = _remote_only_image_edits(local_payload, baseline_by_id[cloud_id], remote_payload, **include)
+        fields = [f for f in _ADOPTABLE_IMAGE_FIELDS if f in edits]
+        if not fields:
+            continue
+        conn = get_connection()
+        try:
+            conn.execute(
+                f"UPDATE images SET {', '.join(f'{f} = ?' for f in fields)} WHERE id = ?",
+                [remote_payload.get(f) for f in fields] + [_safe_int(img.get('id'))],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        print(f'[cloud_sync] Observation {obs_local_id}: adopted cloud image edits {fields} for cloud image {cloud_id}')
+
+
 def _reconcile_metadata_only_linked_images(
     client: SporelyCloudClient,
     obs: dict,
@@ -450,6 +529,7 @@ def _reconcile_metadata_only_linked_images(
     }
 
     stored_stats = _stored_local_media_signature_image_stats(obs_local_id)
+    baseline_by_id = _baseline_images_by_cloud_id(obs_cloud_id)
 
     for image_row in ImageDB.get_images_for_observation(obs_local_id):
         img = dict(image_row or {})
@@ -513,10 +593,20 @@ def _reconcile_metadata_only_linked_images(
         )
         for key in keys_before - set(expected_payload):
             remote_payload.pop(key, None)
+        remote_only = _remote_only_image_edits(
+            expected_payload, baseline_by_id.get(local_cloud_id), remote_payload,
+            include_ai_crop=include_ai_crop, include_upload_meta=include_upload_meta,
+        )
+        for key in remote_only:
+            expected_payload.pop(key, None)
+            remote_payload.pop(key, None)
 
         if expected_payload != remote_payload:
             try:
-                client.push_image_metadata(img, obs_cloud_id, remote_storage_path, remote_row=remote_row)
+                extra = {'keep_remote_fields': remote_only} if remote_only else {}
+                client.push_image_metadata(
+                    img, obs_cloud_id, remote_storage_path, remote_row=remote_row, **extra,
+                )
             except Exception as exc:
                 if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
                     raise

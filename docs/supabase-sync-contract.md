@@ -777,6 +777,7 @@ Canonical desktop image states are `NONE`, `UPLOADED`, `DELETE_PENDING`, and `DE
   local and cloud already agree on it, which the next three-way comparison
   reads as shared. A blocked (conflicting) push adopts nothing. The virtual
   taxon identity field keeps its own adoption rule (see Taxonomy identity).
+- The same holds for linked images: a metadata push leaves fields only the cloud changed since the baseline at the cloud value, and before the post-push baseline is stored, `_adopt_remote_image_edits_before_baseline` copies those cloud-only descriptive edits (notes, objective, mount, stain, sample, contrast, crop mode, measure colour, micro category) into the local row without marking the observation dirty. A field both sides changed stays a conflict.
 - Refresh the baseline after success.
 
 ### Both sides changed

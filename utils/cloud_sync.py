@@ -743,6 +743,10 @@ from utils.cloud_sync_impl.observation_delete import (  # noqa: F401  (facade re
     retry_pending_observation_deletes,
 )
 from utils.cloud_sync_impl.image_push import (  # noqa: F401  (facade re-export)
+    _ADOPTABLE_IMAGE_FIELDS,
+    _adopt_remote_image_edits_before_baseline,
+    _baseline_images_by_cloud_id,
+    _remote_only_image_edits,
     _IMAGE_CREATE_COMPARE_EXCLUDED_KEYS,
     _image_create_content_matches,
     _upload_outcome_uncertain,
@@ -7729,7 +7733,10 @@ class SporelyCloudClient(
             f'{self.user_id}/{str(obs_cloud_id or "").strip()}/originals/{normalized_image_id}/{safe_name}'
         )
 
-    def push_image_metadata(self, img: dict, obs_cloud_id: str, storage_path: str, *, remote_row: dict | None = None) -> str:
+    def push_image_metadata(
+        self, img: dict, obs_cloud_id: str, storage_path: str, *,
+        remote_row: dict | None = None, keep_remote_fields: set[str] | frozenset = frozenset(),
+    ) -> str:
         """Upsert image metadata row. Returns cloud UUID."""
         payload = {col: img.get(col) for col in _IMG_PUSH_COLS}
         captured_at = _normalize_image_captured_at_for_cloud(
@@ -7820,6 +7827,9 @@ class SporelyCloudClient(
                 payload, img, remote_row,
                 captured_at_pull_injected=_captured_at_is_pull_injected(img),
             )
+            # Fields only the cloud changed since the baseline stay at the cloud.
+            for key in keep_remote_fields:
+                payload.pop(key, None)
         restore_source_id = _explicit_image_restore_source(img['id'])
         if existing_id:
             self._patch(f'observation_images?id=eq.{existing_id}&user_id=eq.{self.user_id}', payload)
@@ -10557,7 +10567,14 @@ def _push_all_once(
                 # change. Its child rows are re-read: this run may have
                 # created or linked them under it.
                 if adopted_base is None:
-                    _store_remote_snapshot(client, cloud_id)
+                    # Local rows first, so a failure cannot leave the
+                    # baseline at a cloud edit the local row lacks.
+                    _store_remote_snapshot(
+                        client, cloud_id,
+                        before_store_images=lambda rows, _obs_id=int(obs['id']): (
+                            _adopt_remote_image_edits_before_baseline(client, cloud_id, _obs_id, rows)
+                        ),
+                    )
                 else:
                     _store_remote_snapshot(client, cloud_id, remote=adopted_base)
 

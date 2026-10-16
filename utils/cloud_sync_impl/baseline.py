@@ -363,6 +363,7 @@ def _store_remote_snapshot(
     include_images: bool = True,
     include_measurements: bool = True,
     accepted_asymmetry: dict | None = None,
+    before_store_images=None,
 ) -> None:
     cloud_value = str(cloud_id or '').strip()
     if not cloud_value:
@@ -391,6 +392,10 @@ def _store_remote_snapshot(
         _with_judged_child_rows(client, 'observation_images', images, {cloud_value})
         if include_images else images
     )
+    if before_store_images is not None and include_images:
+        # The caller updates local rows from the rows this baseline records,
+        # before the baseline is written.
+        before_store_images(images)
     if include_measurements:
         if remote_measurements is not None:
             measurements = [dict(row or {}) for row in remote_measurements]
