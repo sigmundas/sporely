@@ -411,7 +411,7 @@ def _local_image_source_bytes_unchanged(
     return _cmp_key(stored_sig) == _cmp_key(current_sig)
 
 
-_NOOP_CHECK_UNREAD_KEYS = frozenset({'user_id', 'storage_exif_safe'})
+_NOOP_CHECK_UNREAD_KEYS = frozenset({'user_id'})
 
 
 def _image_patch_matches_remote(payload: dict, remote_row: dict | None) -> bool:
@@ -421,8 +421,8 @@ def _image_patch_matches_remote(payload: dict, remote_row: dict | None) -> bool:
         return False
     for key, value in payload.items():
         if key not in remote_row:
-            # The PATCH URL filters on user_id, and the pull select does not
-            # read the storage_exif_safe flag: neither alone justifies a PATCH.
+            # The PATCH URL filters on user_id. Any other unread column
+            # (e.g. storage_exif_safe) is read by the caller first.
             if key in _NOOP_CHECK_UNREAD_KEYS:
                 continue
             return False

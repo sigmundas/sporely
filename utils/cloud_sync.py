@@ -684,6 +684,7 @@ from utils.cloud_sync_impl.original_recovery import (  # noqa: F401  (facade re-
     recover_full_original_for_image,
 )
 from utils.cloud_sync_impl.image_pull import (  # noqa: F401  (facade re-export)
+    _keep_pulled_capture_time_precision,
     _adopt_remote_ingest_method,
     _apply_remote_image_metadata_only_to_local,
     _apply_remote_images_to_local,
@@ -7863,6 +7864,18 @@ class SporelyCloudClient(
                 payload.pop(key, None)
         restore_source_id = _explicit_image_restore_source(img['id'])
         if existing_id:
+            unread = [k for k in payload if k not in remote_row and k not in _NOOP_CHECK_UNREAD_KEYS]
+            if unread == ['storage_exif_safe'] and _image_patch_matches_remote(
+                {k: v for k, v in payload.items() if k not in unread}, remote_row,
+            ):
+                # Otherwise identical: read the unread columns (the pull select
+                # omits storage_exif_safe) before deciding the PATCH is a no-op.
+                rows = self._get(
+                    f'observation_images?id=eq.{existing_id}&user_id=eq.{self.user_id}'
+                    f'&select={",".join(unread)}&limit=1'
+                )
+                if rows:
+                    remote_row = {**remote_row, **dict(rows[0])}
             if not _image_patch_matches_remote(payload, remote_row):
                 self._patch(f'observation_images?id=eq.{existing_id}&user_id=eq.{self.user_id}', payload)
             cloud_id = existing_id

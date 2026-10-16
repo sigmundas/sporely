@@ -89,6 +89,15 @@ from utils.cloud_sync_impl.tombstones import (
 )
 
 
+def _keep_pulled_capture_time_precision(local_image_id, remote_captured_at) -> None:
+    """``ImageDB.add_image`` stores whole seconds; a pulled cloud capture time
+    with fractional seconds is written back exactly, so the local row equals
+    the baseline and a later push does not send the truncated value."""
+    local_value = _cloud_image_captured_at_to_local(remote_captured_at)
+    if local_value and '.' in local_value and local_image_id:
+        _update_image_columns_without_touching_observation(int(local_image_id), {'captured_at': local_value})
+
+
 def _update_image_columns_without_touching_observation(
     image_id: int,
     updates: dict[str, object | None],
@@ -883,6 +892,7 @@ def _apply_remote_images_to_local(
                 sync_key=remote_sync_key(remote_image),
             )
             _adopt_remote_ingest_method(local_image_id, remote_image)
+            _keep_pulled_capture_time_precision(local_image_id, remote_image.get('captured_at'))
             _record_pull_injected_captured_at(local_image_id, remote_image.get('captured_at'))
             download_path = _promote_temp_imported_image_if_needed(
                 int(local_image_id),
@@ -1141,6 +1151,7 @@ def _import_remote_images(
                     sync_key=remote_sync_key(image_row),
                 )
                 _adopt_remote_ingest_method(local_image_id, image_row)
+                _keep_pulled_capture_time_precision(local_image_id, image_row.get('captured_at'))
                 _record_pull_injected_captured_at(local_image_id, image_row.get('captured_at'))
                 download_path = _promote_temp_imported_image_if_needed(
                     int(local_image_id),

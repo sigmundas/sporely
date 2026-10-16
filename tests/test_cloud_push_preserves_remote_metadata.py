@@ -775,3 +775,57 @@ def test_choke_point_skips_patch_when_nothing_changes(monkeypatch):
     echoed = dict(remote, **captured[0])
     client.push_image_metadata(local, "cloud-obs-9506", "", remote_row=echoed)
     assert len(captured) == 1
+
+
+def test_storage_exif_safe_false_in_cloud_is_not_skipped_as_noop(monkeypatch):
+    _insert_local_pulled_image(9508, 9608, "c-9608", notes="same")
+    local = _db_image(9608)
+    client, _ = _client(monkeypatch)
+    captured = []
+    monkeypatch.setattr(client, "_patch", lambda path, payload: captured.append(payload) or [{}])
+    remote = dict(_cloud_image("c-9608", "cloud-obs-9508", notes="x"))
+    client.push_image_metadata(local, "cloud-obs-9508", "", remote_row=remote)
+    full = dict(remote, **captured[0])
+    full["storage_exif_safe"] = False
+    # The caller's row (pull select) lacks the flag; the cloud holds FALSE.
+    partial = {k: v for k, v in full.items() if k not in ("storage_exif_safe", "user_id")}
+    monkeypatch.setattr(client, "_get", lambda path: [dict(full)])
+    client.push_image_metadata(local, "cloud-obs-9508", "", remote_row=partial)
+    assert len(captured) == 2 and captured[1]["storage_exif_safe"] is True
+    # Cloud already TRUE: the identical PATCH is skipped.
+    full["storage_exif_safe"] = True
+    client.push_image_metadata(local, "cloud-obs-9508", "", remote_row=partial)
+    assert len(captured) == 2
+
+
+def test_pulled_fractional_capture_time_stays_exact_through_two_pushes(monkeypatch):
+    from utils.cloud_sync_impl import image_pull
+
+    _insert_local_pulled_image(9509, 9609, "c-9609", notes="n")
+    cloud_value = "2026-10-01T08:00:00.123456+00:00"
+    # What ImageDB.add_image stores (whole seconds), then the pull's fix-up.
+    _set_local(9609, captured_at=image_pull._cloud_image_captured_at_to_local(cloud_value)[:19])
+    image_pull._keep_pulled_capture_time_precision(9609, cloud_value)
+    _record_injected(9609, "cloud")
+    remote = _cloud_image("c-9609", "cloud-obs-9509", notes="n", captured_at=cloud_value)
+    _store_baseline("cloud-obs-9509", [remote])
+    client, patches = _client(monkeypatch, {"observation_images?id=eq.c-9609": [remote]})
+
+    for _ in range(2):
+        client.push_image_metadata(_db_image(9609), "cloud-obs-9509", "")
+    for body in _image_bodies(patches, "c-9609"):
+        assert _normalize_image_captured_at_for_cloud(body.get("captured_at", cloud_value), local=False) \
+            == cloud_value
+
+    monkeypatch.setattr(cloud_sync, "_local_tombstoned_cloud_image_ids", lambda *_a, **_k: set())
+    report = cloud_sync._analyze_observation_push_conflicts(
+        local_obs={"id": 9509, "cloud_id": "cloud-obs-9509"}, local_images=[_db_image(9609)],
+        local_measurements_by_cloud_id={}, remote_obs={"id": "cloud-obs-9509"},
+        remote_images=[dict(remote)], remote_measurements=[],
+        baseline_snapshot={"observation": {"id": "cloud-obs-9509"}, "images": [remote], "measurements": []},
+    )
+    assert report.image_conflict_keys == []
+    assert report.image_conflict_keys == []
+    # The local value equals the baseline, so a web edit elsewhere is not a both-sides change.
+    local_cmp = image_push._prepared_item_remote_payload(_db_image(9609), "/tmp/9609.webp", "")
+    assert local_cmp["captured_at"] == cloud_value
