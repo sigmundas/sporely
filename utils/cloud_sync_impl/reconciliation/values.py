@@ -311,3 +311,23 @@ _SNAPSHOT_MEAS_FIELDS = [
     'gallery_rotation', 'p1_x', 'p1_y', 'p2_x', 'p2_y', 'p3_x', 'p3_y',
     'p4_x', 'p4_y', 'measured_at',
 ]
+
+
+def _keep_remote_null_for_blank_text(payload: dict, remote: dict | None) -> None:
+    """Never turn a cloud NULL into ``''`` on a PATCH of an existing row.
+
+    Desktop forms persist an empty text field as ``''``. When the cloud row
+    holds NULL for that column, the blank local value is not an edit: send
+    NULL (the cloud value) instead, in place. Only columns the remote row
+    carries are touched.
+    """
+    if not remote:
+        return
+    for key, value in list(payload.items()):
+        if (
+            isinstance(value, str)
+            and not value.strip()
+            and key in remote
+            and remote.get(key) is None
+        ):
+            payload[key] = None

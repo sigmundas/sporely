@@ -54,7 +54,10 @@ from utils.cloud_sync_impl.image_files import (
     _build_worker_storage_path,
     _file_content_signature,
 )
-from utils.cloud_sync_impl.image_payloads import _remote_image_payload
+from utils.cloud_sync_impl.image_payloads import (
+    _preserve_unedited_remote_image_values,
+    _remote_image_payload,
+)
 from utils.cloud_sync_impl.image_policy import (
     _ensure_cloud_image_storage_intent_initialized,
     _is_generated_cloud_image,
@@ -498,6 +501,13 @@ def _reconcile_metadata_only_linked_images(
             remote_payload.pop('calibration_uuid', None)
         for key in upload_derived_keys:
             expected_payload.pop(key, None)
+            remote_payload.pop(key, None)
+        # Compare what push_image_metadata would actually send: values it
+        # keeps at the cloud's (blank text over NULL, a recovery copy's
+        # derived file facts) are not drift.
+        keys_before = set(expected_payload)
+        _preserve_unedited_remote_image_values(expected_payload, img, remote_row)
+        for key in keys_before - set(expected_payload):
             remote_payload.pop(key, None)
 
         if expected_payload != remote_payload:

@@ -793,7 +793,10 @@ When a local image still maps to an active cloud image:
 
 - add it to the protected cloud list (`kept_cloud_ids`) whether or not bytes are prepared;
 - keep the cloud row and file when omitted from `prepared_items` unless an explicit checkbox/context-menu tombstone is pending;
-- patch metadata when necessary;
+- patch metadata when necessary, without rewriting cloud values the user did not edit:
+  - upload metadata (`upload_mode`, `source_*`, `stored_*`, `stored_bytes`) is sent only by the client that produced the bytes; a metadata patch never NULLs it;
+  - a blank local text value never turns a cloud NULL into `''` (observation and image PATCHes alike);
+  - for a recovery copy (`cloud_recovery_cache` / `cache`), the local file name and the capture time the pull injected from the observation datetime never fill an `original_filename` or `captured_at` the cloud row does not hold;
 - replace bytes only when the trusted source changed or a missing cloud file is deliberately restored;
 - never call it stale merely because it was filtered, skipped, or reordered.
 

@@ -293,6 +293,7 @@ from utils.cloud_sync_impl.logs import (  # noqa: F401  (facade re-export)
     logger,
 )
 from utils.cloud_sync_impl.reconciliation.values import (  # noqa: F401  (facade re-export)
+    _keep_remote_null_for_blank_text,
     _normalize_sync_key_value,
     _OBSERVATION_FLOAT_ABS_TOL,
     _OBSERVATION_FLOAT_FIELDS,
@@ -402,6 +403,7 @@ from utils.cloud_sync_impl.sample_source import (  # noqa: F401  (facade re-expo
 )
 from utils.cloud_sync_impl.image_payloads import (  # noqa: F401  (facade re-export)
     _deleted_remote_image_identity_keys,
+    _preserve_unedited_remote_image_values,
     _remote_image_payload,
 )
 from utils.cloud_sync_impl.reconciliation.calibrations import (  # noqa: F401  (facade re-export)
@@ -7541,6 +7543,8 @@ class SporelyCloudClient(
                 if remote_obs is not None and str(remote_obs.get('id') or '').strip() == str(existing_id)
                 else None
             )
+            # A blank local text field is not an edit of a cloud NULL.
+            _keep_remote_null_for_blank_text(payload, live_remote)
             if _push_attributed_location(self, existing_id, obs, live_remote):
                 # Coordinates and their pair were written atomically; the
                 # PATCH must not resend them.
@@ -7796,12 +7800,19 @@ class SporelyCloudClient(
         if not self._observation_images_support_ai_crop_custom():
             payload.pop('ai_crop_is_custom', None)
         if self._observation_images_support_upload_metadata():
+            # Upload metadata describes the uploaded bytes. Only the upload
+            # path knows it (the local images table has no such columns), so
+            # send a value only when the caller supplied one: a metadata
+            # PATCH must never NULL out what the uploader recorded.
             for key in _IMG_UPLOAD_META_COLS:
-                payload[key] = img.get(key)
+                if img.get(key) is not None:
+                    payload[key] = img.get(key)
         if self._observation_images_support_storage_exif_safe():
             payload['storage_exif_safe'] = True
 
         existing_id = self._resolve_existing_image_for_push(img, obs_cloud_id, remote_row=remote_row)
+        if existing_id and remote_row is not None and str(remote_row.get('id') or '').strip() == str(existing_id):
+            _preserve_unedited_remote_image_values(payload, img, remote_row)
         restore_source_id = _explicit_image_restore_source(img['id'])
         if existing_id:
             self._patch(f'observation_images?id=eq.{existing_id}&user_id=eq.{self.user_id}', payload)

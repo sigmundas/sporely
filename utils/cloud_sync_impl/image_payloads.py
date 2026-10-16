@@ -14,6 +14,7 @@ from utils.cloud_sync_impl.reconciliation.images import _image_identity_keys
 from utils.cloud_sync_impl.reconciliation.values import (
     _normalize_image_captured_at_for_cloud,
     _normalize_snapshot_value,
+    _keep_remote_null_for_blank_text,
     _normalize_sync_key_value,
 )
 from utils.cloud_sync_impl.sample_source import _cloud_to_desktop_sample_source
@@ -85,3 +86,26 @@ def _remote_image_payload(
             'stored_bytes': _normalize_snapshot_value(image.get('stored_bytes')),
         })
     return payload
+
+
+def _preserve_unedited_remote_image_values(payload: dict, img: dict | None, remote_row: dict | None) -> None:
+    """Shape an existing-row image PATCH (or its drift compare) in place.
+
+    * A blank local text value never replaces a cloud NULL.
+    * A remote-owned recovery copy (``source_role=cloud_recovery_cache`` or
+      ``file_purpose=cache``) holds bytes the cloud supplied. Facts the
+      desktop derived from that local file -- its name, and the capture time
+      the pull injected from the observation datetime -- are not edits and
+      never fill a value the cloud row does not hold.
+    """
+    if not remote_row:
+        return
+    _keep_remote_null_for_blank_text(payload, remote_row)
+    row = dict(img or {})
+    source_role = str(row.get('source_role') or '').strip().lower()
+    file_purpose = str(row.get('file_purpose') or '').strip().lower()
+    if source_role != 'cloud_recovery_cache' and file_purpose != 'cache':
+        return
+    for key in ('original_filename', 'captured_at'):
+        if key in payload and remote_row.get(key) is None:
+            payload.pop(key, None)
