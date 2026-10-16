@@ -331,3 +331,29 @@ def test_image_text_with_cloud_value_can_be_cleared(monkeypatch):
     body = [b for p, b in patches if p.startswith("observation_images?")][0]
     assert body["notes"] == ""
     assert body["objective_name"] == ""
+
+
+def test_legacy_pulled_copy_without_record_falls_back_to_observation_datetime(monkeypatch):
+    """Copies pulled before the record existed: the injected value is the
+    observation datetime's wall-clock text, either as pulled (UTC offset
+    dropped) or after the editor re-saved it as naive local time."""
+    from datetime import datetime, timezone
+
+    from utils.cloud_sync_impl import exif
+
+    monkeypatch.setattr(exif.SettingsDB, "get_setting", staticmethod(lambda key, default=None: default))
+    img = _pulled_local_image(id=9001, captured_at="2026-10-13 14:30:00")
+
+    monkeypatch.setattr(exif, "_load_obs_exif_fallback", lambda _oid, **_k: (None,) * 4 + ("2026-10-13T14:30:00+00:00",))
+    assert exif._captured_at_is_pull_injected(img) is True
+
+    naive_local = (
+        datetime(2026, 10, 13, 14, 30, tzinfo=timezone.utc).astimezone().replace(tzinfo=None)
+        .strftime("%Y-%m-%d %H:%M:%S")
+    )
+    monkeypatch.setattr(exif, "_load_obs_exif_fallback", lambda _oid, **_k: (None,) * 4 + (naive_local,))
+    assert exif._captured_at_is_pull_injected(img) is True
+
+    assert exif._captured_at_is_pull_injected(dict(img, captured_at="2026-10-13 09:15:00")) is False
+    # Not a recovery copy: never treated as injected without a record.
+    assert exif._captured_at_is_pull_injected(dict(img, source_role=None, file_purpose=None)) is False

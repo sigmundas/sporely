@@ -8,7 +8,7 @@ in Stage S6 of the cloud-sync extraction.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from database.models import ObservationDB, SettingsDB
@@ -419,4 +419,18 @@ def _captured_at_is_pull_injected(img: dict | None) -> bool:
     except (TypeError, ValueError):
         return False
     injected = _load_obs_exif_fallback(observation_id)[4]
-    return bool(injected) and _local_wall_clock_text(injected) == local_text
+    if not injected:
+        return False
+    # The pull wrote the observation datetime's wall-clock text, dropping any
+    # offset (a cloud value arrives as UTC). The observation editor may have
+    # re-saved that datetime since as naive local time, so also compare its
+    # UTC wall-clock text.
+    candidates = {_local_wall_clock_text(injected)}
+    try:
+        parsed = datetime.fromisoformat(str(injected).strip().replace('Z', '+00:00'))
+        if parsed.tzinfo is None:
+            parsed = parsed.astimezone()
+        candidates.add(parsed.astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'))
+    except (TypeError, ValueError, OverflowError, OSError):
+        pass
+    return local_text in candidates
