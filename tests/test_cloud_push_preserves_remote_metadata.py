@@ -758,6 +758,8 @@ def test_value_identical_patch_is_not_sent():
     assert not _image_patch_matches_remote(dict(body, notes="other"), remote)
     assert not _image_patch_matches_remote(dict(body, stain="Melzer"), remote)  # column not in row
     assert not _image_patch_matches_remote(dict(body, notes=None), remote)
+    # Columns the pull select never reads (meta-g6-b-edit-sync-1, audit 4504).
+    assert _image_patch_matches_remote(dict(body, user_id="u", storage_exif_safe=True), remote)
 
 
 def test_choke_point_skips_patch_when_nothing_changes(monkeypatch):

@@ -411,6 +411,9 @@ def _local_image_source_bytes_unchanged(
     return _cmp_key(stored_sig) == _cmp_key(current_sig)
 
 
+_NOOP_CHECK_UNREAD_KEYS = frozenset({'user_id', 'storage_exif_safe'})
+
+
 def _image_patch_matches_remote(payload: dict, remote_row: dict | None) -> bool:
     """True when an existing-row PATCH body would change nothing in the cloud
     row: the choke point then sends no PATCH (no updated_at / cursor bump)."""
@@ -418,6 +421,10 @@ def _image_patch_matches_remote(payload: dict, remote_row: dict | None) -> bool:
         return False
     for key, value in payload.items():
         if key not in remote_row:
+            # The PATCH URL filters on user_id, and the pull select does not
+            # read the storage_exif_safe flag: neither alone justifies a PATCH.
+            if key in _NOOP_CHECK_UNREAD_KEYS:
+                continue
             return False
         remote = remote_row.get(key)
         if key == 'captured_at':

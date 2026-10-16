@@ -750,6 +750,7 @@ from utils.cloud_sync_impl.image_push import (  # noqa: F401  (facade re-export)
     _remote_only_image_edits,
     _image_fields_to_keep_at_cloud,
     _image_patch_matches_remote,
+    _NOOP_CHECK_UNREAD_KEYS,
     _IMAGE_CREATE_COMPARE_EXCLUDED_KEYS,
     _image_create_content_matches,
     _upload_outcome_uncertain,
