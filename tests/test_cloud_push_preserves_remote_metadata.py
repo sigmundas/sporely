@@ -724,3 +724,52 @@ def test_adopted_field_survives_the_second_push(monkeypatch, field):
     )[field]
     if field in second:
         assert second[field] != stale or stale == remote_cmp[field]
+
+
+def test_fractional_web_capture_time_survives_two_pushes_without_a_noop_patch(monkeypatch):
+    _insert_local_pulled_image(9505, 9605, "c-9605", notes=None)
+    _set_local(9605, captured_at="2026-10-13 14:30:00")
+    _record_injected(9605, "2026-10-13 14:30:00")
+    base = _cloud_image("c-9605", "cloud-obs-9505")
+    _store_baseline("cloud-obs-9505", [base])
+    remote = dict(base, captured_at="2026-10-01T08:00:00.123456+00:00")
+    client, patches = _client(monkeypatch, {"observation_images?id=eq.c-9605": [remote]})
+
+    client.push_image_metadata(_db_image(9605), "cloud-obs-9505", "")
+    _run_post_push_baseline("cloud-obs-9505", 9505, [remote])
+    local = _db_image(9605)
+    assert _normalize_image_captured_at_for_cloud(local["captured_at"], local=True) \
+        == "2026-10-01T08:00:00.123456+00:00"
+    client.push_image_metadata(local, "cloud-obs-9505", "")
+
+    bodies = _image_bodies(patches, "c-9605")
+    assert all(b.get("captured_at") in (None, remote["captured_at"]) for b in bodies)
+    assert "captured_at" not in bodies[0]
+
+
+def test_value_identical_patch_is_not_sent():
+    from utils.cloud_sync_impl.image_push import _image_patch_matches_remote
+
+    remote = {"id": 360, "notes": "n", "sort_order": 0, "captured_at": "2026-10-01 08:00:00+00",
+              "storage_exif_safe": True, "observation_id": 369}
+    body = {"notes": "n", "sort_order": 0, "captured_at": "2026-10-01T08:00:00+00:00",
+            "storage_exif_safe": True, "observation_id": "369"}
+    assert _image_patch_matches_remote(body, remote)
+    assert not _image_patch_matches_remote(dict(body, notes="other"), remote)
+    assert not _image_patch_matches_remote(dict(body, stain="Melzer"), remote)  # column not in row
+    assert not _image_patch_matches_remote(dict(body, notes=None), remote)
+
+
+def test_choke_point_skips_patch_when_nothing_changes(monkeypatch):
+    _insert_local_pulled_image(9506, 9606, "c-9606", notes="same")
+    local = _db_image(9606)
+    client, patches = _client(monkeypatch)
+    captured = []
+    monkeypatch.setattr(client, "_patch", lambda path, payload: captured.append(payload) or [{}])
+    # Echo the first body back as the cloud row: an identical second push sends nothing.
+    remote = dict(_cloud_image("c-9606", "cloud-obs-9506", notes="different"))
+    client.push_image_metadata(local, "cloud-obs-9506", "", remote_row=remote)
+    assert len(captured) == 1
+    echoed = dict(remote, **captured[0])
+    client.push_image_metadata(local, "cloud-obs-9506", "", remote_row=echoed)
+    assert len(captured) == 1

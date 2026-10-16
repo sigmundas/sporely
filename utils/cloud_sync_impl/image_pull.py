@@ -73,6 +73,7 @@ from utils.cloud_sync_impl.progress import (
 )
 from utils.cloud_sync_impl.reconciliation.values import (
     _normalize_image_captured_at_for_cloud,
+    _cloud_image_captured_at_to_local,
 )
 from utils.cloud_sync_impl.remote_reads import _group_remote_measurements_by_observation
 from utils.cloud_sync_impl.sample_source import _cloud_to_desktop_sample_source
@@ -86,15 +87,6 @@ from utils.cloud_sync_impl.tombstones import (
     _record_remote_image_tombstones,
     _tombstoned_cloud_image_warning,
 )
-
-
-def _cloud_image_captured_at_to_local(value) -> str | None:
-    """Convert a cloud capture instant to SQLite's local wall-clock format."""
-    canonical = _normalize_image_captured_at_for_cloud(value, local=False)
-    if canonical is None:
-        return None
-    parsed = datetime.fromisoformat(canonical)
-    return parsed.astimezone().replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
 
 
 def _update_image_columns_without_touching_observation(

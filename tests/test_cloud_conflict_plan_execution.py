@@ -3345,3 +3345,33 @@ def test_operation_log_records_every_dispatch(monkeypatch):
     # Never any bogus operations for unselected kinds.
     assert 'import_measurement' not in ops
     assert 'push_field' not in ops
+
+
+def test_local_image_choice_finalizes_through_the_adoption_hook(monkeypatch):
+    """Resolving an image row as 'local' while the web alone changed another
+    field (captured_at): the plan's baseline is stored through the same hook
+    as push_all, so the cloud-only field reaches the local row first."""
+    local_obs = {"id": 1, "cloud_id": "obs-cloud"}
+    remote_obs = {"id": "obs-cloud"}
+    local_images = [{"id": 5, "cloud_id": "c5", "image_type": "field", "sort_order": 0,
+                     "filepath": "/tmp/a.jpg", "notes": "desktop note"}]
+    remote_images = [{"id": "c5", "image_type": "field", "sort_order": 0, "storage_path": "cloud/a.webp",
+                      "notes": "web note", "captured_at": "2026-10-01T08:00:00.123456+00:00"}]
+    baseline = _baseline_from_state(local_obs, remote_obs, local_images, remote_images, [], [])
+    snapshots = []
+    tracker = _patch_common(monkeypatch, local_obs=local_obs, remote_obs=remote_obs,
+                            local_images=local_images, remote_images=remote_images,
+                            store_remote_snapshot=snapshots)
+    adopted = []
+    monkeypatch.setattr(cloud_sync, "_adopt_remote_image_edits_before_baseline",
+                        lambda client, cloud_id, local_id, rows: adopted.append((cloud_id, local_id, rows)))
+
+    resolve_conflict_plan(_RecordingClient(remote_obs=remote_obs), 1, plan={
+        'baseline': baseline,
+        'items': [{'kind': 'image_metadata', 'local_id': 5, 'cloud_id': 'c5', 'choice': 'local'}],
+    }, prepare_images_cb=lambda obs, progress_cb: ([], None, []))
+
+    assert tracker['push_images']
+    (args, kwargs), = snapshots
+    kwargs["before_store_images"](remote_images)
+    assert adopted == [("obs-cloud", 1, remote_images)]

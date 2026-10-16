@@ -306,6 +306,17 @@ def _normalize_image_captured_at_for_cloud(value, *, local: bool) -> str | None:
     return parsed.astimezone(timezone.utc).isoformat()
 
 
+def _cloud_image_captured_at_to_local(value) -> str | None:
+    """Convert a cloud capture instant to SQLite's local wall-clock format."""
+    canonical = _normalize_image_captured_at_for_cloud(value, local=False)
+    if canonical is None:
+        return None
+    local = datetime.fromisoformat(canonical).astimezone().replace(tzinfo=None)
+    # Keep fractional seconds: a truncated value no longer equals the cloud
+    # instant, and a later push would send it over the cloud value.
+    return local.isoformat(sep=' ') if local.microsecond else local.strftime('%Y-%m-%d %H:%M:%S')
+
+
 _SNAPSHOT_MEAS_FIELDS = [
     'id', 'image_id', 'length_um', 'width_um', 'measurement_type',
     'gallery_rotation', 'p1_x', 'p1_y', 'p2_x', 'p2_y', 'p3_x', 'p3_y',

@@ -749,7 +749,7 @@ from utils.cloud_sync_impl.image_push import (  # noqa: F401  (facade re-export)
     _baseline_images_by_cloud_id,
     _remote_only_image_edits,
     _image_fields_to_keep_at_cloud,
-    _cloud_captured_at_to_local_text,
+    _image_patch_matches_remote,
     _IMAGE_CREATE_COMPARE_EXCLUDED_KEYS,
     _image_create_content_matches,
     _upload_outcome_uncertain,
@@ -4572,11 +4572,11 @@ def _link_reviewed_child_key_pairs(
     )
 
 
-def _store_post_push_snapshot(client: "SporelyCloudClient", cloud_id: str, local_id: int) -> None:
+def _store_post_push_snapshot(client: "SporelyCloudClient", cloud_id: str, local_id: int, **kwargs) -> None:
     """Store the post-push baseline after copying cloud-only image edits into
     the local rows (so the baseline never moves past a stale local row)."""
     _store_remote_snapshot(
-        client, cloud_id,
+        client, cloud_id, **kwargs,
         before_store_images=lambda rows: _adopt_remote_image_edits_before_baseline(
             client, cloud_id, int(local_id), rows,
         ),
@@ -6032,8 +6032,8 @@ def resolve_conflict_plan(
 
     # ── Step 10: finalize in order — snapshot → signature → stamp ─────────────
     try:
-        _store_remote_snapshot(
-            client, resolved_cloud_id,
+        _store_post_push_snapshot(
+            client, resolved_cloud_id, int(local_id),
             accepted_asymmetry=merged_asymmetry,
         )
     except Exception as exc:
@@ -7862,7 +7862,8 @@ class SporelyCloudClient(
                 payload.pop(key, None)
         restore_source_id = _explicit_image_restore_source(img['id'])
         if existing_id:
-            self._patch(f'observation_images?id=eq.{existing_id}&user_id=eq.{self.user_id}', payload)
+            if not _image_patch_matches_remote(payload, remote_row):
+                self._patch(f'observation_images?id=eq.{existing_id}&user_id=eq.{self.user_id}', payload)
             cloud_id = existing_id
         else:
             # State L0: POST with the committed key, or link this database's

@@ -83,6 +83,7 @@ from utils.cloud_sync_impl.progress import (
 )
 from utils.cloud_sync_impl.reconciliation.values import (
     _normalize_image_captured_at_for_cloud,
+    _cloud_image_captured_at_to_local,
     _normalize_snapshot_value,
     _parse_sync_timestamp,
 )
@@ -410,12 +411,22 @@ def _local_image_source_bytes_unchanged(
     return _cmp_key(stored_sig) == _cmp_key(current_sig)
 
 
-def _cloud_captured_at_to_local_text(value) -> str | None:
-    """A cloud capture instant in SQLite's local wall-clock form (as the pull stores it)."""
-    canonical = _normalize_image_captured_at_for_cloud(value, local=False)
-    if canonical is None:
-        return None
-    return datetime.fromisoformat(canonical).astimezone().replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
+def _image_patch_matches_remote(payload: dict, remote_row: dict | None) -> bool:
+    """True when an existing-row PATCH body would change nothing in the cloud
+    row: the choke point then sends no PATCH (no updated_at / cursor bump)."""
+    if not remote_row:
+        return False
+    for key, value in payload.items():
+        if key not in remote_row:
+            return False
+        remote = remote_row.get(key)
+        if key == 'captured_at':
+            if _normalize_image_captured_at_for_cloud(value, local=False) != \
+                    _normalize_image_captured_at_for_cloud(remote, local=False):
+                return False
+        elif value != remote and (value is None or remote is None or str(value) != str(remote)):
+            return False
+    return True
 
 
 def _baseline_images_by_cloud_id(obs_cloud_id: str) -> dict[str, dict]:
@@ -525,7 +536,7 @@ def _adopt_remote_image_edits_before_baseline(
             continue
         values = [remote_payload.get(f) for f in fields]
         if 'captured_at' in fields:
-            values[fields.index('captured_at')] = _cloud_captured_at_to_local_text(remote_payload.get('captured_at'))
+            values[fields.index('captured_at')] = _cloud_image_captured_at_to_local(remote_payload.get('captured_at'))
         conn = get_connection()
         try:
             conn.execute(
