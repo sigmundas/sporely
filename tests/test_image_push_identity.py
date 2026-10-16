@@ -340,3 +340,23 @@ def test_direct_cloud_id_points_to_another_observation_raises_conflict(monkeypat
 
     assert calls["patch"] == []
     assert calls["post"] == []
+
+def _store_image_baseline(obs_cloud_id, image_ids):
+    """A stored sync baseline that knows these linked images, so pushes of
+    existing rows take the three-way path, not the no-baseline refusal."""
+    import json
+    from utils.cloud_sync_impl import baseline as _baseline_mod
+
+    _baseline_mod._store_cloud_observation_snapshot(str(obs_cloud_id), json.dumps({
+        "schema_version": 2, "observation": {"id": str(obs_cloud_id)},
+        "images": [{"id": str(i)} for i in image_ids], "measurements": [],
+    }))
+
+
+import pytest as _pytest
+
+
+@_pytest.fixture(autouse=True)
+def _known_image_baseline():
+    _store_image_baseline(OBS_CLOUD_ID, ["img-200", "img-201", "img-800"])
+

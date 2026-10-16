@@ -546,6 +546,7 @@ def _ensure_local_metadata_only_microscope_anchor(
         local_image_id = _safe_int(created_local_image_id)
         if local_image_id <= 0:
             return None
+        _keep_pulled_capture_time_precision(local_image_id, remote_row.get('captured_at'))
         has_local_file = False
         _adopt_remote_ingest_method(local_image_id, remote_row)
 

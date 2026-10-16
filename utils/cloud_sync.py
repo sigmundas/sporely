@@ -116,6 +116,7 @@ from utils.cloud_sync_impl.errors import (  # noqa: F401  (facade re-export)
     CloudWriteRejectedError,
     raise_if_upload_refused,
     ImageIdentityConflictError,
+    ImageBaselineMissingError,
     ObservationAdoptionConflictError,
     ObservationIdentityConflictError,
     PRIVACY_SLOT_LIMIT_USER_MESSAGE,
@@ -750,6 +751,11 @@ from utils.cloud_sync_impl.image_push import (  # noqa: F401  (facade re-export)
     _baseline_images_by_cloud_id,
     _remote_only_image_edits,
     _image_fields_to_keep_at_cloud,
+    _image_patch_three_way,
+    _IMAGE_THREE_WAY_FIELDS,
+    _IMAGE_FILL_ONLY_FIELDS,
+    _IMAGE_UPLOAD_OWNED_FIELDS,
+    _IMAGE_STRUCTURAL_FIELDS,
     _image_patch_matches_remote,
     _NOOP_CHECK_UNREAD_KEYS,
     _IMAGE_CREATE_COMPARE_EXCLUDED_KEYS,
@@ -4574,6 +4580,25 @@ def _link_reviewed_child_key_pairs(
     )
 
 
+def _as_explicit_resolution(fn):
+    """The user chose a copy: the no-baseline refusal in push_image_metadata
+    does not apply to the writes this resolution makes."""
+    import functools
+
+    @functools.wraps(fn)
+    def wrapper(client, *args, **kwargs):
+        previous = getattr(client, '_explicit_conflict_resolution', False)
+        try:
+            client._explicit_conflict_resolution = True
+        except Exception:
+            return fn(client, *args, **kwargs)
+        try:
+            return fn(client, *args, **kwargs)
+        finally:
+            client._explicit_conflict_resolution = previous
+    return wrapper
+
+
 def _store_post_push_snapshot(client: "SporelyCloudClient", cloud_id: str, local_id: int, **kwargs) -> None:
     """Store the post-push baseline after copying cloud-only image edits into
     the local rows (so the baseline never moves past a stale local row)."""
@@ -4585,6 +4610,7 @@ def _store_post_push_snapshot(client: "SporelyCloudClient", cloud_id: str, local
     )
 
 
+@_as_explicit_resolution
 def resolve_conflict_keep_local(
     client: "SporelyCloudClient",
     local_id: int,
@@ -4805,6 +4831,7 @@ def resolve_conflict_keep_cloud(
     return {'local_id': int(local_id), 'cloud_id': resolved_cloud_id, 'warnings': warnings}
 
 
+@_as_explicit_resolution
 def resolve_conflict_merge(
     client: "SporelyCloudClient",
     local_id: int,
@@ -5091,6 +5118,7 @@ def _paired_remote_row(local_row: dict, remote_rows: list[dict]) -> dict:
     return {}
 
 
+@_as_explicit_resolution
 def resolve_conflict_plan(
     client: "SporelyCloudClient",
     local_id: int,
@@ -7857,9 +7885,20 @@ class SporelyCloudClient(
             )
             # The three-way check (choke point): fields only the cloud changed
             # since the baseline stay at the cloud, whichever caller sent us.
-            keep = set(keep_remote_fields) | _image_fields_to_keep_at_cloud(
+            keep_at_cloud, no_baseline_diff = _image_patch_three_way(
                 self, img, obs_cloud_id, existing_id, remote_row,
             )
+            if no_baseline_diff and not getattr(self, '_explicit_conflict_resolution', False):
+                # No stored baseline: which copy changed is unknown. Send no
+                # descriptive field; the caller routes this to review.
+                raise ImageBaselineMissingError(
+                    f'image {img.get("id")} (cloud {existing_id}) has no sync baseline and differs '
+                    f'from the cloud in {sorted(no_baseline_diff)}; not sending either copy'
+                )
+            keep = set(keep_remote_fields) | keep_at_cloud
+            if remote_row.get('original_filename') is not None:
+                # Fill-only: an existing cloud file name is never replaced.
+                keep.add('original_filename')
             for key in keep:
                 payload.pop(key, None)
         restore_source_id = _explicit_image_restore_source(img['id'])
@@ -10547,7 +10586,10 @@ def _push_all_once(
                                 str(local_img.get('storage_path') or ''),
                             )
                         except Exception as patch_exc:
-                            if is_cloud_auth_error(patch_exc) or is_cloud_temporary_unavailable_error(patch_exc):
+                            if (
+                                is_cloud_auth_error(patch_exc) or is_cloud_temporary_unavailable_error(patch_exc)
+                                or isinstance(patch_exc, ImageBaselineMissingError)
+                            ):
                                 raise
                             images_metadata_synced = False
                             print(
@@ -10649,6 +10691,17 @@ def _push_all_once(
             if isinstance(e, CloudUploadRefusedError):
                 mark_observation_dirty(int(obs['id']))
                 raise
+            if isinstance(e, ImageBaselineMissingError):
+                # Fails safe: no baseline is stored, the observation goes to
+                # the ordinary conflict review (its resolutions store one).
+                errors.append(_format_review_needed_error(
+                    int(obs['id']), str(obs.get('cloud_id') or ''), ['push_blocked', str(e)],
+                ))
+                _set_observation_conflict_review_pending(int(obs['id']))
+                print(f"[cloud_sync] conflict push blocked: obs={obs['id']} categories=['images_no_baseline'] "
+                      f"action=review_required", flush=True)
+                _advance_progress(progress_state, 1)
+                continue
             if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
                 raise
             raw_error = f"obs {obs['id']}: {e}"

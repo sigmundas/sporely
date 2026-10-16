@@ -45,6 +45,7 @@ from utils.cloud_sync_impl.common import (
 from utils.cloud_sync_impl.errors import (
     CloudImageBytesNotDesiredError,
     CloudSyncError,
+    ImageBaselineMissingError,
     is_cloud_auth_error,
     is_cloud_temporary_unavailable_error,
     is_image_too_large_for_plan_error,
@@ -73,6 +74,7 @@ from utils.cloud_sync_impl.media_signature import (
     _path_stat_signature,
 )
 from utils.cloud_sync_impl.preflight import _image_calibration_uuid
+from utils.cloud_sync_impl.calibrations import _local_calibration_id_for_image
 from utils.cloud_sync_impl.progress import (
     _advance_progress,
     _cloud_sync_current_profiler,
@@ -459,24 +461,52 @@ _ADOPTABLE_IMAGE_FIELDS = (
 )
 
 
-def _image_fields_to_keep_at_cloud(
-    client, img: dict, obs_cloud_id: str, cloud_image_id: str, remote_row: dict,
-) -> set[str]:
-    """The choke-point three-way check for an existing-row image PATCH.
+# Every column an existing-row image PATCH can carry, classified once. The
+# three-way fields are protected (cloud-only edits kept) and adopted locally;
+# the rest are never descriptive desktop edits of a web value.
+_IMAGE_THREE_WAY_FIELDS = (*_ADOPTABLE_IMAGE_FIELDS, 'calibration_uuid')
+_IMAGE_FILL_ONLY_FIELDS = ('original_filename',)  # never replaces a cloud value
+_IMAGE_UPLOAD_OWNED_FIELDS = (
+    'storage_path', 'upload_mode', 'source_width', 'source_height',
+    'stored_width', 'stored_height', 'stored_bytes', 'storage_exif_safe',
+)
+_IMAGE_STRUCTURAL_FIELDS = ('observation_id', 'user_id', 'deleted_at')
 
-    ``push_image_metadata`` calls this for every PATCH of an existing row
-    (metadata drift, Refresh, upload, replace, preparation, resolutions), so
-    no caller can bypass it. Returns the adoptable fields the PATCH must leave
-    at the cloud value: cloud-only edits since the stored baseline, which it
-    loads itself. With no stored baseline row for the image there is nothing
-    to compare, and the existing two-way rule applies.
-    """
+
+def _image_patch_three_way(
+    client, img: dict, obs_cloud_id: str, cloud_image_id: str, remote_row: dict,
+) -> tuple[set[str], set[str]]:
+    """(fields to keep at the cloud, differing fields with no baseline)."""
     include = {'include_ai_crop': client._observation_images_support_ai_crop(), 'include_upload_meta': False}
     local_payload = _prepared_item_remote_payload(img, str(img.get('filepath') or ''), '', **include)
     remote_payload = _remote_image_compare_payload(remote_row, **include)
     baseline_row = _baseline_images_by_cloud_id(obs_cloud_id).get(str(cloud_image_id or '').strip())
+    if baseline_row is None:
+        local = dict(local_payload)
+        _preserve_unedited_remote_image_values(
+            local, img, remote_row, captured_at_pull_injected=_captured_at_is_pull_injected(img),
+        )
+        if not _image_calibration_uuid(img):
+            local.pop('calibration_uuid', None)  # a local NULL calibration is never sent
+        def same(key):
+            a, b = local[key], remote_payload[key]
+            # Local flag columns default to 0 where the cloud holds NULL.
+            return a == b or (key in ('gps_source', 'ai_crop_is_custom') and bool(a) == bool(b))
+        differing = {
+            key for key in _IMAGE_THREE_WAY_FIELDS
+            if key in local and key in remote_payload and not same(key)
+        }
+        return set(), differing
     edits = _remote_only_image_edits(local_payload, img, baseline_row, remote_payload, **include)
-    return {key for key in edits if key in _ADOPTABLE_IMAGE_FIELDS}
+    return {key for key in edits if key in _IMAGE_THREE_WAY_FIELDS}, set()
+
+
+def _image_fields_to_keep_at_cloud(
+    client, img: dict, obs_cloud_id: str, cloud_image_id: str, remote_row: dict,
+) -> set[str]:
+    """Cloud-only edits since the stored baseline that a PATCH must not send
+    (see ``_image_patch_three_way``)."""
+    return _image_patch_three_way(client, img, obs_cloud_id, cloud_image_id, remote_row)[0]
 
 
 def _remote_only_image_edits(
@@ -538,16 +568,23 @@ def _adopt_remote_image_edits_before_baseline(
         edits = _remote_only_image_edits(
             local_payload, img, baseline_by_id[cloud_id], remote_payload, **include,
         )
-        fields = [f for f in _ADOPTABLE_IMAGE_FIELDS if f in edits]
+        fields = [f for f in _IMAGE_THREE_WAY_FIELDS if f in edits]
         if not fields:
             continue
         values = [remote_payload.get(f) for f in fields]
         if 'captured_at' in fields:
             values[fields.index('captured_at')] = _cloud_image_captured_at_to_local(remote_payload.get('captured_at'))
+        columns = list(fields)
+        if 'calibration_uuid' in fields:
+            # Local rows link calibrations by id; an unknown uuid links none
+            # (a local NULL calibration is never sent).
+            i = columns.index('calibration_uuid')
+            columns[i] = 'calibration_id'
+            values[i] = _local_calibration_id_for_image({'calibration_uuid': values[i]})
         conn = get_connection()
         try:
             conn.execute(
-                f"UPDATE images SET {', '.join(f'{f} = ?' for f in fields)} WHERE id = ?",
+                f"UPDATE images SET {', '.join(f'{f} = ?' for f in columns)} WHERE id = ?",
                 values + [_safe_int(img.get('id'))],
             )
             conn.commit()
@@ -683,7 +720,10 @@ def _reconcile_metadata_only_linked_images(
                     img, obs_cloud_id, remote_storage_path, remote_row=remote_row, **extra,
                 )
             except Exception as exc:
-                if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                if (
+                    is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc)
+                    or isinstance(exc, ImageBaselineMissingError)
+                ):
                     raise
                 if is_cloud_recovery_cache:
                     # Recovery-cache bytes came from this cloud row. Never

@@ -512,6 +512,7 @@ def test_push_image_metadata_patches_sample_source_without_uploading_bytes(monke
     patched: list[dict] = []
     posted: list[dict] = []
     monkeypatch.setattr(client, "_resolve_existing_image_for_push", lambda img, obs_cloud_id, **kw: "cloud-3124")
+    _store_image_baseline("cloud-obs-631", ["cloud-3124"])
     monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_ai_crop_custom", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: False)
@@ -570,6 +571,7 @@ def test_push_image_metadata_drops_sample_source_when_cloud_lacks_column(monkeyp
 
     patched: list[dict] = []
     monkeypatch.setattr(client, "_resolve_existing_image_for_push", lambda img, obs_cloud_id, **kw: "cloud-3124")
+    _store_image_baseline("cloud-obs-631", ["cloud-3124"])
     monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_ai_crop_custom", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: False)
@@ -590,3 +592,15 @@ def test_push_image_metadata_drops_sample_source_when_cloud_lacks_column(monkeyp
     )
     assert len(patched) == 1
     assert "sample_source" not in patched[0]["payload"]
+
+def _store_image_baseline(obs_cloud_id, image_ids):
+    """A stored sync baseline that knows these linked images, so pushes of
+    existing rows take the three-way path, not the no-baseline refusal."""
+    import json
+    from utils.cloud_sync_impl import baseline as _baseline_mod
+
+    _baseline_mod._store_cloud_observation_snapshot(str(obs_cloud_id), json.dumps({
+        "schema_version": 2, "observation": {"id": str(obs_cloud_id)},
+        "images": [{"id": str(i)} for i in image_ids], "measurements": [],
+    }))
+

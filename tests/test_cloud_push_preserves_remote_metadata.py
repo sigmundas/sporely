@@ -89,6 +89,7 @@ def test_metadata_patch_of_pulled_image_keeps_web_upload_metadata(monkeypatch):
     _record_injected(194, "2026-10-13 14:30:00")
     client, patches = _client(monkeypatch)
     remote = _web_remote_image()
+    _store_baseline("366", [remote])
 
     cloud_id = client.push_image_metadata(
         _pulled_local_image(), "366", remote["storage_path"], remote_row=remote,
@@ -111,6 +112,7 @@ def test_metadata_patch_of_pulled_image_keeps_web_upload_metadata(monkeypatch):
 def test_metadata_patch_still_sends_upload_metadata_the_uploader_supplied(monkeypatch):
     client, patches = _client(monkeypatch)
     remote = _web_remote_image()
+    _store_baseline("366", [remote])
     img = _pulled_local_image(
         id=500,
         source_role=None,
@@ -266,6 +268,7 @@ def test_user_set_capture_time_on_pulled_image_is_pushed(monkeypatch):
     _record_injected(194, "2026-10-13 14:30:00")
     client, patches = _client(monkeypatch)
     remote = _web_remote_image()
+    _store_baseline("366", [remote])
 
     client.push_image_metadata(
         _pulled_local_image(captured_at="2026-10-13 09:15:00"), "366",
@@ -282,6 +285,7 @@ def test_recorded_pull_injected_capture_time_is_not_pushed(monkeypatch):
     _record_injected(194, "2026-10-13 14:30:00")
     client, patches = _client(monkeypatch)
     remote = _web_remote_image()
+    _store_baseline("366", [remote])
 
     client.push_image_metadata(
         _pulled_local_image(), "366", remote["storage_path"], remote_row=remote,
@@ -322,6 +326,7 @@ def test_user_set_capture_time_is_drift(monkeypatch):
 def test_image_text_with_cloud_value_can_be_cleared(monkeypatch):
     client, patches = _client(monkeypatch)
     remote = dict(_web_remote_image(), notes="web note", objective_name="40x")
+    _store_baseline("366", [remote])
 
     client.push_image_metadata(
         _pulled_local_image(notes="", objective_name=""), "366",
@@ -770,6 +775,7 @@ def test_choke_point_skips_patch_when_nothing_changes(monkeypatch):
     monkeypatch.setattr(client, "_patch", lambda path, payload: captured.append(payload) or [{}])
     # Echo the first body back as the cloud row: an identical second push sends nothing.
     remote = dict(_cloud_image("c-9606", "cloud-obs-9506", notes="different"))
+    _store_baseline("cloud-obs-9506", [remote])
     client.push_image_metadata(local, "cloud-obs-9506", "", remote_row=remote)
     assert len(captured) == 1
     echoed = dict(remote, **captured[0])
@@ -784,6 +790,7 @@ def test_storage_exif_safe_false_in_cloud_is_not_skipped_as_noop(monkeypatch):
     captured = []
     monkeypatch.setattr(client, "_patch", lambda path, payload: captured.append(payload) or [{}])
     remote = dict(_cloud_image("c-9608", "cloud-obs-9508", notes="x"))
+    _store_baseline("cloud-obs-9508", [remote])
     client.push_image_metadata(local, "cloud-obs-9508", "", remote_row=remote)
     full = dict(remote, **captured[0])
     full["storage_exif_safe"] = False
@@ -829,3 +836,97 @@ def test_pulled_fractional_capture_time_stays_exact_through_two_pushes(monkeypat
     # The local value equals the baseline, so a web edit elsewhere is not a both-sides change.
     local_cmp = image_push._prepared_item_remote_payload(_db_image(9609), "/tmp/9609.webp", "")
     assert local_cmp["captured_at"] == cloud_value
+
+
+# ---------------------------------------------------------------------------
+# Review 6: anchor capture-time precision, calibration, file name; no baseline.
+# ---------------------------------------------------------------------------
+
+def test_pulled_metadata_only_anchor_keeps_fractional_capture_time():
+    from utils.cloud_sync_impl import image_pull
+
+    _insert_local_pulled_image(9510, 9610, "c-unused", notes=None)
+    remote = {
+        "id": "c-9610", "observation_id": "cloud-obs-9510", "image_type": "microscope",
+        "storage_path": None, "captured_at": "2026-10-01T08:00:00.123456+00:00", "sort_order": 1,
+    }
+    local_id = image_pull._ensure_local_metadata_only_microscope_anchor(None, 9510, remote)
+    local = _db_image(local_id)
+    assert _normalize_image_captured_at_for_cloud(local["captured_at"], local=True) == remote["captured_at"]
+
+
+def test_web_calibration_reassignment_is_kept_and_adopted(monkeypatch):
+    uuid_a, uuid_b = "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"
+    _insert_local_pulled_image(9511, 9611, "c-9611", notes="n")
+    base = _cloud_image("c-9611", "cloud-obs-9511", notes="n", calibration_uuid=uuid_a)
+    _store_baseline("cloud-obs-9511", [base])
+    remote = dict(base, calibration_uuid=uuid_b)
+    client, patches = _client(monkeypatch, {"observation_images?id=eq.c-9611": [remote]})
+    local = dict(_db_image(9611), calibration_uuid=uuid_a)  # local still links A
+
+    client.push_image_metadata(local, "cloud-obs-9511", "")  # Refresh shape
+    client.push_image_metadata(local, "cloud-obs-9511", f"{USER_ID}/cloud-obs-9511/v2.webp", remote_row=remote)
+
+    for body in _image_bodies(patches, "c-9611"):
+        assert body.get("calibration_uuid", uuid_b) == uuid_b
+    assert "calibration_uuid" in image_push._image_fields_to_keep_at_cloud(client, local, "cloud-obs-9511", "c-9611", remote)
+
+
+def test_existing_cloud_file_name_is_never_replaced(monkeypatch):
+    # A pulled file-less anchor has no local file name.
+    _insert_local_pulled_image(9512, 9612, "c-9612", notes="old")
+    _set_local(9612, filepath="")
+    base = _cloud_image("c-9612", "cloud-obs-9512", notes="old", original_filename="web.jpg")
+    _store_baseline("cloud-obs-9512", [base])
+    _set_local(9612, notes="desktop edit")
+    client, patches = _client(monkeypatch, {"observation_images?id=eq.c-9612": [base]})
+
+    client.push_image_metadata(_db_image(9612), "cloud-obs-9512", "")
+
+    body = _image_bodies(patches, "c-9612")[0]
+    assert body["notes"] == "desktop edit"
+    assert "original_filename" not in body
+
+
+def test_no_baseline_differing_image_is_refused_and_reviewed(monkeypatch):
+    from utils.cloud_sync_impl.errors import ImageBaselineMissingError
+
+    _insert_local_pulled_image(9513, 9613, "c-9613", notes="old note")
+    # What an incomplete pull leaves: an observation-only snapshot.
+    _store_baseline("cloud-obs-9513", [])
+    remote = _cloud_image("c-9613", "cloud-obs-9513", notes="web note")
+    client, patches = _client(monkeypatch, {"observation_images?id=eq.c-9613": [remote]})
+
+    with pytest.raises(ImageBaselineMissingError):
+        client.push_image_metadata(_db_image(9613), "cloud-obs-9513", "")
+    assert _image_bodies(patches, "c-9613") == []
+
+    # The push preflight blocks it before any write, through the conflict path.
+    monkeypatch.setattr(cloud_sync, "_local_tombstoned_cloud_image_ids", lambda *_a, **_k: set())
+    report = cloud_sync._analyze_observation_push_conflicts(
+        local_obs={"id": 9513, "cloud_id": "cloud-obs-9513"}, local_images=[_db_image(9613)],
+        local_measurements_by_cloud_id={}, remote_obs={"id": "cloud-obs-9513"},
+        remote_images=[remote], remote_measurements=[],
+        baseline_snapshot={"observation": {"id": "cloud-obs-9513"}, "images": [], "measurements": []},
+    )
+    assert report.image_conflict_keys == ["cloud:c-9613"]
+
+    # An explicit resolution writes the chosen copy.
+    client._explicit_conflict_resolution = True
+    client.push_image_metadata(_db_image(9613), "cloud-obs-9513", "")
+    assert _image_bodies(patches, "c-9613")[0]["notes"] == "old note"
+    client._explicit_conflict_resolution = False
+
+    # Once a baseline exists (a later successful pull or snapshot), the
+    # ordinary three-way rule applies: the web note is kept, nothing refused.
+    _store_baseline("cloud-obs-9513", [dict(remote, notes="old note")])
+    client.push_image_metadata(_db_image(9613), "cloud-obs-9513", "")
+    assert "notes" not in _image_bodies(patches, "c-9613")[-1]
+
+
+def test_no_baseline_identical_image_is_not_refused(monkeypatch):
+    _insert_local_pulled_image(9514, 9614, "c-9614", notes="same")
+    _store_baseline("cloud-obs-9514", [])
+    remote = _cloud_image("c-9614", "cloud-obs-9514", notes="same")
+    client, _ = _client(monkeypatch, {"observation_images?id=eq.c-9614": [remote]})
+    client.push_image_metadata(_db_image(9614), "cloud-obs-9514", "")  # no exception

@@ -93,6 +93,12 @@ class ObservationIdentityConflictError(CloudSyncError):
     """
 
 
+class ImageBaselineMissingError(CloudSyncError):
+    """An existing linked image has no stored baseline and its local and
+    cloud values differ: which copy changed is unknown, so the push sends no
+    descriptive image fields and the observation goes to review."""
+
+
 class ImageIdentityConflictError(CloudSyncError):
     """Raised when image push identity is ambiguous or contradictory.
 

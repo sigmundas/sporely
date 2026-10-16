@@ -689,6 +689,12 @@ def test_metadata_only_refresh_patches_image_metadata_on_existing_cloud_rows(tmp
         _cloud_image_storage_key_cache: dict = {}
 
     client = _RecordingClient()
+    # The stored baseline is the cloud state the test starts from (three-way path).
+    _cid = str(_local_obs_cloud_id := client.get_observation(
+        cloud_sync.ObservationDB.get_observation(389)["cloud_id"])["id"])
+    cloud_sync._store_cloud_observation_snapshot(_cid, cloud_sync._cloud_observation_snapshot(
+        client.get_observation(_cid), client.pull_image_metadata(_cid), [],
+    ))
     cloud_sync.push_all(
         client,
         sync_images=False,
@@ -724,7 +730,7 @@ def test_metadata_only_refresh_patches_image_metadata_on_existing_cloud_rows(tmp
         f"{body.get('sample_source')!r}"
     )
     assert body["mount_medium"] == "KOH"
-    assert body["contrast"] == "DIC"
+    assert body.get("contrast", "DIC") == "DIC"  # unchanged; may be left out
     # storage_path field is present but preserves the anchor state
     # (empty / normalized-empty) — no bytes were uploaded.
     assert not body.get("storage_path")
@@ -856,7 +862,7 @@ def test_metadata_only_refresh_excludes_field_images_from_patch(
     conn.execute(
         "INSERT INTO settings (key, value) "
         "VALUES ('sporely_cloud_local_media_sig_obs_389', ?)",
-        (pre_edit_signature,),
+        (pre_edit_signature,)
     )
     conn.commit()
     conn.close()
@@ -975,6 +981,12 @@ def test_metadata_only_refresh_excludes_field_images_from_patch(
         _cloud_image_storage_key_cache: dict = {}
 
     client = _RecordingClient()
+    # The stored baseline is the cloud state the test starts from (three-way path).
+    _cid = str(_local_obs_cloud_id := client.get_observation(
+        cloud_sync.ObservationDB.get_observation(389)["cloud_id"])["id"])
+    cloud_sync._store_cloud_observation_snapshot(_cid, cloud_sync._cloud_observation_snapshot(
+        client.get_observation(_cid), client.pull_image_metadata(_cid), [],
+    ))
     cloud_sync.push_all(
         client,
         sync_images=False,

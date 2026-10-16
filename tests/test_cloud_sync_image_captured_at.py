@@ -57,6 +57,7 @@ def test_push_serializes_capture_time_without_touching_created_at(monkeypatch):
 
 def test_push_omits_null_capture_time_instead_of_falling_back_or_erasing(monkeypatch):
     client = _client(monkeypatch)
+    _store_image_baseline("cloud-observation-1", ["cloud-image-1"])
     patches = []
     monkeypatch.setattr(client, "_patch", lambda path, payload: patches.append(dict(payload)))
 
@@ -270,3 +271,15 @@ class _Rows:
 
     def fetchall(self):
         return self.rows
+
+def _store_image_baseline(obs_cloud_id, image_ids):
+    """A stored sync baseline that knows these linked images, so pushes of
+    existing rows take the three-way path, not the no-baseline refusal."""
+    import json
+    from utils.cloud_sync_impl import baseline as _baseline_mod
+
+    _baseline_mod._store_cloud_observation_snapshot(str(obs_cloud_id), json.dumps({
+        "schema_version": 2, "observation": {"id": str(obs_cloud_id)},
+        "images": [{"id": str(i)} for i in image_ids], "measurements": [],
+    }))
+

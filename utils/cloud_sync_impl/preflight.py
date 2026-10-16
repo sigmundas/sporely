@@ -247,6 +247,21 @@ def _analyze_observation_push_conflicts(
         if local_changed and remote_changed and local_meta != remote_meta:
             image_conflict_keys.append(f'cloud:{cloud_image_id}')
 
+    # A linked image with no baseline row whose local and cloud values differ:
+    # which copy changed is unknown, so it is reviewed, never pushed.
+    for cloud_image_id in sorted((set(remote_by_cloud_id) & set(local_by_cloud_id)) - set(baseline_by_cloud_id)):
+        remote_meta = _image_metadata_payload(remote_by_cloud_id[cloud_image_id])
+        local_meta = _image_metadata_payload(local_by_cloud_id[cloud_image_id])
+        local_img = local_images_by_cloud_id.get(cloud_image_id)
+        _preserve_unedited_remote_image_values(
+            local_meta, local_img, remote_meta,
+            captured_at_pull_injected=_captured_at_is_pull_injected(local_img),
+        )
+        for key in set(remote_meta) - set(local_meta):
+            local_meta[key] = remote_meta[key]
+        if local_meta != remote_meta:
+            image_conflict_keys.append(f'cloud:{cloud_image_id}')
+
     # ---- Measurements: mirror pull-side conflict detection (no apply) ----
     remote_measurements = list(remote_measurements or [])
     remote_image_lookup = {
