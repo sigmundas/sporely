@@ -1096,28 +1096,47 @@ def test_resolve_keep_local_clears_conflict_marker_and_advances_snapshot(monkeyp
     assert snapshot_writes
 
 
-def test_resolve_keep_local_and_merge_adopt_cloud_only_image_edits_before_baseline(monkeypatch):
-    """Both resolution paths store the baseline through the same hook as
-    push_all, so cloud-only image edits reach the local row first."""
-    import inspect
+@pytest.mark.parametrize("resolver", ["resolve_conflict_keep_local", "resolve_conflict_merge"])
+def test_resolutions_adopt_cloud_only_image_edits_before_baseline(monkeypatch, tmp_path, resolver):
+    """'Use this device' and merge run their real post-push baseline: an image
+    note only the web changed reaches the local row, and the stored baseline
+    matches it, so the next push does not send the stale note back."""
+    db_path = _init_db(tmp_path)
+    _patch_connections(monkeypatch, db_path)
+    from utils.cloud_sync_impl import image_push
 
-    hooked = []
-    monkeypatch.setattr(
-        cloud_sync, "_store_remote_snapshot",
-        lambda client, cloud_id, **kw: hooked.append(kw.get("before_store_images")),
+    monkeypatch.setattr(image_push, "get_connection", lambda: sqlite3.connect(db_path))
+    image_path = tmp_path / "image.jpg"
+    image_path.write_bytes(b"bytes")
+    _seed_observation(db_path, image_path, obs_notes="local edit")
+    cloud_sync._set_observation_conflict_review_pending(1)
+    baseline_image = _remote_image_row(notes="baseline image note")
+    cloud_sync._store_cloud_observation_snapshot(
+        "cloud-obs-1", _snapshot(_baseline_remote_obs(), [baseline_image]),
     )
-    adopted = []
-    monkeypatch.setattr(
-        cloud_sync, "_adopt_remote_image_edits_before_baseline",
-        lambda client, cloud_id, local_id, rows: adopted.append((cloud_id, local_id, rows)),
-    )
-    cloud_sync._store_post_push_snapshot(object(), "cloud-obs-1", 1)
-    hooked[0]([{"id": "img"}])
-    assert adopted == [("cloud-obs-1", 1, [{"id": "img"}])]
-    for fn in (cloud_sync.resolve_conflict_keep_local, cloud_sync.resolve_conflict_merge):
-        source = inspect.getsource(fn)
-        assert "_store_post_push_snapshot(client, cloud_id, int(local_id))" in source
-        assert "_store_remote_snapshot(client, cloud_id)\n" not in source
+    remote_image = _remote_image_row(notes="web image note")
+
+    monkeypatch.setattr(cloud_sync, "_pull_remote_images_for_sync", lambda client, cloud_id: [dict(remote_image)])
+    monkeypatch.setattr(cloud_sync, "_record_remote_image_tombstones", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_apply_remote_images_to_local", lambda *args, **kwargs: [])
+    monkeypatch.setattr(cloud_sync, "_push_images_for_observation", lambda *args, **kwargs: True)
+    monkeypatch.setattr(cloud_sync, "_push_measurements_for_observation", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_push_spore_mosaic_for_observation", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_refresh_local_cloud_media_signature", lambda observation_id: "")
+
+    client = _StubClient(_baseline_remote_obs(notes="cloud edit"), [remote_image])
+    client._observation_images_support_ai_crop = lambda: True
+
+    getattr(cloud_sync, resolver)(client, local_id=1, prepare_images_cb=lambda obs, progress_cb: ([], None, []))
+
+    conn = sqlite3.connect(db_path)
+    try:
+        local_notes = conn.execute("SELECT notes FROM images WHERE id = 11").fetchone()[0]
+    finally:
+        conn.close()
+    assert local_notes == "web image note"
+    stored = json.loads(cloud_sync._load_cloud_observation_snapshot("cloud-obs-1"))
+    assert [row.get("notes") for row in stored["images"]] == ["web image note"]
 
 
 def test_resolve_keep_cloud_clears_conflict_marker_without_local_overwrite(monkeypatch, tmp_path):

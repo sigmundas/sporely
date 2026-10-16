@@ -58,7 +58,7 @@ from utils.cloud_sync_impl.baseline import (
     _load_cloud_observation_snapshot,
     _parse_cloud_observation_snapshot,
 )
-from utils.cloud_sync_impl.exif import _captured_at_is_pull_injected
+from utils.cloud_sync_impl.exif import _captured_at_is_pull_injected, _record_pull_injected_captured_at
 from utils.cloud_sync_impl.image_payloads import (
     _preserve_unedited_remote_image_values,
     _remote_image_payload,
@@ -410,6 +410,14 @@ def _local_image_source_bytes_unchanged(
     return _cmp_key(stored_sig) == _cmp_key(current_sig)
 
 
+def _cloud_captured_at_to_local_text(value) -> str | None:
+    """A cloud capture instant in SQLite's local wall-clock form (as the pull stores it)."""
+    canonical = _normalize_image_captured_at_for_cloud(value, local=False)
+    if canonical is None:
+        return None
+    return datetime.fromisoformat(canonical).astimezone().replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
+
+
 def _baseline_images_by_cloud_id(obs_cloud_id: str) -> dict[str, dict]:
     snapshot = _parse_cloud_observation_snapshot(_load_cloud_observation_snapshot(str(obs_cloud_id or '')))
     return {
@@ -417,6 +425,40 @@ def _baseline_images_by_cloud_id(obs_cloud_id: str) -> dict[str, dict]:
         for row in (snapshot.get('images') or [])
         if str((row or {}).get('id') or '').strip()
     }
+
+
+# Every image field the push keeps at the cloud value when only the cloud
+# changed it, and that the push then adopts locally (same name in the compare
+# payload and the local images table). Protection and adoption use this one
+# list, so the baseline never moves past a stale local value.
+_ADOPTABLE_IMAGE_FIELDS = (
+    'notes', 'objective_name', 'measure_color', 'mount_medium', 'stain',
+    'sample_type', 'sample_source', 'contrast', 'crop_mode', 'micro_category',
+    'captured_at', 'sort_order', 'image_type', 'scale_microns_per_pixel',
+    'resample_scale_factor', 'gps_source',
+    'ai_crop_x1', 'ai_crop_y1', 'ai_crop_x2', 'ai_crop_y2',
+    'ai_crop_source_w', 'ai_crop_source_h', 'ai_crop_is_custom',
+)
+
+
+def _image_fields_to_keep_at_cloud(
+    client, img: dict, obs_cloud_id: str, cloud_image_id: str, remote_row: dict,
+) -> set[str]:
+    """The choke-point three-way check for an existing-row image PATCH.
+
+    ``push_image_metadata`` calls this for every PATCH of an existing row
+    (metadata drift, Refresh, upload, replace, preparation, resolutions), so
+    no caller can bypass it. Returns the adoptable fields the PATCH must leave
+    at the cloud value: cloud-only edits since the stored baseline, which it
+    loads itself. With no stored baseline row for the image there is nothing
+    to compare, and the existing two-way rule applies.
+    """
+    include = {'include_ai_crop': client._observation_images_support_ai_crop(), 'include_upload_meta': False}
+    local_payload = _prepared_item_remote_payload(img, str(img.get('filepath') or ''), '', **include)
+    remote_payload = _remote_image_compare_payload(remote_row, **include)
+    baseline_row = _baseline_images_by_cloud_id(obs_cloud_id).get(str(cloud_image_id or '').strip())
+    edits = _remote_only_image_edits(local_payload, img, baseline_row, remote_payload, **include)
+    return {key for key in edits if key in _ADOPTABLE_IMAGE_FIELDS}
 
 
 def _remote_only_image_edits(
@@ -448,12 +490,6 @@ def _remote_only_image_edits(
     }
 
 
-# Descriptive image fields whose cloud-only edits the push adopts locally
-# (same name in the compare payload and the local images table).
-_ADOPTABLE_IMAGE_FIELDS = (
-    'notes', 'objective_name', 'measure_color', 'mount_medium', 'stain',
-    'sample_type', 'sample_source', 'contrast', 'crop_mode', 'micro_category',
-)
 
 
 def _adopt_remote_image_edits_before_baseline(
@@ -475,23 +511,33 @@ def _adopt_remote_image_edits_before_baseline(
     for image_row in ImageDB.get_images_for_observation(obs_local_id):
         img = dict(image_row or {})
         cloud_id = str(img.get('cloud_id') or '').strip()
-        if cloud_id not in remote_by_id or cloud_id not in baseline_by_id:
+        if cloud_id not in remote_by_id:
             continue
         local_payload = _prepared_item_remote_payload(img, str(img.get('filepath') or ''), '', **include)
         remote_payload = _remote_image_compare_payload(remote_by_id[cloud_id], **include)
-        edits = _remote_only_image_edits(local_payload, img, baseline_by_id[cloud_id], remote_payload, **include)
+        if cloud_id not in baseline_by_id:
+            continue
+        edits = _remote_only_image_edits(
+            local_payload, img, baseline_by_id[cloud_id], remote_payload, **include,
+        )
         fields = [f for f in _ADOPTABLE_IMAGE_FIELDS if f in edits]
         if not fields:
             continue
+        values = [remote_payload.get(f) for f in fields]
+        if 'captured_at' in fields:
+            values[fields.index('captured_at')] = _cloud_captured_at_to_local_text(remote_payload.get('captured_at'))
         conn = get_connection()
         try:
             conn.execute(
                 f"UPDATE images SET {', '.join(f'{f} = ?' for f in fields)} WHERE id = ?",
-                [remote_payload.get(f) for f in fields] + [_safe_int(img.get('id'))],
+                values + [_safe_int(img.get('id'))],
             )
             conn.commit()
         finally:
             conn.close()
+        if 'captured_at' in fields:
+            # The local capture time is now the cloud's, not a pull-injected one.
+            _record_pull_injected_captured_at(img.get('id'), remote_payload.get('captured_at'))
         print(f'[cloud_sync] Observation {obs_local_id}: adopted cloud image edits {fields} for cloud image {cloud_id}')
 
 

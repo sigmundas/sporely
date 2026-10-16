@@ -64,6 +64,7 @@ def test_push_omits_null_capture_time_instead_of_falling_back_or_erasing(monkeyp
         {"id": 7, "image_type": "microscope", "captured_at": None},
         "cloud-observation-1",
         "",
+        remote_row={"id": "cloud-image-1", "observation_id": "cloud-observation-1"},
     )
 
     assert "captured_at" not in patches[0]

@@ -545,6 +545,7 @@ def test_push_image_metadata_patches_sample_source_without_uploading_bytes(monke
         # No storage_path — metadata-only anchor. push_image_metadata still
         # emits the PATCH; the caller is responsible for gating byte upload.
         "",
+        remote_row={"id": "cloud-3124", "observation_id": "cloud-obs-631"},
     )
 
     assert cloud_id == "cloud-3124"
@@ -585,6 +586,7 @@ def test_push_image_metadata_drops_sample_source_when_cloud_lacks_column(monkeyp
         {"id": 871, "filepath": "/tmp/x.jpg", "sort_order": 0, "sample_source": "Hymenium"},
         "cloud-obs-631",
         "",
+        remote_row={"id": "cloud-3124", "observation_id": "cloud-obs-631"},
     )
     assert len(patched) == 1
     assert "sample_source" not in patched[0]["payload"]

@@ -548,3 +548,179 @@ def test_cloud_held_capture_time_record_stops_legacy_fallback(monkeypatch):
     img = _pulled_local_image(id=9303, captured_at="2026-10-13 14:30:00")
 
     assert exif._captured_at_is_pull_injected(img) is False
+
+
+# ---------------------------------------------------------------------------
+# The choke point: push_image_metadata enforces the three-way check itself,
+# whichever caller (Refresh, upload/replace, preparation, resolution) sent it.
+# ---------------------------------------------------------------------------
+
+import pytest  # noqa: E402
+
+from utils.cloud_sync_impl.reconciliation.values import _normalize_image_captured_at_for_cloud  # noqa: E402
+
+
+def _db_image(image_id: int) -> dict:
+    conn = get_connection()
+    try:
+        conn.row_factory = __import__("sqlite3").Row
+        row = conn.execute("SELECT * FROM images WHERE id = ?", (image_id,)).fetchone()
+    finally:
+        conn.close()
+    return dict(row)
+
+
+def _set_local(image_id: int, **fields) -> None:
+    conn = get_connection()
+    try:
+        conn.execute(
+            f"UPDATE images SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ?",
+            [*fields.values(), image_id],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _image_bodies(patches, cloud_image_id):
+    return [b for p, b in patches if p.startswith(f"observation_images?id=eq.{cloud_image_id}")]
+
+
+def test_refresh_patch_without_remote_row_keeps_web_notes_and_cloud_null(monkeypatch):
+    # Codex finding 1: Refresh (cloud_sync.py, sync_images=False) calls
+    # push_image_metadata(img, cloud_id, storage_path) with no remote row.
+    _insert_local_pulled_image(9501, 9601, "c-9601", notes="old note", stain="")
+    base = _cloud_image("c-9601", "cloud-obs-9501", notes="old note")
+    _store_baseline("cloud-obs-9501", [base])
+    remote = dict(base, notes="web note")
+    client, patches = _client(monkeypatch, {"observation_images?id=eq.c-9601": [remote]})
+
+    client.push_image_metadata(_db_image(9601), "cloud-obs-9501", "")
+
+    body = _image_bodies(patches, "c-9601")[0]
+    assert "notes" not in body
+    assert body["stain"] is None  # blank local text never turns cloud NULL into ''
+
+
+def test_replacing_bytes_keeps_web_notes(monkeypatch):
+    # Codex finding 2: the prepared-image path PATCHes the new key with the
+    # remote row but no keep_remote_fields.
+    _insert_local_pulled_image(9502, 9602, "c-9602", notes="old note")
+    base = _cloud_image("c-9602", "cloud-obs-9502", notes="old note")
+    _store_baseline("cloud-obs-9502", [base])
+    remote = dict(base, notes="web note")
+    client, patches = _client(monkeypatch, {"observation_images?id=eq.c-9602": [remote]})
+    new_key = f"{USER_ID}/cloud-obs-9502/c-9602-v2.webp"
+
+    client.push_image_metadata(_db_image(9602), "cloud-obs-9502", new_key, remote_row=remote)
+
+    body = _image_bodies(patches, "c-9602")[0]
+    assert body["storage_path"] == new_key
+    assert "notes" not in body
+
+
+def test_desktop_edit_is_still_sent_by_the_choke_point(monkeypatch):
+    _insert_local_pulled_image(9503, 9603, "c-9603", notes="")
+    base = _cloud_image("c-9603", "cloud-obs-9503", notes="old note")
+    _store_baseline("cloud-obs-9503", [base])
+    client, patches = _client(monkeypatch, {"observation_images?id=eq.c-9603": [base]})
+
+    client.push_image_metadata(_db_image(9603), "cloud-obs-9503", "")
+
+    # A deliberate clear of a cloud value is sent.
+    assert _image_bodies(patches, "c-9603")[0]["notes"] == ""
+
+
+def test_web_capture_time_survives_two_pushes(monkeypatch):
+    # Codex finding 3: web sets captured_at over a NULL baseline; the local
+    # value is the pull-injected one.
+    _insert_local_pulled_image(9504, 9604, "c-9604", notes=None)
+    _set_local(9604, captured_at="2026-10-13 14:30:00")
+    _record_injected(9604, "2026-10-13 14:30:00")
+    base = _cloud_image("c-9604", "cloud-obs-9504")
+    _store_baseline("cloud-obs-9504", [base])
+    remote = dict(base, captured_at="2026-10-01T08:00:00+00:00")
+    client, patches = _client(monkeypatch, {"observation_images?id=eq.c-9604": [remote]})
+
+    client.push_image_metadata(_db_image(9604), "cloud-obs-9504", "")
+    _run_post_push_baseline("cloud-obs-9504", 9504, [remote])
+    client.push_image_metadata(_db_image(9604), "cloud-obs-9504", "")
+
+    first, second = _image_bodies(patches, "c-9604")
+    assert "captured_at" not in first
+    assert _normalize_image_captured_at_for_cloud(second.get("captured_at", remote["captured_at"]), local=False) \
+        == _normalize_image_captured_at_for_cloud(remote["captured_at"], local=False)
+
+
+class _AiCropSnapshotClient(_SnapshotClient):
+    def _observation_images_support_ai_crop(self):
+        return True
+
+
+# field: (local baseline value, cloud baseline value, cloud web value)
+_ADOPTED_FIELD_CASES = {
+    "notes": ("b", "b", "w"),
+    "objective_name": ("10x", "10x", "40x"),
+    "measure_color": ("#111111", "#111111", "#222222"),
+    "mount_medium": ("Water", "Water", "KOH"),
+    "stain": ("Melzer", "Melzer", "Congo"),
+    "sample_type": ("Fresh", "Fresh", "Dried"),
+    "sample_source": ("Hymenium", "hymenium", "spore_print"),
+    "contrast": ("BF", "BF", "DIC"),
+    "crop_mode": ("full", "full", "ai"),
+    "micro_category": ("spores", "spores", "basidia"),
+    "captured_at": (None, None, "2026-10-01T08:00:00+00:00"),
+    "sort_order": (0, 0, 2),
+    "image_type": ("field", "field", "microscope"),
+    "scale_microns_per_pixel": (0.5, 0.5, 0.25),
+    "resample_scale_factor": (1.0, 1.0, 0.5),
+    "gps_source": (0, False, True),
+    "ai_crop_x1": (1.0, 1.0, 2.0),
+    "ai_crop_y1": (1.0, 1.0, 2.0),
+    "ai_crop_x2": (5.0, 5.0, 6.0),
+    "ai_crop_y2": (5.0, 5.0, 6.0),
+    "ai_crop_source_w": (100, 100, 200),
+    "ai_crop_source_h": (100, 100, 200),
+    "ai_crop_is_custom": (0, False, True),
+}
+
+
+def test_every_protected_field_has_a_second_push_case():
+    assert set(_ADOPTED_FIELD_CASES) == set(image_push._ADOPTABLE_IMAGE_FIELDS)
+
+
+@pytest.mark.parametrize("field", sorted(_ADOPTED_FIELD_CASES))
+def test_adopted_field_survives_the_second_push(monkeypatch, field):
+    local_value, base_value, web_value = _ADOPTED_FIELD_CASES[field]
+    obs_id, image_id, cloud_image_id, obs_cloud = 9700, 9800, "c-9800", "cloud-obs-9700"
+    _insert_local_pulled_image(obs_id, image_id, cloud_image_id, notes=None)
+    _set_local(image_id, **{field: local_value})
+    base = _cloud_image(cloud_image_id, obs_cloud, **{field: base_value})
+    _store_baseline(obs_cloud, [base])
+    remote = dict(base, **{field: web_value})
+    client, patches = _client(monkeypatch, {f"observation_images?id=eq.{cloud_image_id}": [remote]})
+
+    client.push_image_metadata(_db_image(image_id), obs_cloud, "")
+    snapshot_client = _AiCropSnapshotClient(obs_cloud, [remote])
+    baseline_mod._store_remote_snapshot(
+        snapshot_client, obs_cloud, remote_measurements=[],
+        before_store_images=lambda rows: image_push._adopt_remote_image_edits_before_baseline(
+            snapshot_client, obs_cloud, obs_id, rows,
+        ),
+    )
+    local_after = _db_image(image_id)
+    client.push_image_metadata(local_after, obs_cloud, "")
+
+    first, second = _image_bodies(patches, cloud_image_id)
+    assert field not in first
+    # The local row now holds the cloud value, so the second push is not a
+    # desktop edit of it.
+    local_cmp = image_push._prepared_item_remote_payload(local_after, local_after["filepath"], "")
+    remote_cmp = image_push._remote_image_compare_payload(remote)
+    assert local_cmp[field] == remote_cmp[field]
+    assert image_push._image_fields_to_keep_at_cloud(client, local_after, obs_cloud, cloud_image_id, remote) == set()
+    stale = image_push._prepared_item_remote_payload(
+        dict(local_after, **{field: local_value}), local_after["filepath"], "",
+    )[field]
+    if field in second:
+        assert second[field] != stale or stale == remote_cmp[field]

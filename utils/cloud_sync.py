@@ -748,6 +748,8 @@ from utils.cloud_sync_impl.image_push import (  # noqa: F401  (facade re-export)
     _adopt_remote_image_edits_before_baseline,
     _baseline_images_by_cloud_id,
     _remote_only_image_edits,
+    _image_fields_to_keep_at_cloud,
+    _cloud_captured_at_to_local_text,
     _IMAGE_CREATE_COMPARE_EXCLUDED_KEYS,
     _image_create_content_matches,
     _upload_outcome_uncertain,
@@ -7834,13 +7836,29 @@ class SporelyCloudClient(
             payload['storage_exif_safe'] = True
 
         existing_id = self._resolve_existing_image_for_push(img, obs_cloud_id, remote_row=remote_row)
-        if existing_id and remote_row is not None and str(remote_row.get('id') or '').strip() == str(existing_id):
+        if existing_id and str((remote_row or {}).get('id') or '').strip() != str(existing_id):
+            # Every existing-row PATCH is shaped against the live cloud row:
+            # a caller without it (Refresh, recovery) gets it fetched here.
+            rows = self._get(
+                f'observation_images?id=eq.{existing_id}&user_id=eq.{self.user_id}&select=*&limit=1'
+            )
+            remote_row = dict(rows[0]) if rows else None
+        if existing_id:
+            if remote_row is None or str(remote_row.get('id') or '').strip() != str(existing_id):
+                raise CloudSyncError(
+                    f'image {img.get("id")}: no cloud row to compare for {existing_id}; '
+                    'refusing a blind metadata PATCH'
+                )
             _preserve_unedited_remote_image_values(
                 payload, img, remote_row,
                 captured_at_pull_injected=_captured_at_is_pull_injected(img),
             )
-            # Fields only the cloud changed since the baseline stay at the cloud.
-            for key in keep_remote_fields:
+            # The three-way check (choke point): fields only the cloud changed
+            # since the baseline stay at the cloud, whichever caller sent us.
+            keep = set(keep_remote_fields) | _image_fields_to_keep_at_cloud(
+                self, img, obs_cloud_id, existing_id, remote_row,
+            )
+            for key in keep:
                 payload.pop(key, None)
         restore_source_id = _explicit_image_restore_source(img['id'])
         if existing_id:
