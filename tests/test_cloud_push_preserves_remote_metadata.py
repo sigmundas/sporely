@@ -86,6 +86,7 @@ def _pulled_local_image(**overrides) -> dict:
 
 
 def test_metadata_patch_of_pulled_image_keeps_web_upload_metadata(monkeypatch):
+    _record_injected(194, "2026-10-13 14:30:00")
     client, patches = _client(monkeypatch)
     remote = _web_remote_image()
 
@@ -111,6 +112,7 @@ def test_metadata_patch_still_sends_upload_metadata_the_uploader_supplied(monkey
     client, patches = _client(monkeypatch)
     remote = _web_remote_image()
     img = _pulled_local_image(
+        id=500,
         source_role=None,
         upload_mode="reduced",
         stored_bytes=1234,
@@ -201,6 +203,7 @@ def test_observation_patch_still_clears_a_cloud_value_to_blank(monkeypatch):
 def test_metadata_only_drift_ignores_values_the_push_keeps_at_cloud(monkeypatch):
     """A pulled image whose only local differences are the pull-injected
     capture time and blank text is not drift: no PATCH (no-op write rule)."""
+    _record_injected(194, "2026-10-13 14:30:00")
     local_image = _pulled_local_image(crop_mode=None, measure_color=None, synced_at="2026-10-16T00:00:00Z")
     remote_image = _web_remote_image()
     pushed = []
@@ -251,3 +254,80 @@ def test_metadata_only_drift_still_patches_a_real_local_edit(monkeypatch):
     cloud_sync._reconcile_metadata_only_linked_images(Client(), {"id": 201}, "366", [remote_image])
 
     assert len(pushed) == 1
+
+
+def _record_injected(local_image_id: int, value: str) -> None:
+    from database.models import SettingsDB
+
+    SettingsDB.set_setting(f"cloud_image_pull_injected_captured_at:{local_image_id}", value)
+
+
+def test_user_set_capture_time_on_pulled_image_is_pushed(monkeypatch):
+    _record_injected(194, "2026-10-13 14:30:00")
+    client, patches = _client(monkeypatch)
+    remote = _web_remote_image()
+
+    client.push_image_metadata(
+        _pulled_local_image(captured_at="2026-10-13 09:15:00"), "366",
+        remote["storage_path"], remote_row=remote,
+    )
+
+    body = [b for p, b in patches if p.startswith("observation_images?")][0]
+    assert body["captured_at"] == cloud_sync._normalize_image_captured_at_for_cloud(
+        "2026-10-13 09:15:00", local=True,
+    )
+
+
+def test_recorded_pull_injected_capture_time_is_not_pushed(monkeypatch):
+    _record_injected(194, "2026-10-13 14:30:00")
+    client, patches = _client(monkeypatch)
+    remote = _web_remote_image()
+
+    client.push_image_metadata(
+        _pulled_local_image(), "366", remote["storage_path"], remote_row=remote,
+    )
+
+    body = [b for p, b in patches if p.startswith("observation_images?")][0]
+    assert "captured_at" not in body
+
+
+def test_user_set_capture_time_is_drift(monkeypatch):
+    _record_injected(194, "2026-10-13 14:30:00")
+    local_image = _pulled_local_image(
+        crop_mode=None, measure_color=None, captured_at="2026-10-13 09:15:00",
+        synced_at="2026-10-16T00:00:00Z",
+    )
+    pushed = []
+
+    class Client:
+        def _observation_images_support_ai_crop(self):
+            return False
+
+        def _observation_images_support_upload_metadata(self):
+            return True
+
+        def push_image_metadata(self, image, observation_id, storage_path, *, remote_row=None):
+            pushed.append(dict(image))
+            return "357"
+
+    monkeypatch.setattr(cloud_sync.ImageDB, "get_images_for_observation", lambda _obs_id: [dict(local_image)])
+    monkeypatch.setattr(cloud_sync, "_stored_local_media_signature_image_stats", lambda _obs_id: {})
+    monkeypatch.setattr(cloud_sync, "_local_image_source_bytes_unchanged", lambda *_args: True)
+
+    cloud_sync._reconcile_metadata_only_linked_images(Client(), {"id": 201}, "366", [_web_remote_image()])
+
+    assert len(pushed) == 1
+
+
+def test_image_text_with_cloud_value_can_be_cleared(monkeypatch):
+    client, patches = _client(monkeypatch)
+    remote = dict(_web_remote_image(), notes="web note", objective_name="40x")
+
+    client.push_image_metadata(
+        _pulled_local_image(notes="", objective_name=""), "366",
+        remote["storage_path"], remote_row=remote,
+    )
+
+    body = [b for p, b in patches if p.startswith("observation_images?")][0]
+    assert body["notes"] == ""
+    assert body["objective_name"] == ""

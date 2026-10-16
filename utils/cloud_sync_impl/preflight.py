@@ -23,8 +23,10 @@ from utils.cloud_sync_impl.common import (
     _normalize_cloud_media_key,
     _safe_int,
 )
+from utils.cloud_sync_impl.exif import _captured_at_is_pull_injected
 from utils.cloud_sync_impl.image_payloads import (
     _deleted_remote_image_identity_keys,
+    _preserve_unedited_remote_image_values,
     _remote_image_payload,
 )
 from utils.cloud_sync_impl.image_policy import should_pull_cloud_image_to_desktop
@@ -215,6 +217,11 @@ def _analyze_observation_push_conflicts(
         for img in (local_images or [])
         if str((img or {}).get('cloud_id') or '').strip()
     }
+    local_images_by_cloud_id = {
+        str((img or {}).get('cloud_id') or '').strip(): dict(img or {})
+        for img in (local_images or [])
+        if str((img or {}).get('cloud_id') or '').strip()
+    }
     image_conflict_keys: list[str] = []
     shared_cloud_ids = sorted(
         set(baseline_by_cloud_id) & set(remote_by_cloud_id) & set(local_by_cloud_id)
@@ -223,6 +230,18 @@ def _analyze_observation_push_conflicts(
         baseline_meta = _image_metadata_payload(baseline_by_cloud_id[cloud_image_id])
         remote_meta = _image_metadata_payload(remote_by_cloud_id[cloud_image_id])
         local_meta = _image_metadata_payload(local_by_cloud_id[cloud_image_id])
+        # Values the push keeps at the cloud's (blank text over NULL, a
+        # pull-injected capture time) are not local edits.
+        _preserve_unedited_remote_image_values(
+            local_meta,
+            local_images_by_cloud_id.get(cloud_image_id),
+            baseline_meta,
+            captured_at_pull_injected=_captured_at_is_pull_injected(
+                local_images_by_cloud_id.get(cloud_image_id)
+            ),
+        )
+        if 'captured_at' not in local_meta and 'captured_at' in baseline_meta:
+            local_meta['captured_at'] = baseline_meta['captured_at']
         local_changed = local_meta != baseline_meta
         remote_changed = remote_meta != baseline_meta
         if local_changed and remote_changed and local_meta != remote_meta:

@@ -88,24 +88,32 @@ def _remote_image_payload(
     return payload
 
 
-def _preserve_unedited_remote_image_values(payload: dict, img: dict | None, remote_row: dict | None) -> None:
+def _preserve_unedited_remote_image_values(
+    payload: dict,
+    img: dict | None,
+    remote_row: dict | None,
+    *,
+    captured_at_pull_injected: bool = False,
+) -> None:
     """Shape an existing-row image PATCH (or its drift compare) in place.
 
     * A blank local text value never replaces a cloud NULL.
+    * ``captured_at`` the pull injected (``captured_at_pull_injected``, from
+      ``exif._captured_at_is_pull_injected``) never fills a cloud NULL; a
+      capture time the user set is sent.
     * A remote-owned recovery copy (``source_role=cloud_recovery_cache`` or
-      ``file_purpose=cache``) holds bytes the cloud supplied. Facts the
-      desktop derived from that local file -- its name, and the capture time
-      the pull injected from the observation datetime -- are not edits and
-      never fill a value the cloud row does not hold.
+      ``file_purpose=cache``) never fills ``original_filename`` from its
+      local file name when the cloud row holds none.
     """
     if not remote_row:
         return
     _keep_remote_null_for_blank_text(payload, remote_row)
+    if captured_at_pull_injected and 'captured_at' in payload and remote_row.get('captured_at') is None:
+        payload.pop('captured_at', None)
     row = dict(img or {})
     source_role = str(row.get('source_role') or '').strip().lower()
     file_purpose = str(row.get('file_purpose') or '').strip().lower()
     if source_role != 'cloud_recovery_cache' and file_purpose != 'cache':
         return
-    for key in ('original_filename', 'captured_at'):
-        if key in payload and remote_row.get(key) is None:
-            payload.pop(key, None)
+    if 'original_filename' in payload and remote_row.get('original_filename') is None:
+        payload.pop('original_filename', None)

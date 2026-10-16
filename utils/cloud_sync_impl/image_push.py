@@ -54,6 +54,7 @@ from utils.cloud_sync_impl.image_files import (
     _build_worker_storage_path,
     _file_content_signature,
 )
+from utils.cloud_sync_impl.exif import _captured_at_is_pull_injected
 from utils.cloud_sync_impl.image_payloads import (
     _preserve_unedited_remote_image_values,
     _remote_image_payload,
@@ -506,7 +507,10 @@ def _reconcile_metadata_only_linked_images(
         # keeps at the cloud's (blank text over NULL, a recovery copy's
         # derived file facts) are not drift.
         keys_before = set(expected_payload)
-        _preserve_unedited_remote_image_values(expected_payload, img, remote_row)
+        _preserve_unedited_remote_image_values(
+            expected_payload, img, remote_row,
+            captured_at_pull_injected=_captured_at_is_pull_injected(img),
+        )
         for key in keys_before - set(expected_payload):
             remote_payload.pop(key, None)
 

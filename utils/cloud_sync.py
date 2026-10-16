@@ -613,7 +613,11 @@ from utils.cloud_sync_impl.exif import (  # noqa: F401  (facade re-export)
     _exif_file_signature,
     _inject_obs_exif_into_field_image,
     _load_exif_backfill_state,
+    _captured_at_is_pull_injected,
     _load_obs_exif_fallback,
+    _local_wall_clock_text,
+    _pull_injected_captured_at_key,
+    _record_pull_injected_captured_at,
     _save_exif_backfill_state,
     _SETTING_CLOUD_EXIF_BACKFILL_STATE,
 )
@@ -7812,7 +7816,10 @@ class SporelyCloudClient(
 
         existing_id = self._resolve_existing_image_for_push(img, obs_cloud_id, remote_row=remote_row)
         if existing_id and remote_row is not None and str(remote_row.get('id') or '').strip() == str(existing_id):
-            _preserve_unedited_remote_image_values(payload, img, remote_row)
+            _preserve_unedited_remote_image_values(
+                payload, img, remote_row,
+                captured_at_pull_injected=_captured_at_is_pull_injected(img),
+            )
         restore_source_id = _explicit_image_restore_source(img['id'])
         if existing_id:
             self._patch(f'observation_images?id=eq.{existing_id}&user_id=eq.{self.user_id}', payload)

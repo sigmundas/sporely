@@ -349,3 +349,74 @@ def _backfill_missing_exif_on_cloud_images() -> dict:
     except Exception as exc:
         print(f'[cloud_sync] EXIF backfill skipped: {exc}')
     return counters
+
+
+def _pull_injected_captured_at_key(image_id: int | str) -> str:
+    return f'cloud_image_pull_injected_captured_at:{int(image_id)}'
+
+
+def _record_pull_injected_captured_at(image_id: int | str, remote_captured_at) -> None:
+    """Remember the capture time a pull derived for an image the cloud left NULL.
+
+    The pull writes the observation datetime into a downloaded field image's
+    EXIF, and ``ImageDB.add_image`` reads it back as ``captured_at``. That
+    value is not a user edit; recording it lets the push tell it apart from
+    one (see ``_captured_at_is_pull_injected``).
+    """
+    try:
+        key = _pull_injected_captured_at_key(image_id)
+    except (TypeError, ValueError):
+        return
+    value = ''
+    try:
+        if remote_captured_at is None:
+            conn = get_connection()
+            try:
+                row = conn.execute(
+                    'SELECT captured_at FROM images WHERE id = ?', (int(image_id),)
+                ).fetchone()
+            finally:
+                conn.close()
+            value = str((row[0] if row else '') or '').strip()
+        SettingsDB.set_setting(key, value)
+    except Exception as exc:
+        # Best effort: without the record the push falls back to the
+        # observation-datetime comparison in _captured_at_is_pull_injected.
+        print(f'[cloud_sync] Warning: could not record pulled capture time for image {image_id}: {exc}')
+
+
+def _local_wall_clock_text(value) -> str:
+    text = str(value or '').strip().replace('T', ' ')
+    return text[:19] if len(text) >= 19 else ''
+
+
+def _captured_at_is_pull_injected(img: dict | None) -> bool:
+    """True when the local ``captured_at`` is the value a pull injected.
+
+    Uses the value recorded at pull. A recovery copy pulled before that record
+    existed falls back to the same source the pull used: the observation
+    datetime (``_load_obs_exif_fallback``), compared as wall-clock text the
+    way the EXIF round trip stores it. Any other local value is an edit.
+    """
+    row = dict(img or {})
+    local_text = _local_wall_clock_text(row.get('captured_at'))
+    if not local_text:
+        return False
+    try:
+        recorded = SettingsDB.get_setting(_pull_injected_captured_at_key(row.get('id')), None)
+    except (TypeError, ValueError):
+        recorded = None
+    if recorded is not None and str(recorded).strip():
+        return _local_wall_clock_text(recorded) == local_text
+    source_role = str(row.get('source_role') or '').strip().lower()
+    file_purpose = str(row.get('file_purpose') or '').strip().lower()
+    if source_role != 'cloud_recovery_cache' and file_purpose != 'cache':
+        return False
+    if str(row.get('image_type') or 'field').strip().lower() != 'field':
+        return False
+    try:
+        observation_id = int(row.get('observation_id'))
+    except (TypeError, ValueError):
+        return False
+    injected = _load_obs_exif_fallback(observation_id)[4]
+    return bool(injected) and _local_wall_clock_text(injected) == local_text

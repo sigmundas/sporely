@@ -764,6 +764,7 @@ Canonical desktop image states are `NONE`, `UPLOADED`, `DELETE_PENDING`, and `DE
 - Compare local, cloud, and baseline.
 - Patch only shared fields that changed.
 - Preserve cloud-only and local-only fields.
+- A blank local text value is not an edit of a cloud NULL: an observation or image PATCH never turns NULL into `''`, and image change and conflict detection treat the two as equal. Clearing a cloud value to blank is still sent.
 - A push (which runs before the pull) that keeps a cloud-only observation
   field edit also writes it to the local row, through
   `_apply_remote_observation_fields`, after the conflict preflight passes and
@@ -795,8 +796,8 @@ When a local image still maps to an active cloud image:
 - keep the cloud row and file when omitted from `prepared_items` unless an explicit checkbox/context-menu tombstone is pending;
 - patch metadata when necessary, without rewriting cloud values the user did not edit:
   - upload metadata (`upload_mode`, `source_*`, `stored_*`, `stored_bytes`) is sent only by the client that produced the bytes; a metadata patch never NULLs it;
-  - a blank local text value never turns a cloud NULL into `''` (observation and image PATCHes alike);
-  - for a recovery copy (`cloud_recovery_cache` / `cache`), the local file name and the capture time the pull injected from the observation datetime never fill an `original_filename` or `captured_at` the cloud row does not hold;
+  - the capture time a pull injected from the observation datetime (recorded at pull) never fills a `captured_at` the cloud row does not hold; a capture time the user sets is sent;
+  - for a recovery copy (`cloud_recovery_cache` / `cache`), the local file name never fills an `original_filename` the cloud row does not hold;
 - replace bytes only when the trusted source changed or a missing cloud file is deliberately restored;
 - never call it stale merely because it was filtered, skipped, or reordered.
 

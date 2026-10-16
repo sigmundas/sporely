@@ -363,3 +363,46 @@ def test_real_remote_edit_still_blocks_push(monkeypatch):
     assert report.has_conflict is True
     assert "observation" in report.categories
     assert any("notes" in label.lower() for label in report.field_labels)
+
+
+# ---------------------------------------------------------------------------
+# Pulled image: pull-injected capture time and blank text are not local edits
+# ---------------------------------------------------------------------------
+
+
+def _pulled_web_image_inputs(local_captured_at: str, remote_notes: str):
+    from database.models import SettingsDB
+
+    SettingsDB.set_setting(
+        "cloud_image_pull_injected_captured_at:773001", "2026-10-13 14:30:00",
+    )
+    return _make_inputs(
+        local_image=_local_image_row(
+            captured_at=local_captured_at, objective_name="", calibration_id=None,
+            source_role="cloud_recovery_cache", file_purpose="cache",
+        ),
+        baseline_image=_baseline_image_row(
+            captured_at=None, objective_name=None, calibration_uuid=None,
+        ),
+        remote_image=_remote_image_row(
+            captured_at=None, objective_name=None, calibration_uuid=None, notes=remote_notes,
+        ),
+    )
+
+
+def test_web_edit_of_pulled_image_is_not_a_conflict(monkeypatch):
+    _patch_tombstones(monkeypatch)
+    inputs = _pulled_web_image_inputs("2026-10-13 14:30:00", "web note")
+
+    report = cloud_sync._analyze_observation_push_conflicts(**inputs)
+
+    assert report.image_conflict_keys == []
+
+
+def test_user_set_capture_time_on_pulled_image_still_conflicts_with_web_edit(monkeypatch):
+    _patch_tombstones(monkeypatch)
+    inputs = _pulled_web_image_inputs("2026-10-13 09:15:00", "web note")
+
+    report = cloud_sync._analyze_observation_push_conflicts(**inputs)
+
+    assert report.image_conflict_keys == [f"cloud:{_CLOUD_IMG_ID}"]

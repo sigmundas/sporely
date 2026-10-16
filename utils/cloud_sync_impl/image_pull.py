@@ -36,6 +36,7 @@ from utils.cloud_sync_impl.errors import (
 from utils.cloud_sync_impl.exif import (
     _inject_obs_exif_into_field_image,
     _load_obs_exif_fallback,
+    _record_pull_injected_captured_at,
 )
 from utils.cloud_sync_impl.image_files import (
     _detected_image_extension,
@@ -890,6 +891,7 @@ def _apply_remote_images_to_local(
                 sync_key=remote_sync_key(remote_image),
             )
             _adopt_remote_ingest_method(local_image_id, remote_image)
+            _record_pull_injected_captured_at(local_image_id, remote_image.get('captured_at'))
             download_path = _promote_temp_imported_image_if_needed(
                 int(local_image_id),
                 int(local_id),
@@ -1147,6 +1149,7 @@ def _import_remote_images(
                     sync_key=remote_sync_key(image_row),
                 )
                 _adopt_remote_ingest_method(local_image_id, image_row)
+                _record_pull_injected_captured_at(local_image_id, image_row.get('captured_at'))
                 download_path = _promote_temp_imported_image_if_needed(
                     int(local_image_id),
                     int(local_id),
