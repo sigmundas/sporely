@@ -2,7 +2,7 @@
 
 Agent verification on the disposable target, 2026-10-15/16. Plan `2026-10-14-sync-key-identity`, Stage 6, slice P1d (run `2026-10-14-sync-key-identity-ff39f23d-7f95e23f`). This file is the stage's only change after the tested commit.
 
-**Status: one required result is not met.** Matrix row 14 fails its "unsynced local work kept" condition for the two-installation collision on every released build (finding F1). The released clients' own pull causes it, and neither the new desktop nor the brake can change it. It needs the plan owner's disposition. Every other required case passes on `T`.
+**Status: one required result is not met, and it is accepted as a limitation.** Matrix row 14 fails its "unsynced local work kept" condition for the two-installation collision on every released build (finding F1). The released clients' own pull causes it, and neither the new desktop nor the brake can change it. The plan owner accepted it on 2026-10-16 as a documented limitation (gate `95948f21f1e1414fa9afa58849dfada6`, check `sync-key-old-client-local-work-preservation-resolution`). It stays a failed condition, not a pass. Every other required case passes on `T`.
 
 ## Tested commit, target and harness
 
@@ -133,7 +133,7 @@ Responses: `p1g/capture/runs/p1g-o-<build>-<step>.jsonl`. Summary: `p1g/analysis
 
 | Case | Runs | Expected | Observed |
 | --- | --- | --- | --- |
-| 14 | p1g-o-{v0.8.13, v0.9.1, v0.9.15, v0.9.18, v0.9.25, 0520afd, ee6f2af}-{1new…9restart} (63 runs) | every row write refused `P0001`/`sporely_upgrade_required`, every media PUT/DELETE 426; zero cloud changes; downloads work; no sign-in prompt; credentials and unsynced local work kept | **Not met: unsynced local work (F1).** Every other condition held: **cloud unchanged**: the account digest stayed `97182d88826c` from before the first client to after the last (`p1g/analysis/cloudstate-old-*.json`); the only audited writes were the builds' own device records. Every row write → 400 `sporely_upgrade_required`; every media PUT and DELETE → 426 with `X-Sporely-Error-Code: sporely_upgrade_required`. 0 responses 401/403, no sign-in dialog; the restart without `--login` synced (credentials kept); pulls worked. **F1:** each build's own pull paired its unsynced local 2 with S's #283 and overwrote its fields: latitude 62.671, from its photo, became S's 62.143 (`p1g/logs-phase4.txt`). The local row and photo remain, next to S's photo |
+| 14 | p1g-o-{v0.8.13, v0.9.1, v0.9.15, v0.9.18, v0.9.25, 0520afd, ee6f2af}-{1new…9restart} (63 runs) | every row write refused `P0001`/`sporely_upgrade_required`, every media PUT/DELETE 426; zero cloud changes; downloads work; no sign-in prompt; credentials and unsynced local work kept | **Not met: unsynced local work (F1); accepted limitation by the plan owner's decision of 2026-10-16, not a pass.** Every other condition held: **cloud unchanged**: the account digest stayed `97182d88826c` from before the first client to after the last (`p1g/analysis/cloudstate-old-*.json`); the only audited writes were the builds' own device records. Every row write → 400 `sporely_upgrade_required`; every media PUT and DELETE → 426 with `X-Sporely-Error-Code: sporely_upgrade_required`. 0 responses 401/403, no sign-in dialog; the restart without `--login` synced (credentials kept); pulls worked. **F1:** each build's own pull paired its unsynced local 2 with S's #283 and overwrote its fields: latitude 62.671, from its photo, became S's 62.143 (`p1g/logs-phase4.txt`). The local row and photo remain, next to S's photo |
 | 14b | same; `oldclients.json` | link repair refused; NULL link | 0 `desktop_id` changes in any run; D's #328–#330 keep `desktop_id` NULL |
 | wrong-target delete (v0.9.15, `0520afd`, and every other build) | `…-5delpair` | zero cloud changes | media DELETE → 426, row DELETEs → 400; #282 and its media intact. Accepted local effect: the row reappears locally on the next sync |
 | ghost row (old-desktop delete of a keyed row) | `…-6delkeyed` | zero cloud changes | #329 intact for every build; reappears locally on the next sync |
@@ -171,7 +171,11 @@ Responses: `p1g/capture/runs/p1g-o-<build>-<step>.jsonl`. Summary: `p1g/analysis
 
 ## Findings
 
-- **F1, open: released builds overwrite unsynced local work when local ids collide** (all seven builds, `p1g-o-<build>-3sync`). Each released build's own pull pairs its unsynced local observation with another installation's keyless cloud row through its built-in `desktop_id` reverse lookup, and overwrites the local fields. The local photo is kept. The cloud is not changed: the brake refuses every write. Row 14 requires unsynced local work to be kept, and the plan's accepted local effects do not include this, so **row 14 fails on this condition**. It cannot be changed by the new desktop or the brake. It needs the plan owner's disposition (an accepted limitation with an upgrade-notice item, or another measure) before the stage can be accepted.
+- **F1, accepted limitation (plan owner, 2026-10-16): released builds overwrite unsynced local work when local ids collide** (all seven builds, `p1g-o-<build>-3sync`). Each released build's own pull pairs its unsynced local observation with another installation's keyless cloud row through its built-in `desktop_id` reverse lookup, and overwrites the local fields. The local photo is kept. The cloud is not changed: the brake refuses every write. Row 14 requires unsynced local work to be kept, and the plan's accepted local effects do not include this, so **row 14 fails on this condition**. It cannot be changed by the new desktop or the brake.
+  - **Disposition** (gate `95948f21f1e1414fa9afa58849dfada6`, check `sync-key-old-client-local-work-preservation-resolution`, PASS 2026-10-16): the plan owner accepts this as a documented limitation. Row 14's "unsynced local work kept" condition stays recorded as failed, not as a pass.
+  - **Scope:** the exception covers only released desktops' own pull behaviour. Every other row 14 condition, and every requirement for `sync_key` identities, stays strict.
+  - **Upgrade notice (release requirement):** the release notes and upgrade notice must tell desktop users to upgrade every desktop installation on an account before syncing, and warn that a released desktop may overwrite unsynced local observation fields when local ids collide. Cloud data and local photos stay protected.
+  - **Owner's installations:** the owner is the only desktop cloud-sync user and upgrades their own installations after backups (release precondition 3).
 - **F2, fixed in this stage** (`5145af1`): an interrupted new-desktop delete no longer leaves a partial cloud observation that comes back (interrupted-delete row above).
 - **F3, row 14c limitation re-confirmed:** edits and deletes through an inherited keyless wrong pairing reach the other installation's row, its image row and its media. Release preconditions 1 and 3 apply.
 - **F4, fixed in this stage** (`5145af1`): legacy recovery no longer uploads bytes to the matched row's key (row 22 above).
@@ -192,7 +196,7 @@ From the sparrer findings of 2026-10-14:
 From the review of 2026-10-16:
 1. Cover repair preserves existing and concurrently set covers (`5145af1`; row 6 image).
 2. Legacy recovery writes no row and no media to the match (`5145af1`; row 22).
-3. Row 14 is recorded as failing on F1, pending the plan owner's disposition.
+3. Row 14 is recorded as failing on F1. The plan owner accepted it on 2026-10-16 as a documented limitation with an upgrade-notice requirement (F1 above).
 4. The interrupted delete resumes instead of resurrecting (`5145af1`; interrupted-delete row).
 
 ## Appendix: every log of this campaign (`g4-evidence/p1g/analysis/runtable.json`)
