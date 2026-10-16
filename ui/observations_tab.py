@@ -14170,8 +14170,15 @@ class ObservationsTab(QWidget):
                         scale = float(objectives[objective_key]["microns_per_pixel"])
             else:
                 # Field images can have a custom scale from scale-bar calibration.
-                # Keep objective empty so stale microscope objective values are cleared.
-                objective_name = ""
+                # Clear a stale microscope objective when the image becomes a
+                # field image. The dialog has no objective control for field
+                # images, so an image that stays a field image keeps its value
+                # (None = unchanged); an unrelated save must not clear it.
+                existing_for_type = existing_by_id.get(result.image_id) if result.image_id else None
+                if existing_for_type and str(existing_for_type.get("image_type") or "field").lower() == "field":
+                    objective_name = None
+                else:
+                    objective_name = ""
 
             calibration_id = None
             if objective_name and objective_name != "Custom":

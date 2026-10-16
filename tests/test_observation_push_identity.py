@@ -409,7 +409,7 @@ def _push_all_harness(monkeypatch, db_path, remote_rows: list[dict]):
 
     snapshot_calls: list[str] = []
     monkeypatch.setattr(
-        cloud_sync, "_store_remote_snapshot", lambda client, cloud_id: snapshot_calls.append(cloud_id)
+        cloud_sync, "_store_remote_snapshot", lambda client, cloud_id, **_kw: snapshot_calls.append(cloud_id)
     )
     # The stored snapshot equals current remote state: the pull-only import
     # captured it, and the cloud has not drifted since.
