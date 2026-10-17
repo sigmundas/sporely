@@ -19,6 +19,12 @@ Add a note under the nearest heading, or use “Unsorted / needs review” when 
 - Spore mosaic after conflict resolution: the mosaic is skipped when local and cloud differ in any way the user accepted. Narrow that so only microscope-relevant differences block it.
 - Spore mosaic after conflict resolution: build the mosaic even when local and cloud differ, using only measurements whose images match on both sides.
 - Spore mosaic after conflict resolution: generate a mosaic for observations that only came in by import (cloud pull), not just ones pushed from this device.
+- Spore mosaic size: the mosaic is encoded once as WebP (quality 82) with every spore as a tile, with no size loop and no tile cap. Large mosaics exceed the plan cap: on 2026-10-17, obs 11 (302 tiles of 262×320) failed with "Image too large for plan", and the failure was not listed among the sync issues. Make the mosaic fit the plan cap the way the web app does: step down tile resolution and/or quality until it fits, and consider capping the tile count. Also report the failure as a sync issue. The alternative, raising the worker cap for mosaic keys, costs storage, and every worker deploy now needs the brake checks.
+- Follow-ups from the first 0.9.26 syncs (2026-10-17):
+  - Obs 604, image 3258: the cloud row 7752 (created by legacy-recovery as a "possible duplicate") carries 3258's sync key, but differs in `scale_microns_per_pixel`, which gives a stable `ChildAdoptionConflictError`. Decide the correct scale in conflict review, then clean up the duplicate cloud row.
+  - Obs 10, 12 and 19: every pull re-marks them dirty (`local_media_changed`, right after media materialization), and every push blocks them as image conflicts needing review. If they still recur after review, treat it as a non-convergence defect and investigate with the sync log.
+  - Obs 372 (image PATCHes interrupted by the legacy `0520afd` sync on 2026-10-16): make a trivial edit to mark it dirty, sync, and check whether image prep reports `changed_keys` (the backfill edits are then pushed) or none (the cloud is already complete).
+  - Storage clean-up from the pre-upgrade reconciliation report: C = 10 images marked not uploaded that still hold cloud bytes, and F = 84 soft-deleted cloud rows whose bytes remain. Separate decision; nothing is deleted automatically.
 
 Source: former `PLAN.md`, the active cloud-sync extraction plan, the cloud-media incident audit, and the deferred items from `completed/2026-09-07-conflict-resolution-spore-mosaic.md`.
 
