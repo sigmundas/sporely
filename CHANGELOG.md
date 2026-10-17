@@ -2,6 +2,21 @@
 
 All notable changes to Sporely are documented here.
 
+## Unreleased (desktop 0.9.26) — DRAFT, wording awaiting owner approval
+
+Requires server migrations `20261012105630`, `20261013210000`, `20261014120000` and `20261015090000` (sporely-web), and the media worker with the obsolete-desktop brake. They are applied as part of this release, before this version is published.
+
+### Upgrade notice (read before upgrading)
+- **Upgrade every computer that syncs to your account before syncing again.** Once the server update is live, older Sporely Desktop versions can no longer upload or delete anything in the cloud. Downloads still work. Do not keep syncing with an older version, even on a single computer.
+- **Back up your Sporely database before upgrading**, and keep a note of observations and measurements that have not been synced yet.
+- **An older desktop can overwrite unsynced local changes.** When an older version downloads from the cloud, it can pair a local, unsynced observation with a different cloud observation that has the same local number, and overwrite the local fields. Upgrading does not necessarily recover fields that were already overwritten this way.
+- **Inherited wrong links remain until corrected.** If an older version has already linked a local observation or image to the wrong cloud record, edits and deletes can still affect that wrong cloud record after the upgrade, until the link is corrected.
+
+### Changed
+- **Per-record sync identity.** Observations, images and measurements carry their own sync keys, and every cloud request identifies the new sync protocol. Two computers on one account no longer overwrite each other's records through shared local numbers.
+- **Metadata preservation.** Syncing keeps image and observation metadata that was previously cleared or rewritten; the accepted remaining behaviours are listed in `docs/verification/2026-10-desktop-metadata-known-risks.md`.
+- **Photo location provenance.** Imported observations record where their location came from (photo GPS/EXIF, device or manual) and why a location is missing.
+
 ## 2026-10-02 (desktop 0.9.25)
 
 Requires server migrations `20261001195524`, `20261001213000`, `20261002120000` and `20261002150000` (sporely-web), all already live in production.
