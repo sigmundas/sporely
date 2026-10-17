@@ -2,7 +2,19 @@
 
 All notable changes to Sporely are documented here.
 
-## Unreleased (desktop 0.9.26) — DRAFT, wording awaiting owner approval
+## 2026-10-17 (desktop 0.9.27)
+
+No server changes; works with the same server as 0.9.26.
+
+### Fixed
+- **Cloud sync could re-apply cloud images over local images (0.9.26).** When an observation had pending local image changes, a sync could forget which image versions it had last agreed with the cloud, so every following sync treated all cloud images as new and wrote them over the linked local images (metadata and microscope working files). The agreed state is now kept.
+- **Image conflicts are no longer resolved silently.** When local and cloud images differ and there is no earlier agreed version, the difference is shown for review instead of the cloud version being applied automatically.
+- **Every blocked conflict now reaches the conflict review.** Observations that sync reported as "needs review" could stay stuck with no way to open the review (images, measurements and spore-mosaic tiles with the same sync key but different content, including those found by the background measurement check).
+
+### Notes
+- Upgrade from 0.9.26 before syncing again. If an observation's images changed unexpectedly after syncing with 0.9.26, compare them with a backup taken before that sync.
+
+## 2026-10-17 (desktop 0.9.26)
 
 Requires server migrations `20261012105630`, `20261013210000`, `20261014120000` and `20261015090000` (sporely-web), and the media worker with the obsolete-desktop brake. They are applied as part of this release, before this version is published.
 
