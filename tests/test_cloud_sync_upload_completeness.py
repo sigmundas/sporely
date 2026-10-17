@@ -587,9 +587,12 @@ def test_missing_file_and_duplicate_rows_do_not_create_a_dirty_loop(db, monkeypa
 # repair must reach a stable subsequent sync rather than a dirty loop.
 
 
-def test_cache_row_without_cloud_id_repairs_identity_without_preparing_bytes(
+def test_cache_row_without_cloud_id_is_never_relinked_by_desktop_id_or_uploaded(
     db, monkeypatch
 ):
+    # desktop_id is retired as an identity: the remote cache row that carries
+    # this local id is never linked by it. Re-linking a remote-owned copy by
+    # its sync_key belongs to pull. Its bytes never leave the desktop.
     db_path, tmp_path, _field_image = db
     cache_file = tmp_path / "cache-15.webp"
     cache_file.write_bytes(b"remote-owned-bytes")
@@ -603,8 +606,6 @@ def test_cache_row_without_cloud_id_repairs_identity_without_preparing_bytes(
         source_role="cloud_recovery_cache",
         file_purpose="cache",
     )
-    # Cache rows are cloud-owned: the storage-intent ledger does not govern
-    # them, so seeding intent for the local canonical row only is realistic.
     cloud_sync._set_cloud_image_storage_intent_initialized_ids(1, {11})
 
     assert cloud_sync._pending_cloud_pushable_image_ids(1) == [15]
@@ -618,26 +619,10 @@ def test_cache_row_without_cloud_id_repairs_identity_without_preparing_bytes(
     result = harness.run()
 
     assert result["errors"] == []
-    # Full image preparation ran (the fast path would not call the callback).
-    assert harness.image_prep_calls == [(1, True)]
-    assert len(harness.prepare_calls) == 1
-    # …and the cache row was handed to the callback as "do not prepare".
-    assert 15 in harness.prepare_calls[0][1]
-    # No bytes left the desktop for a remote-owned recovery copy.
-    assert harness.client.uploaded_bytes == []
-    # The repair the pending state existed for actually happened.
-    assert _cloud_id_for_image(db_path, 15) == "cloud-image-15"
-
-    # Steady state: nothing pending, and the next sync takes the shortcut.
-    assert cloud_sync._pending_cloud_pushable_image_ids(1) == []
-    _mark_observation_dirty(db_path)
-    second = harness.run()
-
-    assert second["errors"] == []
     assert harness.image_prep_calls == [(1, True)]
     assert len(harness.prepare_calls) == 1
     assert harness.client.uploaded_bytes == []
-    assert _observation_status(db_path) == "synced"
+    assert not _cloud_id_for_image(db_path, 15)
 
 
 def test_linked_cache_row_retains_the_fast_path_shortcut(db, monkeypatch):

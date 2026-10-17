@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 from database.models import ImageDB, get_image_tombstones_by_local_image_id
@@ -24,9 +25,16 @@ from utils.cloud_sync_impl.capabilities import (
     _remote_metadata_purpose,
 )
 from utils.cloud_sync_impl.common import _normalize_cloud_media_key, _safe_int
+from utils.cloud_sync_impl.child_identity import (
+    clear_child_create_pending,
+    clear_legacy_marker,
+    create_child_row,
+    is_legacy_link,
+    mark_child_create_pending,
+)
 from utils.cloud_sync_impl.errors import (
+    ChildAdoptionConflictError,
     CloudSyncError,
-    ImageIdentityConflictError,
     is_cloud_auth_error,
     is_cloud_temporary_unavailable_error,
 )
@@ -39,9 +47,9 @@ from utils.cloud_sync_impl.image_policy import (
     microscope_image_requires_public_spore_anchor,
 )
 from utils.cloud_sync_impl.preflight import _image_calibration_uuid
+from utils.cloud_sync_impl.progress import _cloud_sync_current_summary, _increment_sync_summary
 from utils.cloud_sync_impl.reconciliation.values import _normalize_snapshot_value
 from utils.cloud_sync_impl.sync_state import (
-    _clear_cloud_image_file_signature,
     _clear_pending_image_promotion_key,
     _cloud_metadata_only_image_ids,
     _set_cloud_image_metadata_only_state,
@@ -79,6 +87,10 @@ def _reserve_anchor_promotion_key(
     the next sync re-reads remote state before deciding again.
     """
     normalized_key = _normalize_cloud_media_key(storage_path)
+    # The observation is already stamped synced, and the image is linked, so
+    # no dirty scan would find an interrupted promotion: this marker makes the
+    # next push re-dirty the observation (cleared by the image's link commit).
+    mark_child_create_pending(observation_id)
     _store_pending_image_promotion_key(observation_id, local_image_id, normalized_key)
     if not client.reserve_image_storage_path_for_promotion(cloud_image_id, normalized_key):
         _clear_pending_image_promotion_key(observation_id, local_image_id)
@@ -142,8 +154,9 @@ def _rollback_anchor_promotion(
 
 
 # Column subset that is safe to send on a metadata-only microscope image
-# insert. Excludes storage_path (NULL), desktop_id/observation_id/user_id
-# (set explicitly by the helper), and original_filename (derived).
+# insert. Excludes storage_path (NULL), observation_id/user_id (set
+# explicitly by the helper), and original_filename (derived). desktop_id is
+# retired as an identity and never sent.
 _METADATA_ONLY_IMG_FIELDS = [
     'sort_order', 'image_type', 'micro_category', 'objective_name',
     'calibration_uuid',
@@ -163,7 +176,6 @@ def _metadata_only_microscope_image_payload(
     image_row: dict,
 ) -> dict:
     row = dict(image_row or {})
-    local_image_id = _safe_int(row.get('id'))
     payload = {
         field: row.get(field)
         for field in _METADATA_ONLY_IMG_FIELDS
@@ -179,7 +191,6 @@ def _metadata_only_microscope_image_payload(
         'storage_path': None,
         'observation_id': obs_cloud_id,
         'user_id': client.user_id,
-        'desktop_id': local_image_id,
         'original_filename': (
             str(row.get('original_filename') or '').strip()
             or Path(str(row.get('filepath') or '')).name
@@ -255,8 +266,6 @@ def _remote_image_row_matches_anchor_payload(
             return False
     if str(remote.get('image_type') or '').strip().lower() != 'microscope':
         return False
-    if _safe_int(remote.get('desktop_id')) != _safe_int(payload.get('desktop_id')):
-        return False
     if str(remote.get('deleted_at') or '').strip():
         return False
     if metadata_only:
@@ -293,9 +302,13 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
       the measurement_type is one of NULL/''/'manual'/'spore'/'spores')
       get an anchor. This avoids polluting the cloud with anchors that
       can never contribute to public sporePoints.
-    * Idempotent — local ``cloud_id`` values are validated against the
-      current remote rows. A row matching ``desktop_id`` is reused; stale
-      local ids are cleared and replaced with a repaired anchor id.
+    * Idempotent — the local ``cloud_id`` is validated against the current
+      remote rows of the observation (deleted rows included). A linked row
+      whose cloud copy is gone or sits under another observation is never
+      re-created or re-parented (:class:`ChildAdoptionConflictError`). An
+      unlinked image is created with its ``sync_key`` through
+      ``create_child_row``, which links this database's own copy without a
+      write when the create already landed.
     * Never uploads image bytes. Never calls ``upload_image_file`` or
       the R2 client — the caller can guarantee "no full microscope
       source uploads" simply by using this helper.
@@ -385,7 +398,6 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
         )
 
     existing_local_cloud_id = str(row.get('cloud_id') or '').strip()
-    portable_identity_pending = bool(row.get('portable_cloud_identity_pending'))
     remote_rows = [dict(remote or {}) for remote in (remote_images or [])]
     if remote_images is None:
         puller = getattr(client, 'pull_image_metadata', None)
@@ -402,61 +414,42 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
                     dict(remote or {})
                     for remote in (puller(obs_cloud_id) or [])
                 ]
-        elif not portable_identity_pending and hasattr(client, '_find_cloud_image'):
-            try:
-                _row = client._find_cloud_image(local_image_id, obs_cloud_id)
-                remote_cloud_id = _row['id'] if _row else None
-            except ImageIdentityConflictError:
-                raise
-            except Exception as exc:
-                if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
-                    raise
-                print(
-                    f'[cloud_sync] Mosaic image metadata: lookup failed '
-                    f'local_image={local_image_id}: {exc}',
-                    flush=True,
-                )
-            else:
-                if remote_cloud_id:
-                    remote_rows = [{
-                        'id': str(remote_cloud_id),
-                        'desktop_id': local_image_id,
-                        'observation_id': obs_cloud_id,
-                        'image_type': 'microscope',
-                        'storage_path': None,
-                        'deleted_at': None,
-                    }]
 
     remote_by_id = {
         str(remote.get('id') or '').strip(): remote
         for remote in remote_rows
         if str(remote.get('id') or '').strip()
     }
-    remote_by_desktop_id = {
-        _safe_int(remote.get('desktop_id')): remote
-        for remote in remote_rows
-        if _safe_int(remote.get('desktop_id')) > 0
-    }
     remote_row = None
-    if not portable_identity_pending:
-        remote_row = remote_by_desktop_id.get(local_image_id)
-    if remote_row is None and existing_local_cloud_id:
+    if existing_local_cloud_id:
         candidate = remote_by_id.get(existing_local_cloud_id)
         if (
-            candidate
-            and str(candidate.get('observation_id') or '').strip() == str(obs_cloud_id)
-            and (
-                portable_identity_pending
-                or _safe_int(candidate.get('desktop_id')) in {0, local_image_id}
-            )
+            candidate is None
+            or str(candidate.get('observation_id') or '').strip() != str(obs_cloud_id)
         ):
-            remote_row = candidate
+            # A linked row is never re-created or re-parented: its cloud copy
+            # is gone (deletion flow) or belongs to another observation.
+            raise ChildAdoptionConflictError(
+                f'image {local_image_id}: linked cloud image {existing_local_cloud_id} '
+                f'is not a row of observation {obs_cloud_id}; refusing to re-create '
+                f'or re-parent its anchor',
+                table='observation_images', cloud_id=existing_local_cloud_id,
+                reason='missing' if candidate is None else 'parent',
+            )
+        if str(candidate.get('deleted_at') or '').strip():
+            # Deleted in the cloud: never resurrected by an ordinary sync. An
+            # explicit restore republishes the image as a new keyed row.
+            raise ChildAdoptionConflictError(
+                f'image {local_image_id}: linked cloud image {existing_local_cloud_id} '
+                f'was deleted in the cloud; never resurrected',
+                table='observation_images', cloud_id=existing_local_cloud_id,
+                reason='deleted',
+            )
+        remote_row = candidate
 
     payload = _metadata_only_microscope_image_payload(
         client, obs_cloud_id, row,
     )
-    if portable_identity_pending:
-        payload.pop('desktop_id', None)
     # A public-spore parent needs its `public_microscopy` marker on a server
     # with the capability, or that server treats it as not public (NULL fails
     # closed, sporePoints included). Probe (cached per client) only when a
@@ -495,39 +488,12 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
             local_image_id,
             not bool(_normalize_cloud_media_key(remote_row.get('storage_path'))),
         )
-        if str(remote_row.get('deleted_at') or '').strip():
-            client._patch(
-                f'observation_images?id=eq.{remote_cloud_id}'
-                f'&user_id=eq.{client.user_id}',
-                {'deleted_at': None},
-            )
         print(
             f'[cloud_sync] Mosaic image metadata: linked '
             f'local_image={local_image_id} cloud_image={remote_cloud_id} (validated)',
             flush=True,
         )
         return remote_cloud_id
-
-    if existing_local_cloud_id:
-        conn = get_connection()
-        try:
-            conn.execute(
-                'UPDATE images SET cloud_id = NULL, synced_at = NULL WHERE id = ?',
-                (local_image_id,),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-        _clear_cloud_image_file_signature(obs_local_id, local_image_id)
-        _set_cloud_image_metadata_only_state(obs_local_id, local_image_id, False)
-        _cancel_microscope_anchor_tombstones(
-            local_image_id, existing_local_cloud_id,
-        )
-        print(
-            f'[cloud_sync] Mosaic image metadata: stale local link '
-            f'local_image={local_image_id} cloud_image={existing_local_cloud_id}',
-            flush=True,
-        )
 
     print(
         f'[cloud_sync] Mosaic image metadata: create '
@@ -536,32 +502,68 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
         flush=True,
     )
 
-    rows = client._post('observation_images', payload)
-    cloud_image_id = ''
-    if isinstance(rows, list) and rows:
-        cloud_image_id = str(rows[0].get('id') or '').strip()
-    elif isinstance(rows, dict):
-        cloud_image_id = str(rows.get('id') or '').strip()
+    def content_matches(remote: dict) -> bool:
+        if not _remote_image_row_matches_anchor_payload(remote, payload, metadata_only=False):
+            return False
+        if desired_purpose and not _normalize_cloud_media_key(remote.get('storage_path')):
+            return _remote_metadata_purpose(client, remote) == desired_purpose
+        return True
 
-    if not cloud_image_id:
+    cloud_image_id, adopted = create_child_row(
+        client,
+        'observation_images',
+        row,
+        payload,
+        parent_cloud_id=obs_cloud_id,
+        content_matches=content_matches,
+        summary=_cloud_sync_current_summary(),
+        count_adoption=False,
+    )
+    adopted_storage_path = _normalize_cloud_media_key((adopted or {}).get('storage_path'))
+    if (
+        adopted_storage_path
+        and not is_legacy_link(adopted)
+        and cloud_image_bytes_desired(obs_local_id, local_image_id, row)
+    ):
+        # This database's own byte-backed row whose bytes were never confirmed
+        # locally: the image upload links it after sending them to its key.
         print(
-            f'[cloud_sync] Mosaic image metadata: create returned no id '
-            f'local_image={local_image_id}',
+            f'[cloud_sync] Mosaic image metadata: skip '
+            f'local_image={local_image_id} cloud_image={cloud_image_id} '
+            f'reason=byte_upload_completes_adopted_row',
             flush=True,
         )
         return None
 
+    if adopted is not None:
+        _increment_sync_summary(_cloud_sync_current_summary(), 'images_adopted')
     _cancel_microscope_anchor_tombstones(
         local_image_id, existing_local_cloud_id, cloud_image_id,
     )
-    _reconcile_local_image_cloud_id(local_image_id, cloud_image_id, mark_synced=True)
-    _set_cloud_image_metadata_only_state(obs_local_id, local_image_id, True)
+    _commit_anchor_link(obs_local_id, local_image_id, cloud_image_id)
+    _set_cloud_image_metadata_only_state(obs_local_id, local_image_id, not adopted_storage_path)
     print(
         f'[cloud_sync] Mosaic image metadata: linked '
-        f'local_image={local_image_id} cloud_image={cloud_image_id}',
+        f'local_image={local_image_id} cloud_image={cloud_image_id}'
+        f'{" (no cloud write)" if adopted is not None else ""}',
         flush=True,
     )
     return cloud_image_id
+
+
+def _commit_anchor_link(obs_local_id: int, local_image_id: int, cloud_image_id: str) -> None:
+    """Commit a new anchor link with its cleared create markers, together."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            'UPDATE images SET cloud_id = ?, synced_at = ? WHERE id = ?',
+            (str(cloud_image_id), datetime.now(timezone.utc).isoformat(), int(local_image_id)),
+        )
+        clear_legacy_marker(conn, 'images', int(local_image_id))
+        clear_child_create_pending(conn, int(obs_local_id))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _ensure_metadata_only_microscope_images_for_observation(
@@ -596,15 +598,6 @@ def _ensure_metadata_only_microscope_images_for_observation(
     conn = get_connection()
     conn.row_factory = sqlite3.Row
     try:
-        portable_identity_pending = False
-        if 'portable_cloud_identity_pending' in {
-            str(info[1]) for info in conn.execute('PRAGMA table_info(observations)')
-        }:
-            marker_row = conn.execute(
-                'SELECT portable_cloud_identity_pending FROM observations WHERE id = ?',
-                (obs_local_id,),
-            ).fetchone()
-            portable_identity_pending = bool(marker_row and marker_row[0])
         cursor = conn.execute(
             """
             SELECT images.*
@@ -641,7 +634,6 @@ def _ensure_metadata_only_microscope_images_for_observation(
             ]
 
     for image_row in rows:
-        image_row['portable_cloud_identity_pending'] = portable_identity_pending
         counters['considered'] += 1
         local_image_id = _safe_int(image_row.get('id'))
         try:

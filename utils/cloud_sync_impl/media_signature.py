@@ -89,7 +89,6 @@ def _normalized_local_media_signature_payload(
     normalized['images'] = sorted(
         images,
         key=lambda row: (
-            str(row.get('desktop_id') or ''),
             str(row.get('id') or ''),
             str(row.get('original_filename') or ''),
             str(row.get('image_type') or ''),
@@ -97,7 +96,34 @@ def _normalized_local_media_signature_payload(
     )
     if not include_measurements:
         normalized.pop('measurements', None)
+    else:
+        normalized['measurements'] = [
+            _measurement_signature_content(row)
+            for row in list(normalized.get('measurements') or [])
+            if isinstance(row, dict)
+        ]
     return normalized
+
+
+# Signatures stored before sync keys carry a NULL identity entry under this
+# name in each measurement; it never described content.
+_LEGACY_MEASUREMENT_SIGNATURE_IDENTITY_KEY = 'desktop_id'
+
+
+def _measurement_signature_content(row: dict) -> dict:
+    """A signature measurement entry without identity keys (content only)."""
+    content = dict(row)
+    content.pop(_LEGACY_MEASUREMENT_SIGNATURE_IDENTITY_KEY, None)
+    content.pop('sync_key', None)
+    return content
+
+
+def _measurement_signature_entry(row: dict) -> dict:
+    entry = {
+        **_measurement_compare_payload(row, local=False),
+        'notes': _normalize_snapshot_value(row.get('notes')),
+    }
+    return _measurement_signature_content(entry)
 
 
 def _local_media_signatures_match(
@@ -339,11 +365,7 @@ def _local_cloud_media_signature(
     }
     if include_measurements:
         payload['measurements'] = [
-            {
-                **_measurement_compare_payload(row, local=False),
-                'notes': _normalize_snapshot_value(row.get('notes')),
-            }
-            for row in measurement_rows
+            _measurement_signature_entry(row) for row in measurement_rows
         ]
     return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
 

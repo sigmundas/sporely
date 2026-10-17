@@ -24,6 +24,7 @@ import argparse
 import json
 import sqlite3
 import sys
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -76,18 +77,18 @@ CATEGORY_HUMAN_LABELS = {
         "C. unwanted_cloud_bytes — local desired=false, cloud still has bytes"
     ),
     CATEGORY_LOST_LINK_REPAIRABLE_KEEP: (
-        "D1. lost_link_repairable_keep — desktop_id match, desired=true, "
+        "D1. lost_link_repairable_keep — sync_key match, desired=true, "
         "repair link and keep bytes"
     ),
     CATEGORY_LOST_LINK_REPAIRABLE_REMOVE: (
-        "D2. lost_link_repairable_remove — desktop_id match, desired=false, "
+        "D2. lost_link_repairable_remove — sync_key match, desired=false, "
         "repair link then unwanted_cloud_bytes"
     ),
     CATEGORY_DUPLICATE_OR_AMBIGUOUS: (
         "E. duplicate_or_ambiguous — multi-way match; needs human review"
     ),
     CATEGORY_CLOUD_ONLY_ORPHAN: (
-        "F. cloud_only_orphan — no local match by cloud_id or desktop_id"
+        "F. cloud_only_orphan — no local match by cloud_id or sync_key"
     ),
     CATEGORY_BROKEN_ACTIVE: (
         "G. broken_active — local UPLOADED/DELETE_PENDING but no cloud row"
@@ -371,8 +372,12 @@ def load_local_state(conn: sqlite3.Connection) -> LocalState:
 # ---------------------------------------------------------------------------
 
 
+# ``desktop_id`` is reported as found, never used to match: rows pair by
+# cloud id, then by ``sync_key`` (dropped from the read on a server without
+# the column).
 CLOUD_ROW_SELECT_FIELDS = [
     "id",
+    "sync_key",
     "desktop_id",
     "user_id",
     "observation_id",
@@ -412,7 +417,14 @@ def fetch_cloud_image_rows(
         client, "get_read_only", None
     ) or client._get
 
-    select_clause = "select=" + ",".join(CLOUD_ROW_SELECT_FIELDS)
+    select_fields = list(CLOUD_ROW_SELECT_FIELDS)
+    try:
+        fetch("observation_images?select=sync_key&limit=0")
+    except Exception as exc:
+        if "sync_key" not in str(exc or "").lower():
+            raise
+        select_fields.remove("sync_key")
+    select_clause = "select=" + ",".join(select_fields)
     ordering = "order=observation_id.asc,sort_order.asc,id.asc"
     user_id = _normalize_text(getattr(client, "user_id", ""))
     query = [
@@ -457,7 +469,7 @@ def fetch_cloud_image_rows(
 
 
 MATCH_METHOD_CLOUD_ID = "cloud_id"
-MATCH_METHOD_DESKTOP_ID = "desktop_id"
+MATCH_METHOD_SYNC_KEY = "sync_key"
 MATCH_METHOD_NONE = None
 
 
@@ -469,10 +481,21 @@ class MatchResult:
     method: str | None
     ambiguous: bool = False
     ambiguity_reason: str | None = None
-    # When resolving by desktop_id, note whether cloud_id was present but did
+    # When resolving by sync_key, note whether cloud_id was present but did
     # not match any local row (i.e. link is truly broken vs. never set).
     cloud_id_link_broken: bool = False
     candidate_local_image_ids: list[int] = field(default_factory=list)
+
+
+def _sync_key_text(row: dict | None) -> str:
+    """A row's ``sync_key`` in canonical uuid form, or ``""``."""
+    text = _normalize_text((row or {}).get("sync_key"))
+    if not text:
+        return ""
+    try:
+        return str(uuid.UUID(text))
+    except ValueError:
+        return ""
 
 
 def match_cloud_row_to_local(
@@ -484,14 +507,15 @@ def match_cloud_row_to_local(
     Primary: ``cloud_id`` link. If the local row's ``cloud_id`` matches the
     cloud row's id, return it.
 
-    Fallback: unambiguous ``desktop_id`` match, scoped to the *same local
-    observation* (via the cloud observation's ``desktop_id`` -> local
+    Fallback: unambiguous ``sync_key`` match, scoped to the *same local
+    observation* (via the cloud observation id -> local
     observations_by_cloud_id) *and* same ``image_type``. If more than one
-    candidate remains, refuse to match and flag ambiguous.
+    candidate remains, refuse to match and flag ambiguous. A cloud
+    ``desktop_id`` never matches: integer ids are local to one desktop.
     """
     cloud_image_id = _normalize_text(cloud_row.get("id"))
     cloud_observation_id = _normalize_text(cloud_row.get("observation_id"))
-    cloud_desktop_id = _safe_int(cloud_row.get("desktop_id"))
+    cloud_sync_key = _sync_key_text(cloud_row)
     cloud_image_type = _normalize_text(cloud_row.get("image_type")).lower()
 
     # Primary: exact cloud_id match on local images.
@@ -512,8 +536,8 @@ def match_cloud_row_to_local(
         if len(candidates) == 1:
             return MatchResult(local_image=candidates[0], method=MATCH_METHOD_CLOUD_ID)
 
-    # Fallback: desktop_id + owning-observation + image_type match.
-    if cloud_desktop_id > 0:
+    # Fallback: sync_key + owning-observation + image_type match.
+    if cloud_sync_key:
         # Resolve the expected local observation via the cloud observation's
         # cloud_id (the desktop's cloud_id column on the observations table
         # holds the *cloud observation id*, so lookup is direct).
@@ -523,7 +547,7 @@ def match_cloud_row_to_local(
             candidates = [
                 row
                 for row in local.images_by_observation_id.get(local_obs_id, [])
-                if _safe_int(row.get("id")) == cloud_desktop_id
+                if _sync_key_text(row) == cloud_sync_key
             ]
             if cloud_image_type:
                 candidates = [
@@ -539,7 +563,7 @@ def match_cloud_row_to_local(
                     ambiguous=True,
                     ambiguity_reason=(
                         f"multiple local images ({sorted(unique_ids)}) match "
-                        f"desktop_id={cloud_desktop_id} scoped to obs={local_obs_id}"
+                        f"sync_key={cloud_sync_key} scoped to obs={local_obs_id}"
                     ),
                     candidate_local_image_ids=sorted(unique_ids),
                 )
@@ -552,7 +576,7 @@ def match_cloud_row_to_local(
                 broken = bool(cloud_image_id) and local_cloud_id != cloud_image_id
                 return MatchResult(
                     local_image=local_row,
-                    method=MATCH_METHOD_DESKTOP_ID,
+                    method=MATCH_METHOD_SYNC_KEY,
                     cloud_id_link_broken=broken,
                 )
     return MatchResult(local_image=None, method=MATCH_METHOD_NONE)
@@ -735,17 +759,17 @@ def classify_cloud_row(
         if cloud_has_bytes:
             return build(
                 CATEGORY_CLOUD_ONLY_ORPHAN,
-                f"no local image matched by cloud_id or desktop_id (with_bytes){deleted_flag}",
+                f"no local image matched by cloud_id or sync_key (with_bytes){deleted_flag}",
                 subcategory=SUBCATEGORY_F_WITH_BYTES,
             )
         return build(
             CATEGORY_CLOUD_ONLY_ORPHAN,
-            f"no local image matched by cloud_id or desktop_id (metadata_only){deleted_flag}",
+            f"no local image matched by cloud_id or sync_key (metadata_only){deleted_flag}",
             subcategory=SUBCATEGORY_F_METADATA_ONLY,
         )
 
-    # Match via desktop_id fallback => lost/broken link.
-    if match.method == MATCH_METHOD_DESKTOP_ID and match.cloud_id_link_broken:
+    # Match via sync_key fallback => lost/broken link.
+    if match.method == MATCH_METHOD_SYNC_KEY and match.cloud_id_link_broken:
         # Special case: cloud row is soft-deleted AND a synced local tombstone
         # exists. This means the deletion was already pushed from the desktop.
         # Repairing the link would conflict with completed local intent — flag
@@ -757,7 +781,7 @@ def classify_cloud_row(
                 return build(
                     CATEGORY_BROKEN_ACTIVE,
                     (
-                        "desktop_id match found but cloud row is soft-deleted "
+                        "sync_key match found but cloud row is soft-deleted "
                         "with a synced local tombstone — repair requires an "
                         "explicit decision (accept deletion locally, or restore "
                         "via explicit-restore path), not a link repair"
@@ -770,7 +794,7 @@ def classify_cloud_row(
             return build(
                 CATEGORY_LOST_LINK_REPAIRABLE_KEEP,
                 (
-                    "cloud row matched by desktop_id only "
+                    "cloud row matched by sync_key only "
                     f"(local cloud_id={local_cloud_id or 'missing'}); "
                     "local desires bytes"
                 ),
@@ -778,13 +802,13 @@ def classify_cloud_row(
         return build(
             CATEGORY_LOST_LINK_REPAIRABLE_REMOVE,
             (
-                "cloud row matched by desktop_id only "
+                "cloud row matched by sync_key only "
                 f"(local cloud_id={local_cloud_id or 'missing'}); "
                 "local does NOT desire bytes; after repair this becomes C"
             ),
         )
 
-    # From here on we have a healthy cloud_id link (or a desktop_id match
+    # From here on we have a healthy cloud_id link (or a sync_key match
     # where the cloud_id link is not broken — unusual, but treat like linked).
     # Cloud row is soft-deleted: split by whether local acknowledges the
     # deletion. A matching local tombstone means we are in healthy

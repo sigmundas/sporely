@@ -8,10 +8,27 @@ from __future__ import annotations
 
 import json
 import math
+import uuid
 from datetime import (
     datetime,
     timezone,
 )
+
+
+def _normalize_sync_key_value(value) -> str | None:
+    """A record ``sync_key`` in canonical uuid form, or ``None``.
+
+    ``sync_key`` is the only recovery identity: rows pair by cloud id, then
+    by key, never by an integer local id. It is identity, not content, so
+    field compares never include it.
+    """
+    text = str(value or '').strip()
+    if not text:
+        return None
+    try:
+        return str(uuid.UUID(text))
+    except ValueError:
+        return None
 
 
 def _normalize_sharing_scope(value: str | None, fallback: str = 'private') -> str:
@@ -136,7 +153,7 @@ def _normalize_observation_json_value(value):
 
 
 _SNAPSHOT_OBS_FIELDS = [
-    'id', 'desktop_id', 'date', 'genus', 'species', 'common_name', 'species_guess',
+    'id', 'date', 'genus', 'species', 'common_name', 'species_guess',
     'uncertain', 'unspontaneous', 'determination_method',
     'location', 'gps_latitude', 'gps_longitude', 'location_public',
     'is_draft', 'location_precision',
@@ -164,7 +181,7 @@ _SNAPSHOT_OBS_FIELDS = [
 
 
 _SNAPSHOT_IMG_FIELDS = [
-    'id', 'desktop_id', 'sort_order', 'image_type', 'micro_category',
+    'id', 'sort_order', 'image_type', 'micro_category',
     'captured_at',
     'calibration_uuid',
     'objective_name', 'scale_microns_per_pixel', 'resample_scale_factor',
@@ -289,8 +306,39 @@ def _normalize_image_captured_at_for_cloud(value, *, local: bool) -> str | None:
     return parsed.astimezone(timezone.utc).isoformat()
 
 
+def _cloud_image_captured_at_to_local(value) -> str | None:
+    """Convert a cloud capture instant to SQLite's local wall-clock format."""
+    canonical = _normalize_image_captured_at_for_cloud(value, local=False)
+    if canonical is None:
+        return None
+    local = datetime.fromisoformat(canonical).astimezone().replace(tzinfo=None)
+    # Keep fractional seconds: a truncated value no longer equals the cloud
+    # instant, and a later push would send it over the cloud value.
+    return local.isoformat(sep=' ') if local.microsecond else local.strftime('%Y-%m-%d %H:%M:%S')
+
+
 _SNAPSHOT_MEAS_FIELDS = [
-    'id', 'desktop_id', 'image_id', 'length_um', 'width_um', 'measurement_type',
+    'id', 'image_id', 'length_um', 'width_um', 'measurement_type',
     'gallery_rotation', 'p1_x', 'p1_y', 'p2_x', 'p2_y', 'p3_x', 'p3_y',
     'p4_x', 'p4_y', 'measured_at',
 ]
+
+
+def _keep_remote_null_for_blank_text(payload: dict, remote: dict | None) -> None:
+    """Never turn a cloud NULL into ``''`` on a PATCH of an existing row.
+
+    Desktop forms persist an empty text field as ``''``. When the cloud row
+    holds NULL for that column, the blank local value is not an edit: send
+    NULL (the cloud value) instead, in place. Only columns the remote row
+    carries are touched.
+    """
+    if not remote:
+        return
+    for key, value in list(payload.items()):
+        if (
+            isinstance(value, str)
+            and not value.strip()
+            and key in remote
+            and remote.get(key) is None
+        ):
+            payload[key] = None

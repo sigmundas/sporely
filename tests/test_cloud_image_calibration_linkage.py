@@ -4,6 +4,7 @@ import uuid
 
 from database import models
 from utils import cloud_sync
+from utils.cloud_sync_impl import child_identity
 
 
 def _create_calibrations_table(conn: sqlite3.Connection) -> None:
@@ -121,10 +122,14 @@ def test_push_image_metadata_sends_calibration_uuid_instead_of_local_calibration
     monkeypatch.setattr(client, "_observation_images_support_ai_crop_custom", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_storage_exif_safe", lambda: False)
+    monkeypatch.setattr(child_identity, "committed_parent_cloud_id", lambda table, row: "cloud-obs-1")
+    sync_key = str(uuid.uuid4())
 
     cloud_id = client.push_image_metadata(
         {
             "id": 11,
+            "observation_id": 1,
+            "sync_key": sync_key,
             "filepath": "/tmp/image.jpg",
             "image_type": "field",
             "sort_order": 0,
@@ -140,7 +145,8 @@ def test_push_image_metadata_sends_calibration_uuid_instead_of_local_calibration
     assert posts[0][1]["calibration_uuid"] == calibration_uuid
     assert "calibration_id" not in posts[0][1]
     assert "original_storage_path" not in posts[0][1]
-    assert posts[0][1]["desktop_id"] == 11
+    assert "desktop_id" not in posts[0][1]
+    assert posts[0][1]["sync_key"] == sync_key
     assert posts[0][1]["observation_id"] == "cloud-obs-1"
 
 
@@ -205,7 +211,10 @@ def test_import_remote_images_resolves_calibration_uuid_to_local_calibration_id(
     )
 
     assert captured["kwargs"]["calibration_id"] == 1
-    assert desktop_id_calls == [("cloud-img-1", 23)]
+    # Pull never writes an identity onto the cloud row (per-record sync keys);
+    # a keyless cloud row stays keyless locally.
+    assert desktop_id_calls == []
+    assert captured["kwargs"]["sync_key"] is None
 
 
 def test_pull_calibrations_reconciles_images_from_stored_snapshots(monkeypatch, tmp_path, capsys):

@@ -40,6 +40,7 @@ from utils.cloud_sync_impl.preflight import (
     _locally_tombstoned_snapshot_image_identity_keys,
 )
 from utils.cloud_sync_impl.push_payloads import (
+    _analyze_observation_field_changes,
     _baseline_observation_compare_payload,
     _observation_compare_payload,
 )
@@ -47,6 +48,7 @@ from utils.cloud_sync_impl.reconciliation.asymmetry import (
     _filter_accepted_one_sided_images,
     _filter_accepted_one_sided_measurements,
 )
+from utils.cloud_sync_impl.reconciliation.location_provenance import LOCATION_COORDINATE_FIELDS
 from utils.cloud_sync_impl.reconciliation.identity import (
     _classify_identity_sync_change,
     _local_identity_is_claim,
@@ -68,6 +70,7 @@ from utils.cloud_sync_impl.reconciliation.measurements import (
 )
 from utils.cloud_sync_impl.reconciliation.values import (
     _normalize_snapshot_value,
+    _normalize_sync_key_value,
     _observation_field_values_match,
 )
 from utils.cloud_sync_impl.remote_reads import _pull_remote_measurements_for_images
@@ -124,12 +127,12 @@ def _image_label(image_row: dict | None) -> str:
         return f'{filename} ({image_type})'
     if filename:
         return filename
-    cloud_id = str(row.get('id') or '').strip()
-    desktop_id = str(row.get('desktop_id') or '').strip()
+    cloud_id = str(row.get('id') or row.get('cloud_id') or '').strip()
+    local_id = str(row.get('local_id') or '').strip()
     if cloud_id:
         return f'cloud image {cloud_id}'
-    if desktop_id:
-        return f'local image {desktop_id}'
+    if local_id:
+        return f'local image {local_id}'
     return 'image'
 
 
@@ -339,6 +342,54 @@ def _observation_display_name(obs: dict | None) -> str:
 _MEASUREMENT_PRESENTATION_FIELDS = ('gallery_rotation',)
 
 
+def _apply_location_bundle_to_conflict_rows(
+    local_obs: dict,
+    remote_obs: dict | None,
+    baseline_obs: dict,
+    *,
+    local_payload: dict,
+    remote_payload: dict,
+    field_rows: list[dict],
+    automatic_field_decisions: list[dict],
+) -> None:
+    """Classify latitude/longitude as one bundle, as ordinary sync does.
+
+    The per-field pass above sees each coordinate alone; this replaces its
+    coordinate rows and decisions with the bundle classification of
+    ``_analyze_observation_field_changes`` (which also weighs the cloud's
+    provenance pair, altitude and accuracy). A bundle conflict lists both
+    coordinates; the review resolves them together from one side.
+    """
+    coordinates = set(LOCATION_COORDINATE_FIELDS)
+    field_rows[:] = [row for row in field_rows if row.get('field') not in coordinates]
+    automatic_field_decisions[:] = [
+        entry for entry in automatic_field_decisions if entry.get('field') not in coordinates
+    ]
+    changes = _analyze_observation_field_changes(local_obs, remote_obs, baseline_obs)
+    conflict = coordinates & set(changes['conflict_fields'])
+    local_only = coordinates & set(changes['local_only_fields'])
+    remote_only = coordinates & set(changes['remote_only_fields'])
+    for field in LOCATION_COORDINATE_FIELDS:
+        values = {
+            'local': local_payload.get(field),
+            'remote': remote_payload.get(field),
+            'baseline': baseline_obs.get(field),
+        }
+        if conflict:
+            field_rows.append({
+                'field': field,
+                'label': _CONFLICT_FIELD_LABELS.get(field, field),
+                **values,
+                'local_changed': not _observation_field_values_match(field, values['local'], values['baseline']),
+                'remote_changed': True,
+                'bundle': 'location',
+            })
+        elif field in local_only:
+            automatic_field_decisions.append({'field': field, 'action': 'push_local', **values})
+        elif field in remote_only:
+            automatic_field_decisions.append({'field': field, 'action': 'pull_cloud', **values})
+
+
 def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: str | None = None) -> dict:
     """Enhanced conflict details with filename-level media differences."""
     local_obs = ObservationDB.get_observation(int(local_id))
@@ -433,6 +484,14 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
             'local_changed': local_changed, 'remote_changed': remote_changed,
         })
 
+    _apply_location_bundle_to_conflict_rows(
+        local_obs, remote_obs, baseline_obs,
+        local_payload=local_payload,
+        remote_payload=remote_payload,
+        field_rows=field_rows,
+        automatic_field_decisions=automatic_field_decisions,
+    )
+
     # The taxonomy identity is classified by its own three-way rule, never by
     # plain equality: a cloud-derived local token is not a local edit, and an
     # identity follows the identification (genus/species) it names.
@@ -469,7 +528,11 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
 
     # 2. Detailed Image Differences
     local_images_raw = ImageDB.get_images_for_observation(int(local_id))
-    local_image_payloads = [_local_image_snapshot_payload(img) for img in local_images_raw]
+    # The key pairs an unlinked local image; snapshot payloads leave it out.
+    local_image_payloads = [
+        {**_local_image_snapshot_payload(img), 'sync_key': _normalize_sync_key_value(img.get('sync_key'))}
+        for img in local_images_raw
+    ]
     remote_image_payloads = [_remote_image_payload(img) for img in remote_images]
 
     # Conflict review deliberately uses identity stricter than the historical
@@ -481,11 +544,19 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
         for raw, row in zip(remote_images, remote_image_payloads)
         if str(row.get('id') or '').strip()
     }
-    remote_by_desktop_id: dict[int, list[tuple[dict, dict]]] = {}
+    # Pairing: cloud id, then sync_key. Integer local ids are never cloud
+    # identities, so a cloud row's desktop_id never pairs it.
+    remote_by_sync_key: dict[str, list[tuple[dict, dict]]] = {}
     for raw, row in zip(remote_images, remote_image_payloads):
-        desktop_id = _safe_int(row.get('desktop_id'))
-        if desktop_id > 0:
-            remote_by_desktop_id.setdefault(desktop_id, []).append((raw, row))
+        sync_key = _normalize_sync_key_value(row.get('sync_key'))
+        if sync_key:
+            remote_by_sync_key.setdefault(sync_key, []).append((raw, row))
+
+    local_image_ids_by_key: dict[str, set[int]] = {}
+    for raw, row in zip(local_images_raw, local_image_payloads):
+        sync_key = _normalize_sync_key_value(row.get('sync_key'))
+        if sync_key:
+            local_image_ids_by_key.setdefault(sync_key, set()).add(_safe_int(raw.get('id')))
 
     local_cloud_id_counts: dict[str, int] = {}
     for row in local_images_raw:
@@ -512,7 +583,8 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
         else:
             result.update({
                 'cloud_id': str(raw.get('id') or '').strip() or None,
-                'local_id': _safe_int(raw.get('desktop_id')) or None,
+                # A cloud row never names a local row.
+                'local_id': None,
                 'thumbnail_source': _normalize_cloud_media_key(raw.get('storage_path')) or None,
             })
         return result
@@ -522,28 +594,29 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
             continue
         local_image_id = _safe_int(raw.get('id'))
         local_cloud_id = str(raw.get('cloud_id') or '').strip()
+        local_key = _normalize_sync_key_value(payload.get('sync_key'))
         match: tuple[dict, dict] | None = None
         match_basis = ''
         identity_reasons: list[str] = []
         cloud_match = remote_by_cloud_id.get(local_cloud_id) if local_cloud_id else None
-        desktop_candidates = remote_by_desktop_id.get(local_image_id, []) if local_image_id > 0 else []
+        key_candidates = remote_by_sync_key.get(local_key, []) if local_key else []
         if local_cloud_id and local_cloud_id_counts.get(local_cloud_id, 0) > 1:
             identity_reasons.append('multiple local images share the same cloud ID')
-        if len(desktop_candidates) > 1:
-            identity_reasons.append('multiple cloud images reference this local image ID')
+        if len(key_candidates) > 1:
+            identity_reasons.append('multiple cloud images carry this image\'s sync key')
         if cloud_match:
-            cloud_desktop_id = _safe_int(cloud_match[1].get('desktop_id'))
-            if cloud_desktop_id > 0 and cloud_desktop_id != local_image_id:
-                identity_reasons.append('the linked cloud image references another local image')
-        if cloud_match and len(desktop_candidates) == 1:
-            desktop_cloud_id = str(desktop_candidates[0][1].get('id') or '').strip()
-            if desktop_cloud_id and desktop_cloud_id != local_cloud_id:
-                identity_reasons.append('cloud ID and desktop ID identify different cloud images')
+            cloud_key = _normalize_sync_key_value(cloud_match[1].get('sync_key'))
+            if local_image_ids_by_key.get(cloud_key or '', set()) - {local_image_id}:
+                identity_reasons.append('the linked cloud image carries another local image\'s sync key')
+        if cloud_match and len(key_candidates) == 1:
+            key_cloud_id = str(key_candidates[0][1].get('id') or '').strip()
+            if key_cloud_id and key_cloud_id != local_cloud_id:
+                identity_reasons.append('cloud ID and sync key identify different cloud images')
         if cloud_match and str(cloud_match[1].get('id') or '').strip() in paired_remote_ids:
             identity_reasons.append('the cloud image is already paired with another local image')
         if identity_reasons:
             remote_raw, remote_payload = cloud_match or (
-                desktop_candidates[0] if len(desktop_candidates) == 1 else (None, None)
+                key_candidates[0] if len(key_candidates) == 1 else (None, None)
             )
             remote_id = str((remote_payload or {}).get('id') or '').strip()
             if remote_id:
@@ -565,14 +638,14 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
         if local_cloud_id and local_cloud_id in remote_by_cloud_id:
             match = remote_by_cloud_id[local_cloud_id]
             match_basis = 'cloud_id'
-        elif local_image_id > 0:
+        elif not local_cloud_id and local_key:
             candidates = [
-                candidate for candidate in remote_by_desktop_id.get(local_image_id, [])
+                candidate for candidate in key_candidates
                 if str(candidate[1].get('id') or '').strip() not in paired_remote_ids
             ]
             if len(candidates) == 1:
                 match = candidates[0]
-                match_basis = 'desktop_id'
+                match_basis = 'sync_key'
         remote_raw, remote_payload = match if match else (None, None)
         remote_id = str((remote_payload or {}).get('id') or '').strip()
         if remote_id:
@@ -638,19 +711,25 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
         str(row.get('id') or '').strip(): row
         for row in baseline_measurements if str(row.get('id') or '').strip()
     }
-    baseline_by_desktop_id = {
-        _safe_int(row.get('desktop_id')): row
-        for row in baseline_measurements if _safe_int(row.get('desktop_id')) > 0
+    baseline_by_sync_key = {
+        key: row
+        for row in baseline_measurements
+        if (key := _normalize_sync_key_value(row.get('sync_key')))
     }
     remote_measurements_by_id = {
         str(row.get('id') or '').strip(): dict(row)
         for row in remote_measurements if str(row.get('id') or '').strip()
     }
-    remote_measurements_by_desktop_id: dict[int, list[dict]] = {}
+    remote_measurements_by_sync_key: dict[str, list[dict]] = {}
     for row in remote_measurements:
-        desktop_id = _safe_int(row.get('desktop_id'))
-        if desktop_id > 0:
-            remote_measurements_by_desktop_id.setdefault(desktop_id, []).append(dict(row))
+        sync_key = _normalize_sync_key_value(row.get('sync_key'))
+        if sync_key:
+            remote_measurements_by_sync_key.setdefault(sync_key, []).append(dict(row))
+    local_measurement_ids_by_key: dict[str, set[int]] = {}
+    for row in local_measurements:
+        sync_key = _normalize_sync_key_value(row.get('sync_key'))
+        if sync_key:
+            local_measurement_ids_by_key.setdefault(sync_key, set()).add(_safe_int(row.get('id')))
     local_measurement_cloud_counts: dict[str, int] = {}
     for row in local_measurements:
         measurement_cloud_id = str(row.get('cloud_id') or '').strip()
@@ -700,7 +779,12 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
         baseline_row = (
             baseline_by_cloud_id.get(remote_id_value)
             or baseline_by_cloud_id.get(str(local_row.get('cloud_id') or '').strip())
-            or baseline_by_desktop_id.get(local_id_value)
+            or (
+                None if str(local_row.get('cloud_id') or '').strip()
+                else baseline_by_sync_key.get(
+                    _normalize_sync_key_value(local_row.get('sync_key')) or ''
+                )
+            )
         )
         local_values = _local_measurement_snapshot_payload(local_row) if local_row else None
         remote_values = _remote_measurement_snapshot_payload(remote_row) if remote_row else None
@@ -800,26 +884,27 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
     for local_measurement in local_measurements:
         local_measurement_id = _safe_int(local_measurement.get('id'))
         linked_cloud_id = str(local_measurement.get('cloud_id') or '').strip()
+        local_key = _normalize_sync_key_value(local_measurement.get('sync_key'))
         cloud_match = remote_measurements_by_id.get(linked_cloud_id) if linked_cloud_id else None
-        desktop_candidates = remote_measurements_by_desktop_id.get(local_measurement_id, [])
+        key_candidates = remote_measurements_by_sync_key.get(local_key, []) if local_key else []
         identity_reasons: list[str] = []
         if linked_cloud_id and local_measurement_cloud_counts.get(linked_cloud_id, 0) > 1:
             identity_reasons.append('multiple local measurements share the same cloud ID')
-        if len(desktop_candidates) > 1:
-            identity_reasons.append('multiple cloud measurements reference this local measurement ID')
+        if len(key_candidates) > 1:
+            identity_reasons.append('multiple cloud measurements carry this measurement\'s sync key')
         if cloud_match:
-            remote_desktop_id = _safe_int(cloud_match.get('desktop_id'))
-            if remote_desktop_id > 0 and remote_desktop_id != local_measurement_id:
-                identity_reasons.append('the linked cloud measurement references another local measurement')
-        if cloud_match and len(desktop_candidates) == 1:
-            desktop_cloud_id = str(desktop_candidates[0].get('id') or '').strip()
-            if desktop_cloud_id and desktop_cloud_id != linked_cloud_id:
-                identity_reasons.append('cloud ID and desktop ID identify different measurements')
+            cloud_key = _normalize_sync_key_value(cloud_match.get('sync_key'))
+            if local_measurement_ids_by_key.get(cloud_key or '', set()) - {local_measurement_id}:
+                identity_reasons.append('the linked cloud measurement carries another local measurement\'s sync key')
+        if cloud_match and len(key_candidates) == 1:
+            key_cloud_id = str(key_candidates[0].get('id') or '').strip()
+            if key_cloud_id and key_cloud_id != linked_cloud_id:
+                identity_reasons.append('cloud ID and sync key identify different measurements')
         match = cloud_match
         pairing = 'cloud_id' if cloud_match else ''
-        if match is None and len(desktop_candidates) == 1:
-            match = desktop_candidates[0]
-            pairing = 'desktop_id'
+        if match is None and not linked_cloud_id and len(key_candidates) == 1:
+            match = key_candidates[0]
+            pairing = 'sync_key'
         matched_remote_id = str((match or {}).get('id') or '').strip()
         if matched_remote_id in paired_remote_measurement_ids:
             identity_reasons.append('the cloud measurement is already paired with another local measurement')
@@ -944,8 +1029,9 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
                         and str(row.get('id') or '').strip()
                         == str(remote_image.get('cloud_id') or '').strip()
                     ) or (
-                        _safe_int(row.get('desktop_id')) > 0
-                        and _safe_int(row.get('desktop_id')) == _safe_int(local_image.get('local_id'))
+                        _normalize_sync_key_value(row.get('sync_key'))
+                        and _normalize_sync_key_value(row.get('sync_key'))
+                        == _normalize_sync_key_value(local_image.get('sync_key'))
                     )
                 ),
                 None,

@@ -49,6 +49,8 @@ class _FakeCloud(cloud_sync.SporelyCloudClient):
 
     def __init__(self):  # noqa: D401 - no network session
         self.user_id = USER_ID
+        # A server with the sync_key schema: the upload readiness probe passes.
+        self._sync_identity_ready = True
         self.rows: dict[str, dict] = {}
         self.patches: list[dict] = []
         self.posts: list[dict] = []

@@ -13,6 +13,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+import requests
+
 from database.models import ImageDB
 from database.schema import get_connection
 from utils.original_sync_policy import (
@@ -21,8 +23,15 @@ from utils.original_sync_policy import (
     is_full_resolution_original_upload_too_large,
     resolve_full_original_upload_source,
 )
-from utils.r2_storage import media_variant_key
+from utils.r2_storage import CloudflareWorkerError, media_variant_key
 
+from utils.cloud_sync_impl.child_identity import (
+    clear_child_create_pending,
+    clear_legacy_marker,
+    is_legacy_link,
+    mark_child_create_pending,
+    take_adopted_child,
+)
 from utils.cloud_sync_impl.anchors import (
     _ensure_metadata_anchors_for_public_spore_observation,
     _reserve_anchor_promotion_key,
@@ -36,6 +45,7 @@ from utils.cloud_sync_impl.common import (
 from utils.cloud_sync_impl.errors import (
     CloudImageBytesNotDesiredError,
     CloudSyncError,
+    ImageBaselineMissingError,
     is_cloud_auth_error,
     is_cloud_temporary_unavailable_error,
     is_image_too_large_for_plan_error,
@@ -45,8 +55,15 @@ from utils.cloud_sync_impl.image_files import (
     _build_worker_storage_path,
     _file_content_signature,
 )
-from utils.cloud_sync_impl.image_identity import _reconcile_local_image_cloud_id
-from utils.cloud_sync_impl.image_payloads import _remote_image_payload
+from utils.cloud_sync_impl.baseline import (
+    _load_cloud_observation_snapshot,
+    _parse_cloud_observation_snapshot,
+)
+from utils.cloud_sync_impl.exif import _captured_at_is_pull_injected, _record_pull_injected_captured_at
+from utils.cloud_sync_impl.image_payloads import (
+    _preserve_unedited_remote_image_values,
+    _remote_image_payload,
+)
 from utils.cloud_sync_impl.image_policy import (
     _ensure_cloud_image_storage_intent_initialized,
     _is_generated_cloud_image,
@@ -57,6 +74,7 @@ from utils.cloud_sync_impl.media_signature import (
     _path_stat_signature,
 )
 from utils.cloud_sync_impl.preflight import _image_calibration_uuid
+from utils.cloud_sync_impl.calibrations import _local_calibration_id_for_image
 from utils.cloud_sync_impl.progress import (
     _advance_progress,
     _cloud_sync_current_profiler,
@@ -67,12 +85,17 @@ from utils.cloud_sync_impl.progress import (
 )
 from utils.cloud_sync_impl.reconciliation.values import (
     _normalize_image_captured_at_for_cloud,
+    _cloud_image_captured_at_to_local,
     _normalize_snapshot_value,
     _parse_sync_timestamp,
 )
-from utils.cloud_sync_impl.sample_source import _cloud_to_desktop_sample_source
+from utils.cloud_sync_impl.sample_source import (
+    _cloud_to_desktop_sample_source,
+    _split_legacy_sample_type_into_source,
+)
 from utils.cloud_sync_impl.status_messages import _format_cloud_sync_observation_status
 from utils.cloud_sync_impl.sync_state import (
+    mark_observation_media_dirty,
     _clear_pending_image_promotion_key,
     _load_cloud_image_file_signature,
     _load_local_cloud_media_signature,
@@ -86,6 +109,26 @@ from utils.cloud_sync_impl.tombstones import (
     _push_pending_image_tombstones,
     _tombstoned_cloud_image_warning,
 )
+
+
+def _upload_outcome_uncertain(error: BaseException) -> bool:
+    """Whether bytes may have landed: a timeout, a lost connection or a worker 5xx.
+
+    A definite refusal (a worker 4xx, a local preparation error, the byte
+    gate) means nothing was stored, and a row created by this attempt may be
+    rolled back.
+    """
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, (requests.Timeout, requests.ConnectionError)):
+            return True
+        if isinstance(current, CloudflareWorkerError):
+            status = current.status_code
+            return status is None or int(status) >= 500
+        current = current.__cause__ or current.__context__
+    return False
 
 
 def should_push_local_image_to_cloud(image_row: dict | None) -> bool:
@@ -113,7 +156,6 @@ def _prepared_item_remote_payload(
     normalized_key = _normalize_cloud_media_key(storage_path)
     payload = {
         'id': _normalize_snapshot_value(image_row.get('cloud_id')),
-        'desktop_id': _safe_int(image_row.get('id')),
         'sort_order': _normalize_snapshot_value(image_row.get('sort_order')),
         'image_type': _normalize_snapshot_value(image_row.get('image_type')),
         'micro_category': _normalize_snapshot_value(image_row.get('micro_category')),
@@ -166,6 +208,73 @@ def _prepared_item_remote_payload(
     return payload
 
 
+def _remote_image_compare_payload(
+    remote_image: dict | None,
+    *,
+    include_ai_crop: bool = True,
+    include_upload_meta: bool = True,
+) -> dict:
+    """``_remote_image_payload`` without ``sync_key``, for push comparisons.
+
+    ``sync_key`` is identity, not content: it is never sent on a PATCH, and a
+    legacy cloud row has none, so comparing it would re-PATCH on every sync.
+    """
+    payload = _remote_image_payload(
+        remote_image,
+        include_ai_crop=include_ai_crop,
+        include_upload_meta=include_upload_meta,
+    )
+    payload.pop('sync_key', None)
+    return payload
+
+
+# What a create sends but adoption cannot compare: the server id, the random
+# reserved key and filename, and the fields that describe uploaded bytes.
+_IMAGE_CREATE_COMPARE_EXCLUDED_KEYS = frozenset({
+    'id', 'storage_path', 'original_filename',
+    'upload_mode', 'source_width', 'source_height',
+    'stored_width', 'stored_height', 'stored_bytes',
+})
+
+
+def _image_create_content_matches(client, img: dict, remote: dict) -> bool:
+    """Whether ``remote`` holds the metadata a create of ``img`` uploads.
+
+    Fails closed on every descriptive difference. The reserved
+    ``storage_path`` is not compared: adoption reuses the remote row's key.
+    """
+    include_ai_crop = client._observation_images_support_ai_crop()
+    expected = _prepared_item_remote_payload(
+        img, str(img.get('filepath') or ''), '',
+        include_ai_crop=include_ai_crop, include_upload_meta=False,
+    )
+    actual = _remote_image_compare_payload(
+        remote, include_ai_crop=include_ai_crop, include_upload_meta=False,
+    )
+    # The create sends the sample fields normalized (``'Not_set'`` becomes
+    # NULL; a legacy ``sample_type='Spore_print'`` moves to ``sample_source``),
+    # so compare what it uploaded rather than the raw local columns.
+    condition, source = _split_legacy_sample_type_into_source(
+        img.get('sample_type'), img.get('sample_source'),
+    )
+    expected['sample_type'] = _normalize_snapshot_value(condition)
+    expected['sample_source'] = _normalize_snapshot_value(_cloud_to_desktop_sample_source(source))
+    if source and not client._observation_images_support_sample_source():
+        # An older cloud without the column receives no sample_source.
+        expected.pop('sample_source', None)
+        actual.pop('sample_source', None)
+    if not _image_calibration_uuid(img):
+        expected.pop('calibration_uuid', None)
+        actual.pop('calibration_uuid', None)
+    if include_ai_crop and not client._observation_images_support_ai_crop_custom():
+        expected.pop('ai_crop_is_custom', None)
+        actual.pop('ai_crop_is_custom', None)
+    for key in _IMAGE_CREATE_COMPARE_EXCLUDED_KEYS:
+        expected.pop(key, None)
+        actual.pop(key, None)
+    return expected == actual
+
+
 # Image rows the upload-preparation step should skip because a remote-first
 # pass already re-associated them with an existing cloud image. Passed to the
 # prepare callback via the observation dict so no temporary WebP candidate is
@@ -180,21 +289,16 @@ def _lookup_unlisted_remote_image_storage_path(
 ) -> str:
     """Return the storage_path of the live row this image is linked to.
 
-    Used only when the observation's image listing failed: mirrors the
-    identity legs of ``_resolve_existing_image_for_push`` (direct cloud_id,
-    else desktop_id reverse link unless portable identity is pending) so a
-    later PATCH keeps the row's existing key. Returns '' when none is found.
+    Used only when the observation's image listing failed: mirrors
+    ``_resolve_existing_image_for_push``, whose only target is the direct
+    ``cloud_id``, so a later PATCH keeps the row's existing key. Returns ''
+    when none is found.
     """
     obs_value = str(obs_cloud_id or '').strip()
     cloud_id = str(img.get('cloud_id') or '').strip()
-    if cloud_id:
-        query = f'id=eq.{cloud_id}'
-    elif not bool(img.get('portable_cloud_identity_pending')) and _safe_int(img.get('id')) > 0:
-        query = f'desktop_id=eq.{_safe_int(img.get("id"))}'
-        if img.get('image_type'):
-            query += f'&image_type=eq.{img.get("image_type")}'
-    else:
+    if not cloud_id:
         return ''
+    query = f'id=eq.{cloud_id}'
     try:
         rows = client._get(
             f'observation_images?{query}'
@@ -217,173 +321,18 @@ def _lookup_unlisted_remote_image_storage_path(
 
 def _select_remote_image_identity_candidate(
     *,
-    local_image_id: int,
     local_cloud_id: str,
     existing_by_id: dict[str, dict],
-    existing_by_desktop_id: dict[int, dict],
-    portable_identity_pending: bool,
 ) -> dict | None:
-    """Select only identity candidates permitted by the current guard."""
+    """The listed remote row this image is linked to: by ``cloud_id`` only.
+
+    An unlinked image (L0) has no candidate; its create finds this
+    database's own row by ``sync_key`` instead.
+    """
     normalized_cloud_id = str(local_cloud_id or '').strip()
     if normalized_cloud_id:
         return existing_by_id.get(normalized_cloud_id)
-    if portable_identity_pending:
-        return None
-    return existing_by_desktop_id.get(int(local_image_id or 0))
-
-
-def _associate_persisted_cloud_images(
-    client: SporelyCloudClient,
-    obs: dict,
-    existing_rows: list[dict],
-) -> set[int]:
-    """Re-link orphaned local image rows to existing remote cloud images.
-
-    Targets the repair case described in the sync bug: a local image row whose
-    ``cloud_id`` was lost but which still has an unambiguous remote cloud
-    image match (same ``desktop_id``, same owner, same ``image_type``). The
-    local ``cloud_id`` is restored without uploading any bytes.
-
-    Stage 1: repair is intentionally NOT gated on the cloud-storage-desired
-    checkbox — even an unchecked image with a lost link should be relinked so
-    the byte gate can refuse re-upload and any pending tombstone can complete
-    its deletion instead of creating a duplicate.
-
-    Returns local image ids that the upload-preparation step can skip.
-    """
-    associated_ids: set[int] = set()
-    try:
-        obs_local_id = int(obs.get('id'))
-    except Exception:
-        return associated_ids
-    if bool(obs.get('portable_cloud_identity_pending')):
-        return associated_ids
-
-    # Bucket remote rows by desktop_id so we can detect ambiguity (2+ rows
-    # sharing the same desktop_id). Ambiguous groups are skipped: identity
-    # cannot be repaired safely without human intervention.
-    remote_rows_by_desktop_id: dict[int, list[dict]] = {}
-    for row in (existing_rows or []):
-        desktop_id = _safe_int(row.get('desktop_id'))
-        if desktop_id <= 0:
-            continue
-        remote_rows_by_desktop_id.setdefault(desktop_id, []).append(row)
-    if not remote_rows_by_desktop_id:
-        return associated_ids
-
-    obs_cloud_id = str(obs.get('cloud_id') or '').strip()
-    obs_owner_id = str(obs.get('user_id') or '').strip()
-
-    include_ai_crop = client._observation_images_support_ai_crop()
-    include_upload_meta = client._observation_images_support_upload_metadata()
-    # Fields that describe the uploaded bytes rather than user metadata. They
-    # cannot be known without encoding, so they are excluded from the
-    # metadata-only match decision — the remote bytes are unchanged anyway.
-    upload_derived_keys = {
-        'id',
-        'storage_path',
-        'original_filename',
-        'source_width',
-        'source_height',
-        'stored_width',
-        'stored_height',
-        'stored_bytes',
-        'upload_mode',
-    }
-
-    for image_row in ImageDB.get_images_for_observation(obs_local_id):
-        img = dict(image_row or {})
-        img['portable_cloud_identity_pending'] = bool(
-            obs.get('portable_cloud_identity_pending')
-        )
-        local_image_id = _safe_int(img.get('id'))
-        if local_image_id <= 0 or not should_push_local_image_to_cloud(img):
-            continue
-        # Only repair orphaned rows. Rows that still hold a cloud_id (correct or
-        # conflicting) flow through the normal path.
-        if str(img.get('cloud_id') or '').strip():
-            continue
-        matches = remote_rows_by_desktop_id.get(local_image_id) or []
-        if not matches:
-            continue
-        if len(matches) > 1:
-            print(
-                f'[cloud_sync] Observation {obs_local_id}: ambiguous cloud image match '
-                f'for desktop_id={local_image_id} (found {len(matches)} candidates); '
-                f'skipping identity repair'
-            )
-            continue
-        remote_row = matches[0]
-        remote_cloud_id = str(remote_row.get('id') or '').strip()
-        remote_storage_path = _normalize_cloud_media_key(remote_row.get('storage_path'))
-        if not remote_cloud_id:
-            continue
-
-        # Owner scoping: require either the observation cloud_id match or the
-        # remote row's user_id to match the local observation's owner. Prevents
-        # cross-account bleed if a stale cache leaked rows from another user.
-        remote_obs_cloud_id = str(remote_row.get('observation_id') or '').strip()
-        remote_owner_id = str(remote_row.get('user_id') or '').strip()
-        if obs_cloud_id and remote_obs_cloud_id and obs_cloud_id != remote_obs_cloud_id:
-            print(
-                f'[cloud_sync] Observation {obs_local_id}: cloud image '
-                f'desktop_id={local_image_id} does not match this observation '
-                f'({remote_obs_cloud_id} != {obs_cloud_id}); skipping identity repair'
-            )
-            continue
-        if obs_owner_id and remote_owner_id and obs_owner_id != remote_owner_id:
-            print(
-                f'[cloud_sync] Observation {obs_local_id}: cloud image '
-                f'desktop_id={local_image_id} has different owner; skipping identity repair'
-            )
-            continue
-
-        # image_type must agree — otherwise this is not the same image.
-        local_type = str(img.get('image_type') or '').strip().lower()
-        remote_type = str(remote_row.get('image_type') or '').strip().lower()
-        if local_type and remote_type and local_type != remote_type:
-            continue
-
-        was_synced_previously = bool(str(img.get('synced_at') or '').strip())
-        if was_synced_previously and remote_storage_path:
-            # Historical repair path: descriptive metadata must already match
-            # so we don't silently drop pending edits. Newly-created local
-            # rows (no prior synced_at) do not have this constraint — their
-            # descriptive metadata is being introduced right now and will be
-            # patched by the normal reconcile step.
-            expected_payload = _prepared_item_remote_payload(
-                img,
-                '',
-                remote_storage_path,
-                include_ai_crop=include_ai_crop,
-                include_upload_meta=include_upload_meta,
-            )
-            remote_payload = _remote_image_payload(
-                remote_row,
-                include_ai_crop=include_ai_crop,
-                include_upload_meta=include_upload_meta,
-            )
-            if not _image_calibration_uuid(img):
-                expected_payload.pop('calibration_uuid', None)
-                remote_payload.pop('calibration_uuid', None)
-            for key in upload_derived_keys:
-                expected_payload.pop(key, None)
-                remote_payload.pop(key, None)
-            if expected_payload != remote_payload:
-                # Descriptive metadata changed while the link was missing — let
-                # the normal prepare + metadata-patch path handle it.
-                continue
-
-        if _reconcile_local_image_cloud_id(local_image_id, remote_cloud_id, mark_synced=True):
-            _increment_sync_summary(_cloud_sync_current_summary(), 'images_cloud_id_repaired')
-            print(
-                f'[cloud_sync] Observation {obs_local_id}: metadata association for cloud image '
-                f'actual_upload=False image_id={local_image_id} cloud_image_id={remote_cloud_id} '
-                f'storage_path={remote_storage_path} '
-                f'(restored local cloud_id without preparing an upload candidate)'
-            )
-        associated_ids.add(local_image_id)
-    return associated_ids
+    return None
 
 
 def _stored_local_media_signature_image_stats(
@@ -464,6 +413,189 @@ def _local_image_source_bytes_unchanged(
     return _cmp_key(stored_sig) == _cmp_key(current_sig)
 
 
+_NOOP_CHECK_UNREAD_KEYS = frozenset({'user_id'})
+
+
+def _image_patch_matches_remote(payload: dict, remote_row: dict | None) -> bool:
+    """True when an existing-row PATCH body would change nothing in the cloud
+    row: the choke point then sends no PATCH (no updated_at / cursor bump)."""
+    if not remote_row:
+        return False
+    for key, value in payload.items():
+        if key not in remote_row:
+            # The PATCH URL filters on user_id. Any other unread column
+            # (e.g. storage_exif_safe) is read by the caller first.
+            if key in _NOOP_CHECK_UNREAD_KEYS:
+                continue
+            return False
+        remote = remote_row.get(key)
+        if key == 'captured_at':
+            if _normalize_image_captured_at_for_cloud(value, local=False) != \
+                    _normalize_image_captured_at_for_cloud(remote, local=False):
+                return False
+        elif value != remote and (value is None or remote is None or str(value) != str(remote)):
+            return False
+    return True
+
+
+def _baseline_images_by_cloud_id(obs_cloud_id: str) -> dict[str, dict]:
+    snapshot = _parse_cloud_observation_snapshot(_load_cloud_observation_snapshot(str(obs_cloud_id or '')))
+    return {
+        str(row.get('id') or '').strip(): dict(row)
+        for row in (snapshot.get('images') or [])
+        if str((row or {}).get('id') or '').strip()
+    }
+
+
+# Every image field the push keeps at the cloud value when only the cloud
+# changed it, and that the push then adopts locally (same name in the compare
+# payload and the local images table). Protection and adoption use this one
+# list, so the baseline never moves past a stale local value.
+_ADOPTABLE_IMAGE_FIELDS = (
+    'notes', 'objective_name', 'measure_color', 'mount_medium', 'stain',
+    'sample_type', 'sample_source', 'contrast', 'crop_mode', 'micro_category',
+    'captured_at', 'sort_order', 'image_type', 'scale_microns_per_pixel',
+    'resample_scale_factor', 'gps_source',
+    'ai_crop_x1', 'ai_crop_y1', 'ai_crop_x2', 'ai_crop_y2',
+    'ai_crop_source_w', 'ai_crop_source_h', 'ai_crop_is_custom',
+)
+
+
+# Every column an existing-row image PATCH can carry, classified once. The
+# three-way fields are protected (cloud-only edits kept) and adopted locally;
+# the rest are never descriptive desktop edits of a web value.
+_IMAGE_THREE_WAY_FIELDS = (*_ADOPTABLE_IMAGE_FIELDS, 'calibration_uuid')
+_IMAGE_FILL_ONLY_FIELDS = ('original_filename',)  # never replaces a cloud value
+_IMAGE_UPLOAD_OWNED_FIELDS = (
+    'storage_path', 'upload_mode', 'source_width', 'source_height',
+    'stored_width', 'stored_height', 'stored_bytes', 'storage_exif_safe',
+)
+_IMAGE_STRUCTURAL_FIELDS = ('observation_id', 'user_id', 'deleted_at')
+
+
+def _image_patch_three_way(
+    client, img: dict, obs_cloud_id: str, cloud_image_id: str, remote_row: dict,
+) -> tuple[set[str], set[str]]:
+    """(fields to keep at the cloud, differing fields with no baseline)."""
+    include = {'include_ai_crop': client._observation_images_support_ai_crop(), 'include_upload_meta': False}
+    local_payload = _prepared_item_remote_payload(img, str(img.get('filepath') or ''), '', **include)
+    remote_payload = _remote_image_compare_payload(remote_row, **include)
+    baseline_row = _baseline_images_by_cloud_id(obs_cloud_id).get(str(cloud_image_id or '').strip())
+    if baseline_row is None:
+        local = dict(local_payload)
+        _preserve_unedited_remote_image_values(
+            local, img, remote_row, captured_at_pull_injected=_captured_at_is_pull_injected(img),
+        )
+        if not _image_calibration_uuid(img):
+            local.pop('calibration_uuid', None)  # a local NULL calibration is never sent
+        def same(key):
+            a, b = local[key], remote_payload[key]
+            # Local flag columns default to 0 where the cloud holds NULL.
+            return a == b or (key in ('gps_source', 'ai_crop_is_custom') and bool(a) == bool(b))
+        differing = {
+            key for key in _IMAGE_THREE_WAY_FIELDS
+            if key in local and key in remote_payload and not same(key)
+        }
+        return set(), differing
+    edits = _remote_only_image_edits(local_payload, img, baseline_row, remote_payload, **include)
+    return {key for key in edits if key in _IMAGE_THREE_WAY_FIELDS}, set()
+
+
+def _image_fields_to_keep_at_cloud(
+    client, img: dict, obs_cloud_id: str, cloud_image_id: str, remote_row: dict,
+) -> set[str]:
+    """Cloud-only edits since the stored baseline that a PATCH must not send
+    (see ``_image_patch_three_way``)."""
+    return _image_patch_three_way(client, img, obs_cloud_id, cloud_image_id, remote_row)[0]
+
+
+def _remote_only_image_edits(
+    local_payload: dict, img: dict | None, baseline_row: dict | None, remote_payload: dict, **include,
+) -> set[str]:
+    """Fields only the cloud changed since the baseline (the preflight's
+    three-way rule): local still holds the baseline value, the cloud does not.
+
+    ``local_payload`` is the unshaped local compare payload. As in the
+    preflight, it is normalized against the BASELINE (blank text over a NULL
+    baseline, a pull-injected capture time) before comparing; a value that
+    normalization withholds equals the baseline. A metadata push must leave
+    these fields at the cloud value.
+    """
+    if not baseline_row:
+        return set()
+    baseline_payload = _remote_image_compare_payload(baseline_row, **include)
+    local = dict(local_payload)
+    _preserve_unedited_remote_image_values(
+        local, img, baseline_row, captured_at_pull_injected=_captured_at_is_pull_injected(img),
+    )
+    for key in set(local_payload) - set(local):
+        local[key] = baseline_payload.get(key)
+    return {
+        key for key, remote_value in remote_payload.items()
+        if key in local and key in baseline_payload
+        and local[key] == baseline_payload[key]
+        and remote_value != baseline_payload[key]
+    }
+
+
+
+
+def _adopt_remote_image_edits_before_baseline(
+    client, obs_cloud_id: str, obs_local_id: int, remote_rows: list[dict],
+) -> None:
+    """Copy cloud-only image edits into the local rows before the post-push
+    baseline is stored, without marking the observation dirty.
+
+    Without this the stored baseline moves to the cloud value while the local
+    row keeps the old one, and the next push sends the stale local value over
+    the cloud edit. ``remote_rows`` are the post-push rows the baseline
+    records (``_store_remote_snapshot(before_store_images=...)``).
+    """
+    baseline_by_id = _baseline_images_by_cloud_id(obs_cloud_id)
+    remote_by_id = {str(r.get('id') or '').strip(): r for r in remote_rows}
+    if not (set(baseline_by_id) & set(remote_by_id)):
+        return
+    include = {'include_ai_crop': client._observation_images_support_ai_crop(), 'include_upload_meta': False}
+    for image_row in ImageDB.get_images_for_observation(obs_local_id):
+        img = dict(image_row or {})
+        cloud_id = str(img.get('cloud_id') or '').strip()
+        if cloud_id not in remote_by_id:
+            continue
+        local_payload = _prepared_item_remote_payload(img, str(img.get('filepath') or ''), '', **include)
+        remote_payload = _remote_image_compare_payload(remote_by_id[cloud_id], **include)
+        if cloud_id not in baseline_by_id:
+            continue
+        edits = _remote_only_image_edits(
+            local_payload, img, baseline_by_id[cloud_id], remote_payload, **include,
+        )
+        fields = [f for f in _IMAGE_THREE_WAY_FIELDS if f in edits]
+        if not fields:
+            continue
+        values = [remote_payload.get(f) for f in fields]
+        if 'captured_at' in fields:
+            values[fields.index('captured_at')] = _cloud_image_captured_at_to_local(remote_payload.get('captured_at'))
+        columns = list(fields)
+        if 'calibration_uuid' in fields:
+            # Local rows link calibrations by id; an unknown uuid links none
+            # (a local NULL calibration is never sent).
+            i = columns.index('calibration_uuid')
+            columns[i] = 'calibration_id'
+            values[i] = _local_calibration_id_for_image({'calibration_uuid': values[i]})
+        conn = get_connection()
+        try:
+            conn.execute(
+                f"UPDATE images SET {', '.join(f'{f} = ?' for f in columns)} WHERE id = ?",
+                values + [_safe_int(img.get('id'))],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        if 'captured_at' in fields:
+            # The local capture time is now the cloud's, not a pull-injected one.
+            _record_pull_injected_captured_at(img.get('id'), remote_payload.get('captured_at'))
+        print(f'[cloud_sync] Observation {obs_local_id}: adopted cloud image edits {fields} for cloud image {cloud_id}')
+
+
 def _reconcile_metadata_only_linked_images(
     client: SporelyCloudClient,
     obs: dict,
@@ -472,9 +604,8 @@ def _reconcile_metadata_only_linked_images(
 ) -> set[int]:
     """Skip WebP prep for linked images whose bytes haven't changed.
 
-    Companion to :func:`_associate_persisted_cloud_images`. When an
-    observation is re-dirtied for a *different* image (e.g. a new local image
-    that still has ``cloud_id IS NULL``), the sibling images that are already
+    When an observation is re-dirtied for a *different* image (e.g. a new
+    local image that still has ``cloud_id IS NULL``), the sibling images that are already
     correctly linked and whose local source file hasn't changed should not be
     re-encoded to WebP just to end up as a metadata-only patch. This pass
     applies any pending metadata delta directly and returns their ids so the
@@ -493,11 +624,6 @@ def _reconcile_metadata_only_linked_images(
         for row in existing_rows
         if str(row.get('id') or '').strip()
     }
-    existing_by_desktop_id = {
-        _safe_int(row.get('desktop_id')): row
-        for row in existing_rows
-        if _safe_int(row.get('desktop_id')) != 0
-    }
 
     include_ai_crop = client._observation_images_support_ai_crop()
     include_upload_meta = client._observation_images_support_upload_metadata()
@@ -514,12 +640,10 @@ def _reconcile_metadata_only_linked_images(
     }
 
     stored_stats = _stored_local_media_signature_image_stats(obs_local_id)
+    baseline_by_id = _baseline_images_by_cloud_id(obs_cloud_id)
 
     for image_row in ImageDB.get_images_for_observation(obs_local_id):
         img = dict(image_row or {})
-        img['portable_cloud_identity_pending'] = bool(
-            obs.get('portable_cloud_identity_pending')
-        )
         local_image_id = _safe_int(img.get('id'))
         if local_image_id <= 0 or not should_push_local_image_to_cloud(img):
             continue
@@ -535,13 +659,8 @@ def _reconcile_metadata_only_linked_images(
             # through the upload path, never the metadata-only fast path.
             continue
         remote_row = _select_remote_image_identity_candidate(
-            local_image_id=local_image_id,
             local_cloud_id=local_cloud_id,
             existing_by_id=existing_by_id,
-            existing_by_desktop_id=existing_by_desktop_id,
-            portable_identity_pending=bool(
-                obs.get('portable_cloud_identity_pending')
-            ),
         )
         if not remote_row:
             continue
@@ -564,7 +683,7 @@ def _reconcile_metadata_only_linked_images(
             include_ai_crop=include_ai_crop,
             include_upload_meta=include_upload_meta,
         )
-        remote_payload = _remote_image_payload(
+        remote_payload = _remote_image_compare_payload(
             remote_row,
             include_ai_crop=include_ai_crop,
             include_upload_meta=include_upload_meta,
@@ -575,12 +694,36 @@ def _reconcile_metadata_only_linked_images(
         for key in upload_derived_keys:
             expected_payload.pop(key, None)
             remote_payload.pop(key, None)
+        # Compare what push_image_metadata would actually send: values it
+        # keeps at the cloud's (blank text over NULL, a recovery copy's
+        # derived file facts) are not drift.
+        keys_before = set(expected_payload)
+        unshaped_local = dict(expected_payload)
+        _preserve_unedited_remote_image_values(
+            expected_payload, img, remote_row,
+            captured_at_pull_injected=_captured_at_is_pull_injected(img),
+        )
+        for key in keys_before - set(expected_payload):
+            remote_payload.pop(key, None)
+        remote_only = _remote_only_image_edits(
+            unshaped_local, img, baseline_by_id.get(local_cloud_id), remote_payload,
+            include_ai_crop=include_ai_crop, include_upload_meta=include_upload_meta,
+        )
+        for key in remote_only:
+            expected_payload.pop(key, None)
+            remote_payload.pop(key, None)
 
         if expected_payload != remote_payload:
             try:
-                client.push_image_metadata(img, obs_cloud_id, remote_storage_path, remote_row=remote_row)
+                extra = {'keep_remote_fields': remote_only} if remote_only else {}
+                client.push_image_metadata(
+                    img, obs_cloud_id, remote_storage_path, remote_row=remote_row, **extra,
+                )
             except Exception as exc:
-                if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                if (
+                    is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc)
+                    or isinstance(exc, ImageBaselineMissingError)
+                ):
                     raise
                 if is_cloud_recovery_cache:
                     # Recovery-cache bytes came from this cloud row. Never
@@ -636,7 +779,13 @@ def _push_images_for_observation(
     original_summary: dict | None = None,
     include_image_ids: set[int] | None = None,
 ) -> bool:
-    """Push selected observation images for one observation."""
+    """Push selected observation images for one observation.
+
+    Children wait for their parent: an image without a ``cloud_id`` is
+    created only when the observation's ``cloud_id`` is committed locally and
+    equals ``obs_cloud_id`` (``create_child_row``); otherwise it is deferred
+    and stays dirty.
+    """
     warnings: list[str] = []
     anchor_result = _ensure_metadata_anchors_for_public_spore_observation(
         client,
@@ -647,6 +796,10 @@ def _push_images_for_observation(
     anchor_failures = anchor_result.get('failures') or []
     for msg in anchor_failures:
         warnings.append(f'anchor: {msg}')
+        # Reported with the image failures, so an identity refusal of an
+        # anchor row is visible in the sync result, not only in the log.
+        if isinstance(summary_warnings, list):
+            summary_warnings.append(f'anchor: {msg}')
     anchor_had_failures = bool(anchor_failures)
     # Existing metadata-only anchors remain protected, but publication
     # selection must never downgrade a cloud-backed image to this state.
@@ -672,10 +825,11 @@ def _push_images_for_observation(
     prepared_items: list[dict] = []
     cleanup = None
     preparation_failed = False
-    # Remote-first pass: pull existing cloud image metadata once up front so we
-    # can re-associate orphaned local rows (cloud_id lost but already uploaded)
-    # before any temporary WebP candidate is encoded for them. Reused by the
-    # main upload loop below to avoid a second metadata fetch.
+    # Remote-first pass: pull existing cloud image metadata once up front so
+    # linked images whose bytes are unchanged skip WebP preparation. Reused by
+    # the main upload loop below to avoid a second metadata fetch. A local row
+    # that lost its cloud_id is never matched here: its create finds its own
+    # cloud row by sync_key.
     prepass_existing_rows: list[dict] | None = None
     skip_prepare_image_ids: set[int] = set()
     if include_image_ids is not None:
@@ -696,11 +850,7 @@ def _push_images_for_observation(
             )
             prepass_existing_rows = None
         if prepass_existing_rows is not None:
-            associated_skip_ids = _associate_persisted_cloud_images(
-                client, obs, prepass_existing_rows
-            )
-            skip_prepare_image_ids = skip_prepare_image_ids | associated_skip_ids
-            # Also skip WebP prep for sibling images that are already linked
+            # Skip WebP prep for sibling images that are already linked
             # and whose local bytes haven't changed since last sync. Their
             # metadata delta (if any) is patched in place here so the
             # prepare_images_cb can focus on images that actually need bytes.
@@ -845,12 +995,6 @@ def _push_images_for_observation(
         for row in existing_rows
         if str(row.get('id') or '').strip()
     }
-    existing_by_desktop_id = {
-        _safe_int(row.get('desktop_id')): row
-        for row in existing_rows
-        if _safe_int(row.get('desktop_id')) != 0
-    }
-
     try:
         processed_items = 0
         total_items = len(prepared_items)
@@ -862,9 +1006,6 @@ def _push_images_for_observation(
             _increment_sync_summary(_cloud_sync_current_summary(), 'images_checked')
             img = dict(item.get('image_row') or {})
             img.update(dict(item.get('cloud_upload_meta') or {}))
-            img['portable_cloud_identity_pending'] = bool(
-                obs.get('portable_cloud_identity_pending')
-            )
             if observation_index and observation_total:
                 _emit_progress(
                     progress_cb,
@@ -885,13 +1026,8 @@ def _push_images_for_observation(
                 else ''
             )
             remote_row = _select_remote_image_identity_candidate(
-                local_image_id=local_image_id,
                 local_cloud_id=local_cloud_id,
                 existing_by_id=existing_by_id,
-                existing_by_desktop_id=existing_by_desktop_id,
-                portable_identity_pending=bool(
-                    img.get('portable_cloud_identity_pending')
-                ),
             )
             remote_cloud_id = str((remote_row or {}).get('id') or '').strip()
             if not should_push_local_image_to_cloud(img):
@@ -950,7 +1086,7 @@ def _push_images_for_observation(
                 local_calibration_uuid = _image_calibration_uuid(img)
                 if remote_row and remote_row.get('original_filename'):
                     expected_payload['original_filename'] = _normalize_snapshot_value(remote_row.get('original_filename'))
-                remote_payload = _remote_image_payload(
+                remote_payload = _remote_image_compare_payload(
                     remote_row,
                     include_ai_crop=include_ai_crop,
                     include_upload_meta=include_upload_meta,
@@ -1001,24 +1137,6 @@ def _push_images_for_observation(
 
                 if file_matches and metadata_matches:
                     _increment_sync_summary(_cloud_sync_current_summary(), 'images_skipped_already_synced')
-                    # The remote bytes and metadata already match, but the local
-                    # row may have lost its cloud_id (e.g. an earlier overwrite).
-                    # Restore the association so this observation is not
-                    # re-dirtied forever. This is a metadata-only repair —
-                    # actual_upload=False, no bytes are sent.
-                    if remote_cloud_id and local_image_id > 0 and local_cloud_id != remote_cloud_id:
-                        if _reconcile_local_image_cloud_id(
-                            local_image_id, remote_cloud_id, mark_synced=True
-                        ):
-                            _increment_sync_summary(
-                                _cloud_sync_current_summary(), 'images_cloud_id_repaired'
-                            )
-                            print(
-                                f'[cloud_sync] Observation {obs["id"]}: metadata association for cloud image '
-                                f'actual_upload=False image_id={local_image_id or item_index} '
-                                f'cloud_image_id={remote_cloud_id} storage_path={storage_path} '
-                                f'(restored missing local cloud_id)'
-                            )
                     print(
                         f'[cloud_sync] Observation {obs["id"]}: skipped already synced cloud image '
                         f'{local_image_id or item_index} (storage_path={storage_path})'
@@ -1050,6 +1168,7 @@ def _push_images_for_observation(
                     )
 
                 img_cloud_id = remote_cloud_id
+                adopted_row: dict | None = None
                 # Stage 1 defense in depth: even after prepare_images_cb emitted
                 # this row, skip the byte upload if the user unchecked the
                 # image between preparation and this loop. This must NOT
@@ -1092,7 +1211,20 @@ def _push_images_for_observation(
                     if not img_cloud_id:
                         img_cloud_id = client.push_image_metadata(
                             img, obs_cloud_id, storage_path)
-                        reserved_image_row = True
+                        adopted_row = take_adopted_child(
+                            client, 'observation_images', img_cloud_id,
+                        )
+                        if adopted_row is None:
+                            reserved_image_row = True
+                        else:
+                            # This database's own row, linked without a write.
+                            # Its bytes were never confirmed locally, so they
+                            # go to the row's reserved key (one object, never
+                            # a new key). A row without a key is linked as is.
+                            remote_row = adopted_row
+                            storage_path = _normalize_cloud_media_key(
+                                adopted_row.get('storage_path')
+                            )
                     elif not remote_row_storage_path and not is_metadata_only_anchor:
                         # Linked metadata-anchor → byte-backed promotion: a
                         # cloud row already exists for this image (same owned
@@ -1125,17 +1257,47 @@ def _push_images_for_observation(
                         # clean NULL anchor.
                         promotion_reserved_key = pending_promotion_key
                     try:
-                        uploaded_key = client.upload_image_file(
-                            upload_path,
-                            obs_cloud_id,
-                            img_cloud_id,
-                            storage_path=storage_path,
-                            upload_meta=dict(item.get('cloud_upload_meta') or {}),
-                            observation_id=_safe_int(obs.get('id')),
-                            image_id=local_image_id,
-                        )
-                    except Exception:
-                        if reserved_image_row and img_cloud_id:
+                        if adopted_row is not None and (
+                            not storage_path or is_legacy_link(adopted_row)
+                        ):
+                            # A row linked as is, or a one-time legacy
+                            # recovery link: that row may be another
+                            # database's upload, so its media are never
+                            # written (no confirming upload).
+                            uploaded_key = ''
+                        else:
+                            # Durable retry intent for every byte upload,
+                            # including a resumed promotion: a crash before the
+                            # link commit below re-dirties the observation on
+                            # the next push.
+                            mark_child_create_pending(_safe_int(obs.get('id')))
+                            uploaded_key = client.upload_image_file(
+                                upload_path,
+                                obs_cloud_id,
+                                img_cloud_id,
+                                storage_path=storage_path,
+                                upload_meta=dict(item.get('cloud_upload_meta') or {}),
+                                observation_id=_safe_int(obs.get('id')),
+                                image_id=local_image_id,
+                            )
+                    except Exception as upload_exc:
+                        if (
+                            reserved_image_row
+                            and img_cloud_id
+                            and _upload_outcome_uncertain(upload_exc)
+                        ):
+                            # The bytes may have landed. Keep the row and its
+                            # reserved key: the retry repeats the create,
+                            # adopts this row and uploads to the same key.
+                            print(
+                                f'[cloud_sync] Observation {obs["id"]}: upload outcome '
+                                f'uncertain for image {local_image_id}; keeping cloud '
+                                f'image {img_cloud_id} and reserved key {storage_path}'
+                            )
+                            # A transient error aborts the push after the
+                            # observation was stamped synced: keep it dirty.
+                            mark_observation_media_dirty(_safe_int(obs.get('id')))
+                        elif reserved_image_row and img_cloud_id:
                             try:
                                 client._storage_remove([
                                     storage_path,
@@ -1146,8 +1308,23 @@ def _push_images_for_observation(
                                     f'observation_images?id=eq.{img_cloud_id}'
                                     f'&user_id=eq.{client.user_id}'
                                 )
+                        elif (
+                            promotion_reserved_key
+                            and img_cloud_id
+                            and _upload_outcome_uncertain(upload_exc)
+                        ):
+                            # The bytes may have landed. Keep the reserved key
+                            # and its pending marker: the retry resumes the
+                            # promotion and uploads to the same key.
+                            print(
+                                f'[cloud_sync] Observation {obs["id"]}: upload outcome '
+                                f'uncertain for promoted image {local_image_id}; keeping '
+                                f'reserved key {promotion_reserved_key} on cloud image '
+                                f'{img_cloud_id}'
+                            )
+                            mark_observation_media_dirty(_safe_int(obs.get('id')))
                         elif promotion_reserved_key and img_cloud_id:
-                            # Promotion failure: restore the clean metadata
+                            # Definite failure: restore the clean metadata
                             # anchor (conditional NULL rollback + partial
                             # object cleanup). The anchor row is kept.
                             _rollback_anchor_promotion(
@@ -1186,10 +1363,16 @@ def _push_images_for_observation(
                             obs.get('id'), local_image_id,
                         )
 
-                if not img_cloud_id or not metadata_matches:
+                if adopted_row is None and (not img_cloud_id or not metadata_matches):
                     if remote_row and remote_row.get('original_filename'):
                         img['original_filename'] = str(remote_row.get('original_filename') or '').strip()
+                    if img_cloud_id:
+                        # Confirm by the verified id, never by a second create.
+                        img['cloud_id'] = img_cloud_id
                     img_cloud_id = client.push_image_metadata(img, obs_cloud_id, storage_path, remote_row=remote_row)
+                    adopted_row = take_adopted_child(
+                        client, 'observation_images', img_cloud_id,
+                    )
                     remote_payload = _prepared_item_remote_payload(
                         img,
                         upload_path,
@@ -1206,19 +1389,41 @@ def _push_images_for_observation(
                 except Exception:
                     image_id = 0
                 if image_id > 0:
+                    # The link and the cleared legacy marker commit together,
+                    # only after the row's bytes (if any) were sent: a crash
+                    # before this repeats the same create, which adopts.
                     conn = get_connection()
-                    conn.execute(
-                        'UPDATE images SET cloud_id = ?, synced_at = ? WHERE id = ?',
-                        (img_cloud_id, datetime.now(timezone.utc).isoformat(), image_id),
-                    )
-                    conn.commit()
-                    conn.close()
-                if current_file_sig:
+                    try:
+                        conn.execute(
+                            'UPDATE images SET cloud_id = ?, synced_at = ? WHERE id = ?',
+                            (img_cloud_id, datetime.now(timezone.utc).isoformat(), image_id),
+                        )
+                        clear_legacy_marker(conn, 'images', image_id)
+                        clear_child_create_pending(conn, _safe_int(obs.get('id')))
+                        conn.commit()
+                    finally:
+                        conn.close()
+                adopted_without_bytes = (
+                    adopted_row is not None
+                    and not _normalize_cloud_media_key(storage_path)
+                    and local_image_id > 0
+                    and cloud_image_bytes_desired(obs.get('id'), local_image_id, img)
+                )
+                if current_file_sig and not adopted_without_bytes:
                     _store_cloud_image_file_signature(obs.get('id'), local_image_id, current_file_sig)
                 if _normalize_cloud_media_key(storage_path):
                     _set_cloud_image_metadata_only_state(
                         obs.get('id'), local_image_id, False,
                     )
+                if adopted_row is not None:
+                    if adopted_without_bytes:
+                        # Giving the linked row its bytes is an ordinary
+                        # linked-row change for the next push, never a write
+                        # during adoption.
+                        mark_observation_media_dirty(_safe_int(obs.get('id')))
+                    # The adoption step never writes the row: no original
+                    # upload binding either.
+                    continue
 
                 original_upload_source = resolve_full_original_upload_source(img)
                 original_storage_path = _normalize_cloud_media_key((remote_row or {}).get('original_storage_path'))

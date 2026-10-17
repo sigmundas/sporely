@@ -6,6 +6,7 @@ import time
 import pytest
 
 from utils import cloud_sync
+from utils.cloud_sync_impl import child_identity
 
 
 def _client(monkeypatch, *, existing_id="cloud-image-1"):
@@ -35,9 +36,14 @@ def test_push_serializes_capture_time_without_touching_created_at(monkeypatch):
         lambda path, payload: posts.append(dict(payload)) or [{"id": "cloud-image-new"}],
     )
 
+    monkeypatch.setattr(
+        child_identity, "committed_parent_cloud_id", lambda table, row: "cloud-observation-1",
+    )
     client.push_image_metadata(
         {
             "id": 7,
+            "observation_id": 1,
+            "sync_key": "0f6a1c0e-5d1b-4b8e-9a52-6e0f3c2b7a41",
             "image_type": "microscope",
             "captured_at": "2026-07-12T19:45:00+02:00",
         },
@@ -51,6 +57,7 @@ def test_push_serializes_capture_time_without_touching_created_at(monkeypatch):
 
 def test_push_omits_null_capture_time_instead_of_falling_back_or_erasing(monkeypatch):
     client = _client(monkeypatch)
+    _store_image_baseline("cloud-observation-1", ["cloud-image-1"])
     patches = []
     monkeypatch.setattr(client, "_patch", lambda path, payload: patches.append(dict(payload)))
 
@@ -58,6 +65,7 @@ def test_push_omits_null_capture_time_instead_of_falling_back_or_erasing(monkeyp
         {"id": 7, "image_type": "microscope", "captured_at": None},
         "cloud-observation-1",
         "",
+        remote_row={"id": "cloud-image-1", "observation_id": "cloud-observation-1"},
     )
 
     assert "captured_at" not in patches[0]
@@ -263,3 +271,15 @@ class _Rows:
 
     def fetchall(self):
         return self.rows
+
+def _store_image_baseline(obs_cloud_id, image_ids):
+    """A stored sync baseline that knows these linked images, so pushes of
+    existing rows take the three-way path, not the no-baseline refusal."""
+    import json
+    from utils.cloud_sync_impl import baseline as _baseline_mod
+
+    _baseline_mod._store_cloud_observation_snapshot(str(obs_cloud_id), json.dumps({
+        "schema_version": 2, "observation": {"id": str(obs_cloud_id)},
+        "images": [{"id": str(i)} for i in image_ids], "measurements": [],
+    }))
+

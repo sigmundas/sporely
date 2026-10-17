@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+import uuid
 from pathlib import Path
 
 import pytest
@@ -98,7 +99,8 @@ def _init_db(tmp_path: Path) -> Path:
             calibration_id INTEGER,
             synced_at TEXT,
             source_role TEXT,
-            file_purpose TEXT
+            file_purpose TEXT,
+            sync_key TEXT
         );
         CREATE TABLE spore_measurements (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -111,7 +113,8 @@ def _init_db(tmp_path: Path) -> Path:
             p3_x REAL, p3_y REAL, p4_x REAL, p4_y REAL,
             gallery_rotation INTEGER,
             measured_at TEXT,
-            cloud_id TEXT
+            cloud_id TEXT,
+            sync_key TEXT
         );
         CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
         CREATE TABLE image_tombstones (
@@ -186,12 +189,12 @@ def _add_microscope_image(
             INSERT INTO images (
                 id, observation_id, cloud_id, filepath, image_type, sort_order,
                 created_at, objective_name, scale_microns_per_pixel,
-                resample_scale_factor, crop_mode, source_role
-            ) VALUES (?, ?, ?, ?, 'microscope', ?, ?, ?, ?, ?, 'full', 'local_canonical')
+                resample_scale_factor, crop_mode, source_role, sync_key
+            ) VALUES (?, ?, ?, ?, 'microscope', ?, ?, ?, ?, ?, 'full', 'local_canonical', ?)
             """,
             (
                 image_id, 1, cloud_id, str(filepath), sort_order,
-                "2026-05-02T00:00:00Z", "100X", 0.25, 1.0,
+                "2026-05-02T00:00:00Z", "100X", 0.25, 1.0, str(uuid.uuid4()),
             ),
         )
         conn.commit()
@@ -210,17 +213,26 @@ def _add_spore_measurements(db_path: Path, *, image_id: int, ids: list[int]) -> 
                 INSERT INTO spore_measurements (
                     id, image_id, length_um, width_um, measurement_type,
                     gallery_rotation, measured_at,
-                    p1_x, p1_y, p2_x, p2_y, p3_x, p3_y, p4_x, p4_y
-                ) VALUES (?, ?, ?, ?, 'manual', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    p1_x, p1_y, p2_x, p2_y, p3_x, p3_y, p4_x, p4_y, sync_key
+                ) VALUES (?, ?, ?, ?, 'manual', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     measurement_id, image_id, 9.5 + index, 5.5 + index,
                     "2026-05-03T00:00:00Z",
                     offset, offset, offset + 20.0, offset,
                     offset + 10.0, offset - 8.0, offset + 10.0, offset + 8.0,
+                    str(uuid.uuid4()),
                 ),
             )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def _image_sync_key(db_path: Path, image_id: int) -> str:
+    conn = sqlite3.connect(db_path)
+    try:
+        return str(conn.execute("SELECT sync_key FROM images WHERE id = ?", (image_id,)).fetchone()[0])
     finally:
         conn.close()
 
@@ -359,21 +371,11 @@ class _ChainClient:
                 return row
         return None
 
-    def _row_for_desktop_id(self, desktop_id) -> dict | None:
-        try:
-            wanted = int(desktop_id)
-        except (TypeError, ValueError):
-            return None
-        for row in self.remote_images:
-            if int(row.get("desktop_id") or 0) == wanted:
-                return row
-        return None
-
-    def rows_for_desktop_id(self, desktop_id) -> list[dict]:
+    def rows_for_sync_key(self, sync_key) -> list[dict]:
         """Every remote row claiming this local image — duplicates included."""
         return [
             dict(row) for row in self.remote_images
-            if int(row.get("desktop_id") or 0) == int(desktop_id)
+            if str(row.get("sync_key") or "") == str(sync_key)
         ]
 
     def _next_image_cloud_id(self) -> str:
@@ -385,11 +387,9 @@ class _ChainClient:
             (remote_row or {}).get("id")
         )
         if row is None:
-            row = self._row_for_desktop_id(img.get("id"))
-        if row is None:
             row = {
                 "id": self._next_image_cloud_id(),
-                "desktop_id": int(img.get("id") or 0),
+                "sync_key": img.get("sync_key"),
                 "observation_id": str(obs_cloud_id),
                 "user_id": self.user_id,
                 "deleted_at": None,
@@ -428,12 +428,6 @@ class _ChainClient:
             row["storage_path"] = None
             return True
         return False
-
-    def _find_cloud_image(self, desktop_id, obs_cloud_id=None, image_type=None):
-        row = self._row_for_desktop_id(desktop_id)
-        if row is None:
-            return None
-        return {"id": str(row.get("id") or ""), "deleted_at": row.get("deleted_at")}
 
     # ── bytes ─────────────────────────────────────────────────────────────
     def upload_image_file(
@@ -476,7 +470,7 @@ class _ChainClient:
         row = next(
             (
                 candidate for candidate in self.remote_measurements
-                if int(candidate.get("desktop_id") or 0) == local_id
+                if str(candidate.get("id")) == str(meas.get("cloud_id") or "")
             ),
             None,
         )
@@ -484,8 +478,10 @@ class _ChainClient:
             self._measurement_seq += 1
             row = {
                 "id": f"cloud-meas-{self._measurement_seq}",
-                "desktop_id": local_id,
+                "sync_key": meas.get("sync_key"),
                 "user_id": self.user_id,
+                # Test bookkeeping only; not a cloud column.
+                "_local_id": local_id,
             }
             self.remote_measurements.append(row)
         row["image_id"] = str(cloud_image_id)
@@ -713,7 +709,7 @@ def test_stranded_selected_microscope_media_converges_to_mosaic(db, monkeypatch)
     #    byte-backed, and the local row points at exactly that row.
     image_cloud_id = _image_cloud_id(db_path, 12)
     assert image_cloud_id
-    remote_rows = harness.client.rows_for_desktop_id(12)
+    remote_rows = harness.client.rows_for_sync_key(_image_sync_key(db_path, 12))
     assert len(remote_rows) == 1, remote_rows
     assert str(remote_rows[0]["id"]) == image_cloud_id
     storage_path = str(remote_rows[0].get("storage_path") or "")
@@ -749,7 +745,7 @@ def test_stranded_selected_microscope_media_converges_to_mosaic(db, monkeypatch)
     assert second["errors"] == []
     assert harness.image_prep_calls == [1]
     assert harness.client.uploaded_bytes == [(12, storage_path)]
-    assert len(harness.client.rows_for_desktop_id(12)) == 1
+    assert len(harness.client.rows_for_sync_key(_image_sync_key(db_path, 12))) == 1
     assert _observation_status(db_path) == "synced"
 
 
@@ -791,7 +787,7 @@ def test_unselected_microscope_image_syncs_measurements_without_any_bytes(
     # A metadata-only anchor exists: cloud identity without cloud bytes.
     image_cloud_id = _image_cloud_id(db_path, 12)
     assert image_cloud_id
-    remote_rows = harness.client.rows_for_desktop_id(12)
+    remote_rows = harness.client.rows_for_sync_key(_image_sync_key(db_path, 12))
     assert len(remote_rows) == 1, remote_rows
     assert str(remote_rows[0]["id"]) == image_cloud_id
     assert remote_rows[0].get("storage_path") in (None, "")
@@ -843,8 +839,8 @@ def test_byte_selection_and_mosaic_participation_are_independent(db, monkeypatch
 
     # Bytes: exactly one upload, for the selected image only.
     assert [image_id for image_id, _key in harness.client.uploaded_bytes] == [12]
-    selected_row = harness.client.rows_for_desktop_id(12)[0]
-    excluded_row = harness.client.rows_for_desktop_id(13)[0]
+    selected_row = harness.client.rows_for_sync_key(_image_sync_key(db_path, 12))[0]
+    excluded_row = harness.client.rows_for_sync_key(_image_sync_key(db_path, 13))[0]
     assert str(selected_row.get("storage_path") or "")
     assert excluded_row.get("storage_path") in (None, "")
 

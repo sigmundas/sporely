@@ -215,7 +215,7 @@ def _local_context(db_path: Path, monkeypatch):
         conn.close()
 
 
-def test_dry_run_maps_cloud_desktop_id_to_local_image_id(tmp_path, monkeypatch):
+def test_dry_run_maps_a_cloud_row_to_its_local_image_by_cloud_id(tmp_path, monkeypatch):
     db_path = tmp_path / "sporely.db"
     _create_test_db(db_path)
     image_path = tmp_path / "images" / "field.jpg"
@@ -255,7 +255,8 @@ def test_dry_run_maps_cloud_desktop_id_to_local_image_id(tmp_path, monkeypatch):
     report = audit._prepare_row_report(cloud_row, context, None)
 
     assert report["local_image_id"] == 11
-    assert report["match_method"] == "desktop_id"
+    # The cloud row is matched by its cloud id; its desktop_id is only reported.
+    assert report["match_method"] == "cloud_id"
     assert report["local_file_exists"] is True
     assert report["repairable"] == "no"
 
@@ -475,4 +476,5 @@ def test_excluded_local_only_microscope_images_are_not_reported_as_missing_cloud
     assert report["local_observation_id"] == 1
     assert report["repairable"] == "yes"
     assert report["image_type"] == "field"
-    assert report["match_method"] == "desktop_id"
+    # The cloud row is matched by its cloud id; its desktop_id is only reported.
+    assert report["match_method"] == "cloud_id"

@@ -411,7 +411,7 @@ class CloudSyncProfiler:
 def summarize_blocked_write_attempts(attempts) -> str:
     """Compress a raw list of blocked writer names into ``name ×N`` groups.
 
-    A single leaky path (e.g. ``set_image_desktop_id``) can fire hundreds of
+    A single leaky path (e.g. ``set_image_storage_path``) can fire hundreds of
     times per run; printing the name once with a count is what the user
     actually reads.
     """
@@ -764,6 +764,16 @@ def _increment_sync_summary(sync_summary: dict | None, key: str, amount: int = 1
     sync_summary[key] = _sync_summary_value(sync_summary, key) + increment
 
 
+def _append_identity_bits(bits: list[str], summary: dict, prefix: str) -> None:
+    """Create-identity outcomes of child rows, worded as for observations."""
+    adopted = _sync_summary_value(summary, f'{prefix}_adopted')
+    if adopted:
+        bits.append(f'{adopted} linked to their existing cloud copy')
+    possible_duplicates = _sync_summary_value(summary, f'{prefix}_possible_duplicate')
+    if possible_duplicates:
+        bits.append(f'{possible_duplicates} possible duplicate of an earlier upload')
+
+
 def format_sync_summary(sync_summary: dict | None) -> str | None:
     summary = dict(sync_summary or {})
     if not summary:
@@ -787,6 +797,14 @@ def format_sync_summary(sync_summary: dict | None) -> str | None:
     observations_deleted = _sync_summary_value(summary, 'observations_deleted_remote')
     if observations_deleted:
         observation_bits.append(f'{observations_deleted} deleted remotely')
+    observations_adopted = _sync_summary_value(summary, 'observations_adopted')
+    if observations_adopted:
+        observation_bits.append(f'{observations_adopted} linked to their existing cloud copy')
+    possible_duplicates = _sync_summary_value(summary, 'observations_possible_duplicate')
+    if possible_duplicates:
+        observation_bits.append(
+            f'{possible_duplicates} possible duplicate of an earlier upload'
+        )
     if observation_bits:
         lines.append(f"Observations: {'; '.join(observation_bits)}.")
 
@@ -809,6 +827,7 @@ def format_sync_summary(sync_summary: dict | None) -> str | None:
     images_deleted = _sync_summary_value(summary, 'images_deleted_remote')
     if images_deleted:
         image_bits.append(f'{images_deleted} deleted remotely')
+    _append_identity_bits(image_bits, summary, 'images')
     if image_bits:
         lines.append(f"Images: {'; '.join(image_bits)}.")
 
@@ -822,6 +841,7 @@ def format_sync_summary(sync_summary: dict | None) -> str | None:
     measurements_noop = _sync_summary_value(summary, 'measurements_skipped_noop')
     if measurements_noop:
         measurement_bits.append(f'{measurements_noop} skipped as no-op')
+    _append_identity_bits(measurement_bits, summary, 'measurements')
     if measurement_bits:
         lines.append(f"Measurements: {'; '.join(measurement_bits)}.")
 

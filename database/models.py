@@ -16,6 +16,8 @@ from .schema import (
     get_reference_connection,
     get_images_dir,
     get_calibrations_dir,
+    LEGACY_RECOVERY_MARKER_COLUMN,
+    new_sync_key,
     save_app_settings,
 )
 from utils.exif_reader import get_image_datetime
@@ -30,8 +32,22 @@ from utils.publish_targets import (
 )
 from database.reverse_location_lookup import normalize_country_code
 from utils.taxon_identity import STATE_NONE, STATE_SPORELY, TaxonIdentity
+from utils.cloud_sync_impl.reconciliation.location_provenance import (
+    coordinates_match,
+    provenance_text,
+)
 
 _UNSET = object()
+# Sentinel for creation functions' ``sync_key`` argument. Omitted means a
+# local creation, which mints a fresh key. An explicit value (including None
+# for a pulled cloud row without a key) is stored as given and never minted.
+MINT_SYNC_KEY = object()
+
+
+def _resolve_sync_key(sync_key: object) -> str | None:
+    if sync_key is MINT_SYNC_KEY:
+        return new_sync_key()
+    return sync_key
 
 # Per-image cloud lifecycle state used by the gallery UI and other consumers.
 # NONE           — image has no cloud copy (never uploaded, or upload cleared).
@@ -229,6 +245,7 @@ _CLOUD_SQLITE_SETTING_PREFIXES = (
     "sporely_cloud_image_file_sig_",
     "sporely_cloud_local_media_sig_obs_",
     "sporely_cloud_explicit_image_restore_source_",
+    "sporely_cloud_child_create_pending_obs_",
 )
 _CLOUD_SQLITE_SETTING_KEYS = {
     "sporely_cloud_media_signature_v1",
@@ -320,6 +337,46 @@ def _table_columns(cursor, table_name: str) -> set[str]:
         return {str(row[1] or "") for row in cursor.fetchall()}
     except sqlite3.OperationalError:
         return set()
+
+
+def _fork_image_sync_identity(cursor, image_id: int) -> None:
+    """Make an image's measurements and sync keys those of new records.
+
+    For an image that becomes a new cloud row (moved, or republished after a
+    cloud delete): its measurements lose their ``cloud_id``, and the image and
+    its measurements get fresh sync keys and a cleared legacy-recovery
+    marker. The caller clears the image's own ``cloud_id``.
+    """
+    image_columns = _table_columns(cursor, "images")
+    measurement_columns = _table_columns(cursor, "spore_measurements")
+    if "sync_key" in image_columns:
+        cursor.execute(
+            "UPDATE images SET sync_key = ? WHERE id = ?", (new_sync_key(), image_id),
+        )
+    if LEGACY_RECOVERY_MARKER_COLUMN in image_columns:
+        cursor.execute(
+            f"UPDATE images SET {LEGACY_RECOVERY_MARKER_COLUMN} = 0 WHERE id = ?", (image_id,),
+        )
+    if "cloud_id" in measurement_columns:
+        cursor.execute(
+            "UPDATE spore_measurements SET cloud_id = NULL WHERE image_id = ?", (image_id,),
+        )
+    if LEGACY_RECOVERY_MARKER_COLUMN in measurement_columns:
+        cursor.execute(
+            f"UPDATE spore_measurements SET {LEGACY_RECOVERY_MARKER_COLUMN} = 0 "
+            f"WHERE image_id = ?",
+            (image_id,),
+        )
+    if "sync_key" in measurement_columns:
+        measurement_ids = [
+            row[0] for row in cursor.execute(
+                "SELECT id FROM spore_measurements WHERE image_id = ?", (image_id,),
+            ).fetchall()
+        ]
+        cursor.executemany(
+            "UPDATE spore_measurements SET sync_key = ? WHERE id = ?",
+            [(new_sync_key(), measurement_id) for measurement_id in measurement_ids],
+        )
 
 
 def update_observation_sync_state(
@@ -1338,6 +1395,8 @@ class ObservationDB:
                           ai_selected_at: str | None = None,
                           country_code: str | None = None,
                           region_id: str | None = None,
+                          location_source: str | None = None,
+                          location_status: str | None = None,
                           scientific_name_snapshot: str | None = None,
                           taxon_rank_snapshot: str | None = None,
                           sporely_taxon_id: int | None = None,
@@ -1347,8 +1406,13 @@ class ObservationDB:
                           taxon_identity_namespace: str | None = None,
                           taxon_identity_external_id: str | None = None,
                           taxon_identity_raw_external_id: str | None = None,
-                          taxon_identity_provenance: str | None = None) -> int:
-        """Create a new observation and return its ID"""
+                          taxon_identity_provenance: str | None = None,
+                          sync_key: str | None | object = MINT_SYNC_KEY) -> int:
+        """Create a new observation and return its ID.
+
+        ``sync_key`` omitted mints a fresh key; pull passes the remote key
+        explicitly (None included) so it never mints.
+        """
         conn = get_connection()
         cursor = conn.cursor()
         # Stage 3B.3: whitelist the rank_snapshot at write time.
@@ -1432,12 +1496,13 @@ class ObservationDB:
                                      ai_selected_service, ai_selected_taxon_id, ai_selected_scientific_name,
                                      ai_selected_probability, ai_selected_at,
                                      country_code, region_id,
+                                     location_source, location_status,
                                      scientific_name_snapshot, taxon_rank_snapshot, sporely_taxon_id,
                                      taxon_identity_state, taxon_identity_proof,
                                      taxon_identity_source_system, taxon_identity_namespace,
                                      taxon_identity_external_id, taxon_identity_raw_external_id,
-                                     taxon_identity_provenance)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     taxon_identity_provenance, sync_key)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (date, genus, species, common_name, location, habitat, artsdata_id,
               artportalen_id, resolved_publish_target, species_guess, notes, 1 if uncertain else 0, 1 if unspontaneous else 0,
               1 if resolved_is_draft else 0, resolved_sharing_scope, 1 if resolved_location_public else 0,
@@ -1454,6 +1519,7 @@ class ObservationDB:
               ai_selected_service, ai_selected_taxon_id, ai_selected_scientific_name,
               ai_selected_probability, ai_selected_at,
               resolved_country_code, resolved_region_id,
+              provenance_text(location_source), provenance_text(location_status),
               scientific_name_snapshot, taxon_rank_snapshot, sporely_taxon_id,
               _sanitize_identity_text(taxon_identity_state),
               _sanitize_identity_text(taxon_identity_proof),
@@ -1461,7 +1527,8 @@ class ObservationDB:
               _sanitize_identity_text(taxon_identity_namespace),
               _sanitize_identity_text(taxon_identity_external_id),
               _sanitize_identity_text(taxon_identity_raw_external_id),
-              _sanitize_identity_text(taxon_identity_provenance)))
+              _sanitize_identity_text(taxon_identity_provenance),
+              _resolve_sync_key(sync_key)))
 
         obs_id = cursor.lastrowid
         conn.commit()
@@ -1504,6 +1571,8 @@ class ObservationDB:
                            ai_selected_at: str | object = _UNSET,
                            country_code: str | None | object = _UNSET,
                            region_id: str | None | object = _UNSET,
+                           location_source: str | None | object = _UNSET,
+                           location_status: str | None | object = _UNSET,
                            scientific_name_snapshot: str | None | object = _UNSET,
                            taxon_rank_snapshot: str | None | object = _UNSET,
                            sporely_taxon_id: int | None | object = _UNSET,
@@ -1650,6 +1719,28 @@ class ObservationDB:
             if gps_longitude is not _UNSET and (allow_nulls or gps_longitude is not None):
                 updates.append('gps_longitude = ?')
                 values.append(gps_longitude)
+            # Location provenance belongs to the coordinate bundle. An explicit
+            # pair (even NULL) is stored as given; a coordinate change without
+            # one invalidates the stored pair, mirroring the cloud trigger, so
+            # a stale attribution never describes new coordinates.
+            new_lat = gps_latitude if gps_latitude is not _UNSET and (allow_nulls or gps_latitude is not None) else current.get('gps_latitude')
+            new_lon = gps_longitude if gps_longitude is not _UNSET and (allow_nulls or gps_longitude is not None) else current.get('gps_longitude')
+            if location_source is not _UNSET or location_status is not _UNSET:
+                updates.append('location_source = ?')
+                values.append(provenance_text(
+                    current.get('location_source') if location_source is _UNSET else location_source
+                ))
+                updates.append('location_status = ?')
+                values.append(provenance_text(
+                    current.get('location_status') if location_status is _UNSET else location_status
+                ))
+            elif not coordinates_match(
+                current.get('gps_latitude'), current.get('gps_longitude'), new_lat, new_lon,
+            ):
+                updates.append('location_source = ?')
+                values.append(None)
+                updates.append('location_status = ?')
+                values.append(None)
             if species_guess is not _UNSET and (allow_nulls or species_guess is not None):
                 updates.append('species_guess = ?')
                 values.append(species_guess)
@@ -2290,7 +2381,8 @@ class ImageDB:
                   source_role: str | None = None,
                   file_purpose: str | None = None,
                   original_mime_type: str | None = None,
-                  working_mime_type: str | None = None) -> int:
+                  working_mime_type: str | None = None,
+                  sync_key: str | None | object = MINT_SYNC_KEY) -> int:
         """Add an image and return its ID.
 
         Args:
@@ -2302,6 +2394,8 @@ class ImageDB:
             micro_category: Category for microscope images
             objective_name: Name of the objective used
             copy_to_folder: If True, copy image to observation folder
+            sync_key: Omitted mints a fresh key; pull passes the remote key
+                explicitly (None included) so it never mints.
         """
         conn = get_connection()
         conn.row_factory = sqlite3.Row
@@ -2453,6 +2547,7 @@ class ImageDB:
             "original_filepath",
             "sort_order",
             "artsobs_web_unpublished",
+            "sync_key",
         ]
         insert_values = [
             observation_id,
@@ -2483,6 +2578,7 @@ class ImageDB:
             final_original_filepath,
             sort_order,
             artsobs_web_unpublished,
+            _resolve_sync_key(sync_key),
         ]
         for column_name, column_value in (
             ("source_role", source_role),
@@ -2771,7 +2867,13 @@ class ImageDB:
 
     @staticmethod
     def clear_image_cloud_sync_state(image_id: int) -> bool:
-        """Clear the cloud link from a local image so it can be republished."""
+        """Clear the cloud link from a local image so it can be republished.
+
+        Republishing creates new cloud rows: the deleted cloud image keeps its
+        immutable ``sync_key`` and its measurements, so the image and its
+        measurements become forks with fresh keys and no ``cloud_id``, like an
+        image move. They are never legacy-recovery candidates.
+        """
         try:
             image_id = int(image_id)
         except (TypeError, ValueError):
@@ -2804,10 +2906,12 @@ class ImageDB:
                 f'UPDATE images SET {", ".join(updates)} WHERE id = ?',
                 (image_id,),
             )
+            changed = bool(cursor.rowcount and cursor.rowcount > 0)
+            _fork_image_sync_identity(cursor, image_id)
             if observation_id:
                 _touch_observation(cursor, observation_id, mark_dirty=True)
             conn.commit()
-            return bool(cursor.rowcount and cursor.rowcount > 0)
+            return changed
         except Exception:
             conn.rollback()
             raise
@@ -2885,10 +2989,6 @@ class ImageDB:
                     )
 
                 cursor.execute(
-                    "UPDATE spore_measurements SET cloud_id = NULL WHERE image_id = ?",
-                    (image_id,),
-                )
-                cursor.execute(
                     """
                     UPDATE images
                     SET observation_id = ?, sort_order = ?, cloud_id = NULL, synced_at = NULL
@@ -2896,6 +2996,9 @@ class ImageDB:
                     """,
                     (target_id, next_sort_order, image_id),
                 )
+                # The moved image and its measurements become new cloud rows,
+                # so they are forks: each gets a fresh sync key.
+                _fork_image_sync_identity(cursor, image_id)
                 next_sort_order += 1
                 moved += 1
 
@@ -3561,7 +3664,8 @@ class MeasurementDB:
     @staticmethod
     def add_measurement(image_id: int, length: float, width: float = None,
                        measurement_type: str = 'manual', notes: str = None,
-                       points: list = None) -> int:
+                       points: list = None,
+                       sync_key: str | None | object = MINT_SYNC_KEY) -> int:
         """Add a measurement and return its ID
 
         Args:
@@ -3571,7 +3675,10 @@ class MeasurementDB:
             measurement_type: Type of measurement
             notes: Optional notes
             points: List of 4 QPointF objects [p1, p2, p3, p4]
+            sync_key: Omitted mints a fresh key; an explicit value
+                (None included) is stored as given.
         """
+        resolved_sync_key = _resolve_sync_key(sync_key)
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute('SELECT observation_id FROM images WHERE id = ?', (image_id,))
@@ -3585,27 +3692,29 @@ class MeasurementDB:
             cursor.execute('''
                 INSERT INTO spore_measurements
                 (image_id, length_um, width_um, measurement_type, notes,
-                 p1_x, p1_y, p2_x, p2_y, p3_x, p3_y, p4_x, p4_y)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 p1_x, p1_y, p2_x, p2_y, p3_x, p3_y, p4_x, p4_y, sync_key)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (image_id, length, width, measurement_type, notes,
                   points[0].x(), points[0].y(),
                   points[1].x(), points[1].y(),
                   points[2].x(), points[2].y(),
-                  points[3].x(), points[3].y()))
+                  points[3].x(), points[3].y(),
+                  resolved_sync_key))
         elif points and len(points) == 2:
             cursor.execute('''
                 INSERT INTO spore_measurements
                 (image_id, length_um, width_um, measurement_type, notes,
-                 p1_x, p1_y, p2_x, p2_y)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 p1_x, p1_y, p2_x, p2_y, sync_key)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (image_id, length, width, measurement_type, notes,
                   points[0].x(), points[0].y(),
-                  points[1].x(), points[1].y()))
+                  points[1].x(), points[1].y(),
+                  resolved_sync_key))
         else:
             cursor.execute('''
-                INSERT INTO spore_measurements (image_id, length_um, width_um, measurement_type, notes)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (image_id, length, width, measurement_type, notes))
+                INSERT INTO spore_measurements (image_id, length_um, width_um, measurement_type, notes, sync_key)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (image_id, length, width, measurement_type, notes, resolved_sync_key))
 
         meas_id = cursor.lastrowid
         if observation_id:

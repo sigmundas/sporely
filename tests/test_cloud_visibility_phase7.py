@@ -730,8 +730,7 @@ def test_phase7_visibility_normalization_sends_private_visibility_to_cloud():
 def test_push_observation_sends_private_visibility_for_local_private(monkeypatch):
     client = cloud_sync.SporelyCloudClient("token", "user-123")
     posted_payloads = []
-
-    monkeypatch.setattr(client, "_find_cloud_observation", lambda desktop_id: None)
+    sync_key = "6f1c2c44-6d7e-4a8b-9c0d-1e2f3a4b5c6d"
 
     def fake_post(path, payload):
         posted_payloads.append((path, dict(payload)))
@@ -742,6 +741,7 @@ def test_push_observation_sends_private_visibility_for_local_private(monkeypatch
     cloud_id = client.push_observation(
         {
             "id": 7,
+            "sync_key": sync_key,
             "sharing_scope": "private",
             "location_public": 0,
             "is_draft": True,
@@ -758,14 +758,15 @@ def test_push_observation_sends_private_visibility_for_local_private(monkeypatch
     assert posted_payloads[0][1]["is_draft"] is True
     assert posted_payloads[0][1]["location_precision"] == "fuzzed"
     assert posted_payloads[0][1]["user_id"] == "user-123"
-    assert posted_payloads[0][1]["desktop_id"] == 7
+    assert posted_payloads[0][1]["sync_key"] == sync_key
+    assert "desktop_id" not in posted_payloads[0][1]
 
 
 def test_push_observation_preserves_public_visibility(monkeypatch):
     client = cloud_sync.SporelyCloudClient("token", "user-123")
     patched_payloads = []
 
-    monkeypatch.setattr(client, "_find_cloud_observation", lambda desktop_id: "cloud-obs-2")
+    monkeypatch.setattr(client, "get_observation", lambda cloud_id: {"id": cloud_id})
 
     def fake_patch(path, payload):
         patched_payloads.append((path, dict(payload)))
@@ -775,6 +776,7 @@ def test_push_observation_preserves_public_visibility(monkeypatch):
     cloud_id = client.push_observation(
         {
             "id": 8,
+            "cloud_id": "cloud-obs-2",
             "sharing_scope": "public",
             "location_public": 1,
             "is_draft": False,
@@ -791,6 +793,8 @@ def test_push_observation_preserves_public_visibility(monkeypatch):
     assert patched_payloads[0][1]["location_public"] is True
     assert patched_payloads[0][1]["is_draft"] is False
     assert patched_payloads[0][1]["location_precision"] == "exact"
+    assert "desktop_id" not in patched_payloads[0][1]
+    assert "sync_key" not in patched_payloads[0][1]
 
 
 def test_observation_push_diff_fields_normalize_bool_float_json_and_visibility():
@@ -861,7 +865,6 @@ def test_push_observation_skips_noop_patch_when_remote_matches_after_normalizati
     client = cloud_sync.SporelyCloudClient("token", "user-123")
     patched_payloads = []
 
-    monkeypatch.setattr(client, "_find_cloud_observation", lambda desktop_id: "cloud-obs-1")
     monkeypatch.setattr(client, "_patch", lambda path, payload: patched_payloads.append((path, dict(payload))))
     monkeypatch.setattr(client, "_post", lambda *args, **kwargs: pytest.fail("no-op observation sync should not POST"))
     summary = cloud_sync._new_sync_summary()
@@ -869,6 +872,7 @@ def test_push_observation_skips_noop_patch_when_remote_matches_after_normalizati
         cloud_id = client.push_observation(
             {
                 "id": 7,
+                "cloud_id": "cloud-obs-1",
                 "date": "2026-05-01T12:34:56Z",
                 "genus": "Agaricus",
                 "species": "campestris",
@@ -929,17 +933,12 @@ def test_narrow_select_projection_constants_match_live_schema():
     assert "gallery_rotation" in cloud_sync._SPORE_MEASUREMENT_SELECT_COLUMNS
 
 
-def test_set_image_desktop_id_scopes_patch_to_user(monkeypatch):
+def test_client_has_no_desktop_id_writers():
+    # Per-record sync keys: no client writes an identity onto a cloud row.
     client = cloud_sync.SporelyCloudClient("token", "user-123")
-    patched_payloads = []
-
-    monkeypatch.setattr(client, "_patch", lambda path, payload: patched_payloads.append((path, dict(payload))))
-
-    client.set_image_desktop_id("cloud-img-1", 77)
-
-    assert patched_payloads == [
-        ("observation_images?id=eq.cloud-img-1&user_id=eq.user-123", {"desktop_id": 77})
-    ]
+    for name in ("set_image_desktop_id", "set_measurement_desktop_id", "set_desktop_id",
+                 "_find_cloud_observation", "_find_cloud_image"):
+        assert not hasattr(client, name), name
 
 
 def test_soft_delete_image_scopes_patch_to_user(monkeypatch):
@@ -990,7 +989,7 @@ def test_pull_image_metadata_filters_deleted_rows_by_default(monkeypatch):
         (
             "observation_images?observation_id=eq.cloud-obs-1&user_id=eq.user-123"
             "&deleted_at=is.null&select="
-            f"{cloud_sync._OBSERVATION_IMAGE_SELECT_COLUMNS}"
+            f"{client._observation_image_select_columns()}"
         )
     ]
     assert [row["id"] for row in rows] == ["cloud-img-1"]
@@ -1019,7 +1018,7 @@ def test_pull_image_metadata_include_deleted_for_sync_returns_deleted_rows(monke
     assert fetched_paths == [
         (
             "observation_images?observation_id=eq.cloud-obs-1&user_id=eq.user-123&select="
-            f"{cloud_sync._OBSERVATION_IMAGE_SELECT_COLUMNS}"
+            f"{client._observation_image_select_columns()}"
         )
     ]
     assert [row["id"] for row in rows] == ["cloud-img-1", "cloud-img-2"]
@@ -1331,7 +1330,6 @@ def test_push_pending_image_tombstones_runs_before_active_image_push(monkeypatch
     # Widened signature: post-2a1ebe3/56fee93 upload_image_file receives
     # observation_id=/image_id= kwargs; the old fixed 5-arg lambda TypeErrors.
     monkeypatch.setattr(client, "upload_image_file", lambda *args, **kwargs: order.append("upload_file") or kwargs.get("storage_path") or (args[3] if len(args) > 3 else None))
-    monkeypatch.setattr(client, "set_image_desktop_id", lambda cloud_image_id, desktop_id: order.append("set_desktop_id"))
     monkeypatch.setattr(client, "_patch", lambda *args, **kwargs: order.append("patch_storage"))
     monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: False)
@@ -1389,7 +1387,6 @@ def test_push_images_for_observation_leaves_image_pending_when_worker_upload_fai
         lambda *args, **kwargs: order.append("upload_file") or (_ for _ in ()).throw(cloud_sync.CloudSyncError("Worker upload failed")),
     )
     monkeypatch.setattr(client, "push_image_metadata", lambda *args, **kwargs: order.append("push_metadata") or "cloud-image-1")
-    monkeypatch.setattr(client, "set_image_desktop_id", lambda *args, **kwargs: order.append("set_desktop_id"))
     monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: False)
     # Post commit 2a1ebe3, the failure path reserves the metadata row then
@@ -1476,7 +1473,6 @@ def test_push_images_for_observation_skips_already_synced_image_without_uploadin
         cloud_sync,
         "_prepared_item_remote_payload",
         lambda *args, **kwargs: {
-            "desktop_id": 11,
             "storage_path": storage_path,
             "original_filename": "synced.jpg",
             "image_type": "field",
@@ -1487,7 +1483,6 @@ def test_push_images_for_observation_skips_already_synced_image_without_uploadin
         cloud_sync,
         "_remote_image_payload",
         lambda *args, **kwargs: {
-            "desktop_id": 11,
             "storage_path": storage_path,
             "original_filename": "synced.jpg",
             "image_type": "field",
@@ -3278,7 +3273,10 @@ def test_unchecked_image_that_is_not_an_fk_anchor_follows_normal_removal_path(
         )
 
 
-def test_metadata_anchor_repairs_stale_local_image_cloud_id(monkeypatch, tmp_path):
+def test_metadata_anchor_never_recreates_or_relinks_a_stale_local_image_cloud_id(monkeypatch, tmp_path):
+    # A linked image whose cloud row is gone is never re-created (no
+    # resurrection) and never re-linked to another row by desktop_id (retired
+    # as an identity). It fails visibly and stays linked for the deletion flow.
     db_path = _init_push_all_sync_db(tmp_path)
     with sqlite3.connect(db_path) as conn:
         conn.execute(
@@ -3305,17 +3303,16 @@ def test_metadata_anchor_repairs_stale_local_image_cloud_id(monkeypatch, tmp_pat
         )
     monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
-    client = _PushAllImageClient(
-        remote_images=[{
-            "id": "repaired-image-id",
-            "observation_id": "cloud-obs-1",
-            "desktop_id": 11,
-            "image_type": "microscope",
-            "storage_path": None,
-            "original_storage_path": None,
-            "deleted_at": None,
-        }],
-    )
+    other_device_row = {
+        "id": "other-device-image-id",
+        "observation_id": "cloud-obs-1",
+        "desktop_id": 11,
+        "image_type": "microscope",
+        "storage_path": None,
+        "original_storage_path": None,
+        "deleted_at": None,
+    }
+    client = _PushAllImageClient(remote_images=[dict(other_device_row)])
 
     result = cloud_sync._ensure_metadata_only_microscope_images_for_observation(
         client, 1, "cloud-obs-1",
@@ -3325,100 +3322,11 @@ def test_metadata_anchor_repairs_stale_local_image_cloud_id(monkeypatch, tmp_pat
         local_cloud_id = conn.execute(
             "SELECT cloud_id FROM images WHERE id = 11"
         ).fetchone()[0]
-    assert result["cloud_ids"] == ["repaired-image-id"]
-    assert local_cloud_id == "repaired-image-id"
+    assert result["cloud_ids"] == []
+    assert result["failed"] == 1
+    assert local_cloud_id == "stale-image-id"
+    assert client.remote_images == [other_device_row]
     assert client.upload_image_calls == []
-
-
-def test_observation_435_fixture_repairs_47_unchecked_spores(monkeypatch, tmp_path):
-    """Database regression: stale ids on 47 spores across unchecked sources."""
-    db_path = _init_push_all_sync_db(tmp_path)
-    image_ids = (1276, 1283)
-    with sqlite3.connect(db_path) as conn:
-        conn.execute(
-            "INSERT INTO observations (id, cloud_id, spore_data_visibility) VALUES (435, '730', 'public')"
-        )
-        for image_id in image_ids:
-            conn.execute(
-                """
-                INSERT INTO images (id, observation_id, cloud_id, filepath, image_type, sort_order)
-                VALUES (?, 435, ?, ?, 'microscope', ?)
-                """,
-                (
-                    image_id,
-                    f"stale-image-{image_id}",
-                    str(tmp_path / f"unchecked-{image_id}.jpg"),
-                    image_id,
-                ),
-            )
-        for offset in range(47):
-            image_id = image_ids[offset % 2]
-            conn.execute(
-                """
-                INSERT INTO spore_measurements
-                    (id, image_id, cloud_id, length_um, width_um, measurement_type,
-                     p1_x, p1_y, p2_x, p2_y, p3_x, p3_y, p4_x, p4_y)
-                VALUES (?, ?, ?, 10.0, 5.0, 'spore', 1, 1, 11, 1, 1, 6, 11, 6)
-                """,
-                (1000 + offset, image_id, f"stale-measure-{offset}"),
-            )
-        conn.execute(
-            "INSERT INTO settings (key, value) VALUES (?, ?)",
-            ("artsobs_publish_excluded_image_ids_435", json.dumps(list(image_ids))),
-        )
-    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
-    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
-
-    class RepairClient(_PushAllImageClient):
-        def _post(self, path, payload):
-            assert path == "observation_images"
-            row = dict(payload)
-            row["id"] = f"anchor-{payload['desktop_id']}"
-            self.remote_images.append(row)
-            return [row]
-
-        def _get(self, path):
-            return []
-
-        def push_measurement(self, meas, cloud_image_id, remote_measurement_cache=None):
-            existing = (remote_measurement_cache or {}).get(
-                f"desktop:{int(meas['id'])}"
-            )
-            if existing:
-                return str(existing.get("id"))
-            cloud_id = f"measure-{meas['id']}"
-            self.measurement_push_calls.append((int(meas["id"]), str(cloud_image_id)))
-            self.remote_measurements.append({
-                "id": cloud_id,
-                "desktop_id": int(meas["id"]),
-                "image_id": str(cloud_image_id),
-            })
-            return cloud_id
-
-    client = RepairClient()
-    cloud_sync._push_measurements_for_observation(client, 435)
-
-    with sqlite3.connect(db_path) as conn:
-        image_links = dict(conn.execute("SELECT id, cloud_id FROM images WHERE observation_id = 435"))
-        measurement_links = conn.execute(
-            "SELECT cloud_id FROM spore_measurements ORDER BY id"
-        ).fetchall()
-    remote_image_ids = {str(row["id"]) for row in client.remote_images}
-    assert len(client.remote_images) == 2
-    assert all(row["storage_path"] is None for row in client.remote_images)
-    assert client.upload_image_calls == []
-    assert len(client.remote_measurements) == 47
-    assert all(row["image_id"] in remote_image_ids for row in client.remote_measurements)
-    assert set(image_links.values()) == remote_image_ids
-    assert all(str(row[0]).startswith("measure-") for row in measurement_links)
-
-    # A repeated repair validates and reuses both anchors and measurements.
-    first_image_count = len(client.remote_images)
-    first_measurement_count = len(client.remote_measurements)
-    client.measurement_push_calls.clear()
-    cloud_sync._push_measurements_for_observation(client, 435)
-    assert len(client.remote_images) == first_image_count
-    assert len(client.remote_measurements) == first_measurement_count
 
 
 def test_get_conflict_detail_ignores_file_size_differences(monkeypatch):
@@ -3588,7 +3496,7 @@ def test_import_remote_images_preserves_original_filename(monkeypatch, tmp_path)
     assert Path(captured["filepath"]).name == "cloud_1.jpg"
 
 
-def test_import_remote_images_preserves_metadata_and_sets_desktop_id(monkeypatch, tmp_path):
+def test_import_remote_images_preserves_metadata_without_identity_write(monkeypatch, tmp_path):
     temp_root = tmp_path / "sync-meta"
     temp_root.mkdir()
     captured = {}
@@ -3688,7 +3596,7 @@ def test_import_remote_images_preserves_metadata_and_sets_desktop_id(monkeypatch
     assert captured["file_purpose"] == "cache"
     assert captured["original_mime_type"] is None
     assert captured["working_mime_type"] == "image/jpeg"
-    assert desktop_id_calls == [("cloud-img-1", 23)]
+    assert desktop_id_calls == []  # no identity write-back
     assert any(
         sql == "UPDATE images SET cloud_id = ?, synced_at = ? WHERE id = ?"
         and params[0] == "cloud-img-1"
@@ -3794,7 +3702,7 @@ def test_import_remote_images_creates_metadata_only_microscope_anchor_without_do
     )
     assert image_row[8] is not None
     assert download_calls == []
-    assert desktop_id_calls == [("cloud-image-1", 1)]
+    assert desktop_id_calls == []  # no identity write-back
     assert "Missing storage path" not in output
 
 
@@ -3958,7 +3866,7 @@ def test_import_remote_images_leaves_working_mime_type_null_for_unknown_extensio
     assert captured["file_purpose"] == "cache"
     assert captured["original_mime_type"] is None
     assert captured["working_mime_type"] is None
-    assert desktop_id_calls == [("cloud-img-2", 24)]
+    assert desktop_id_calls == []  # no identity write-back
 
 
 def test_import_remote_images_uses_passed_client_and_marks_deferred_materialization(
@@ -4392,7 +4300,7 @@ def test_pull_all_existing_observation_records_remote_deleted_rows(monkeypatch, 
 
 
 @pytest.mark.parametrize("linked_by_cloud_id", [True, False])
-def test_get_conflict_detail_ignores_tombstoned_image_changes_for_cloud_id_and_desktop_id(
+def test_get_conflict_detail_ignores_tombstoned_image_changes_for_cloud_id_and_sync_key(
     monkeypatch,
     linked_by_cloud_id,
 ):
@@ -4414,7 +4322,7 @@ def test_get_conflict_detail_ignores_tombstoned_image_changes_for_cloud_id_and_d
         "images": [
             {
                 "id": "cloud-image-1",
-                "desktop_id": 11,
+                "sync_key": "3e680f54-ee78-41dc-881a-0fca440a0677",
                 "sort_order": 0,
                 "image_type": "field",
                 "original_filename": "image.jpg",
@@ -4432,6 +4340,7 @@ def test_get_conflict_detail_ignores_tombstoned_image_changes_for_cloud_id_and_d
         {
             "id": 11,
             "cloud_id": "cloud-image-1" if linked_by_cloud_id else None,
+            "sync_key": "3e680f54-ee78-41dc-881a-0fca440a0677",
             "filepath": "/tmp/image.jpg",
             "image_type": "field",
             "sort_order": 0,
@@ -4448,7 +4357,7 @@ def test_get_conflict_detail_ignores_tombstoned_image_changes_for_cloud_id_and_d
     remote_images = [
         {
             "id": "cloud-image-1",
-            "desktop_id": 11,
+            "sync_key": "3e680f54-ee78-41dc-881a-0fca440a0677",
             "sort_order": 0,
             "image_type": "field",
             "original_filename": "image.jpg",

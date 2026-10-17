@@ -7,9 +7,6 @@ in Stage S3 of the cloud-sync extraction.
 from __future__ import annotations
 
 
-from utils.cloud_sync_impl.common import _safe_int
-
-
 def _pull_remote_images_for_sync(client: "SporelyCloudClient", cloud_id: str) -> list[dict]:
     """Fetch cloud image rows including deleted ones so tombstones can be recorded."""
     cloud_value = str(cloud_id or '').strip()
@@ -50,11 +47,6 @@ def _group_remote_measurements_by_observation(
             continue
         grouped.setdefault(cloud_obs_id, []).append(dict(measurement_row or {}))
     for rows in grouped.values():
-        rows.sort(
-            key=lambda row: (
-                str(row.get('image_id') or ''),
-                _safe_int(row.get('desktop_id')),
-                str(row.get('id') or ''),
-            )
-        )
+        # Stable: keeps the read order (measured_at, id) within an image.
+        rows.sort(key=lambda row: str(row.get('image_id') or ''))
     return grouped

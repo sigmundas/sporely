@@ -17,6 +17,7 @@ from database.schema import (
     get_reference_database_path,
     get_reference_connection,
     load_objectives,
+    new_sync_key,
     save_objectives,
 )
 from database.reference_library_schema import (
@@ -648,6 +649,37 @@ def export_database_bundle(
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+# A bundle import merges another library's records into this one as new
+# records, so it is a fork: mirror portable import and drop every cloud
+# identity and sync-state value, then mint fresh sync keys. Without this two
+# local rows can share one cloud_id.
+_BUNDLE_OBSERVATION_CLEARED_FIELDS = (
+    "cloud_id", "synced_at", "sync_error_code", "sync_error_message",
+    "sync_blocked_reason", "sync_blocked_at", "mosaic_signature", "region_id",
+)
+_BUNDLE_IMAGE_CLEARED_FIELDS = ("cloud_id", "synced_at")
+_BUNDLE_MEASUREMENT_CLEARED_FIELDS = ("cloud_id",)
+
+
+def _table_column_names(cursor: sqlite3.Cursor, table: str) -> set[str]:
+    try:
+        cursor.execute(f"PRAGMA table_info({table})")
+    except sqlite3.OperationalError:
+        return set()
+    return {str(row[1] or "").strip() for row in cursor.fetchall() if str(row[1] or "").strip()}
+
+
+def _fork_bundle_row(data: dict, dest_columns: set[str], cleared_fields: tuple[str, ...]) -> None:
+    for field in cleared_fields:
+        if field in data or field in dest_columns:
+            data[field] = None
+    if "sync_key" in data or "sync_key" in dest_columns:
+        data["sync_key"] = new_sync_key()
+    # A forked row is a new record: never a candidate for legacy recovery.
+    if "legacy_recovery_pending" in data or "legacy_recovery_pending" in dest_columns:
+        data["legacy_recovery_pending"] = 0
+
+
 def import_database_bundle(
     zip_path: str,
     *,
@@ -766,10 +798,18 @@ def import_database_bundle(
                     existing_calibration_asset_uuids = set()
 
         if include_observations and src_cur is not None:
+            observation_table_columns = _table_column_names(dest_cur, "observations")
             src_cur.execute("SELECT * FROM observations ORDER BY id")
             for row in src_cur.fetchall():
                 data = dict(row)
                 data.pop("id", None)
+                _fork_bundle_row(
+                    data, observation_table_columns, _BUNDLE_OBSERVATION_CLEARED_FIELDS
+                )
+                if "sync_status" in data or "sync_status" in observation_table_columns:
+                    data["sync_status"] = "local"
+                if "portable_cloud_identity_pending" in observation_table_columns:
+                    data["portable_cloud_identity_pending"] = 1
                 columns = [k for k in data.keys()]
                 values = [data[k] for k in columns]
                 placeholders = ", ".join(["?"] * len(columns))
@@ -881,6 +921,7 @@ def import_database_bundle(
                     data["original_filepath"] = restored_original
 
                 _backfill_imported_image_provenance(data, image_table_columns)
+                _fork_bundle_row(data, image_table_columns, _BUNDLE_IMAGE_CLEARED_FIELDS)
 
                 columns = [k for k in data.keys()]
                 values = [data[k] for k in columns]
@@ -894,6 +935,7 @@ def import_database_bundle(
         if include_measurements and src_cur is not None:
             if not img_map:
                 raise ValueError("Cannot import measurements without images.")
+            measurement_table_columns = _table_column_names(dest_cur, "spore_measurements")
             src_cur.execute("SELECT * FROM spore_measurements ORDER BY id")
             for row in src_cur.fetchall():
                 data = dict(row)
@@ -903,6 +945,9 @@ def import_database_bundle(
                     data["image_id"] = img_map[old_image_id]
                 else:
                     continue
+                _fork_bundle_row(
+                    data, measurement_table_columns, _BUNDLE_MEASUREMENT_CLEARED_FIELDS
+                )
                 columns = [k for k in data.keys()]
                 values = [data[k] for k in columns]
                 placeholders = ", ".join(["?"] * len(columns))

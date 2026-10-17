@@ -259,6 +259,7 @@ def _load_local_context(conn: sqlite3.Connection) -> dict[str, Any]:
 
     images_by_id: dict[int, list[dict]] = {}
     images_by_cloud_id: dict[str, list[dict]] = {}
+    images_by_sync_key: dict[str, list[dict]] = {}
     images_by_observation_id: dict[int, list[dict]] = {}
     for row in images:
         image_id = _safe_int(row.get("id"))
@@ -268,6 +269,9 @@ def _load_local_context(conn: sqlite3.Connection) -> dict[str, Any]:
         cloud_id = _normalize_text(row.get("cloud_id"))
         if cloud_id:
             images_by_cloud_id.setdefault(cloud_id, []).append(row)
+        sync_key = _sync_key_text(row)
+        if sync_key:
+            images_by_sync_key.setdefault(sync_key, []).append(row)
         obs_id = _safe_int(row.get("observation_id"))
         if obs_id > 0:
             images_by_observation_id.setdefault(obs_id, []).append(row)
@@ -282,6 +286,7 @@ def _load_local_context(conn: sqlite3.Connection) -> dict[str, Any]:
         "observations_by_cloud_id": observations_by_cloud_id,
         "images_by_id": images_by_id,
         "images_by_cloud_id": images_by_cloud_id,
+        "images_by_sync_key": images_by_sync_key,
         "images_by_observation_id": images_by_observation_id,
         "tombstones_by_local_image_id": tombstones_by_local_image_id,
         "tombstones_by_cloud_id": tombstones_by_cloud_id,
@@ -336,12 +341,25 @@ def _augment_local_image(image_row: dict, context: dict[str, Any]) -> dict[str, 
     }
 
 
+def _sync_key_text(row: dict | None) -> str:
+    """A row's ``sync_key`` in canonical uuid form, or ``""``."""
+    text = _normalize_text((row or {}).get("sync_key"))
+    if not text:
+        return ""
+    try:
+        return str(uuid.UUID(text))
+    except ValueError:
+        return ""
+
+
 def _select_local_candidate(
     cloud_row: dict,
     context: dict[str, Any],
 ) -> tuple[dict[str, Any] | None, str | None, str | None]:
     cloud_image_id = _normalize_text(cloud_row.get("id"))
-    desktop_id = _safe_int(cloud_row.get("desktop_id"))
+    # A cloud desktop_id is reported, never matched: integer ids are local
+    # to one desktop. Rows pair by cloud id, then by sync_key.
+    cloud_sync_key = _sync_key_text(cloud_row)
     cloud_observation_id = _normalize_text(cloud_row.get("observation_id"))
     expected_local_obs_row = context["observations_by_cloud_id"].get(cloud_observation_id)
     expected_local_obs_id = _safe_int((expected_local_obs_row or {}).get("id"))
@@ -353,12 +371,12 @@ def _select_local_candidate(
         sort_order_int = None
 
     direct_candidates: list[tuple[str, dict]] = []
-    if desktop_id > 0:
-        for candidate in context["images_by_id"].get(desktop_id, []):
-            direct_candidates.append(("desktop_id", candidate))
     if cloud_image_id:
         for candidate in context["images_by_cloud_id"].get(cloud_image_id, []):
             direct_candidates.append(("cloud_id", candidate))
+    if cloud_sync_key and not direct_candidates:
+        for candidate in context.get("images_by_sync_key", {}).get(cloud_sync_key, []):
+            direct_candidates.append(("sync_key", candidate))
 
     direct_candidates = [
         (method, candidate)
@@ -567,6 +585,7 @@ def _fetch_cloud_rows(
 ) -> list[dict]:
     select_fields = [
         "id",
+        "sync_key",
         "desktop_id",
         "observation_id",
         "storage_path",
@@ -583,6 +602,12 @@ def _fetch_cloud_rows(
         "stored_bytes",
         "created_at",
     ]
+    try:
+        client._get("observation_images?select=sync_key&limit=0")
+    except Exception as exc:
+        if "sync_key" not in str(exc or "").lower():
+            raise
+        select_fields.remove("sync_key")
     query = [
         "user_id=eq." + str(client.user_id),
         "deleted_at=is.null",

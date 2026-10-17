@@ -23,8 +23,10 @@ from utils.cloud_sync_impl.common import (
     _normalize_cloud_media_key,
     _safe_int,
 )
+from utils.cloud_sync_impl.exif import _captured_at_is_pull_injected
 from utils.cloud_sync_impl.image_payloads import (
     _deleted_remote_image_identity_keys,
+    _preserve_unedited_remote_image_values,
     _remote_image_payload,
 )
 from utils.cloud_sync_impl.image_policy import should_pull_cloud_image_to_desktop
@@ -76,7 +78,7 @@ def _observation_push_diff_fields(local_obs: dict | None, remote_obs: dict | Non
     remote_payload = _observation_compare_payload(remote_obs, local=False)
     diff_fields: list[str] = []
     for field in _SNAPSHOT_OBS_FIELDS:
-        if field in {'id', 'desktop_id'}:
+        if field == 'id':
             continue
         if not _observation_field_values_match(field, local_payload.get(field), remote_payload.get(field)):
             diff_fields.append(field)
@@ -87,7 +89,6 @@ def _local_image_snapshot_payload(image_row: dict | None) -> dict:
     row = dict(image_row or {})
     payload = {
         'id': _normalize_snapshot_value(str(row.get('cloud_id') or '').strip() or None),
-        'desktop_id': _normalize_snapshot_value(row.get('id')),
         'sort_order': _normalize_snapshot_value(row.get('sort_order')),
         'image_type': _normalize_snapshot_value(row.get('image_type')),
         'micro_category': _normalize_snapshot_value(row.get('micro_category')),
@@ -216,6 +217,11 @@ def _analyze_observation_push_conflicts(
         for img in (local_images or [])
         if str((img or {}).get('cloud_id') or '').strip()
     }
+    local_images_by_cloud_id = {
+        str((img or {}).get('cloud_id') or '').strip(): dict(img or {})
+        for img in (local_images or [])
+        if str((img or {}).get('cloud_id') or '').strip()
+    }
     image_conflict_keys: list[str] = []
     shared_cloud_ids = sorted(
         set(baseline_by_cloud_id) & set(remote_by_cloud_id) & set(local_by_cloud_id)
@@ -224,9 +230,36 @@ def _analyze_observation_push_conflicts(
         baseline_meta = _image_metadata_payload(baseline_by_cloud_id[cloud_image_id])
         remote_meta = _image_metadata_payload(remote_by_cloud_id[cloud_image_id])
         local_meta = _image_metadata_payload(local_by_cloud_id[cloud_image_id])
+        # Values the push keeps at the cloud's (blank text over NULL, a
+        # pull-injected capture time) are not local edits.
+        _preserve_unedited_remote_image_values(
+            local_meta,
+            local_images_by_cloud_id.get(cloud_image_id),
+            baseline_meta,
+            captured_at_pull_injected=_captured_at_is_pull_injected(
+                local_images_by_cloud_id.get(cloud_image_id)
+            ),
+        )
+        if 'captured_at' not in local_meta and 'captured_at' in baseline_meta:
+            local_meta['captured_at'] = baseline_meta['captured_at']
         local_changed = local_meta != baseline_meta
         remote_changed = remote_meta != baseline_meta
         if local_changed and remote_changed and local_meta != remote_meta:
+            image_conflict_keys.append(f'cloud:{cloud_image_id}')
+
+    # A linked image with no baseline row whose local and cloud values differ:
+    # which copy changed is unknown, so it is reviewed, never pushed.
+    for cloud_image_id in sorted((set(remote_by_cloud_id) & set(local_by_cloud_id)) - set(baseline_by_cloud_id)):
+        remote_meta = _image_metadata_payload(remote_by_cloud_id[cloud_image_id])
+        local_meta = _image_metadata_payload(local_by_cloud_id[cloud_image_id])
+        local_img = local_images_by_cloud_id.get(cloud_image_id)
+        _preserve_unedited_remote_image_values(
+            local_meta, local_img, remote_meta,
+            captured_at_pull_injected=_captured_at_is_pull_injected(local_img),
+        )
+        for key in set(remote_meta) - set(local_meta):
+            local_meta[key] = remote_meta[key]
+        if local_meta != remote_meta:
             image_conflict_keys.append(f'cloud:{cloud_image_id}')
 
     # ---- Measurements: mirror pull-side conflict detection (no apply) ----
@@ -297,7 +330,7 @@ def _local_has_real_changes_since_snapshot(local_obs: dict, cloud_id: str | None
     local_obs = _guard_local_location_precision(local_obs, baseline_obs)
     local_payload = _observation_compare_payload(local_obs, local=True)
     for field in _SNAPSHOT_OBS_FIELDS:
-        if field in {'id', 'desktop_id'}:
+        if field == 'id':
             continue
         if not _observation_field_values_match(field, local_payload.get(field), baseline_obs.get(field)):
             return True

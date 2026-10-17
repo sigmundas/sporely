@@ -22,14 +22,23 @@ from utils.cloud_sync_impl.common import (
 )
 from utils.cloud_sync_impl.image_policy import should_pull_cloud_image_to_desktop
 from utils.cloud_sync_impl.progress import _cloud_sync_current_profiler
-from utils.cloud_sync_impl.reconciliation.asymmetry import _reconcile_accepted_asymmetry
+from utils.cloud_sync_impl.reconciliation.asymmetry import (
+    _counterpart_ids,
+    _reconcile_accepted_asymmetry,
+)
 from utils.cloud_sync_impl.reconciliation.identity import (
     _remote_identity_claim,
     TAXON_IDENTITY_SYNC_FIELD,
 )
+from utils.cloud_sync_impl.reconciliation.location_provenance import (
+    LOCATION_CLOUD_ONLY_BUNDLE_FIELDS,
+    LOCATION_PROVENANCE_FIELDS,
+    row_carries_provenance,
+)
 from utils.cloud_sync_impl.reconciliation.values import (
     _normalize_image_captured_at_for_cloud,
     _normalize_snapshot_value,
+    _normalize_sync_key_value,
     _SNAPSHOT_IMG_FIELDS,
     _SNAPSHOT_IMG_PASSIVE_FIELDS,
     _SNAPSHOT_MEAS_FIELDS,
@@ -117,6 +126,17 @@ def _cloud_observation_snapshot(
     identity_claim = _remote_identity_claim(remote)
     if identity_claim is not None:
         obs_part[TAXON_IDENTITY_SYNC_FIELD] = identity_claim.key
+    # Location provenance is recorded only when the cloud row carries the
+    # columns: a snapshot without the keys means "pair not recorded", which
+    # comparison treats as equal to the current cloud pair.
+    if row_carries_provenance(remote):
+        for field in LOCATION_PROVENANCE_FIELDS:
+            obs_part[field] = _normalize_snapshot_value(remote.get(field))
+    # Cloud-only bundle members (altitude, accuracy): recorded when read, so a
+    # later cloud change to them is a bundle change.
+    for field in LOCATION_CLOUD_ONLY_BUNDLE_FIELDS:
+        if field in (remote or {}):
+            obs_part[field] = _normalize_snapshot_value(remote.get(field))
     payload: dict = {
         'schema_version': _CLOUD_OBSERVATION_SNAPSHOT_SCHEMA_VERSION,
         'observation': obs_part,
@@ -140,6 +160,7 @@ def _cloud_observation_snapshot(
                 passive_value = _normalize_cloud_media_key(image.get(field))
                 if passive_value:
                     image_payload[field] = _normalize_snapshot_value(passive_value)
+            _record_sync_key(image_payload, image)
             images_part.append(image_payload)
         payload['images'] = images_part
     if include_measurements:
@@ -149,16 +170,15 @@ def _cloud_observation_snapshot(
             filtered_measurements,
             key=lambda row: (
                 str(row.get('image_id') or ''),
-                _safe_int(row.get('desktop_id')),
                 str(row.get('id') or ''),
             ),
         ):
-            measurements_part.append(
-                {
-                    field: _normalize_snapshot_value(measurement.get(field))
-                    for field in _SNAPSHOT_MEAS_FIELDS
-                }
-            )
+            measurement_payload = {
+                field: _normalize_snapshot_value(measurement.get(field))
+                for field in _SNAPSHOT_MEAS_FIELDS
+            }
+            _record_sync_key(measurement_payload, measurement)
+            measurements_part.append(measurement_payload)
         payload['measurements'] = measurements_part
     # ── Accepted-asymmetry section ────────────────────────────────────────
     # Only include the section when meaningful; older readers ignore it.
@@ -167,6 +187,18 @@ def _cloud_observation_snapshot(
             accepted_asymmetry
         )
     return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
+
+
+def _record_sync_key(part: dict, row: dict | None) -> None:
+    """Record a cloud row's ``sync_key`` in its baseline entry, when it has one.
+
+    The key pairs a baseline row with its local row when the local
+    ``cloud_id`` is missing; it is identity, never compared as content. A
+    snapshot without the key means the cloud row had none (or predates keys).
+    """
+    sync_key = _normalize_sync_key_value((row or {}).get('sync_key'))
+    if sync_key:
+        part['sync_key'] = sync_key
 
 
 def _normalize_accepted_asymmetry_for_snapshot(raw: dict | None) -> dict:
@@ -271,6 +303,56 @@ def _local_observation_id_by_cloud_id(cloud_id: str) -> int:
     return 0
 
 
+# Child rows (images, measurements) linked without a write in this push are
+# judged on the row the adoption fetched. That row, not a later read, is their
+# baseline: an edit made elsewhere after the adoption GET stays a remote change.
+_JUDGED_CHILD_ROWS_ATTR = '_judged_child_rows'
+
+
+def remember_judged_child_row(client, table: str, row: dict) -> None:
+    rows = getattr(client, _JUDGED_CHILD_ROWS_ATTR, None)
+    if not isinstance(rows, dict):
+        rows = {}
+        setattr(client, _JUDGED_CHILD_ROWS_ATTR, rows)
+    cloud_id = str((row or {}).get('id') or '').strip()
+    if cloud_id:
+        rows[(str(table), cloud_id)] = dict(row)
+
+
+def forget_judged_child_rows(client) -> None:
+    """Drop judged rows a push did not store; they never outlive the push."""
+    if isinstance(getattr(client, _JUDGED_CHILD_ROWS_ATTR, None), dict):
+        setattr(client, _JUDGED_CHILD_ROWS_ATTR, {})
+
+
+_JUDGED_CHILD_PARENT_COLUMNS = {
+    'observation_images': 'observation_id',
+    'spore_measurements': 'image_id',
+}
+
+
+def _with_judged_child_rows(
+    client, table: str, rows: list[dict], parent_ids: set[str],
+) -> list[dict]:
+    """``rows`` with each judged child of ``parent_ids`` as its judged row, once.
+
+    A judged child missing from the later read (deleted or purged since the
+    adoption read) is kept as judged, so its removal stays a remote change.
+    """
+    judged = getattr(client, _JUDGED_CHILD_ROWS_ATTR, None)
+    if not isinstance(judged, dict) or not judged:
+        return rows
+    result = []
+    for row in rows:
+        key = (str(table), str((row or {}).get('id') or '').strip())
+        result.append(dict(judged.pop(key)) if key in judged else row)
+    parent_column = _JUDGED_CHILD_PARENT_COLUMNS[str(table)]
+    for key in [key for key in judged if key[0] == str(table)]:
+        if str(judged[key].get(parent_column) or '').strip() in parent_ids:
+            result.append(dict(judged.pop(key)))
+    return result
+
+
 def _store_remote_snapshot(
     client: "SporelyCloudClient",
     cloud_id: str,
@@ -281,6 +363,7 @@ def _store_remote_snapshot(
     include_images: bool = True,
     include_measurements: bool = True,
     accepted_asymmetry: dict | None = None,
+    before_store_images=None,
 ) -> None:
     cloud_value = str(cloud_id or '').strip()
     if not cloud_value:
@@ -305,6 +388,14 @@ def _store_remote_snapshot(
         )
     else:
         images = []
+    images = (
+        _with_judged_child_rows(client, 'observation_images', images, {cloud_value})
+        if include_images else images
+    )
+    if before_store_images is not None and include_images:
+        # The caller updates local rows from the rows this baseline records,
+        # before the baseline is written.
+        before_store_images(images)
     if include_measurements:
         if remote_measurements is not None:
             measurements = [dict(row or {}) for row in remote_measurements]
@@ -313,6 +404,10 @@ def _store_remote_snapshot(
                 client,
                 [str(row.get('id') or '').strip() for row in images if str(row.get('id') or '').strip()],
             ))
+        measurements = _with_judged_child_rows(
+            client, 'spore_measurements', measurements,
+            {str(row.get('id') or '').strip() for row in images if str(row.get('id') or '').strip()},
+        )
     else:
         measurements = []
     # ── B3 + final Fix 2: reconcile accepted-asymmetry on every schema-2
@@ -347,31 +442,14 @@ def _store_remote_snapshot(
                 )
             except Exception:
                 current_local_measurements = []
-        # Determine matched IDs (counterpart appearance) from remote state.
-        matched_local_image_ids = {
-            _safe_int(row.get('desktop_id'))
-            for row in images if _safe_int(row.get('desktop_id'))
-        } | {
-            _safe_int(row.get('id')) for row in current_local_images
-            if str(row.get('cloud_id') or '').strip()
-        }
-        matched_cloud_image_ids = {
-            str(row.get('cloud_id') or '').strip()
-            for row in current_local_images
-            if str(row.get('cloud_id') or '').strip()
-        }
-        matched_local_measurement_ids = {
-            _safe_int(row.get('desktop_id'))
-            for row in measurements if _safe_int(row.get('desktop_id'))
-        } | {
-            _safe_int(row.get('id')) for row in current_local_measurements
-            if str(row.get('cloud_id') or '').strip()
-        }
-        matched_cloud_measurement_ids = {
-            str(row.get('cloud_id') or '').strip()
-            for row in current_local_measurements
-            if str(row.get('cloud_id') or '').strip()
-        }
+        # Determine matched IDs (counterpart appearance): a local cloud_id
+        # link or a shared sync_key, never a cloud desktop_id.
+        matched_local_image_ids, matched_cloud_image_ids = _counterpart_ids(
+            current_local_images, images,
+        )
+        matched_local_measurement_ids, matched_cloud_measurement_ids = _counterpart_ids(
+            current_local_measurements, measurements,
+        )
         # Ordinary sync path: additions_from_caller is None → we only prune.
         # Plan-resolver path: additions_from_caller carries new entries → they
         # are added on top of the pruned survivors.

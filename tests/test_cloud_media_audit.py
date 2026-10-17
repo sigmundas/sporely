@@ -65,7 +65,8 @@ def _db(tmp_path: Path, *, observation_date="2020-05-01", observation_synced="20
             CREATE TABLE images (
                 id INTEGER PRIMARY KEY, observation_id INTEGER, cloud_id TEXT,
                 image_type TEXT, sort_order INTEGER, filepath TEXT,
-                original_filepath TEXT, source_role TEXT, file_purpose TEXT, synced_at TEXT
+                original_filepath TEXT, source_role TEXT, file_purpose TEXT, synced_at TEXT,
+                sync_key TEXT
             );
             CREATE TABLE image_tombstones (
                 id INTEGER PRIMARY KEY, local_image_id INTEGER, deleted_cloud_id TEXT,
@@ -86,20 +87,24 @@ def _db(tmp_path: Path, *, observation_date="2020-05-01", observation_synced="20
     return path
 
 
+KEY_11 = "0f0e0d0c-0b0a-4908-8706-050403020100"
+
+
 def _insert_image(db, *, image_id=11, cloud_id="cloud-image-11", image_type="field", sort_order=0,
-                  filepath=None, original_filepath=None, synced_at="2026-08-04T12:00:00Z"):
+                  filepath=None, original_filepath=None, synced_at="2026-08-04T12:00:00Z",
+                  sync_key=KEY_11):
     with sqlite3.connect(db) as conn:
         conn.execute(
-            "INSERT INTO images VALUES (?,1,?,?,?,?,?,'local_canonical',?,?)",
+            "INSERT INTO images VALUES (?,1,?,?,?,?,?,'local_canonical',?,?,?)",
             (image_id, cloud_id, image_type, sort_order, str(filepath) if filepath else None,
              str(original_filepath) if original_filepath else None,
-             "microscope" if image_type == "microscope" else "field", synced_at),
+             "microscope" if image_type == "microscope" else "field", synced_at, sync_key),
         )
 
 
 def _cloud_image(**changes):
     row = {
-        "id": "cloud-image-11", "desktop_id": 11, "observation_id": "cloud-obs-1",
+        "id": "cloud-image-11", "sync_key": KEY_11, "desktop_id": 11, "observation_id": "cloud-obs-1",
         "image_type": "field", "sort_order": 0, "storage_path": "media/11.webp",
         "original_storage_path": None, "deleted_at": None, "purged_at": None,
         "original_filename": "field.jpg", "upload_mode": "full", "upload_variant": "clean",
@@ -277,14 +282,14 @@ def test_attempted_network_failure_is_unverifiable_not_missing(tmp_path):
 
 def test_unmatched_cloud_row_checks_derivative_and_original(tmp_path):
     db = _db(tmp_path)
-    reader = FakeReader(images=[_cloud_image(id="orphan", desktop_id=999, original_storage_path="media/original.jpg")])
+    reader = FakeReader(images=[_cloud_image(id="orphan", sync_key=None, desktop_id=999, original_storage_path="media/original.jpg")])
     record = _report(db, reader)["images"][0]
     assert sorted(reader.storage_calls) == ["media/11.webp", "media/original.jpg"]
     assert record["derivative_status"] == audit.STORAGE_EXISTS
     assert record["original_status"] == audit.STORAGE_EXISTS
 
 
-def test_duplicate_desktop_id_rows_are_surfaced_without_arbitrary_match(tmp_path):
+def test_duplicate_sync_key_rows_are_surfaced_without_arbitrary_match(tmp_path):
     db = _db(tmp_path); _insert_image(db, cloud_id=None, synced_at=None)
     rows = [_cloud_image(id="duplicate-a"), _cloud_image(id="duplicate-b")]
     records = _report(db, FakeReader(images=rows))["images"]
@@ -294,13 +299,24 @@ def test_duplicate_desktop_id_rows_are_surfaced_without_arbitrary_match(tmp_path
     assert local["duplicate_cloud_ids"] == ["duplicate-a", "duplicate-b"]
 
 
+def test_a_cloud_desktop_id_never_matches_a_local_image(tmp_path):
+    # Another desktop's row may carry this desktop's integer id; it is
+    # reported as found, never used to match.
+    db = _db(tmp_path); _insert_image(db, cloud_id=None, synced_at=None)
+    records = _report(db, FakeReader(images=[_cloud_image(sync_key=None)]))["images"]
+    local = next(row for row in records if row["local_image_id"] == 11)
+    assert local["match_method"] is None and local["cloud_image_id"] is None
+    orphan = next(row for row in records if row["local_image_id"] is None)
+    assert orphan["cloud"]["desktop_id"] == 11
+
+
 def test_filename_fallback_is_never_authoritative_and_multiple_candidates_are_duplicates(tmp_path):
     db = _db(tmp_path, observation_synced=None)
     source = tmp_path / "field.jpg"; source.write_bytes(b"x")
     _insert_image(db, cloud_id=None, filepath=source, synced_at=None)
     rows = [
-        _cloud_image(id="fallback-a", desktop_id=None),
-        _cloud_image(id="fallback-b", desktop_id=None),
+        _cloud_image(id="fallback-a", sync_key=None, desktop_id=None),
+        _cloud_image(id="fallback-b", sync_key=None, desktop_id=None),
     ]
     local = next(row for row in _report(db, FakeReader(images=rows))["images"] if row["local_image_id"] == 11)
     assert local["match_method"] is None

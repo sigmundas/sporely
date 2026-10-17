@@ -10,9 +10,11 @@ found nothing and a later normal push POSTed a duplicate cloud observation.
 The canonical resolver under test is
 ``SporelyCloudClient._resolve_existing_observation_for_push``:
 
-* verified local ``cloud_id`` is the primary identity (PATCH, never POST);
-* remote ``desktop_id`` is the recovery identity (unique match only);
-* direct/reverse disagreement or an ambiguous reverse match raises
+* verified local ``cloud_id`` is the only push target (PATCH, never POST);
+* ``desktop_id`` is retired as an identity: never looked up, never sent
+  (per-record sync keys, plan 2026-10-14; the create path and its
+  ``sync_key`` adoption are covered by tests/test_sync_key_observation_identity.py);
+* a ``cloud_id`` that does not verify raises
   ``ObservationIdentityConflictError`` and must leave the observation
   dirty/retryable — no PATCH, no POST, no snapshot.
 """
@@ -91,6 +93,9 @@ def _make_client(monkeypatch, remote_rows: list[dict]) -> tuple[cloud_sync.Spore
     return client, calls
 
 
+_KEY = "2b3c4d5e-6f70-4182-93a4-b5c6d7e8f901"
+
+
 def _local_obs(local_id: int, cloud_id: str | None = None, **overrides) -> dict:
     obs = {
         "id": local_id,
@@ -132,77 +137,26 @@ def test_verified_local_cloud_id_is_primary_identity(monkeypatch):
     assert calls["post"] == [], "verified direct identity must never POST a replacement"
 
 
-def test_pull_only_import_heals_reverse_link_on_normal_push(monkeypatch):
-    """Rule F: the normal PATCH payload carries desktop_id, healing the reverse link."""
+def test_patch_never_sends_an_identity_column(monkeypatch):
+    """Rule 21: no client writes an identity onto an existing cloud row."""
     client, calls = _make_client(
         monkeypatch,
         [{"id": "1100", "desktop_id": None, "user_id": "user-123"}],
     )
 
-    client.push_observation(_local_obs(762, cloud_id="1100"))
+    client.push_observation(_local_obs(762, cloud_id="1100", sync_key=_KEY))
 
     assert len(calls["patch"]) == 1
     path, payload = calls["patch"][0]
     assert path == "observations?id=eq.1100"
-    assert payload["desktop_id"] == 762
+    assert "desktop_id" not in payload
+    assert "sync_key" not in payload
     assert calls["post"] == []
 
 
-def test_missing_local_cloud_id_uses_unique_desktop_id_recovery(monkeypatch):
-    """Rule B: no direct link + exactly one reverse match → reuse that row."""
-    client, calls = _make_client(
-        monkeypatch,
-        [{"id": "900", "desktop_id": 5, "user_id": "user-123"}],
-    )
-
-    cloud_id = client.push_observation(_local_obs(5, cloud_id=None))
-
-    assert cloud_id == "900"
-    assert [path for path, _ in calls["patch"]] == ["observations?id=eq.900"]
-    assert calls["post"] == []
-
-
-def test_local_cloud_id_gone_and_no_desktop_match_allows_fresh_post(monkeypatch):
-    """Rule D/G: unverifiable direct link + no reverse match → creation allowed."""
-    client, calls = _make_client(monkeypatch, [])
-
-    cloud_id = client.push_observation(_local_obs(5, cloud_id="9999"))
-
-    assert cloud_id == "new-cloud-id"
-    assert calls["patch"] == []
-    assert [path for path, _ in calls["post"]] == ["observations"]
-
-
-def test_local_cloud_id_gone_with_unique_desktop_match_recovers_row(monkeypatch):
-    """Rule D: direct link dead but reverse link unique → reuse, no POST."""
-    client, calls = _make_client(
-        monkeypatch,
-        [{"id": "901", "desktop_id": 5, "user_id": "user-123"}],
-    )
-
-    cloud_id = client.push_observation(_local_obs(5, cloud_id="9999"))
-
-    assert cloud_id == "901"
-    assert [path for path, _ in calls["patch"]] == ["observations?id=eq.901"]
-    assert calls["post"] == []
-
-
-def test_local_cloud_id_owned_by_another_user_is_never_patched(monkeypatch):
-    """Rule E: a foreign-owner row is invisible to the user-scoped client and
-    must never be patched; recovery proceeds per the creation contract."""
-    client, calls = _make_client(
-        monkeypatch,
-        [{"id": "1100", "desktop_id": None, "user_id": "someone-else"}],
-    )
-
-    cloud_id = client.push_observation(_local_obs(5, cloud_id="1100"))
-
-    assert calls["patch"] == [], "foreign-owner rows must never be hijacked via PATCH"
-    assert cloud_id == "new-cloud-id"
-
-
-def test_multiple_desktop_id_matches_fail_safely(monkeypatch):
-    """Rule B: ambiguous reverse link → conflict; never silently choose."""
+def test_missing_local_cloud_id_creates_with_its_key_and_ignores_desktop_id(monkeypatch):
+    """No direct link: POST with the committed key. A row carrying this local
+    id as desktop_id (another device's, or duplicates) is never looked up."""
     client, calls = _make_client(
         monkeypatch,
         [
@@ -211,15 +165,54 @@ def test_multiple_desktop_id_matches_fail_safely(monkeypatch):
         ],
     )
 
+    cloud_id = client.push_observation(_local_obs(5, cloud_id=None, sync_key=_KEY))
+
+    assert cloud_id == "new-cloud-id"
+    assert calls["patch"] == []
+    assert [path for path, _ in calls["post"]] == ["observations"]
+    assert calls["post"][0][1]["sync_key"] == _KEY
+    assert "desktop_id" not in calls["post"][0][1]
+    assert not any("desktop_id=" in path for path in calls["cloud"].get_paths)
+
+
+@pytest.mark.parametrize(
+    "remote_rows",
+    [
+        [],
+        [{"id": "901", "desktop_id": 5, "user_id": "user-123"}],
+    ],
+    ids=["no-reverse-match", "unique-reverse-match"],
+)
+def test_dead_local_cloud_id_is_never_recreated_or_rerouted(monkeypatch, remote_rows):
+    """A linked row whose cloud copy is gone fails closed: no POST of a
+    replacement, and no PATCH of a row found by desktop_id."""
+    client, calls = _make_client(monkeypatch, remote_rows)
+
     with pytest.raises(cloud_sync.ObservationIdentityConflictError):
-        client.push_observation(_local_obs(5, cloud_id=None))
+        client.push_observation(_local_obs(5, cloud_id="9999", sync_key=_KEY))
 
     assert calls["patch"] == []
     assert calls["post"] == []
 
 
-def test_direct_and_reverse_links_disagreeing_is_an_identity_conflict(monkeypatch):
-    """Rule C: cloud_id → A, desktop_id → B → conflict; no PATCH of either, no POST."""
+def test_local_cloud_id_owned_by_another_user_is_never_patched(monkeypatch):
+    """Rule E: a foreign-owner row is invisible to the user-scoped client and
+    must never be patched, nor replaced by a POST."""
+    client, calls = _make_client(
+        monkeypatch,
+        [{"id": "1100", "desktop_id": None, "user_id": "someone-else"}],
+    )
+
+    with pytest.raises(cloud_sync.ObservationIdentityConflictError):
+        client.push_observation(_local_obs(5, cloud_id="1100", sync_key=_KEY))
+
+    assert calls["patch"] == [], "foreign-owner rows must never be hijacked via PATCH"
+    assert calls["post"] == []
+
+
+def test_verified_direct_link_ignores_a_row_carrying_this_desktop_id(monkeypatch):
+    """cloud_id → 1100 verifies; another row with desktop_id=762 is not an
+    identity and is neither consulted nor touched."""
     client, calls = _make_client(
         monkeypatch,
         [
@@ -228,11 +221,11 @@ def test_direct_and_reverse_links_disagreeing_is_an_identity_conflict(monkeypatc
         ],
     )
 
-    with pytest.raises(cloud_sync.ObservationIdentityConflictError):
-        client.push_observation(_local_obs(762, cloud_id="1100"))
+    assert client.push_observation(_local_obs(762, cloud_id="1100")) == "1100"
 
-    assert calls["patch"] == []
+    assert [path for path, _ in calls["patch"]] == ["observations?id=eq.1100"]
     assert calls["post"] == []
+    assert not any("desktop_id=" in path for path in calls["cloud"].get_paths)
 
 
 def test_identity_conflict_error_is_retryable_cloud_sync_error():
@@ -416,7 +409,7 @@ def _push_all_harness(monkeypatch, db_path, remote_rows: list[dict]):
 
     snapshot_calls: list[str] = []
     monkeypatch.setattr(
-        cloud_sync, "_store_remote_snapshot", lambda client, cloud_id: snapshot_calls.append(cloud_id)
+        cloud_sync, "_store_remote_snapshot", lambda client, cloud_id, **_kw: snapshot_calls.append(cloud_id)
     )
     # The stored snapshot equals current remote state: the pull-only import
     # captured it, and the cloud has not drifted since.
@@ -484,7 +477,7 @@ def test_pull_only_import_then_metadata_edit_patches_original_row(tmp_path, monk
     assert result["errors"] == []
     assert calls["post"] == [], "pull-only imported observation must never be re-POSTed"
     assert [path for path, _ in calls["patch"]] == ["observations?id=eq.1100"]
-    assert calls["patch"][0][1]["desktop_id"] == 762
+    assert "desktop_id" not in calls["patch"][0][1]
     assert _observation_row(db_path, 762) == ("1100", "synced")
 
 
@@ -512,30 +505,27 @@ def test_pull_only_import_then_media_dirty_reuses_original_row(tmp_path, monkeyp
 
 
 def test_identity_conflict_in_push_all_stays_dirty_without_snapshot(tmp_path, monkeypatch):
-    """Regression 9 (orchestration level): direct link → 1100, reverse link →
-    1143. No PATCH, no POST, no snapshot; observation stays dirty/retryable."""
+    """Regression 9 (orchestration level): the direct link → 1100 is gone from
+    the cloud while another row (1143) carries desktop_id 762. That row is
+    never used as a substitute: no PATCH, no POST, no snapshot; the
+    observation stays dirty for the cloud-deletion flow."""
     db_path = _init_db(tmp_path)
     _insert_pull_only_import(db_path, 762, "1100")
-    remote_original = _remote_observation("1100", desktop_id=None)
     remote_duplicate = _remote_observation("1143", desktop_id=762)
-    client, calls = _push_all_harness(
-        monkeypatch, db_path, [remote_original, remote_duplicate]
-    )
+    client, calls = _push_all_harness(monkeypatch, db_path, [remote_duplicate])
 
     conn = sqlite3.connect(db_path)
     conn.execute("UPDATE observations SET notes = 'edited note', sync_status = 'dirty' WHERE id = 762")
     conn.commit()
     conn.close()
 
-    result = cloud_sync.push_all(
+    cloud_sync.push_all(
         client,
         sync_images=False,
         sync_calibrations=False,
-        remote_obs=[dict(remote_original), dict(remote_duplicate)],
+        remote_obs=[dict(remote_duplicate)],
     )
 
-    assert len(result["errors"]) == 1
-    assert "different cloud observations" in result["errors"][0]
     assert calls["patch"] == []
     assert calls["post"] == []
     assert calls["snapshots"] == [], "identity failure must not persist a snapshot"

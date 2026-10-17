@@ -11,7 +11,10 @@ from utils.cloud_sync_impl.reconciliation.measurements import (
     _normalize_measurement_float_value,
     _normalize_measurement_type_value,
 )
-from utils.cloud_sync_impl.reconciliation.values import _normalize_snapshot_value
+from utils.cloud_sync_impl.reconciliation.values import (
+    _normalize_snapshot_value,
+    _normalize_sync_key_value,
+)
 
 
 # Material-content fields for the accepted-asymmetry image fingerprint.  Turn-B
@@ -34,6 +37,37 @@ _ASYMMETRY_MATERIAL_IMAGE_FIELDS = (
     'crop_mode',
     'microscope_notes',
 )
+
+
+def _counterpart_ids(
+    local_rows: list[dict] | None,
+    remote_rows: list[dict] | None,
+) -> tuple[set[int], set[str]]:
+    """Local ids and cloud ids of rows that have a counterpart on the other side.
+
+    A pair is a local ``cloud_id`` link, or a ``sync_key`` both sides carry.
+    Integer local ids are never cloud identities, so a cloud row's
+    ``desktop_id`` never makes a pair.
+    """
+    remote_id_by_key = {
+        key: str(row.get('id') or '').strip()
+        for row in (remote_rows or [])
+        if (key := _normalize_sync_key_value(row.get('sync_key')))
+        and str(row.get('id') or '').strip()
+    }
+    local_ids: set[int] = set()
+    cloud_ids: set[str] = set()
+    for row in local_rows or []:
+        local_id = _safe_int(row.get('id'))
+        cloud_id = str(row.get('cloud_id') or '').strip()
+        keyed_cloud_id = remote_id_by_key.get(_normalize_sync_key_value(row.get('sync_key')) or '')
+        if cloud_id:
+            cloud_ids.add(cloud_id)
+        if keyed_cloud_id:
+            cloud_ids.add(keyed_cloud_id)
+        if local_id and (cloud_id or keyed_cloud_id):
+            local_ids.add(local_id)
+    return local_ids, cloud_ids
 
 
 def _asymmetry_fingerprint_local_image(row: dict | None) -> dict:
@@ -181,7 +215,7 @@ def _reconcile_accepted_asymmetry(
         # Row now linked to a cloud row → no longer one-sided.
         if str(row.get('cloud_id') or '').strip():
             return False
-        # A cloud row now claims this local id → no longer one-sided.
+        # A cloud row now pairs with this local row → no longer one-sided.
         if local_id in matched_local_image_ids:
             return False
         # User overrode (upload etc.) → drop.
@@ -193,9 +227,6 @@ def _reconcile_accepted_asymmetry(
         cloud_id = str(entry.get('cloud_id') or '').strip()
         if not cloud_id or cloud_id not in remote_image_by_id:
             return False
-        row = remote_image_by_id[cloud_id]
-        if _safe_int(row.get('desktop_id')):
-            return False  # cloud row now points at a local row
         if cloud_id in matched_cloud_image_ids:
             return False
         if any(cid == cloud_id for _, cid in override_images):
@@ -225,8 +256,6 @@ def _reconcile_accepted_asymmetry(
         if not cloud_id or cloud_id not in remote_meas_by_id:
             return False
         row = remote_meas_by_id[cloud_id]
-        if _safe_int(row.get('desktop_id')):
-            return False
         expected_owner = str(entry.get('owning_cloud_image_id') or '').strip() or None
         current_owner = str(row.get('image_id') or '').strip() or None
         if expected_owner and current_owner and expected_owner != current_owner:

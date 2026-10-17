@@ -7,6 +7,7 @@ import pytest
 
 from database import models
 from utils import cloud_sync
+from utils.cloud_sync_impl import child_identity
 
 
 @pytest.fixture(autouse=True)
@@ -446,7 +447,10 @@ def test_pull_all_emits_phase_progress_messages(monkeypatch, tmp_path):
     monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(cloud_sync, "_backfill_missing_exif_on_cloud_images", lambda: {"scanned": 0})
     monkeypatch.setattr(cloud_sync, "_load_local_observation_lookup", lambda: ({}, {}))
-    monkeypatch.setattr(cloud_sync, "_find_local_observation_for_remote_cached", lambda *a, **k: None)
+    monkeypatch.setattr(
+        cloud_sync, "_find_local_observation_for_remote_cached",
+        lambda *a, **k: (None, cloud_sync.KEY_FREE),
+    )
     monkeypatch.setattr(cloud_sync, "_load_cloud_observation_snapshot", lambda cloud_id: "")
     monkeypatch.setattr(
         cloud_sync,
@@ -637,8 +641,6 @@ def test_push_all_skips_noop_patch_and_clears_dirty_state_after_normalized_match
     monkeypatch.setattr(client, "pull_bulk_image_metadata", lambda obs_cloud_ids: [])
     monkeypatch.setattr(client, "pull_image_metadata", lambda cloud_id, include_deleted_for_sync=False: [])
     monkeypatch.setattr(client, "pull_measurements_for_images", lambda image_cloud_ids: [])
-    monkeypatch.setattr(client, "set_desktop_id", lambda *args, **kwargs: None)
-    monkeypatch.setattr(client, "_find_cloud_observation", lambda desktop_id: "cloud-obs-1")
     monkeypatch.setattr(client, "_patch", lambda path, payload: patch_calls.append((path, dict(payload))))
     monkeypatch.setattr(client, "_post", lambda *args, **kwargs: pytest.fail("no-op push should not POST"))
 
@@ -859,9 +861,12 @@ def test_push_image_metadata_marks_reencoded_uploads_as_exif_safe(monkeypatch):
         lambda path, payload: posted_payloads.append({"path": path, "payload": dict(payload)}) or [{"id": "cloud-image-11"}],
     )
 
+    monkeypatch.setattr(child_identity, "committed_parent_cloud_id", lambda table, row: "cloud-obs-1")
     cloud_id = client.push_image_metadata(
         {
             "id": 11,
+            "observation_id": 1,
+            "sync_key": "7c1a5bd2-46a3-4f0e-9d65-3f2b9b0d6c11",
             "filepath": "/tmp/source.jpg",
             "sort_order": 0,
             "upload_mode": "full",

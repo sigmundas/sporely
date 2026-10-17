@@ -223,7 +223,8 @@ def test_repair_sets_marker_even_when_nothing_to_repair(db):
 
 
 def test_confirmation_consumed_after_post(db, no_geography):
-    local = dict(_seed(db), notes="edited")
+    # A create always carries the row's committed sync key.
+    local = dict(_seed(db), notes="edited", sync_key="5e1d2c3b-4a59-4687-8796-a5b4c3d2e1f0")
 
     class PostClient(_PushClient):
         def _resolve_existing_observation_for_push(self, obs, remote_obs=None):

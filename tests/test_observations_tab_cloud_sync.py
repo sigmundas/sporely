@@ -2633,3 +2633,42 @@ def _real_profile_observation_451():
     if obs is None:
         pytest.skip("needs real-profile observation 451; requires a seeded fixture")
     return obs
+
+
+@pytest.mark.parametrize(
+    ("reason", "expected"),
+    [
+        (
+            "upgrade_required",
+            "This version of Sporely can no longer upload. Please install the latest version.",
+        ),
+        (
+            "cloud_not_ready",
+            "Sporely Cloud is not ready for this version yet. Uploads are paused; downloads still work.",
+        ),
+    ],
+)
+def test_cloud_sync_idle_hint_keeps_the_upload_block_banner_up(monkeypatch, reason, expected):
+    hint_controller = _DummyHintController()
+    fake_window = SimpleNamespace(
+        _cloud_client=SimpleNamespace(user_id="user-123"),
+        _cloud_sync_pending_observation_ids=lambda: [12],
+        _cloud_sync_blocked_observation_ids=lambda: [],
+        _format_cloud_sync_observation_ids=main_window.MainWindow._format_cloud_sync_observation_ids,
+    )
+    settings = {"cloud_last_sync_status": "warning", "cloud_upload_blocked_reason": reason}
+    monkeypatch.setattr(observations_tab, "get_app_settings", lambda: dict(settings))
+    tab = SimpleNamespace(
+        tr=lambda text: text,
+        _status_hint_controller=hint_controller,
+        window=lambda: fake_window,
+    )
+
+    observations_tab.ObservationsTab._refresh_cloud_sync_idle_hint(tab)
+    kind, message, tone, timeout_ms = hint_controller.calls[-1]
+    assert (kind, tone, timeout_ms) == ("hint", "warning", None)
+    assert message.splitlines()[0] == expected
+
+    settings["cloud_upload_blocked_reason"] = ""
+    observations_tab.ObservationsTab._refresh_cloud_sync_idle_hint(tab)
+    assert expected not in hint_controller.calls[-1][1]

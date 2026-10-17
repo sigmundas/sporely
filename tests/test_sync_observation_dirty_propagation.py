@@ -179,8 +179,6 @@ def test_per_image_upload_failure_recorded_in_summary_warnings():
     ), patch_facade_object(
         cloud_sync, '_increment_sync_summary', return_value=None,
     ), patch_facade_object(
-        cloud_sync, '_associate_persisted_cloud_images', return_value=set(),
-    ), patch_facade_object(
         cloud_sync, '_reconcile_metadata_only_linked_images', return_value=set(),
     ), patch_facade_object(
         cloud_sync, '_cloud_sync_current_profiler', return_value=None,

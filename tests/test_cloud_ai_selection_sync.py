@@ -161,7 +161,6 @@ def test_cloud_push_and_pull_carry_selected_ai_fields(tmp_path, monkeypatch) -> 
     client = cloud_sync.SporelyCloudClient.__new__(cloud_sync.SporelyCloudClient)
     client.user_id = "user-123"
     captured: dict[str, dict] = {}
-    client._find_cloud_observation = lambda desktop_id: None
 
     def fake_post(path: str, payload: dict) -> list[dict]:
         captured["path"] = path
@@ -173,6 +172,8 @@ def test_cloud_push_and_pull_carry_selected_ai_fields(tmp_path, monkeypatch) -> 
     pushed_cloud_id = client.push_observation(
         {
             "id": local_id,
+            # A pulled row carries no key of its own; a create always does.
+            "sync_key": "0b7d3f1e-5a2c-4e8f-9d1a-2c3b4d5e6f70",
             "date": "2026-05-01",
             "genus": "Entoloma",
             "species": "clypeatum",
@@ -386,7 +387,6 @@ def test_explicit_identification_nulls_are_not_restored_from_cloud() -> None:
 
     client = cloud_sync.SporelyCloudClient.__new__(cloud_sync.SporelyCloudClient)
     client.user_id = "user-123"
-    client._find_cloud_observation = lambda desktop_id: "cloud-123"
     captured: dict[str, object] = {}
 
     def fake_patch(path: str, patch_payload: dict) -> None:
@@ -394,7 +394,10 @@ def test_explicit_identification_nulls_are_not_restored_from_cloud() -> None:
         captured["payload"] = dict(patch_payload)
 
     client._patch = fake_patch
-    client.push_observation(merged, remote_obs=remote)
+    # PATCH goes by the verified local cloud_id only.
+    client.push_observation(
+        {**merged, "cloud_id": "cloud-123"}, remote_obs={**remote, "id": "cloud-123"},
+    )
 
     assert captured["path"] == "observations?id=eq.cloud-123"
     patch_payload = captured["payload"]

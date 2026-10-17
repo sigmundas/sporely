@@ -64,7 +64,8 @@ def _init_measurement_sync_db(tmp_path):
             p4_x REAL,
             p4_y REAL,
             measured_at TEXT,
-            notes TEXT
+            notes TEXT,
+            sync_key TEXT
         );
         """
     )
@@ -250,7 +251,8 @@ def test_create_local_from_remote_imports_measurements_from_cloud_anchored_image
         "2026-05-01T12:00:00Z",
         None,
     )
-    assert desktop_id_calls == [("cloud-measurement-1", 1)]
+    # Pull never writes an identity onto a cloud row (per-record sync keys).
+    assert desktop_id_calls == []
 
 
 def test_import_remote_measurements_skips_when_image_missing_and_cannot_materialize(monkeypatch, tmp_path):
@@ -1082,7 +1084,8 @@ def test_import_remote_measurements_imports_from_metadata_only_microscope_anchor
         "2026-05-04T12:00:00Z",
     )
     assert download_calls == []
-    assert desktop_id_calls == [("cloud-measurement-4", 1)]
+    # Pull never writes an identity onto a cloud row (per-record sync keys).
+    assert desktop_id_calls == []
 
 
 def test_import_remote_measurements_groups_generated_mosaic_skips(monkeypatch, tmp_path):
@@ -1321,7 +1324,7 @@ def test_push_measurements_for_observation_prefetches_identity_cache_once(monkey
         id=22,
         image_id=11,
         cloud_id=None,
-        desktop_id=22,
+        sync_key="22222222-2222-4222-8222-222222222222",
         length_um=11.0,
         width_um=5.5,
         measurement_type="manual",
@@ -1341,7 +1344,7 @@ def test_push_measurements_for_observation_prefetches_identity_cache_once(monkey
         id=23,
         image_id=11,
         cloud_id=None,
-        desktop_id=23,
+        sync_key="23232323-2323-4323-8323-232323232323",
         length_um=12.0,
         width_um=6.0,
         measurement_type="manual",
@@ -1425,11 +1428,11 @@ def test_push_measurements_for_observation_prefetches_identity_cache_once(monkey
 
     def fake_post(path, payload):
         client.post_calls.append((path, dict(payload)))
-        new_cloud_id = f"cloud-post-{int(payload['desktop_id'])}"
+        new_cloud_id = f"cloud-post-{payload['sync_key'][:2]}"
         remote_measurements_state.append(
             {
                 "id": new_cloud_id,
-                "desktop_id": payload["desktop_id"],
+                "desktop_id": None,
                 "image_id": payload["image_id"],
                 "length_um": payload["length_um"],
                 "width_um": payload["width_um"],
@@ -1461,36 +1464,53 @@ def test_push_measurements_for_observation_prefetches_identity_cache_once(monkey
     finally:
         conn.close()
 
+    # A keyed row is created with its own key. The cloud row that happens to
+    # carry desktop_id=22 (another device's) is never reused, read or touched.
     assert client.pull_calls == [["cloud-image-1"], ["cloud-image-1"]]
     assert client.patch_calls == []
+    expected_body = {
+        "image_id": "cloud-image-1",
+        "user_id": "user-123",
+        "measurement_type": "manual",
+        "gallery_rotation": 0,
+        "p1_x": 1.0,
+        "p1_y": 2.0,
+        "p2_x": 3.0,
+        "p2_y": 4.0,
+        "p3_x": 5.0,
+        "p3_y": 6.0,
+        "p4_x": 7.0,
+        "p4_y": 8.0,
+    }
     assert client.post_calls == [
         (
             "spore_measurements",
             {
-                "image_id": "cloud-image-1",
-                "user_id": "user-123",
-                "desktop_id": 23,
+                **expected_body,
+                "length_um": 11.0,
+                "width_um": 5.5,
+                "measured_at": "2026-05-01T13:00:00+00:00",
+                "sync_key": "22222222-2222-4222-8222-222222222222",
+            },
+        ),
+        (
+            "spore_measurements",
+            {
+                **expected_body,
                 "length_um": 12.0,
                 "width_um": 6.0,
-                "measurement_type": "manual",
-                "gallery_rotation": 0,
-                "p1_x": 1.0,
-                "p1_y": 2.0,
-                "p2_x": 3.0,
-                "p2_y": 4.0,
-                "p3_x": 5.0,
-                "p3_y": 6.0,
-                "p4_x": 7.0,
-                "p4_y": 8.0,
                 "measured_at": "2026-05-01T14:00:00+00:00",
+                "sync_key": "23232323-2323-4323-8323-232323232323",
             },
-        )
+        ),
     ]
     assert rows == [
         (21, "cloud-measurement-1"),
-        (22, "cloud-measurement-2"),
+        (22, "cloud-post-22"),
         (23, "cloud-post-23"),
     ]
+    assert remote_measurements_state[1]["id"] == "cloud-measurement-2"
+    assert remote_measurements_state[1]["desktop_id"] == 22
 
 
 def test_push_measurements_for_observation_aborts_on_transient_failure(monkeypatch, tmp_path):
@@ -1543,7 +1563,7 @@ def test_push_measurements_for_observation_aborts_on_transient_failure(monkeypat
         id=22,
         image_id=11,
         cloud_id=None,
-        desktop_id=22,
+        sync_key="22222222-2222-4222-8222-222222222222",
         length_um=11.0,
         width_um=5.5,
         measurement_type="manual",
@@ -1563,7 +1583,7 @@ def test_push_measurements_for_observation_aborts_on_transient_failure(monkeypat
         id=23,
         image_id=11,
         cloud_id=None,
-        desktop_id=23,
+        sync_key="23232323-2323-4323-8323-232323232323",
         length_um=12.0,
         width_um=6.0,
         measurement_type="manual",
@@ -1653,7 +1673,6 @@ def test_push_measurements_for_observation_aborts_on_transient_failure(monkeypat
             {
                 "image_id": "cloud-image-1",
                 "user_id": "user-123",
-                "desktop_id": 22,
                 "length_um": 11.0,
                 "width_um": 5.5,
                 "measurement_type": "manual",
@@ -1667,6 +1686,7 @@ def test_push_measurements_for_observation_aborts_on_transient_failure(monkeypat
                 "p4_x": 7.0,
                 "p4_y": 8.0,
                 "measured_at": "2026-05-01T13:00:00+00:00",
+                "sync_key": "22222222-2222-4222-8222-222222222222",
             },
         )
     ]

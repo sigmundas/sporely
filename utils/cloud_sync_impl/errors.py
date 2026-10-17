@@ -85,14 +85,18 @@ class PartialConflictPlanError(CloudSyncError):
 class ObservationIdentityConflictError(CloudSyncError):
     """Raised when observation push identity cannot be resolved safely.
 
-    Two links tie a local observation to a cloud row: the direct link
-    (local ``observations.cloud_id``) and the reverse link (remote
-    ``observations.desktop_id``). This error is raised when they resolve to
-    different cloud rows, or when the reverse-link recovery lookup matches
-    more than one cloud row. PATCHing either candidate could overwrite the
-    wrong row and POSTing would create a duplicate, so the push must fail
-    and leave the observation dirty/retryable for review.
+    The local ``observations.cloud_id`` is the only push target. This error
+    is raised when that link does not verify (the cloud row is gone, or
+    invisible to this user-scoped client). PATCHing blindly could overwrite
+    the wrong row and POSTing would create a duplicate, so the push must
+    fail and leave the observation dirty/retryable for review.
     """
+
+
+class ImageBaselineMissingError(CloudSyncError):
+    """An existing linked image has no stored baseline and its local and
+    cloud values differ: which copy changed is unknown, so the push sends no
+    descriptive image fields and the observation goes to review."""
 
 
 class ImageIdentityConflictError(CloudSyncError):
@@ -100,6 +104,94 @@ class ImageIdentityConflictError(CloudSyncError):
 
     The caller must not PATCH or POST. Leave the image dirty/retryable.
     """
+
+
+class CloudWriteRejectedError(CloudSyncError):
+    """A Data API write answered with a non-2xx PostgREST error.
+
+    Carries the parsed PostgREST fields so callers can match a SQLSTATE and
+    the constraint named in ``message`` (a ``23505`` alone is ambiguous: the
+    legacy ``UNIQUE(desktop_id, user_id)`` collision is also ``23505``). The
+    string form is unchanged from the plain ``CloudSyncError`` it replaces.
+    """
+
+    def __init__(
+        self,
+        text: str,
+        *,
+        status_code: int = 0,
+        code: str = '',
+        message: str = '',
+        hint: str = '',
+    ):
+        super().__init__(text)
+        self.status_code = int(status_code or 0)
+        self.code = str(code or '')
+        self.message = str(message or '')
+        self.hint = str(hint or '')
+
+
+class ObservationAdoptionConflictError(CloudSyncError):
+    """A create hit this database's own cloud row, whose content differs.
+
+    Raised after a ``23505`` on ``observations_user_sync_key_uidx`` when the
+    row fetched by key and owner does not equal the local row. The caller
+    links the row with the fetched content as base and hands it to conflict
+    review; it never PATCHes the row.
+    """
+
+    def __init__(self, text: str, *, cloud_id: str, remote: dict):
+        super().__init__(text)
+        self.cloud_id = str(cloud_id or '')
+        self.remote = dict(remote or {})
+
+
+class ChildAdoptionConflictError(CloudSyncError):
+    """An image or measurement create hit a keyed cloud row it cannot link.
+
+    Raised after a ``23505`` on the table's ``*_user_sync_key_uidx`` when the
+    row fetched by key and owner sits under another parent (``reason`` is
+    ``'parent'``: never re-parented), was deleted in the cloud (``'deleted'``:
+    never resurrected), or differs from the local row (``'content'``). Also
+    raised for a linked row whose cloud copy is gone or sits under another
+    parent. The caller never PATCHes the row; the local row stays unlinked or
+    untouched, and dirty.
+    """
+
+    def __init__(self, text: str, *, table: str, cloud_id: str = '', reason: str = ''):
+        super().__init__(text)
+        self.table = str(table or '')
+        self.cloud_id = str(cloud_id or '')
+        self.reason = str(reason or '')
+
+
+class ChildParentNotLinkedError(CloudSyncError):
+    """A child row's parent has no committed ``cloud_id`` equal to the target.
+
+    Children are created only under a parent whose ``cloud_id`` is committed
+    locally; until then the child is deferred and stays dirty.
+    """
+
+
+def raise_if_upload_refused(client) -> None:
+    """Stop upload work once ``client`` has seen an upload refusal this run."""
+    check = getattr(client, '_check_upload_refusal', None)
+    if callable(check):
+        check()
+
+
+class CloudUploadRefusedError(CloudSyncError):
+    """The server refused this client's uploads (write stop or identity guard).
+
+    Raised for ``P0001`` with hint ``sporely_upgrade_required`` or
+    ``sporely_sync_identity_refused``, and for the media worker's ``426``.
+    It stops the upload phase for the run; rows stay dirty and pull keeps
+    working. It is neither an auth nor a transient error.
+    """
+
+    def __init__(self, text: str, *, hint: str = ''):
+        super().__init__(text)
+        self.hint = str(hint or '')
 
 
 class CloudSessionAccountMismatchError(AccountMismatchError):

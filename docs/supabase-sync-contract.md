@@ -89,7 +89,8 @@ Plain English comes first; technical terms are in parentheses.
 - **Cloud record** (`Supabase/Postgres row`): a shared database entry.
 - **Cloud file** (`R2 object`): uploaded image bytes.
 - **Local-to-cloud link** (`cloud_id`): cloud record ID stored locally.
-- **Cloud-to-local link** (`desktop_id`): desktop record ID stored in the cloud.
+- **Cloud-to-local link** (`desktop_id`): desktop record ID stored in the cloud. Retired as an identity; see "Per-record sync keys (`sync_key`)".
+- **Sync key** (`sync_key`): a random per-record uuid minted locally before the first upload; the only recovery identity.
 - **Known-good baseline** (`sync snapshot`): the last state both sides agreed on.
 - **Removal marker** (`tombstone`): durable evidence of an explicit user deletion.
 - **Recoverable deletion** (`soft delete`): keep the record but mark it deleted, usually with `deleted_at`.
@@ -119,7 +120,7 @@ Plain English comes first; technical terms are in parentheses.
 9. **Conflicts block automatic writes.** When local and cloud both changed since the known-good baseline, stop and ask for a choice.
 10. **Stable IDs define identity.** Match by IDs, not dates, filenames, file paths, species names, or sort order.
 11. **All clients share the same state meanings.** Desktop, web, Android, cloud functions, and media workers must distinguish active, measurement-only, broken, and deleted images consistently.
-12. **Identity repair is checkbox-independent.** A local row with a lost `cloud_id` must be reconciled with the matching remote row by `desktop_id` regardless of the current gallery checkbox. Repair restores identity; it does not upload bytes. Recovery of identity for an unchecked image lets the byte gate correctly refuse re-uploads and lets a pending tombstone complete instead of creating a duplicate.
+12. **Identity repair is checkbox-independent.** A lost `cloud_id` is reconciled by `sync_key`; rows that predate keys use the one-time legacy recovery, which never writes to the matched row. Reconciliation happens regardless of the current gallery checkbox. Repair restores identity; it does not upload bytes. Recovery of identity for an unchecked image lets the byte gate correctly refuse re-uploads and lets a pending tombstone complete instead of creating a duplicate.
 13. **The legacy `artsobs_publish_excluded_image_ids_<obs>` setting is publication-only.** Its values must never automatically tombstone or otherwise remove cloud media. They may surface as audit hints in a later stage but never independently drive cloud-side change.
 14. **A partial remote collection is never authoritative remote state.** PostgREST (and any bounded API) can silently cap a response at the server row limit while returning HTTP 200. A truncated collection must never be used to conclude that rows are absent, to compute deletions, or to drive any diff against local state.
 15. **Bounded or paginated remote reads must be exhausted successfully before absence may be interpreted as deletion.** If any page fails, the whole read fails — the client must raise, not return the pages fetched so far. Absence of a row is meaningful only after a complete, successful paginated read of the relevant scope.
@@ -127,13 +128,13 @@ Plain English comes first; technical terms are in parentheses.
 17. **PostgREST pagination must use deterministic ordering.** Every paginated bulk read must include an explicit `order=` clause with a unique tie-breaker (`id.asc`); offset-based paging over an unstable order can silently skip or duplicate rows across pages.
 18. **Download from Cloud is a strict zero-cloud-write mode.** A pull-only run must complete with `cloud_writes_completed == 0` and an empty blocked-write list. Every write path — PATCH, POST, DELETE, RPC mutations, storage upload, storage removal, and identity write-backs — is out of scope for this mode.
 19. **Pull-only write blocking is defense in depth, not expected control flow.** The fail-closed pull-only client wrapper exists to catch mistakes, not to be exercised. Pull-side code must gate its own writes at the source; any blocked write attempt recorded during a Download-from-Cloud run is a defect to fix at the source, not a handled event. New client writer methods must be added to the pull-only blocklist; new read methods join the allowlist only as an explicit, reviewed choice.
-20. **The local `cloud_id` is the primary direct local→cloud observation identity.** Once it verifies against an existing same-owner cloud row, that row is the push target. The remote `desktop_id` is the reverse cloud→local link and an identity recovery mechanism — never the primary lookup.
-21. **A missing remote `desktop_id` must never cause object creation when a verified local `cloud_id` already identifies the remote object.** Download from Cloud legitimately creates local rows with `cloud_id` set while the remote `desktop_id` remains NULL until a future normal (write-enabled) sync heals the reverse link. Resolving push identity by reverse link alone creates duplicate cloud observations.
+20. **The local `cloud_id` is the primary direct local→cloud identity.** Once it verifies against an existing same-owner cloud row, that row is the push target. `sync_key` is the only recovery identity. Integer local ids are never cloud identities.
+21. **No client writes an identity onto an existing cloud row.** Pull links by cloud id or `sync_key`. (Replaces the former rule that a missing remote `desktop_id` is healed by a later sync.)
 22. **Direct and reverse identity links resolving to different objects is an identity conflict, not permission to create a third object.** The same applies to an ambiguous reverse-link match (multiple rows carrying one `desktop_id`). The push must fail safely — no update of either candidate, no creation, no snapshot — and the local observation stays dirty/retryable for review.
-23. **Observation creation (POST) is a last resort.** It is allowed only after direct identity verification and reverse-link recovery both find no target. "Lookup failed" never automatically means "create" while the local row carries a direct cloud identity.
+23. **POST only for a row with a key and no `cloud_id`.** A 23505 on the table's `*_user_sync_key_uidx` means adopt: parent check, then the fetched row as base, then a conflict on any difference. A tombstone goes to the deletion flow. Any other 409 or 4xx is an error. "Lookup failed" never automatically means "create" while the local row carries a direct cloud identity.
 24. **No no-op cloud writes on sync paths.** `observation_images.updated_at` is trigger-bumped on EVERY update, for every role, regardless of whether values changed — so a value-identical PATCH is a real child-change cursor event, not a harmless idempotent write. Before any cloud write in a sync path, check whether the target value already matches and skip the request if so. (Live incident 2026-08-24: unconditional `desktop_id` relink PATCHes during pull rewrote ~2 500 image rows per sync and created a self-sustaining full child re-pull echo loop.)
 25. **The child-change cursor must commit the true `MAX(updated_at, id)` tuple over every inspected row, with numeric id ordering.** Row ids compare numerically, never as strings (`'10000' > '9999'`), and the strict filter and the advancement comparison must use identical ordering. The cursor advances only after `pull_all` succeeds; a failed pull leaves the cursor untouched so the changes are re-detected next sync.
-26. **Portable imports establish a new cloud identity graph.** While an observation has `portable_cloud_identity_pending=1`, push and pull reconciliation for the observation, its images (including metadata anchors), and measurements must ignore remote `desktop_id` recovery and must not write a `desktop_id`. Verified destination-side `cloud_id` links remain authoritative. The marker clears only after the complete graph has fresh cloud IDs and collision checks have safely established reverse IDs from the new destination integer IDs; any collision leaves the guard active.
+26. **Superseded: imports and other forks mint fresh keys.** Portable import, legacy bundle import and image move give every created row a fresh `sync_key`, so the imported graph becomes new cloud rows and never adopts the source's. The former rule follows for the record only: while an observation has `portable_cloud_identity_pending=1`, push and pull reconciliation for the observation, its images (including metadata anchors), and measurements must ignore remote `desktop_id` recovery and must not write a `desktop_id`. Verified destination-side `cloud_id` links remain authoritative. The marker clears only after the complete graph has fresh cloud IDs and collision checks have safely established reverse IDs from the new destination integer IDs; any collision leaves the guard active.
 27. **Observation reference uses preserve frozen evidence.** Sync must transmit and
     reconcile the stored use UUID, role, note, selected revision, and
     `snapshot_json` verbatim. It must never rebuild a snapshot from the current
@@ -321,6 +322,193 @@ Plain English comes first; technical terms are in parentheses.
     a further manual free-text rename to yet another name does not clear it,
     since the explicit-clear condition above requires a known baseline that
     Case F lacks by definition.
+29. **Children follow their parent's committed cloud id.** Children are
+    uploaded only after their parent's `cloud_id` is committed locally. Media
+    object keys are random reserved keys, reused on adoption, never derived
+    from `sync_key`.
+30. **Desktop write stop.** The desktop sends `x-sporely-sync-identity: 2` and
+    `x-sporely-client-version`. A version listed in the server's write-block
+    table is refused with `sporely_upgrade_required`.
+
+### Temporary obsolete-desktop brake
+
+<!-- obsolete-desktop-brake:begin -->
+Every desktop released before per-record sync keys resolves its cloud writes
+through the shared `desktop_id` reverse link, so two installations on one
+account can silently overwrite each other's cloud observations. Until a
+desktop that uses sync keys ships, the server refuses these desktops' cloud
+writes.
+
+- Who is refused: a request whose lower-cased `User-Agent` starts with
+  `python-requests/` (the default every released desktop sends) and that has
+  no `x-sporely-sync-identity: 2` header. In the database the request must
+  also come through the Data API with an `authenticated` or `anon` JWT; the
+  media worker's upload routes accept only `authenticated` JWTs. Web,
+  Android, `service_role` and other server roles, migrations, cron and direct
+  SQL sessions are not refused.
+- Database: every INSERT, UPDATE and DELETE, including writes made inside
+  RPCs, on `observations`, `observation_images`, `spore_measurements`,
+  `spore_measurement_mosaics`, `spore_measurement_mosaic_tiles`,
+  `observation_spore_summaries` and `observation_reference_uses` is refused
+  with SQLSTATE `P0001` and HINT `sporely_upgrade_required`, which PostgREST
+  returns as HTTP 400. Trigger: `trg_000_sync_brake`, function
+  `private.sync_brake_guard()`, migration `20261015090000`.
+- Media worker: every non-read method (PUT, DELETE and any other method
+  except GET, HEAD and OPTIONS) under `/upload/` is refused with HTTP 426,
+  header `X-Sporely-Error-Code: sporely_upgrade_required` and body
+  `{"error":"sporely_upgrade_required", ...}`, before authentication, storage
+  access or quota accounting. Its `/healthz` reports
+  `obsoleteDesktopBrake: true` while the guard is deployed.
+- Effect: reads are unaffected; refused desktops can still sign in, download
+  and pull. A refused write changes nothing in the cloud. The desktop keeps
+  the row local (new) or dirty (edited), keeps its photos and credentials,
+  and uploads the pending work once it is updated to a desktop that is not
+  refused.
+- Removal: only by the sync-key cutover migration, in the same transaction
+  that installs the permanent identity gate, with the worker guard removed in
+  the matching worker release. Never as a rollback: removing either half
+  early re-enables silent overwrites or media deletion ahead of a refused row
+  delete.
+- Not an authorization boundary: any caller can choose its User-Agent and
+  headers. The brake holds back honest old clients; row-level security and
+  the existing guards remain the authorization layer.
+<!-- obsolete-desktop-brake:end -->
+
+## Per-record sync keys (`sync_key`)
+
+`sync_key` is a random uuid minted locally before the first upload. It is
+immutable for every role, unique per owner, and recovers only the creating
+database's own rows. `desktop_id` is retired as an identity: clients must not
+send it, and the server refuses it on rows that have a key.
+
+This section is the identity contract for `observations`,
+`observation_images` and `spore_measurements`. It supersedes every
+`desktop_id`-based identity rule elsewhere in this document: the reverse-link
+lookups in rules 21–23, "First upload" finding a row by `desktop_id`, and the
+`desktop_id` match in "Lost local `cloud_id` — identity repair". Rules 12, 20,
+21, 23, 26, 29 and 30 above state its summary.
+
+### Server
+
+Migration `20261013210000_sync_key_identity.sql`:
+
+- `sync_key uuid NULL` on the three tables, with no backfill. Rows created
+  before sync keys keep NULL and can never be given a key.
+- Per-owner partial unique indexes `observations_user_sync_key_uidx`,
+  `observation_images_user_sync_key_uidx` and
+  `spore_measurements_user_sync_key_uidx` on `(user_id, sync_key) WHERE
+  sync_key IS NOT NULL`. Another owner may use the same key value; there is no
+  cross-tenant 409.
+- Guard `public._sync_identity_guard()` (BEFORE INSERT OR UPDATE, sorting last
+  among BEFORE triggers):
+  - all roles: `sync_key` never changes on UPDATE, in any direction;
+  - every caller except `postgres`, `service_role` and `supabase_admin`: a row
+    carrying both `sync_key` and `desktop_id` is refused on INSERT and UPDATE.
+- `sync_key` never appears in non-owner views or public RPC results.
+
+### Refusals
+
+| Answer | Meaning | Client action |
+| --- | --- | --- |
+| `P0001`, hint `sporely_sync_identity_refused` | the write would change a key or put `desktop_id` on a keyed row | stop the upload phase (see the state machine) |
+| `P0001`, hint `sporely_upgrade_required` | this client version is blocked from writing rows | stop the upload phase (see the state machine) |
+| media worker HTTP `426` with `X-Sporely-Error-Code: sporely_upgrade_required` | this client version is blocked from media writes | stop the upload phase (see the state machine) |
+
+Refusals are always `P0001` (HTTP 400), never `42501`/403: released desktops
+v0.8.13 and v0.9.1 treat 403 as a sign-in failure. Refusal text is fixed. It
+never contains row values, any auth word (`unauthorized`, `not logged in`,
+`jwt`, `token`, `session expired`, `authentication failed`, `invalid_grant`,
+`pgrst301`/`303`, `captcha_failed`) or any transient word (`timeout`,
+`unavailable`, `schema cache`).
+
+### Desktop write stop
+
+The desktop sends `x-sporely-sync-identity: 2` and
+`x-sporely-client-version: <app version>` on every Data API and media-worker
+request. Migration `20261014120000_sync_client_write_block.sql` adds the
+owner-only table `private.sync_client_write_block(client_version, reason,
+created_at)`, created empty, and a BEFORE INSERT/UPDATE/DELETE row trigger on
+`observations`, `observation_images`, `spore_measurements`,
+`spore_measurement_mosaics`, `spore_measurement_mosaic_tiles`,
+`observation_spore_summaries` and `observation_reference_uses`.
+
+- When `x-sporely-sync-identity` is present and `x-sporely-client-version` is
+  listed in the table, the write is refused with `P0001`, hint
+  `sporely_upgrade_required`, and the message "This version of Sporely Desktop
+  is blocked from uploading. Install the latest version from sporely.no.
+  Nothing was changed in the cloud."
+- The check keys only on the request headers, never on the database role.
+  Requests without the identity header are never affected: web, Android,
+  released desktops, Edge Functions, migrations and plain SQL sessions.
+- With an empty table nothing is blocked. Writes made inside RPCs are covered
+  too, because the request's headers stay visible inside the function.
+- Limit: media-worker requests are not blocked by this table. A blocked build
+  can still upload or delete media bytes, but it cannot write the rows that
+  reference them. Rows are written first, so this costs orphan bytes at worst.
+
+Web and Android never send `desktop_id`, and never send the desktop identity
+or version headers.
+
+### Per-row state machine
+
+For observations, images and measurements. A child waits for its parent's
+committed `cloud_id`.
+
+| State | Event | Action | Next |
+| --- | --- | --- | --- |
+| L0 (key, no `cloud_id`) | parent has no `cloud_id` | defer | L0 |
+| L0 | POST with `sync_key` → 201 | commit `cloud_id` | L2 |
+| L0 | `23505` naming the table's `*_user_sync_key_uidx` | GET by key and owner; parent check; tombstone → existing deletion/restore flow; content equal → link silently; content differs → sync conflict, never PATCH | L2 or conflict |
+| L0 | `23505` on any other constraint, `23503`, `42501`, any other 4xx | plain error; row stays dirty | L0 |
+| L0 | timeout, network error, crash | nothing; the retry repeats the same POST | L0 |
+| L0 or L2 | `P0001` with hint `sporely_upgrade_required` or `sporely_sync_identity_refused`, or a media 426 with `X-Sporely-Error-Code: sporely_upgrade_required` | stop the upload phase for this run; keep rows dirty and downloads working; persistent banner "This version of Sporely can no longer upload. Please install the latest version."; log it as a server/client mismatch | unchanged |
+| L2 (`cloud_id`) | edit | verify `cloud_id`; PATCH by id; never send `sync_key` or `desktop_id` | L2 |
+
+No POST without a committed local key. A cloud-linked row with a NULL key is
+never POSTed, only PATCHed by verified `cloud_id`.
+
+### Adoption and ownership
+
+- Adoption takes the fetched row as the base snapshot.
+- Parent check: an image's `observation_id` must equal its local parent
+  observation's `cloud_id`, and a measurement's `image_id` its local parent
+  image's `cloud_id`. Otherwise it is an identity conflict: no re-parenting,
+  and the row stays dirty.
+- An adopted image reuses the adopted row's reserved `storage_path`. If its
+  bytes were never confirmed, the retry uploads to that same key.
+- The client matches the constraint name, not only SQLSTATE `23505`: the
+  legacy `UNIQUE(desktop_id, user_id)` collision is also `23505`.
+- An image moved to another observation is a new cloud row with a fresh key.
+  The old cloud image is tombstoned, because cloud `observation_id` is
+  immutable.
+- Pull matches by cloud `id`, else by a `sync_key` equal to a local key, never
+  by integer. Conflict detail pairs child rows by cloud id, then by key.
+
+### Cloud not ready
+
+Before uploading, the desktop probes `select=sync_key&limit=0`. If the column
+is missing, it blocks uploads with "cloud not ready", and pull keeps working.
+
+### One-time legacy recovery
+
+An older desktop may have created a cloud row and crashed before storing its
+`cloud_id`. Rows that existed before the upgrade and were never confirmed in
+the cloud carry a one-time local marker. Before such a row's first POST, the
+desktop makes one read-only lookup for same-owner rows with `sync_key IS NULL`
+and `desktop_id` equal to the local id (for images and measurements, also
+restricted to the already-linked parent):
+
+- exactly one match whose uploaded content equals the local row: link it
+  locally; no cloud write;
+- any other outcome: clear the marker and POST as a new keyed row, reporting
+  "possible duplicate of an earlier upload" in the sync summary.
+
+A row found this way is never PATCHed and never deleted. The worst case is a
+visible duplicate, never an overwrite.
+
+### Rollback
+
+No rollback ever restores `desktop_id` links.
 
 ## Normalized reference graph
 
@@ -560,7 +748,7 @@ Canonical desktop image states are `NONE`, `UPLOADED`, `DELETE_PENDING`, and `DE
 
 ### First upload
 
-- Create or find the cloud observation by owner (`user_id`) and stable desktop link (`desktop_id`).
+- Create the cloud observation with its `sync_key`, or adopt it after a `23505` on `observations_user_sync_key_uidx` (see "Per-record sync keys (`sync_key`)"). Never find it by `desktop_id`.
 - Upload only images eligible for a new cloud copy (byte-storage desired) and whose bytes are actually available.
 - Store local cloud links (`cloud_id`) only after confirmation.
 - Save the known-good baseline (`sync snapshot`) after all required child work succeeds.
@@ -576,6 +764,7 @@ Canonical desktop image states are `NONE`, `UPLOADED`, `DELETE_PENDING`, and `DE
 - Compare local, cloud, and baseline.
 - Patch only shared fields that changed.
 - Preserve cloud-only and local-only fields.
+- A blank local text value is not an edit of a cloud NULL: an observation or image PATCH never turns NULL into `''`, and image change and conflict detection treat the two as equal. Clearing a cloud value to blank is still sent.
 - A push (which runs before the pull) that keeps a cloud-only observation
   field edit also writes it to the local row, through
   `_apply_remote_observation_fields`, after the conflict preflight passes and
@@ -588,6 +777,8 @@ Canonical desktop image states are `NONE`, `UPLOADED`, `DELETE_PENDING`, and `DE
   local and cloud already agree on it, which the next three-way comparison
   reads as shared. A blocked (conflicting) push adopts nothing. The virtual
   taxon identity field keeps its own adoption rule (see Taxonomy identity).
+- Linked images follow the same three-way rule, with adoption. `push_image_metadata` enforces the rule for every PATCH of an existing image row, whichever path sends it (metadata drift, Refresh, upload, byte replacement, preparation, conflict resolutions): it shapes the body against the live cloud row, fetching that row when the caller has none and refusing the PATCH when it cannot, and leaves at the cloud value every field only the cloud changed since the stored baseline. Before the post-push baseline is stored, `_adopt_remote_image_edits_before_baseline` copies those same cloud-only edits into the local row without marking the observation dirty. Every column the desktop sends is classified once (`image_push._IMAGE_*_FIELDS`): one three-way list governs both protection and adoption (notes, objective, mount, stain, sample type and source, contrast, crop mode, measure colour, micro category, capture time, sort order, image type, scale, resample factor, GPS source, the AI crop box and the calibration, adopted as the local calibration link); `original_filename` is fill-only and never replaces a cloud value; storage key, upload metadata and the EXIF-safe flag belong to the uploader; observation, owner and deletion columns are structural. An adopted capture time keeps full precision (fractional seconds) and is recorded as cloud-held. A PATCH whose body equals the cloud row is not sent. A field both sides changed stays a conflict. The three-way check, in the push as in the preflight, compares local values normalized against the baseline (blank text over a NULL baseline, the pull-injected capture time, the `'cloud'` record and the legacy fallback). With no stored baseline row for an existing linked image whose local and cloud values differ, the push sends neither copy: the push preflight reports an image conflict and `push_image_metadata` refuses the PATCH (`ImageBaselineMissingError`), so the observation goes to conflict review and no baseline is stored. Only an explicit resolution writes; a later stored baseline restores the three-way rule. The conflict resolutions "Use this device", merge and the per-item plan store their baseline the same way.
+- Known limitations (accepted by the plan owner, 2026-10-16, for the limited release): the no-baseline refusal is not yet honoured on two desktop paths — the prepared-upload loop can absorb the refusal and still store a baseline, and automatic conflict finalization can snapshot an unresolved image — so a stale local value can be pushed on a later sync. Other inherited desktop silent-overwrite risks (derived `species_guess`, pulls that ignore cloud clears, writers outside `push_image_metadata`, unconditional writes) are listed in sporely-py `docs/verification/2026-10-desktop-metadata-known-risks.md`. The whole-image conflict check can report false conflicts; those stop safely. A structural redesign (edit intent, conditional writes, atomic refusal state, reliable baselines, one enforcement point) is a separate future project.
 - Refresh the baseline after success.
 
 ### Both sides changed
@@ -605,11 +796,16 @@ When a local image still maps to an active cloud image:
 
 - add it to the protected cloud list (`kept_cloud_ids`) whether or not bytes are prepared;
 - keep the cloud row and file when omitted from `prepared_items` unless an explicit checkbox/context-menu tombstone is pending;
-- patch metadata when necessary;
+- patch metadata when necessary, without rewriting cloud values the user did not edit:
+  - upload metadata (`upload_mode`, `source_*`, `stored_*`, `stored_bytes`) is sent only by the client that produced the bytes; a metadata patch never NULLs it;
+  - the capture time a pull injected from the observation datetime (recorded at pull) never fills a `captured_at` the cloud row does not hold; a capture time the user sets is sent. For a copy pulled before that record existed, a local capture time equal to the observation datetime is withheld, and only while the cloud value is NULL;
+  - for a recovery copy (`cloud_recovery_cache` / `cache`), the local file name never fills an `original_filename` the cloud row does not hold;
 - replace bytes only when the trusted source changed or a missing cloud file is deliberately restored;
 - never call it stale merely because it was filtered, skipped, or reordered.
 
 ### Lost local `cloud_id` — identity repair
+
+Superseded by "Per-record sync keys (`sync_key`)": a lost `cloud_id` is reconciled by `sync_key`, and only the one-time legacy recovery still reads `desktop_id`. The former rule follows for the record.
 
 When a local row has no `cloud_id` but a unique remote row shares the same `desktop_id`, matches owner scope, and matches image type:
 
@@ -1348,3 +1544,249 @@ Every pull request that can remove a cloud row or file must state:
 - Which test proves publication selection is not deletion consent?
 - How can the owner audit and recover the result?
 - Were both copies of this contract updated?
+
+## Private ingestion and location provenance (not deployed)
+
+Migration `20261012105630_ingestion_location_provenance.sql` adds nullable
+`observation_images.ingest_method` and observation `location_source` /
+`location_status`. These are owner diagnostics, excluded from existing public
+views/RPCs. Historical and unsupported-client values stay NULL; ingestion is
+into Sporely and does not identify the photographing device. `gps_source`
+continues to identify the contributing image separately. Client-reported
+values are diagnostics, never authorization claims.
+
+| Field | Values | NULL means |
+| --- | --- | --- |
+| `observation_images.ingest_method` | `sporely_camera`, `system_camera`, `web_camera`, `native_picker`, `web_file_picker`, `unknown` | historical row or client without provenance |
+| `observations.location_source` | `device_gps`, `image_exif`, `manual`, `none`, `unknown` | no attribution (historical, legacy client, or invalidated by a legacy coordinate change) |
+| `observations.location_status` | `acquired`, `disabled`, `denied`, `timeout`, `skipped`, `unavailable`, `unknown` | as above; always NULL together with `location_source` |
+
+`unknown` means a provenance-aware client could not classify a new operation;
+it is not a substitute for NULL.
+
+### Server rules
+
+The coordinate bundle is latitude, longitude, altitude and accuracy. Ordinary
+UPDATEs changing any actual bundle value invalidate both location fields to
+NULL, including direct writes resending unchanged enum labels. Unrelated edits
+and value-identical coordinate resends preserve attribution. Complete pair and
+coordinate compatibility checks apply to new provenance; legacy NULL pairs do
+not impose new restrictions on historical coordinates:
+
+- `acquired` requires valid latitude/longitude and a source of `device_gps`,
+  `image_exif`, `manual` or `unknown`;
+- every other status requires all four bundle values NULL and a source of
+  `none` or `unknown`.
+
+Aware clients must call owner/RLS-enforced `set_observation_location` with all
+seven arguments (observation ID, four coordinate values, source, status). It
+locks the owner row, updates coordinates with ordinary invalidation, then sets
+the validated pair within the same transaction. Same-value retries make no
+writes. A failing second write rolls back both. No bypass flag or definer
+privileges are used. The same enum pair may legitimately be kept for new
+coordinates (a new `device_gps`/`acquired` fix). The RPC does not collect GPS
+or classify client actions. An INSERT may carry a compatible pair together
+with its coordinates; INSERTs without the fields store NULL/NULL.
+
+### Location outcome semantics (frozen transitions)
+
+The pair describes the saved observation's current coordinates. Valid
+selected coordinates use `acquired` and their actual source. Without
+coordinates the status is the latest meaningful acquisition outcome of the
+current session at save: continue-without-location preserves `denied`,
+`timeout`, `unavailable` or `disabled`; `skipped` is used only when no such
+outcome was observed, or when coordinates are deliberately cleared through
+the aware operation (`none`/`skipped`). A successful selected fix supersedes
+earlier failures; a failed attempt never replaces valid selected coordinates
+or their source. Session state never borrows an outcome from an earlier
+session, and stale asynchronous results are ignored. Status is not inferred
+where acquisition was never observed. The full table is in
+`docs/plans/active/2026-10-12-ingestion-location-provenance.md`.
+
+### Web client behavior (Stage 3)
+
+- **Session outcome.** `geo.js` records the classified outcome (permission
+  denied → `denied`, preference disabled → `disabled`, timeout → `timeout`,
+  position unavailable/unsupported/invalid fix → `unavailable`, other errors →
+  `unknown`) in `state.captureSessionLocation.outcome`, scoped by a generation
+  that changes only when a capture session starts or ends. Re-beginning the
+  same session (preflight "continue" after a denial) keeps the outcome. Every
+  acquisition (permission query, position request, watch, acquisition timer)
+  belongs to the generation in which it started: a continuation that completes
+  after the session changed may update the device-global permission but never
+  the session's fix, outcome or acquisition state, and a request whose session
+  ended during its permission check does not start. Within one session,
+  overlapping attempts are ordered: each request, watch, standalone permission
+  check or preference/unsupported observation takes an increasing attempt id,
+  and only the newest attempt may record a failure outcome or reset acquisition
+  state, so an older attempt completing after a retry cannot replace the
+  retry's outcome. A superseded attempt whose permission check resolves late
+  starts no acquisition and does not change acquisition status; only the
+  device-global permission value is updated. A superseded attempt's successful fix still counts as a
+  device fix. Global `state.location.error` is never used as provenance.
+- **Save decision (review screen).** Selected coordinates → their source +
+  `acquired`. Location preference disabled at save → `none`/`disabled`. The
+  location sheet's "Continue without location" (or an earlier continue in the
+  same session) → `none` + session outcome, else `skipped`. A successful
+  "Try again" saves `device_gps`/`acquired`.
+- **Coordinate sources.** `geo.js` tags each fix it accepts into the session
+  as `device_gps`; a session fix and photo snapshots keep the source recorded
+  with them (a restored pre-provenance fix stays `unknown`). GPS read from an
+  original photo's EXIF (pickers, system camera — including the native New
+  Find camera path, with late hydration that Save awaits) is `image_exif`. Sporely Cam writes GPS EXIF only from the location
+  Sporely hands it, so its EXIF carries that location's source (`unknown` if
+  none was handed over). In live review the selected coordinate (the more
+  accurate of session fix and first photo with GPS) decides the source; a
+  missing accuracy is unknown, never better than a measured one (ties keep the
+  session fix), and an unmeasured accuracy or altitude is saved as NULL, not 0; in
+  import groups it is the first photo with GPS. Late EXIF hydration changes the
+  source only when its coordinates become the selected location.
+- **Imports.** An imported review never observed acquisition: with coordinates
+  it saves their source, without coordinates it saves a NULL pair. A
+  multi-group import saves `none`/`skipped` only for groups the user explicitly
+  confirmed saving without any location; a group with only a place name stays
+  NULL.
+- **Persistence.** Per-photo GPS source and the session outcome survive review
+  drafts; per-photo source and the group source survive persisted import
+  sessions. Drafts and sessions written before provenance restore with no
+  outcome and an `unknown` source for existing coordinates.
+- **Queue.** The pair travels on the queued observation payload and is
+  inserted atomically with the coordinates in the single observation INSERT.
+  An incomplete or incompatible pair is dropped (NULL/NULL) before the insert,
+  so provenance can never block an upload. Legacy queue items carry no pair.
+- **Manual location.** The find-detail map picker saves through
+  `set_observation_location` as `manual`/`acquired` with NULL altitude and
+  accuracy. The web app has no coordinate-clearing UI; an aware clear must use
+  the RPC with `none`/`skipped`.
+- **Adding photos** to an existing find writes image rows only (with their own
+  `ingest_method`) and never touches the find's coordinates or provenance.
+- **Pre-migration targets.** A queue INSERT rejected for missing provenance
+  columns is retried once without the pair; a missing RPC falls back to a plain
+  owner-filtered coordinate update. Any other error (CHECK, non-owner) is
+  surfaced, never retried as a legacy write.
+
+### Desktop requirements (Stage 4 implements against this)
+
+The desktop client (`sporely`) must:
+
+1. **Store** `location_source` and `location_status` on its local observation
+   and `ingest_method` on its local image records, nullable, as text received
+   from the cloud. Do not validate, remap or default them on pull.
+2. **Pull** the three fields from owner base-table reads. Absent keys (a target
+   or projection without the columns) leave local values unchanged; an
+   explicit NULL is stored as NULL. Public views never carry them.
+3. **Merge** `location_source`/`location_status` as members of the coordinate
+   bundle (latitude, longitude, altitude, accuracy, source, status): the bundle
+   moves as a unit in three-way comparison, never field by field. Comparisons
+   are NULL-safe; NULL and an absent key are equal. A sync snapshot written
+   before provenance (no provenance keys) treats the baseline pair as equal to
+   the current cloud pair, so adopting the cloud pair is not a local change and
+   produces no push.
+4. **Preserve on unrelated edits.** Ordinary observation PATCHes never include
+   `location_source` or `location_status`. Value-identical coordinate resends
+   are allowed but should be avoided by comparing before writing.
+5. **Coordinate changes.** A desktop coordinate change whose origin the desktop
+   knows (manual entry → `manual`/`acquired`; image EXIF → `image_exif`/
+   `acquired`; deliberate clear → `none`/`skipped`) must use
+   `set_observation_location` with all seven arguments. Any other coordinate
+   change uses the ordinary PATCH and accepts server invalidation to NULL/NULL;
+   the desktop must not guess a pair. After either write the baseline records
+   the resulting server pair (NULL/NULL after a legacy coordinate PATCH).
+6. **First upload.** A new cloud observation INSERT may include a compatible
+   pair with its coordinates when the desktop knows it; otherwise it omits both
+   fields. Desktop-created images omit `ingest_method` (NULL) in the initial
+   release.
+7. **Images.** `ingest_method` is preserved cloud→desktop→cloud and never
+   PATCHed by the desktop: reservation, re-upload, metadata-anchor promotion
+   and identity repair keep the existing row value and do not resend it.
+   `gps_source` remains the contributing-image designation and is unrelated to
+   `ingest_method`.
+8. **Zero-write paths.** Download-from-Cloud and no-op sync remain strictly
+   zero-cloud-write; pulling or adopting provenance never causes a cloud write,
+   media upload, media-key change or child media-version bump.
+9. **Validation.** Any pair the desktop writes must satisfy the server rules
+   above before it is sent; an invalid pair is not sent.
+
+Older desktop clients without this support keep working: they preserve
+provenance on unrelated edits, and the server invalidates it on their actual
+coordinate changes. No image byte upload, media-key change or child
+media-version bump is required merely to assign location provenance.
+
+### Desktop implementation (sporely-py Stage 4)
+
+How the desktop meets the requirements above, against sporely-web
+`feature/photo-provenance` at `1029975`:
+
+- **Storage.** SQLite `observations.location_source`/`location_status` and
+  `images.ingest_method` are nullable TEXT, added by `database/schema.py`. The
+  local pair is part of the coordinate bundle: `ObservationDB.update_observation`
+  stores an explicitly passed pair (NULL included) and otherwise clears it
+  whenever latitude or longitude actually changes (sync GPS tolerance), the
+  local mirror of the server trigger. A stale pair therefore never describes
+  new coordinates, and a writable local pair always means the desktop
+  attributed the current coordinates.
+- **Reads.** Observation reads select the pair, `gps_altitude` and
+  `gps_accuracy`, and image reads select `ingest_method`, from the owner base
+  tables; a target rejecting the provenance columns is re-read without that
+  group once per client (as for identity provenance).
+- **Snapshots and merge.** The baseline records the pair, altitude and
+  accuracy only when the cloud row carries them. Comparison skips the pair
+  entirely for a cloud row without the columns; a baseline without it uses the
+  current cloud pair. The desktop stores no altitude or accuracy: a cloud
+  change to them (against a baseline that recorded them) is a cloud bundle
+  change, and their local absence is never a local change. Latitude,
+  longitude, altitude, accuracy and the pair are one bundle: changed on both
+  sides it is a conflict on the coordinates unless both sides hold the same
+  latitude/longitude (shared; the cloud pair is taken). The local pair alone is never
+  a local change: where local coordinates are not a pending change, a
+  differing cloud pair is adopted by a local write only, including on the
+  fast pull and in Download from Cloud. Applying cloud coordinates applies the
+  cloud pair with them.
+- **Attribution.** The Observation details dialog attributes a coordinate
+  edit made in it: coordinates equal to those last applied from a photo's EXIF
+  are `image_exif`/`acquired` — a new observation whose coordinates Prepare
+  Images took from a photo imported in that session (the GPS the file's own
+  EXIF held at import, not values typed over it in Prepare Images, of a file
+  without a stored image row; stored or cloud-materialised images can carry
+  Sporely-written GPS and never count) opens attributed to it, and that photo's
+  EXIF stays the reference for later edits in the dialog; a deliberate clear of an existing
+  observation is `none`/`skipped`; any other change (typed values, map link)
+  is `manual`/`acquired`. A new observation whose coordinates were typed in
+  Prepare Images (and are not that EXIF) opens `manual`/`acquired`.
+  Unchanged coordinates keep the pair the opened
+  record holds for them; a new observation saved without coordinates stays
+  unattributed. An attribution survives an Edit Images detour (details dialog
+  → Prepare Images → details dialog, for new and existing observations) while
+  Prepare Images keeps those coordinates; if Prepare Images replaces them the
+  change is of unknown origin, except that a new observation attributes them
+  as above on reopening. Prepare Images itself and every other coordinate
+  writer do not attribute.
+- **Push.** An existing observation whose coordinates differ from the live
+  cloud row and whose local pair is writable for them is written through
+  `set_observation_location` (altitude and accuracy NULL — the desktop stores
+  neither), and the following PATCH omits the coordinates. Otherwise the
+  ordinary PATCH carries changed coordinates and the server invalidates the
+  pair; coordinates equal to the live row are not resent. A missing RPC
+  (PGRST202) falls back to the coordinate PATCH. A new observation INSERT
+  carries a writable pair, retried once without it on a target lacking the
+  columns. The baseline is refreshed from the cloud row after the push.
+- **Conflict review.** The review classifies the coordinates with the same
+  bundle rule (one-sided bundle changes are automatic decisions; a two-sided
+  one lists latitude and longitude as one choice). A plan applies one side to
+  both coordinates and refuses mixed sides. Taking the cloud side applies its
+  pair with the coordinates; keeping this device's side pushes through the
+  same aware path as ordinary sync (`set_observation_location` for an
+  attributed location, coordinates equal to the cloud row not resent). The
+  reviewed drift fingerprints include the local pair and the cloud pair,
+  altitude and accuracy, so a change to any of them after review refuses the
+  plan before any write. A completed coordinate operation records the bundle
+  it left (the local pair after a pull; the cloud pair, altitude and accuracy
+  read back after a push, whether from the RPC, server invalidation or the
+  RPC fallback); a retry accepts exactly those effects, only on the side the
+  operation wrote, and refuses any other change on either side.
+- **Images.** `ingest_method` is adopted locally as received (absent key:
+  unchanged) when an image is created or matched on pull, including
+  metadata-only anchors. No image write payload (`_IMG_PUSH_COLS`, anchor
+  payloads) contains it and it is outside the image snapshot and media
+  signature, so it causes no upload, media-key change or version bump.
+- **Download from Cloud.** `set_observation_location` is a blocked writer.

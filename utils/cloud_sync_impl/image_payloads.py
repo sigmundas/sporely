@@ -9,14 +9,13 @@ in Stage S4 of the cloud-sync extraction.
 
 from __future__ import annotations
 
-from utils.cloud_sync_impl.common import (
-    _normalize_cloud_media_key,
-    _safe_int,
-)
+from utils.cloud_sync_impl.common import _normalize_cloud_media_key
 from utils.cloud_sync_impl.reconciliation.images import _image_identity_keys
 from utils.cloud_sync_impl.reconciliation.values import (
     _normalize_image_captured_at_for_cloud,
     _normalize_snapshot_value,
+    _keep_remote_null_for_blank_text,
+    _normalize_sync_key_value,
 )
 from utils.cloud_sync_impl.sample_source import _cloud_to_desktop_sample_source
 
@@ -39,7 +38,7 @@ def _remote_image_payload(
     image = remote_image or {}
     payload = {
         'id': _normalize_snapshot_value(image.get('id')),
-        'desktop_id': _safe_int(image.get('desktop_id')),
+        'sync_key': _normalize_sync_key_value(image.get('sync_key')),
         'sort_order': _normalize_snapshot_value(image.get('sort_order')),
         'image_type': _normalize_snapshot_value(image.get('image_type')),
         'micro_category': _normalize_snapshot_value(image.get('micro_category')),
@@ -87,3 +86,34 @@ def _remote_image_payload(
             'stored_bytes': _normalize_snapshot_value(image.get('stored_bytes')),
         })
     return payload
+
+
+def _preserve_unedited_remote_image_values(
+    payload: dict,
+    img: dict | None,
+    remote_row: dict | None,
+    *,
+    captured_at_pull_injected: bool = False,
+) -> None:
+    """Shape an existing-row image PATCH (or its drift compare) in place.
+
+    * A blank local text value never replaces a cloud NULL.
+    * ``captured_at`` the pull injected (``captured_at_pull_injected``, from
+      ``exif._captured_at_is_pull_injected``) never fills a cloud NULL; a
+      capture time the user set is sent.
+    * A remote-owned recovery copy (``source_role=cloud_recovery_cache`` or
+      ``file_purpose=cache``) never fills ``original_filename`` from its
+      local file name when the cloud row holds none.
+    """
+    if not remote_row:
+        return
+    _keep_remote_null_for_blank_text(payload, remote_row)
+    if captured_at_pull_injected and 'captured_at' in payload and remote_row.get('captured_at') is None:
+        payload.pop('captured_at', None)
+    row = dict(img or {})
+    source_role = str(row.get('source_role') or '').strip().lower()
+    file_purpose = str(row.get('file_purpose') or '').strip().lower()
+    if source_role != 'cloud_recovery_cache' and file_purpose != 'cache':
+        return
+    if 'original_filename' in payload and remote_row.get('original_filename') is None:
+        payload.pop('original_filename', None)

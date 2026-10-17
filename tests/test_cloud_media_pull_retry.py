@@ -1126,8 +1126,9 @@ def test_materialize_cloud_media_for_observation_uses_snapshot_and_is_idempotent
     assert len(client.download_attempts) == 1
     assert client.pull_image_metadata_calls == 0
     assert client.pull_measurement_calls == 0
-    assert len(client.set_image_desktop_id_calls) == 1
-    assert len(client.set_measurement_desktop_id_calls) == 1
+    # No identity is written onto a cloud row (per-record sync keys).
+    assert client.set_image_desktop_id_calls == []
+    assert client.set_measurement_desktop_id_calls == []
     assert len(generate_calls) == 1
     assert profiler.generate_all_sizes_calls == 1
     assert profiler.store_remote_snapshot_fetch_images_count == 0
@@ -1757,18 +1758,18 @@ def test_cloud_media_materialization_state_pending_portable_identity_suppresses_
     assert state["local_images_ready"] == 0
 
 
-def test_cloud_media_materialization_state_non_pending_permits_reverse_recovery(
+def test_cloud_media_materialization_state_never_pairs_by_desktop_id(
     tmp_path,
     monkeypatch,
 ):
-    # Same reverse desktop-id match, but with no pending portable-identity guard: ordinary
-    # reverse recovery must still resolve the local row and report it as ready.
+    # A cloud desktop_id equal to an unlinked local image id is not a match:
+    # integer ids are never cloud identities (per-record sync keys).
     state = _materialization_state_reverse_recovery_fixture(
         tmp_path, monkeypatch, pending=False, local_cloud_id=None
     )
-    assert state["status"] == "already_materialized"
-    assert state["local_images_missing_files"] == 0
-    assert state["local_images_ready"] == 1
+    assert state["status"] == "needs_materialization"
+    assert state["local_images_missing_files"] == 1
+    assert state["local_images_ready"] == 0
 
 
 def test_cloud_media_materialization_state_verified_cloud_id_match_survives_pending_portable_identity(

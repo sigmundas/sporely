@@ -73,6 +73,20 @@ OWNER_LAYERS: dict[str, int] = {
     # Conflict execution stays in the facade and imports both downward.
     "utils.cloud_sync_impl.conflict_plan": 7,
     "utils.cloud_sync_impl.conflict_detail": 8,
+    # Ingestion/location provenance: pure vocabulary and bundle helpers.
+    "utils.cloud_sync_impl.reconciliation.location_provenance": 0,
+    # Per-record sync keys: the env-gated crash hook is a leaf; observation
+    # create identity (adoption, legacy recovery) sits above the payloads.
+    "utils.cloud_sync_impl.fault_injection": 0,
+    "utils.cloud_sync_impl.observation_identity": 3,
+    # Child (image, measurement) create identity builds on the observation
+    # owner's key match and sits below the anchor, image and measurement pushes.
+    "utils.cloud_sync_impl.child_identity": 5,
+    # Pull pairing by sync_key (key holder lookup) sits on the pure values.
+    "utils.cloud_sync_impl.pull_identity": 1,
+    # Durable observation-delete intent reuses the child owner's settings
+    # helper and sits above it.
+    "utils.cloud_sync_impl.observation_delete": 6,
 }
 
 #: Owner modules allowed to import the facade at runtime (transitional; each

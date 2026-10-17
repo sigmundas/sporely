@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
 from pathlib import Path
 
 import pytest
@@ -46,7 +47,8 @@ def _seed_schema(db_path: Path) -> None:
                 sort_order INTEGER,
                 synced_at TEXT,
                 source_role TEXT,
-                file_purpose TEXT
+                file_purpose TEXT,
+                sync_key TEXT
             );
             CREATE TABLE settings (
                 key TEXT PRIMARY KEY,
@@ -87,8 +89,8 @@ def _insert_image(
     try:
         conn.execute(
             "INSERT INTO images (id, observation_id, cloud_id, filepath, "
-            "image_type, sort_order, synced_at, source_role, file_purpose) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "image_type, sort_order, synced_at, source_role, file_purpose, sync_key) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 image_id,
                 observation_id,
@@ -99,6 +101,7 @@ def _insert_image(
                 "2026-08-01T00:00:00Z" if synced else None,
                 "local_canonical",
                 image_type,
+                _key(image_id),
             ),
         )
         conn.commit()
@@ -139,7 +142,16 @@ def _insert_tombstone(
         conn.close()
 
 
+def _key(local_image_id: int) -> str:
+    """The sync key local image ``local_image_id`` minted in these fixtures."""
+    return str(uuid.UUID(int=int(local_image_id)))
+
+
 def _cloud_row(**overrides):
+    """A cloud image row. ``created_by=<local image id>`` gives it that image's key."""
+    created_by = overrides.pop("created_by", None)
+    if created_by is not None:
+        overrides.setdefault("sync_key", _key(created_by))
     row = {
         "id": None,
         "desktop_id": None,
@@ -179,7 +191,7 @@ def test_category_a_healthy_uploaded(tmp_path: Path) -> None:
 
     cloud_row = _cloud_row(
         id="img-11",
-        desktop_id=11,
+        desktop_id=11, created_by=11,
         observation_id="obs-1",
         storage_path="user-1/obs-1/originals/img-11/photo.webp",
     )
@@ -221,7 +233,7 @@ def test_category_b_metadata_only_anchor_ok(tmp_path: Path) -> None:
 
     cloud_row = _cloud_row(
         id="img-21",
-        desktop_id=21,
+        desktop_id=21, created_by=21,
         observation_id="obs-2",
         image_type="microscope",
         storage_path=None,  # NULL: anchor shape
@@ -257,7 +269,7 @@ def test_category_c_unwanted_cloud_bytes(tmp_path: Path) -> None:
 
     cloud_row = _cloud_row(
         id="img-31",
-        desktop_id=31,
+        desktop_id=31, created_by=31,
         observation_id="obs-3",
         storage_path="user-1/obs-3/originals/img-31/photo.webp",
     )
@@ -286,7 +298,7 @@ def test_category_d1_lost_link_desired(tmp_path: Path) -> None:
 
     cloud_row = _cloud_row(
         id="img-41",
-        desktop_id=41,
+        desktop_id=41, created_by=41,
         observation_id="obs-4",
         storage_path="user-1/obs-4/originals/img-41/photo.webp",
     )
@@ -294,7 +306,7 @@ def test_category_d1_lost_link_desired(tmp_path: Path) -> None:
     row = recon.classify_cloud_row(cloud_row, match, local)
 
     assert row.category == recon.CATEGORY_LOST_LINK_REPAIRABLE_KEEP
-    assert row.match_method == recon.MATCH_METHOD_DESKTOP_ID
+    assert row.match_method == recon.MATCH_METHOD_SYNC_KEY
     assert row.local_cloud_bytes_desired is True
 
 
@@ -314,7 +326,7 @@ def test_category_d2_lost_link_undesired(tmp_path: Path) -> None:
 
     cloud_row = _cloud_row(
         id="img-51",
-        desktop_id=51,
+        desktop_id=51, created_by=51,
         observation_id="obs-5",
         storage_path="user-1/obs-5/originals/img-51/photo.webp",
     )
@@ -322,7 +334,7 @@ def test_category_d2_lost_link_undesired(tmp_path: Path) -> None:
     row = recon.classify_cloud_row(cloud_row, match, local)
 
     assert row.category == recon.CATEGORY_LOST_LINK_REPAIRABLE_REMOVE
-    assert row.match_method == recon.MATCH_METHOD_DESKTOP_ID
+    assert row.match_method == recon.MATCH_METHOD_SYNC_KEY
     assert row.local_cloud_bytes_desired is False
 
 
@@ -344,7 +356,7 @@ def test_category_e_multiple_local_share_cloud_id(tmp_path: Path) -> None:
 
     cloud_row = _cloud_row(
         id="img-61",
-        desktop_id=61,
+        desktop_id=61, created_by=61,
         observation_id="obs-6",
         storage_path="user-1/obs-6/originals/img-61/photo.webp",
     )
@@ -368,13 +380,13 @@ def test_category_e_multiple_cloud_rows_match_single_local(tmp_path: Path) -> No
 
     row_a = _cloud_row(
         id="img-71",
-        desktop_id=71,
+        desktop_id=71, created_by=71,
         observation_id="obs-7",
         storage_path="user-1/obs-7/originals/img-71/photo.webp",
     )
     row_b = _cloud_row(
         id="img-71-dup",
-        desktop_id=71,
+        desktop_id=71, created_by=71,
         observation_id="obs-7",
         storage_path="user-1/obs-7/originals/img-71-dup/photo.webp",
     )
@@ -398,7 +410,7 @@ def test_category_f_cloud_only_orphan_with_bytes(tmp_path: Path) -> None:
 
     cloud_row = _cloud_row(
         id="img-81",
-        desktop_id=99,
+        desktop_id=99, created_by=99,
         observation_id="obs-8",
         storage_path="user-1/obs-8/originals/img-81/photo.webp",
     )
@@ -418,7 +430,7 @@ def test_category_f_cloud_only_orphan_metadata_only(tmp_path: Path) -> None:
 
     cloud_row = _cloud_row(
         id="img-82",
-        desktop_id=99,
+        desktop_id=99, created_by=99,
         observation_id="obs-9",
         image_type="microscope",
         storage_path=None,
@@ -489,7 +501,7 @@ def test_category_h_non_microscope_row_missing_storage_path(tmp_path: Path) -> N
 
     cloud_row = _cloud_row(
         id="img-121",
-        desktop_id=121,
+        desktop_id=121, created_by=121,
         observation_id="obs-12",
         image_type="field",  # not microscope: NULL storage_path is a defect
         storage_path=None,
@@ -519,7 +531,7 @@ def test_category_h_microscope_shaped_but_local_is_field(tmp_path: Path) -> None
 
     cloud_row = _cloud_row(
         id="img-131",
-        desktop_id=131,
+        desktop_id=131, created_by=131,
         observation_id="obs-13",
         image_type="microscope",
         storage_path=None,
@@ -535,7 +547,7 @@ def test_category_h_microscope_shaped_but_local_is_field(tmp_path: Path) -> None
 # ---------------------------------------------------------------------------
 
 
-def test_match_prefers_cloud_id_over_desktop_id(tmp_path: Path) -> None:
+def test_match_prefers_cloud_id_over_sync_key(tmp_path: Path) -> None:
     db_path = tmp_path / "sporely.db"
     _seed_schema(db_path)
     _insert_observation(db_path, local_id=14, cloud_id="obs-14")
@@ -546,7 +558,7 @@ def test_match_prefers_cloud_id_over_desktop_id(tmp_path: Path) -> None:
         local = recon.load_local_state(conn)
 
     cloud_row = _cloud_row(
-        id="img-141", desktop_id=141, observation_id="obs-14",
+        id="img-141", desktop_id=141, created_by=141, observation_id="obs-14",
         storage_path="user-1/obs-14/originals/img-141/photo.webp",
     )
     match = recon.match_cloud_row_to_local(cloud_row, local)
@@ -554,7 +566,7 @@ def test_match_prefers_cloud_id_over_desktop_id(tmp_path: Path) -> None:
     assert match.cloud_id_link_broken is False
 
 
-def test_desktop_id_match_skips_wrong_image_type(tmp_path: Path) -> None:
+def test_sync_key_match_skips_wrong_image_type(tmp_path: Path) -> None:
     db_path = tmp_path / "sporely.db"
     _seed_schema(db_path)
     _insert_observation(db_path, local_id=15, cloud_id="obs-15")
@@ -570,7 +582,7 @@ def test_desktop_id_match_skips_wrong_image_type(tmp_path: Path) -> None:
     with recon._open_readonly(db_path) as conn:
         local = recon.load_local_state(conn)
 
-    cloud_row = _cloud_row(id="img-151", desktop_id=151, observation_id="obs-15",
+    cloud_row = _cloud_row(id="img-151", desktop_id=151, created_by=151, observation_id="obs-15",
                           image_type="field", storage_path="k")
     match = recon.match_cloud_row_to_local(cloud_row, local)
     assert match.method is None
@@ -639,16 +651,16 @@ def test_integration_run_produces_report_and_never_writes(
 
     cloud_rows = [
         _cloud_row(
-            id="img-1001", desktop_id=1001, observation_id="obs-100",
+            id="img-1001", desktop_id=1001, created_by=1001, observation_id="obs-100",
             storage_path="user-1/obs-100/originals/img-1001/photo.webp",
         ),
         _cloud_row(
-            id="img-1002", desktop_id=1002, observation_id="obs-100",
+            id="img-1002", desktop_id=1002, created_by=1002, observation_id="obs-100",
             storage_path="user-1/obs-100/originals/img-1002/photo.webp",
         ),
         # Also throw in an orphan for good measure.
         _cloud_row(
-            id="img-lost", desktop_id=9999, observation_id="obs-lost",
+            id="img-lost", desktop_id=9999, created_by=9999, observation_id="obs-lost",
             storage_path="user-1/obs-lost/originals/img-lost/photo.webp",
         ),
     ]
@@ -712,7 +724,7 @@ def test_soft_deleted_cloud_row_with_local_tombstone_is_healthy_lifecycle(
 
     cloud_row = _cloud_row(
         id="img-3011",
-        desktop_id=3011,
+        desktop_id=3011, created_by=3011,
         observation_id="obs-301",
         storage_path="user-1/obs-301/originals/img-3011/photo.webp",
         deleted_at="2026-08-05T00:00:00Z",
@@ -740,7 +752,7 @@ def test_soft_deleted_cloud_row_without_local_tombstone_is_remote_only_deletion(
 
     cloud_row = _cloud_row(
         id="img-3021",
-        desktop_id=3021,
+        desktop_id=3021, created_by=3021,
         observation_id="obs-302",
         storage_path="user-1/obs-302/originals/img-3021/photo.webp",
         deleted_at="2026-08-05T00:00:00Z",
@@ -760,11 +772,11 @@ def test_orphan_subcategory_reflects_bytes_state(tmp_path: Path) -> None:
         local = recon.load_local_state(conn)
 
     with_bytes = _cloud_row(
-        id="img-with", desktop_id=99, observation_id="obs-orphan",
+        id="img-with", desktop_id=99, created_by=99, observation_id="obs-orphan",
         storage_path="user-1/obs-orphan/originals/img-with/photo.webp",
     )
     metadata_only = _cloud_row(
-        id="img-meta", desktop_id=99, observation_id="obs-orphan",
+        id="img-meta", desktop_id=99, created_by=99, observation_id="obs-orphan",
         image_type="microscope", storage_path=None,
     )
     row_with = recon.classify_cloud_row(
@@ -777,7 +789,7 @@ def test_orphan_subcategory_reflects_bytes_state(tmp_path: Path) -> None:
     assert row_meta.subcategory == recon.SUBCATEGORY_F_METADATA_ONLY
 
 
-def test_desktop_id_match_on_deleted_row_with_synced_tombstone_is_conflicting_intent(
+def test_sync_key_match_on_deleted_row_with_synced_tombstone_is_conflicting_intent(
     tmp_path: Path,
 ) -> None:
     """cloud row matched only by desktop_id, soft-deleted, synced tombstone present.
@@ -803,13 +815,13 @@ def test_desktop_id_match_on_deleted_row_with_synced_tombstone_is_conflicting_in
 
     cloud_row = _cloud_row(
         id="img-4001-cloud",
-        desktop_id=4001,
+        desktop_id=4001, created_by=4001,
         observation_id="obs-400",
         storage_path="user-1/obs-400/originals/img-4001-cloud/photo.webp",
         deleted_at="2026-08-09T00:00:00Z",
     )
     match = recon.match_cloud_row_to_local(cloud_row, local)
-    assert match.method == recon.MATCH_METHOD_DESKTOP_ID
+    assert match.method == recon.MATCH_METHOD_SYNC_KEY
     assert match.cloud_id_link_broken is True
 
     row = recon.classify_cloud_row(cloud_row, match, local)
@@ -823,7 +835,7 @@ def test_desktop_id_match_on_deleted_row_with_synced_tombstone_is_conflicting_in
     assert report.subcounts.get(recon.SUBCATEGORY_G_CONFLICTING_INTENT, 0) == 1
 
 
-def test_desktop_id_match_on_deleted_row_without_synced_tombstone_stays_D1(
+def test_sync_key_match_on_deleted_row_without_synced_tombstone_stays_D1(
     tmp_path: Path,
 ) -> None:
     """cloud row soft-deleted, desktop_id match, but NO synced tombstone.
@@ -847,7 +859,7 @@ def test_desktop_id_match_on_deleted_row_without_synced_tombstone_stays_D1(
 
     cloud_row = _cloud_row(
         id="img-4011-cloud",
-        desktop_id=4011,
+        desktop_id=4011, created_by=4011,
         observation_id="obs-401",
         storage_path="user-1/obs-401/originals/img-4011-cloud/photo.webp",
         deleted_at="2026-08-09T00:00:00Z",
@@ -862,7 +874,7 @@ def test_desktop_id_match_on_deleted_row_without_synced_tombstone_stays_D1(
     assert row.subcategory != recon.SUBCATEGORY_G_CONFLICTING_INTENT
 
 
-def test_desktop_id_match_on_deleted_row_no_tombstone_stays_D1(
+def test_sync_key_match_on_deleted_row_no_tombstone_stays_D1(
     tmp_path: Path,
 ) -> None:
     """cloud row soft-deleted, desktop_id match, tombstone absent entirely."""
@@ -877,7 +889,7 @@ def test_desktop_id_match_on_deleted_row_no_tombstone_stays_D1(
 
     cloud_row = _cloud_row(
         id="img-4021-cloud",
-        desktop_id=4021,
+        desktop_id=4021, created_by=4021,
         observation_id="obs-402",
         storage_path="user-1/obs-402/originals/img-4021-cloud/photo.webp",
         deleted_at="2026-08-09T00:00:00Z",
@@ -892,9 +904,9 @@ def test_desktop_id_match_on_deleted_row_no_tombstone_stays_D1(
     assert row.subcategory != recon.SUBCATEGORY_G_CONFLICTING_INTENT
 
 
-def test_desktop_id_match_scoped_to_local_observation(tmp_path: Path) -> None:
-    """desktop_id fallback must not match a same-numbered id across a
-    different observation (owner+observation scope, per contract)."""
+def test_sync_key_match_scoped_to_local_observation(tmp_path: Path) -> None:
+    """The sync_key fallback must not match across a different observation
+    (owner+observation scope, per contract)."""
     db_path = tmp_path / "sporely.db"
     _seed_schema(db_path)
     _insert_observation(db_path, local_id=201, cloud_id="obs-201")
@@ -905,11 +917,26 @@ def test_desktop_id_match_scoped_to_local_observation(tmp_path: Path) -> None:
     with recon._open_readonly(db_path) as conn:
         local = recon.load_local_state(conn)
 
-    # Cloud row claims desktop_id=33 but belongs to obs-202 — must not match.
+    # Cloud row carries image 33's key but belongs to obs-202 — must not match.
     cloud_row = _cloud_row(
-        id="img-33", desktop_id=33, observation_id="obs-202",
+        id="img-33", desktop_id=33, created_by=33, observation_id="obs-202",
         storage_path="user-1/obs-202/originals/img-33/photo.webp",
     )
     match = recon.match_cloud_row_to_local(cloud_row, local)
     assert match.local_image is None
     assert match.method is None
+
+
+def test_a_cloud_desktop_id_alone_never_matches_a_local_image(tmp_path: Path) -> None:
+    """Integer ids are never cloud identities: a keyless cloud row naming a
+    local image id stays a cloud-only orphan."""
+    db_path = tmp_path / "sporely.db"
+    _seed_schema(db_path)
+    _insert_observation(db_path, local_id=1, cloud_id="obs-1")
+    _insert_image(db_path, image_id=11, observation_id=1, cloud_id=None)
+    with recon._open_readonly(db_path) as conn:
+        local = recon.load_local_state(conn)
+    cloud_row = _cloud_row(id="img-x", desktop_id=11, observation_id="obs-1",
+                           storage_path="user/obs-1/img-x.webp")
+    match = recon.match_cloud_row_to_local(cloud_row, local)
+    assert match.local_image is None and match.method is None

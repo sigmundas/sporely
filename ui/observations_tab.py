@@ -117,6 +117,15 @@ from database.schema import (
 from utils.thumbnail_generator import get_thumbnail_path, generate_all_sizes
 from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
 from utils.exif_reader import get_image_metadata
+from utils.cloud_sync_impl.reconciliation.location_provenance import (
+    IMAGE_EXIF_LOCATION_PAIR,
+    LOCATION_PROVENANCE_FIELDS,
+    MANUAL_LOCATION_PAIR,
+    attribute_coordinate_edit,
+    coordinates_match,
+    location_pair_is_writable,
+    provenance_pair,
+)
 from utils.heic_converter import build_local_image_provenance, save_image_as_webp
 import utils.ai_image_prep as ai_image_prep
 from utils.image_metadata_merge import merge_image_lab_metadata
@@ -177,6 +186,11 @@ from utils.taxon_text import (
     resolve_observation_taxon_fields,
     split_scientific_name_text,
 )
+from utils.sync_client_identity import (
+    UPLOAD_BLOCK_CLOUD_NOT_READY,
+    UPLOAD_BLOCK_SETTING,
+    UPLOAD_BLOCK_UPGRADE_REQUIRED,
+)
 from utils.cloud_sync import (
     ACCOUNT_MISMATCH_MESSAGE,
     AccountMismatchError,
@@ -184,6 +198,8 @@ from utils.cloud_sync import (
     CloudSyncError,
     SporelyCloudClient,
     cloud_observation_uses_privacy_slot,
+    remote_observations_not_on_this_desktop,
+    remote_sync_key,
     cloud_media_materialization_state_for_observation,
     build_cloud_ai_state_from_observation_identifications,
     _cloud_identification_prediction_taxon,
@@ -2296,6 +2312,17 @@ class InatPublishDecision:
     failure_level: str = "info"
 
 
+def _pending_location_pair(draft: dict | None, latitude, longitude) -> tuple[str, str] | None:
+    """The details dialog's location attribution, if it still describes these coordinates."""
+    record = draft or {}
+    if LOCATION_PROVENANCE_FIELDS[0] not in record:
+        return None
+    if not coordinates_match(record.get("gps_latitude"), record.get("gps_longitude"), latitude, longitude):
+        return None
+    pair = provenance_pair(record)
+    return pair if location_pair_is_writable(*pair, latitude, longitude) else None
+
+
 class ObservationsTab(QWidget):
     """Tab for viewing and managing observations."""
 
@@ -3143,7 +3170,7 @@ class ObservationsTab(QWidget):
             species_display = species_raw or species_guess or "sp."
             cloud_id = _normalize_external_publication_id(obs.get("id"))
             linked_local_id = _normalize_external_publication_id(
-                obs.get("desktop_id") or obs.get("local_id") or obs.get("observation_id")
+                obs.get("local_id") or obs.get("observation_id")
             )
             local_obs = ObservationDB.get_observation(linked_local_id) if linked_local_id else None
 
@@ -3244,7 +3271,9 @@ class ObservationsTab(QWidget):
         try:
             client = self._window_cloud_client()
             if client is not None:
-                remote_rows = client.pull_web_observations(after_iso=None) or []
+                remote_rows = remote_observations_not_on_this_desktop(
+                    client.pull_web_observations(after_iso=None) or []
+                )
             else:
                 remote_rows = []
         except Exception as exc:
@@ -3515,6 +3544,8 @@ class ObservationsTab(QWidget):
                     resample_scale_factor=image_row.get("resample_scale_factor"),
                     original_filepath=filepath,
                     store_original=False,
+                    cloud_image_id=str(image_row.get("id") or "").strip() or None,
+                    cloud_sync_key=remote_sync_key(image_row),
                 )
             )
         return results
@@ -3638,7 +3669,31 @@ class ObservationsTab(QWidget):
             message = self.tr("Ready.")
             tone = "info"
 
+        # Persistent until a sync's upload phase runs again (sync_all clears it).
+        upload_block_text = ObservationsTab._cloud_upload_block_text(self, settings.get(UPLOAD_BLOCK_SETTING))
+        if upload_block_text and last_status != "reauth_required":
+            message = (
+                upload_block_text
+                if tone == "info"
+                else f"{upload_block_text}\n{message}"
+            )
+            tone = "warning"
+
         self._status_hint_controller.set_hint(message, tone=tone)
+
+    def _cloud_upload_block_text(self, reason: object) -> str:
+        """The banner for an upload block recorded by the last sync, or ""."""
+        reason_text = str(reason or "").strip()
+        if reason_text == UPLOAD_BLOCK_UPGRADE_REQUIRED:
+            return self.tr(
+                "This version of Sporely can no longer upload. Please install the latest version."
+            )
+        if reason_text == UPLOAD_BLOCK_CLOUD_NOT_READY:
+            return self.tr(
+                "Sporely Cloud is not ready for this version yet. Uploads are paused; "
+                "downloads still work."
+            )
+        return ""
 
     def _set_status_progress_visible(self, visible: bool) -> None:
         visible = bool(visible)
@@ -4284,6 +4339,10 @@ class ObservationsTab(QWidget):
             else:
                 message = self.tr("Sporely Cloud already up to date.")
                 level = "success"
+        upload_block_text = ObservationsTab._cloud_upload_block_text(self, result.get("upload_blocked"))
+        if upload_block_text:
+            message = f"{upload_block_text} {message}"
+            level = "warning"
         reference_notice = ObservationsTab._reference_capability_hold_notice(self, result)
         if reference_notice:
             message = f"{message} {reference_notice}"
@@ -4295,7 +4354,11 @@ class ObservationsTab(QWidget):
         original_summary = format_original_upload_summary(result.get("original_sync"))
         if original_summary:
             message = f"{message}\n{original_summary}"
-        self._record_cloud_sync_status(message, errors=errors, status="warning" if (errors or deleted_count) else "ok")
+        self._record_cloud_sync_status(
+            message,
+            errors=errors,
+            status="warning" if (errors or deleted_count or upload_block_text) else "ok",
+        )
         self._refresh_cloud_sync_idle_hint()
         _cloud_sync_completion_timing("UI summary and idle hint complete", completion_start)
         if not self._cloud_sync_show_status:
@@ -12342,6 +12405,9 @@ class ObservationsTab(QWidget):
                     # with the identity it describes, so the two can never
                     # drift apart across a restart.
                     **{key: data.get(key) for key in IDENTITY_COLUMNS},
+                    # Only an attributed coordinate edit carries a pair; any
+                    # other coordinate change invalidates it in the DB layer.
+                    **{key: data[key] for key in LOCATION_PROVENANCE_FIELDS if key in data},
                     allow_nulls=True
                 )
                 if dialog.is_unidentified():
@@ -12462,8 +12528,19 @@ class ObservationsTab(QWidget):
                     if coords_changed:
                         update_kwargs["country_code"] = None
                         update_kwargs["region_id"] = None
+                    # An attribution made in the details dialog stays with its
+                    # coordinates while Prepare Images keeps them selected; if
+                    # Prepare Images replaced them, the change is of unknown
+                    # origin and the DB layer invalidates the pair.
+                    pending_pair = _pending_location_pair(data, obs_lat, obs_lon)
+                    if pending_pair is not None:
+                        update_kwargs.update(zip(LOCATION_PROVENANCE_FIELDS, pending_pair))
                     ObservationDB.update_observation(obs_id, **update_kwargs)
                     self.schedule_metadata_cloud_sync(obs_id)
+                    stored_pair = provenance_pair(ObservationDB.get_observation(obs_id))
+                    for location_record in (observation, draft_observation, self._observation_edit_draft_cache.get(obs_id)):
+                        if location_record is not None:
+                            location_record.update(zip(LOCATION_PROVENANCE_FIELDS, stored_pair))
                     if observation is not None:
                         observation["gps_latitude"] = obs_lat
                         observation["gps_longitude"] = obs_lon
@@ -12732,10 +12809,16 @@ class ObservationsTab(QWidget):
 
     def _mark_cloud_observation_imported(
         self,
-        client,
         row_data: dict,
         local_observation_id: int,
+        image_results: list[ImageImportResult],
     ) -> None:
+        """Link the imported observation and images to the cloud rows they came from.
+
+        Each image links by the cloud row its import result carries, never by
+        list position: an image removed or reordered in the dialog links to
+        its own row or to none. Nothing is written to the cloud.
+        """
         raw = row_data.get("raw") or {}
         cloud_id = str(row_data.get("cloud_id") or raw.get("id") or "").strip()
         if not cloud_id:
@@ -12756,34 +12839,32 @@ class ObservationsTab(QWidget):
         finally:
             conn.close()
 
-        cloud_images = self._download_cloud_observation_images(row_data, download_all=True)
-        local_images = ImageDB.get_images_for_observation(int(local_observation_id))
         conn = get_connection()
         try:
-            for local_image, cloud_image in zip(local_images, cloud_images):
-                cloud_image_id = str(cloud_image.get("id") or "").strip()
-                local_image_id = local_image.get("id")
+            for result in image_results or []:
+                cloud_image_id = str(getattr(result, "cloud_image_id", None) or "").strip()
+                local_image_id = getattr(result, "image_id", None)
                 if not cloud_image_id or not local_image_id:
                     continue
                 conn.execute(
-                    "UPDATE images SET cloud_id = ?, synced_at = ? WHERE id = ?",
-                    (cloud_image_id, synced_at, int(local_image_id)),
+                    "UPDATE images SET cloud_id = ?, synced_at = ? "
+                    "WHERE id = ? AND observation_id = ?",
+                    (cloud_image_id, synced_at, int(local_image_id), int(local_observation_id)),
                 )
-                try:
-                    client.set_image_desktop_id(cloud_image_id, int(local_image_id))
-                except Exception:
-                    pass
             conn.commit()
         finally:
             conn.close()
 
-        try:
-            client.set_desktop_id(cloud_id, int(local_observation_id))
-        except Exception:
-            pass
-
     def _open_cloud_observation_editor(self, row_data: dict) -> None:
         if not isinstance(row_data, dict):
+            return
+        raw = row_data.get("raw") or {}
+        if raw and not remote_observations_not_on_this_desktop([raw]):
+            # A stale inbox row: this desktop already holds the cloud row (by
+            # cloud id or sync key) since the list was loaded. Never a second
+            # local copy.
+            self.refresh_observations()
+            self.set_status_message(self.tr("Sporely Cloud already up to date."), level="info")
             return
         image_results = self._cloud_image_import_results(row_data)
         draft_observation: dict | None = self._cloud_observation_draft_data(row_data)
@@ -12817,6 +12898,8 @@ class ObservationsTab(QWidget):
                 if not self._confirm_duplicate_observation_creation(obs_data, image_results):
                     continue
 
+                # The cloud row's key, not a fresh one (NULL stays NULL).
+                obs_data["sync_key"] = remote_sync_key(row_data.get("raw") or {})
                 obs_id = ObservationDB.create_observation(**obs_data)
                 confirmed_precision = getattr(dialog, "confirmed_location_precision", None)
                 if confirmed_precision:
@@ -12872,11 +12955,7 @@ class ObservationsTab(QWidget):
                         progress.close()
 
                 try:
-                    from utils.cloud_sync import SporelyCloudClient
-
-                    client = SporelyCloudClient.from_stored_credentials()
-                    if client is not None:
-                        self._mark_cloud_observation_imported(client, row_data, obs_id)
+                    self._mark_cloud_observation_imported(row_data, obs_id, image_results)
                 except Exception:
                     pass
 
@@ -12912,6 +12991,11 @@ class ObservationsTab(QWidget):
                     if ai_state:
                         ai_state = self._remap_ai_state_to_images(ai_state, image_results)
                     obs_lat, obs_lon = image_dialog.get_observation_gps()
+                    # Keep the dialog's attribution only for the coordinates
+                    # it described.
+                    if _pending_location_pair(draft_observation, obs_lat, obs_lon) is None:
+                        for field in LOCATION_PROVENANCE_FIELDS:
+                            draft_observation.pop(field, None)
                     draft_observation["gps_latitude"] = obs_lat
                     draft_observation["gps_longitude"] = obs_lon
                 continue
@@ -13282,6 +13366,16 @@ class ObservationsTab(QWidget):
                     )
                     advance_progress(label)
 
+                if cloud_id:
+                    # Durable intent before anything is removed: a crash or a
+                    # failed cloud delete is finished by the next sync, and
+                    # pull never re-imports the observation meanwhile.
+                    from utils.cloud_sync import (
+                        _load_linked_cloud_user_id,
+                        mark_observation_delete_pending,
+                    )
+
+                    mark_observation_delete_pending(cloud_id, _load_linked_cloud_user_id())
                 delete_db_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
                 delete_failures = ObservationDB.delete_observation(
                     obs_id,
@@ -13398,6 +13492,9 @@ class ObservationsTab(QWidget):
                 )
 
                 acknowledge_observation_parent_delete(cloud_user_id, cloud_id)
+            from utils.cloud_sync import clear_observation_delete_pending
+
+            clear_observation_delete_pending(cloud_id)
         except Exception as exc:
             return [self.tr("cloud {id}: {error}").format(id=cloud_id, error=exc)]
         try:
@@ -14073,8 +14170,15 @@ class ObservationsTab(QWidget):
                         scale = float(objectives[objective_key]["microns_per_pixel"])
             else:
                 # Field images can have a custom scale from scale-bar calibration.
-                # Keep objective empty so stale microscope objective values are cleared.
-                objective_name = ""
+                # Clear a stale microscope objective when the image becomes a
+                # field image. The dialog has no objective control for field
+                # images, so an image that stays a field image keeps its value
+                # (None = unchanged); an unrelated save must not clear it.
+                existing_for_type = existing_by_id.get(result.image_id) if result.image_id else None
+                if existing_for_type and str(existing_for_type.get("image_type") or "field").lower() == "field":
+                    objective_name = None
+                else:
+                    objective_name = ""
 
             calibration_id = None
             if objective_name and objective_name != "Custom":
@@ -14446,6 +14550,13 @@ class ObservationsTab(QWidget):
                 original_filepath=original_to_store,
                 lab_metadata=image_lab_metadata or None,
                 **provenance_kwargs,
+                # A cloud-inbox image keeps its cloud row's key (NULL stays
+                # NULL); every other import mints one.
+                **(
+                    {"sync_key": getattr(result, "cloud_sync_key", None)}
+                    if getattr(result, "cloud_image_id", None)
+                    else {}
+                ),
             )
             result.image_id = image_id
             if image_id and image_id not in existing_ids:
@@ -14755,6 +14866,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.image_metadata = []
         self.image_settings = []
         self.selected_image_index = -1
+        # Last coordinates applied from a photo's EXIF in this dialog, so a
+        # save can attribute them as image_exif rather than manual entry.
+        self._image_exif_coordinates: tuple[float, float] | None = None
+        self._opened_coordinates: tuple = (None, None)
+        self._opened_location_pair: tuple[str, str] | None = None
         self.objectives = self._load_objectives()
         self.default_objective = self._get_default_objective()
         self.contrast_options = self._load_tag_options("contrast")
@@ -14868,6 +14984,39 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._cloud_privacy_original_slot_consumption = 0
             self._update_cloud_privacy_slots_label()
         self._loading_form = False
+        # Coordinates as opened: what get_data() compares against to decide
+        # whether the user changed the location in this dialog.
+        if self.edit_mode:
+            self._opened_coordinates = (
+                (observation or {}).get("gps_latitude"),
+                (observation or {}).get("gps_longitude"),
+            )
+        else:
+            self._opened_coordinates = self._current_coordinate_inputs()
+        # The pair the opened record holds for those coordinates: a stored
+        # attribution, or one made before an Edit Images detour (drafts).
+        opened_record = (observation if self.edit_mode else self.draft_data) or {}
+        opened_pair = provenance_pair(opened_record)
+        self._opened_location_pair = (
+            opened_pair
+            if location_pair_is_writable(*opened_pair, *self._opened_coordinates)
+            else None
+        )
+        # A new observation opens attributed to where Prepare Images got its
+        # coordinates: an imported photo's own EXIF, or values typed there.
+        # The photo's EXIF stays the reference for later edits in this dialog.
+        # (Edits of existing observations keep the contract's rule: a Prepare
+        # Images replacement is of unknown origin.)
+        if not self.edit_mode:
+            lat, lon = self._current_coordinate_inputs()
+            exif_coordinates = self._imported_photo_exif_coordinates(lat, lon)
+            if exif_coordinates is not None:
+                self._image_exif_coordinates = exif_coordinates
+            if self._opened_location_pair is None and lat is not None and lon is not None:
+                if exif_coordinates is not None and coordinates_match(*exif_coordinates, lat, lon):
+                    self._opened_location_pair = IMAGE_EXIF_LOCATION_PAIR
+                elif self._typed_in_prepare_images(lat, lon):
+                    self._opened_location_pair = MANUAL_LOCATION_PAIR
         QTimer.singleShot(0, self._complete_deferred_dialog_setup)
         self._apply_suggested_taxon()
         self._sync_taxon_cache()
@@ -17917,6 +18066,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.lon_input.setValue(lon)
             self.gps_latitude = lat
             self.gps_longitude = lon
+            self._image_exif_coordinates = (lat, lon)
             self.gps_info_label.setText(f"GPS from: {meta['filename']}")
             self.map_btn.setEnabled(True)
         else:
@@ -18181,6 +18331,54 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return None
         return code
 
+    def _imported_photo_exif_coordinates(self, lat, lon) -> tuple[float, float] | None:
+        """The EXIF GPS of a photo imported in this session, or ``None``.
+
+        That is ``(lat, lon)`` when they equal one; otherwise the GPS-source
+        photo's, else the first such photo's (rounded to the coordinate
+        inputs' precision), so returning to it later is recognised.
+
+        Uses the GPS each file's EXIF held at import (``exif_gps_*``), never
+        ``gps_latitude``/``gps_longitude``, which Prepare Images overwrites
+        with typed values. Only photos without a stored image row count:
+        stored and cloud-materialised images can carry GPS that Sporely
+        itself wrote, which is not evidence of where the photo was taken.
+        """
+        photos = []
+        for result in self.image_results:
+            if getattr(result, "image_id", None) is not None:
+                continue
+            exif_lat = getattr(result, "exif_gps_latitude", None)
+            exif_lon = getattr(result, "exif_gps_longitude", None)
+            if exif_lat is None or exif_lon is None:
+                continue
+            if coordinates_match(exif_lat, exif_lon, lat, lon):
+                return (lat, lon)
+            photos.append((bool(getattr(result, "gps_source", False)), exif_lat, exif_lon))
+        if not photos:
+            return None
+        photos.sort(key=lambda photo: not photo[0])
+        _gps_source, exif_lat, exif_lon = photos[0]
+        decimals = self.lat_input.decimals()
+        return (round(exif_lat, decimals), round(exif_lon, decimals))
+
+    def _typed_in_prepare_images(self, lat, lon) -> bool:
+        """Whether ``(lat, lon)`` were typed for a photo in Prepare Images."""
+        return any(
+            coordinates_match(
+                getattr(result, "typed_gps_latitude", None),
+                getattr(result, "typed_gps_longitude", None),
+                lat,
+                lon,
+            )
+            for result in self.image_results
+        )
+
+    def _current_coordinate_inputs(self) -> tuple[float | None, float | None]:
+        lat = self.lat_input.value() if self.lat_input.value() > self.lat_input.minimum() else None
+        lon = self.lon_input.value() if self.lon_input.value() > self.lon_input.minimum() else None
+        return lat, lon
+
     def get_data(self):
         """Return observation data as dict."""
         genus = self.genus_input.text().strip() or None
@@ -18233,6 +18431,22 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if self.lon_input.value() > self.lon_input.minimum():
             lon = self.lon_input.value()
         country_code = self._resolved_country_code_for_current_coords(lat, lon)
+        location_pair = attribute_coordinate_edit(
+            before_lat=self._opened_coordinates[0],
+            before_lon=self._opened_coordinates[1],
+            after_lat=lat,
+            after_lon=lon,
+            image_exif_coords=self._image_exif_coordinates,
+            # A new observation without coordinates never observed a location
+            # acquisition: it stays unattributed rather than "skipped".
+            allow_clear=self.edit_mode,
+        )
+        if location_pair is None and coordinates_match(
+            self._opened_coordinates[0], self._opened_coordinates[1], lat, lon,
+        ):
+            # Still the opened coordinates: keep their attribution (a pending
+            # one from before an Edit Images detour must not be lost).
+            location_pair = self._opened_location_pair
         # ``region_id`` is preserve-only from the cloud. We surface whatever was
         # loaded so the standard save path can pass it back into
         # ``update_observation`` unchanged; if coordinates changed we do NOT
@@ -18328,6 +18542,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             'gps_longitude': lon,
             'country_code': country_code,
             'region_id': region_id,
+            # Present only for a coordinate edit whose origin this dialog
+            # knows (manual entry, a photo's EXIF, or a deliberate clear).
+            **(
+                dict(zip(LOCATION_PROVENANCE_FIELDS, location_pair))
+                if location_pair is not None else {}
+            ),
             'scientific_name_snapshot': scientific_name_snapshot,
             'taxon_rank_snapshot': taxon_rank_snapshot,
             'sporely_taxon_id': sporely_taxon_id,

@@ -93,6 +93,7 @@ from database.models import SettingsDB, ImageDB, MeasurementDB, CalibrationDB
 from database.database_tags import DatabaseTerms
 from utils.artsdatabanken_link import concept_link_from_name_id
 from utils.cloud_sync import _cloud_identification_prediction_taxon
+from utils.cloud_sync_impl.reconciliation.location_provenance import coordinates_match
 from utils.image_companion_grouping import normalize_raw_companion_source_preference
 from utils.image_import_candidates import (
     IMAGE_IMPORT_STATUS_COMMITTED,
@@ -307,6 +308,11 @@ class ImageImportResult:
     filepath: str
     preview_path: Optional[str] = None
     image_id: Optional[int] = None
+    # The cloud row an image imported from the cloud inbox came from: its id
+    # links the new local row, and its sync_key (None for a keyless cloud
+    # row) is stored instead of minting one. None for every other import.
+    cloud_image_id: Optional[str] = None
+    cloud_sync_key: Optional[str] = None
     image_type: str = "field"
     objective: Optional[str] = None
     custom_scale: Optional[float] = None
@@ -321,6 +327,16 @@ class ImageImportResult:
     gps_longitude: Optional[float] = None
     needs_scale: bool = False
     exif_has_gps: bool = False
+    # GPS the picked file's own EXIF held when this session imported it. Set
+    # only from an import candidate and never edited (typing in Prepare Images
+    # rewrites gps_latitude/gps_longitude), so it is the image-origin evidence
+    # for location provenance; stored and cloud-materialised rows leave it None.
+    exif_gps_latitude: Optional[float] = None
+    exif_gps_longitude: Optional[float] = None
+    # Coordinates last typed for this photo in Prepare Images (not ones set
+    # from a photo), so a new observation can attribute them as manual.
+    typed_gps_latitude: Optional[float] = None
+    typed_gps_longitude: Optional[float] = None
     calibration_id: Optional[int] = None
     ai_crop_box: Optional[tuple[float, float, float, float]] = None
     ai_crop_source_size: Optional[tuple[int, int]] = None
@@ -420,6 +436,8 @@ def image_import_result_from_candidate(
         gps_longitude=gps_longitude,
         needs_scale=False,
         exif_has_gps=bool(gps_latitude is not None or gps_longitude is not None),
+        exif_gps_latitude=gps_latitude,
+        exif_gps_longitude=gps_longitude,
         calibration_id=None,
         ai_crop_box=ai_crop_box,
         ai_crop_source_size=ai_crop_source_size,
@@ -5321,9 +5339,19 @@ class ImageImportDialog(GeometryMixin, QDialog):
         dt_value = self.datetime_input.dateTime()
         result.captured_at = None if dt_value == self._unset_datetime else dt_value
         lat = self.lat_input.value()
-        result.gps_latitude = None if lat == self.lat_input.minimum() else lat
+        lat = None if lat == self.lat_input.minimum() else lat
         lon = self.lon_input.value()
-        result.gps_longitude = None if lon == self.lon_input.minimum() else lon
+        lon = None if lon == self.lon_input.minimum() else lon
+        if (
+            not self._setting_from_image_source
+            and lat is not None
+            and lon is not None
+            and not coordinates_match(lat, lon, result.gps_latitude, result.gps_longitude)
+        ):
+            result.typed_gps_latitude = lat
+            result.typed_gps_longitude = lon
+        result.gps_latitude = lat
+        result.gps_longitude = lon
 
     def _apply_metadata_to_indices(self, indices: list[int | None]) -> None:
         self._update_observation_metadata_from_inputs()

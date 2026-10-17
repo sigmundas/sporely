@@ -23,6 +23,7 @@ from utils.original_sync_policy import (
     should_download_full_original,
 )
 
+from utils.cloud_sync_impl.reconciliation.values import _normalize_sync_key_value
 from utils.cloud_sync_impl.baseline import (
     _load_cloud_observation_snapshot,
     _parse_cloud_observation_snapshot,
@@ -152,9 +153,9 @@ def _remote_image_matches_local_image(remote_image: dict | None, local_image: di
     local_cloud_id = str(local.get("cloud_id") or "").strip()
     if remote_cloud_id and local_cloud_id and remote_cloud_id == local_cloud_id:
         return True
-    remote_desktop_id = _safe_int(remote.get("desktop_id"))
-    local_image_id = _safe_int(local.get("id"))
-    return remote_desktop_id > 0 and local_image_id > 0 and remote_desktop_id == local_image_id
+    # A lost link pairs by sync_key, never by an integer local id.
+    remote_key = _normalize_sync_key_value(remote.get("sync_key"))
+    return bool(remote_key) and remote_key == _normalize_sync_key_value(local.get("sync_key"))
 
 
 def _load_remote_original_recovery_image_rows(

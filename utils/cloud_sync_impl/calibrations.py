@@ -20,8 +20,10 @@ from utils.cloud_sync_impl.baseline import (
 from utils.cloud_sync_impl.common import _safe_int
 from utils.cloud_sync_impl.errors import (
     CloudSyncError,
+    CloudUploadRefusedError,
     is_cloud_auth_error,
     is_cloud_temporary_unavailable_error,
+    raise_if_upload_refused,
 )
 from utils.cloud_sync_impl.preflight import _image_calibration_uuid
 from utils.cloud_sync_impl.progress import (
@@ -245,6 +247,9 @@ def push_calibrations(
             progress_state,
         )
         try:
+            # A refusal (possibly swallowed by a reference-image upload)
+            # stops the whole upload phase, not just one calibration.
+            raise_if_upload_refused(client)
             if not calibration_uuid:
                 errors.append('calibration ?: skipped push because calibration_uuid is missing')
                 continue
@@ -303,6 +308,8 @@ def push_calibrations(
                 )
                 if warning:
                     errors.append(warning)
+        except CloudUploadRefusedError:
+            raise
         except CloudSyncError as exc:
             if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
                 raise
@@ -620,6 +627,8 @@ def repair_calibrations_local_wins(
                             f'remote={json.dumps(repair_entry["normalized_remote_measurements_json"], ensure_ascii=False, sort_keys=True)})'
                         )
             repairs.append(repair_entry)
+        except CloudUploadRefusedError:
+            raise
         except CloudSyncError as exc:
             if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
                 raise
