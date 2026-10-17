@@ -6125,10 +6125,25 @@ def resolve_conflict_plan(
                              'mosaic_status': mosaic_status})
 
     # ── Step 10: finalize in order — snapshot → signature → stamp ─────────────
+    # A linked image without a baseline row that still differs and that this
+    # plan made no choice for (an automatic plan beside manual work) stays
+    # undecided: it gets no baseline row and the observation stays in review.
+    decided_image_cloud_ids = {
+        str(item.get('cloud_id') or '').strip()
+        for item in items if item.get('kind') == 'image_metadata'
+    }
+    undecided_image_cloud_ids = _linked_no_baseline_image_conflicts(
+        int(local_id),
+        reconciled_remote_images,
+        _parse_cloud_observation_snapshot(
+            _load_cloud_observation_snapshot(resolved_cloud_id)
+        ).get('images') or [],
+    ) - decided_image_cloud_ids
     try:
         _store_post_push_snapshot(
             client, resolved_cloud_id, int(local_id),
             accepted_asymmetry=merged_asymmetry,
+            withhold_image_ids=undecided_image_cloud_ids,
         )
     except Exception as exc:
         raise _partial_error(
@@ -6136,7 +6151,10 @@ def resolve_conflict_plan(
             failing={'op': 'store_snapshot'}, cause=exc,
         )
     _refresh_local_cloud_media_signature(int(local_id))
-    _stamp_observation_synced(int(local_id), resolved_cloud_id)
+    if undecided_image_cloud_ids:
+        _set_observation_conflict_review_pending(int(local_id))
+    else:
+        _stamp_observation_synced(int(local_id), resolved_cloud_id)
 
     return {
         'local_id': int(local_id),
@@ -11680,6 +11698,9 @@ def pull_all(
                 should_store_snapshot = True
                 store_full_snapshot = True
                 local_media_changed = False
+                # Cloud ids of linked images with no baseline row whose copies
+                # differ: never applied over the local row, never baselined.
+                no_baseline_conflict_ids: set[str] = set()
                 # The row the snapshot is taken from. An identity disagreement
                 # with no baseline stores it WITHOUT the identity, so the
                 # baseline stays "unknown" and every later pull and push
@@ -11742,10 +11763,22 @@ def pull_all(
                             [_format_observation_metadata_field_label(TAXON_IDENTITY_SYNC_FIELD)],
                         ))
                         snapshot_remote = _remote_row_without_identity(remote)
+                    # No snapshot is no image baseline either: a linked image
+                    # whose copies differ goes to review, never cloud-wins.
+                    no_baseline_conflict_ids = _linked_no_baseline_image_conflicts(
+                        local_id, remote_images, [],
+                    )
+                    if no_baseline_conflict_ids:
+                        errors.append(_format_review_needed_error(
+                            local_id, cloud_id, ['images without a baseline differ'],
+                        ))
                     warnings = _apply_remote_images_to_local(
                         client,
                         local_id,
-                        remote_images,
+                        [
+                            row for row in remote_images
+                            if str(row.get('id') or '').strip() not in no_baseline_conflict_ids
+                        ],
                         allow_delete=False,
                         materialize_remote_images=materialize_remote_images,
                     )
@@ -11765,7 +11798,10 @@ def pull_all(
                         or measurement_result.get('failed')
                     )
                     materialization_failed = bool(materialize_remote_images and remote_media_pending)
-                    if measurement_result.get('conflict') or materialization_failed or identity_conflict:
+                    if (
+                        measurement_result.get('conflict') or materialization_failed or identity_conflict
+                        or no_baseline_conflict_ids
+                    ):
                         _set_observation_sync_state(local_id, cloud_id, dirty=True, synced_at=None)
                     else:
                         _stamp_observation_synced(local_id, cloud_id)
@@ -11976,7 +12012,12 @@ def pull_all(
                 # Metadata-only pulls intentionally skip the retry pass because
                 # that branch exists solely to re-materialize missing cloud media.
                 if stored_snapshot and materialize_remote_images:
-                    retry_remote_images = _remote_images_missing_locally(local_id, remote_images)
+                    # An undecided no-baseline image is never re-applied, even
+                    # when its local file is missing.
+                    retry_remote_images = [
+                        row for row in _remote_images_missing_locally(local_id, remote_images)
+                        if str(row.get('id') or '').strip() not in no_baseline_conflict_ids
+                    ]
                     if retry_remote_images:
                         profiler = _cloud_sync_current_profiler()
                         if profiler is not None:
@@ -12014,7 +12055,10 @@ def pull_all(
                             or measurement_result.get('skipped_materialization')
                             or measurement_result.get('failed')
                         )
-                        if measurement_result.get('conflict') or retry_remote_media_pending:
+                        if (
+                            measurement_result.get('conflict') or retry_remote_media_pending
+                            or no_baseline_conflict_ids
+                        ):
                             _set_observation_sync_state(local_id, cloud_id, dirty=True, synced_at=None)
                         else:
                             _stamp_observation_synced(local_id, cloud_id)
@@ -12031,6 +12075,7 @@ def pull_all(
                         remote_measurements=remote_measurements,
                         include_images=store_full_snapshot,
                         include_measurements=store_full_snapshot,
+                        withhold_image_ids=no_baseline_conflict_ids,
                     )
         except Exception as e:
             if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):

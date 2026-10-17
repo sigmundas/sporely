@@ -364,7 +364,15 @@ def _store_remote_snapshot(
     include_measurements: bool = True,
     accepted_asymmetry: dict | None = None,
     before_store_images=None,
+    withhold_image_ids: set[str] | frozenset[str] = frozenset(),
 ) -> None:
+    """Store the observation's baseline from the current cloud rows.
+
+    ``withhold_image_ids`` names cloud images whose difference from the local
+    row is still undecided (no baseline row, no explicit choice): they get no
+    baseline row, so every later push and pull still treats them as
+    unreviewed instead of reading the cloud copy as the agreed state.
+    """
     cloud_value = str(cloud_id or '').strip()
     if not cloud_value:
         return
@@ -485,9 +493,13 @@ def _store_remote_snapshot(
             accepted_asymmetry = reconciled
         else:
             accepted_asymmetry = None
+    withheld = {str(image_id or '').strip() for image_id in (withhold_image_ids or ())} - {''}
+    stored_images = [
+        row for row in images if str(row.get('id') or '').strip() not in withheld
+    ] if withheld else images
     snapshot = _cloud_observation_snapshot(
         remote_obs,
-        images if include_images else None,
+        stored_images if include_images else None,
         measurements if include_measurements else None,
         include_images=include_images,
         include_measurements=include_measurements,
