@@ -442,9 +442,19 @@ created_at)`, created empty, and a BEFORE INSERT/UPDATE/DELETE row trigger on
   released desktops, Edge Functions, migrations and plain SQL sessions.
 - With an empty table nothing is blocked. Writes made inside RPCs are covered
   too, because the request's headers stay visible inside the function.
-- Limit: media-worker requests are not blocked by this table. A blocked build
-  can still upload or delete media bytes, but it cannot write the rows that
-  reference them. Rows are written first, so this costs orphan bytes at worst.
+- Limit (owner-accepted 2026-10-17; Codex security review of `29b22d3`:
+  CHANGES REQUESTED): media-worker requests are **not** blocked by this table.
+  A blocked build can still upload **and delete** media objects. Uploads cost
+  orphan bytes at worst, because rows are written first. Deletes are worse:
+  the desktop's observation delete removes the media first and then the rows,
+  so a blocked build can delete the media, have its row deletion refused, and
+  leave live cloud rows that reference missing media (broken images). The
+  write stop is therefore **not** a safe complete stop on its own. Before a
+  version is listed, every installation running it must be stopped or
+  disconnected (runbook, "Emergency: activating the desktop write stop"). If
+  that cannot be ensured, worker-side enforcement of the same block is
+  required first; it is a planned later improvement, not part of this
+  release.
 
 Web and Android never send `desktop_id`, and never send the desktop identity
 or version headers.
