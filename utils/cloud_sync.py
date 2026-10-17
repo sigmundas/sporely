@@ -2296,6 +2296,27 @@ def _format_review_needed_error(local_id: int, cloud_id: str, reasons: list[str]
     return f'{base} ({reason_text})' if reason_text else base
 
 
+def _route_child_adoption_conflict_to_review(
+    errors: list[str],
+    local_id: int,
+    obs_cloud_id: str,
+    exc: ChildAdoptionConflictError,
+) -> None:
+    """Report a keyed child copy whose content differs as a conflict review.
+
+    Like an observation adoption conflict: the child row stays unlinked, the
+    observation is marked for review, and the error is the review-needed
+    form the conflict dialog path collects.
+    """
+    errors.append(_format_review_needed_error(
+        int(local_id), str(obs_cloud_id or ''),
+        ['push_blocked', f'cloud copy with the same sync key differs: {exc}'],
+    ))
+    _set_observation_conflict_review_pending(int(local_id))
+    print(f"[cloud_sync] conflict push blocked: obs={int(local_id)} "
+          f"categories=['child_sync_key_adoption'] action=review_required", flush=True)
+
+
 def _linked_no_baseline_image_conflicts(
     local_id: int,
     remote_images: list[dict] | None,
@@ -10802,15 +10823,9 @@ def _push_all_once(
                 _advance_progress(progress_state, 1)
                 continue
             if _is_reviewable_child_adoption_conflict(e):
-                # Like an observation adoption conflict: the child row stays
-                # unlinked and the observation goes to conflict review.
-                errors.append(_format_review_needed_error(
-                    int(obs['id']), str(cloud_id or obs.get('cloud_id') or ''),
-                    ['push_blocked', f'cloud copy with the same sync key differs: {e}'],
-                ))
-                _set_observation_conflict_review_pending(int(obs['id']))
-                print(f"[cloud_sync] conflict push blocked: obs={obs['id']} "
-                      f"categories=['child_sync_key_adoption'] action=review_required", flush=True)
+                _route_child_adoption_conflict_to_review(
+                    errors, int(obs['id']), str(cloud_id or obs.get('cloud_id') or ''), e,
+                )
                 _emit_progress(
                     progress_cb,
                     _format_cloud_sync_observation_status(
@@ -10924,6 +10939,9 @@ def _push_all_once(
                 client,
                 errors,
                 verify_stamped_remote=verify_stamped_measurements,
+                on_adoption_conflict=lambda local_id, obs_cloud_id, exc: (
+                    _route_child_adoption_conflict_to_review(errors, local_id, obs_cloud_id, exc)
+                ),
             )
     except Exception as reconcile_exc:
         if is_cloud_auth_error(reconcile_exc) or is_cloud_temporary_unavailable_error(reconcile_exc):

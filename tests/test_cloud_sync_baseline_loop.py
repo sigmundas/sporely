@@ -452,3 +452,36 @@ def test_anchor_content_conflict_reaches_measurement_push_callers_typed(two_desk
         cloud_sync._push_measurements_for_observation(cloud.client(), obs_id)
     assert raised.value.reason == "content"
     assert cloud.writes("observation_images", "PATCH") == []
+
+
+def test_backfill_measurement_content_conflict_on_a_synced_observation_is_routed_to_review(
+    two_desktops, tmp_path,
+):
+    """A Refresh reaches a synced observation only through the measurement backfill."""
+    table = "spore_measurements"
+    obs_id, _image_id, measurement_id = _create_full(tmp_path)
+    cloud = ChildCloud()
+    assert _push(cloud.client())["errors"] == []
+    assert _row("observations", obs_id)["sync_status"] == "synced"
+    # The create landed but its local stamp was lost; the web then edited it.
+    _set("spore_measurements", measurement_id, cloud_id=None)
+    cloud.edit_elsewhere(table, cloud.rows(table)[0]["id"], length_um=12.5)
+    expected = {name: cloud.rows(name) for name in _TABLES}
+
+    cloud.requests.clear()
+    result = _push(cloud.client(), images=False)
+
+    assert not [e for e in result["errors"] if "measurement reconciliation failed" in e], result["errors"]
+    entry = _assert_routed_to_review(result, obs_id)
+    assert {w["method"] for w in cloud.writes(table)} <= {"POST"}, "a differing copy is never PATCHed"
+    for name in _TABLES:
+        if name != "observations":
+            assert cloud.rows(name) == expected[name]
+    assert _row("spore_measurements", measurement_id)["cloud_id"] is None
+    assert _row("spore_measurements", measurement_id)["length_um"] == 10.0
+
+    cloud.requests.clear()
+    manual, _errors = cloud_sync.finalize_sync_candidates(cloud.client(), [entry])
+    assert [c["local_id"] for c in manual] == [obs_id]
+    assert cloud.writes(table, "PATCH") == []
+    assert cloud.rows(table)[0]["length_um"] == 12.5
