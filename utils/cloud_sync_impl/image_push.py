@@ -803,6 +803,8 @@ def _push_images_for_observation(
         str(obs_cloud_id or '').strip(),
     ) or {}
     anchor_failures = anchor_result.get('failures') or []
+    if adoption_conflicts is not None:
+        adoption_conflicts.extend(anchor_result.get('adoption_conflicts') or [])
     for msg in anchor_failures:
         warnings.append(f'anchor: {msg}')
         # Reported with the image failures, so an identity refusal of an

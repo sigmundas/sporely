@@ -22,8 +22,10 @@ from utils.cloud_sync_impl.common import (
 )
 from utils.cloud_sync_impl.child_identity import clear_legacy_marker
 from utils.cloud_sync_impl.errors import (
+    ChildAdoptionConflictError,
     CloudSyncError,
     CloudUploadRefusedError,
+    _is_reviewable_child_adoption_conflict,
     is_cloud_auth_error,
     is_cloud_temporary_unavailable_error,
 )
@@ -121,6 +123,11 @@ def _push_measurements_for_observation(
     together after the loop, so the caller keeps the observation dirty.
     """
     push_start = _cloud_sync_perf_counter()
+    # Keyed rows whose cloud copy differs (anchors, measurements): owner
+    # decisions, raised typed after the other rows are pushed so the caller
+    # routes the observation to conflict review.
+    adoption_conflicts: list[ChildAdoptionConflictError] = []
+    anchor_conflict_messages: list[str] = []
     conn = get_connection()
     conn.row_factory = sqlite3.Row
     try:
@@ -132,12 +139,16 @@ def _push_measurements_for_observation(
         conn.close()
     if observation_row is not None:
         observation = dict(observation_row)
-        _ensure_metadata_anchors_for_public_spore_observation(
+        anchor_result = _ensure_metadata_anchors_for_public_spore_observation(
             client,
             observation,
             int(obs_local_id),
             str(observation.get('cloud_id') or '').strip(),
-        )
+        ) or {}
+        for conflict in anchor_result.get('adoption_conflicts') or []:
+            if _is_reviewable_child_adoption_conflict(conflict):
+                adoption_conflicts.append(conflict)
+                anchor_conflict_messages.append(f'anchor: {conflict}')
 
     conn = get_connection()
     conn.row_factory = sqlite3.Row
@@ -199,7 +210,7 @@ def _push_measurements_for_observation(
 
     pushed_cloud_ids: set[str] = set()
     local_id_stamp_failures: list[int] = []
-    push_failures: list[str] = []
+    push_failures: list[str] = list(anchor_conflict_messages)
     for meas in measurements:
         cloud_image_id = str(meas.get('image_cloud_id') or '').strip()
         if not cloud_image_id:
@@ -219,6 +230,8 @@ def _push_measurements_for_observation(
                 raise
             print(f'[cloud_sync] Measurement {meas["id"]} push failed: {e}')
             push_failures.append(f'measurement {meas["id"]}: {e}')
+            if _is_reviewable_child_adoption_conflict(e):
+                adoption_conflicts.append(e)
             continue
 
         pushed_cloud_ids.add(cloud_meas_id)
@@ -267,7 +280,17 @@ def _push_measurements_for_observation(
         flush=True,
     )
     if push_failures:
-        raise CloudSyncError(
+        message = (
             f'obs {int(obs_local_id)}: {len(push_failures)} measurement(s) not synced: '
             + '; '.join(push_failures)
         )
+        if adoption_conflicts:
+            # Same aggregate text, but typed: the caller routes the
+            # observation to conflict review instead of a plain error.
+            raise ChildAdoptionConflictError(
+                message,
+                table=adoption_conflicts[0].table,
+                cloud_id=adoption_conflicts[0].cloud_id,
+                reason='content',
+            )
+        raise CloudSyncError(message)

@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from utils import cloud_sync
@@ -350,3 +351,104 @@ def test_image_adoption_content_conflict_is_routed_to_review(two_desktops, monke
     assert [c["local_id"] for c in manual] == [obs_id]
     assert cloud.writes(table, "PATCH") == []
     assert _row("images", image_id)["notes"] is None
+
+
+def _assert_routed_to_review(result: dict, obs_id: int) -> dict:
+    issues = cloud_sync.summarize_sync_issues(result["errors"])
+    [entry] = [e for e in issues["conflicts"] if e["local_id"] == obs_id]
+    assert entry["push_skipped"] is True and entry["pull_skipped"] is False
+    assert _row("observations", obs_id)["sync_blocked_reason"] == cloud_sync.CONFLICT_REVIEW_PENDING_MARKER
+    assert _row("observations", obs_id)["sync_status"] == "dirty"
+    return entry
+
+
+def _prepare_nothing(observation, progress_cb=None):
+    """A prepare step that offers no image for upload: only anchors run."""
+    return [], None, []
+
+
+def test_measurement_adoption_content_conflict_is_routed_to_review(two_desktops, monkeypatch, tmp_path):
+    table = "spore_measurements"
+    cloud = ChildCloud()
+    obs_id, _image_id, measurement_id = _create_full(tmp_path)
+    _copy_database(two_desktops["A"], two_desktops["B"])
+    assert _push(cloud.client())["errors"] == []
+    cloud.edit_elsewhere(table, cloud.rows(table)[0]["id"], length_um=12.5)
+    expected = {name: cloud.rows(name) for name in _TABLES}
+
+    two_desktops["B"].activate(monkeypatch)
+    cloud.requests.clear()
+    result = _push(cloud.client())
+
+    entry = _assert_routed_to_review(result, obs_id)
+    assert {w["method"] for w in cloud.writes(table)} == {"POST"}, "a differing copy is never PATCHed"
+    for name in ("observation_images", "spore_measurements"):
+        assert cloud.rows(name) == expected[name]
+    assert _row("spore_measurements", measurement_id)["cloud_id"] is None
+
+    # The dialog path receives it as a manual decision: the automatic part
+    # of the gate never pushes the local copy over the web edit.
+    cloud.requests.clear()
+    manual, _errors = cloud_sync.finalize_sync_candidates(cloud.client(), [entry])
+    assert [c["local_id"] for c in manual] == [obs_id]
+    assert cloud.writes(table, "PATCH") == []
+    assert cloud.rows(table)[0]["length_um"] == 12.5
+    assert _row("spore_measurements", measurement_id)["length_um"] == 10.0
+    assert _row("observations", obs_id)["sync_blocked_reason"] == cloud_sync.CONFLICT_REVIEW_PENDING_MARKER
+
+
+def test_anchor_adoption_content_conflict_is_routed_to_review(two_desktops, monkeypatch, tmp_path):
+    table = "observation_images"
+    cloud = ChildCloud()
+    obs_id, image_id, _measurement_id = _create_full(tmp_path)
+    _copy_database(two_desktops["A"], two_desktops["B"])
+    assert _push(cloud.client())["errors"] == []
+    cloud.edit_elsewhere(table, cloud.rows(table)[0]["id"], notes="edited on the web")
+    expected = {name: cloud.rows(name) for name in _TABLES}
+
+    two_desktops["B"].activate(monkeypatch)
+    cloud.requests.clear()
+    client = cloud.client()
+    result = cloud_sync.push_all(
+        client, sync_images=True, prepare_images_cb=_prepare_nothing,
+        remote_obs=client.list_remote_observations(), sync_calibrations=False,
+        full_pull=False, verify_stamped_measurements=False,
+    )
+
+    assert not [e for e in result["errors"] if "Image 1:" in e], "only the anchor step met the copy"
+    entry = _assert_routed_to_review(result, obs_id)
+    assert {w["method"] for w in cloud.writes(table)} == {"POST"}
+    for name in ("observation_images", "spore_measurements"):
+        assert cloud.rows(name) == expected[name]
+    assert _row("images", image_id)["cloud_id"] is None
+
+    # The unlinked image never agreed with its keyed copy: no automatic side.
+    detail = cloud_sync.get_conflict_detail(cloud.client(), obs_id)
+    assert not [d for d in detail["automatic_decisions"]["media"] if d["kind"] == "image_metadata"]
+    [pair] = [p for p in detail["image_pairs"] if p.get("metadata_diff_details")]
+    assert {d["change_origin"] for d in pair["metadata_diff_details"]} == {"baseline_unavailable"}
+
+    cloud.requests.clear()
+    manual, _errors = cloud_sync.finalize_sync_candidates(cloud.client(), [entry])
+    assert [c["local_id"] for c in manual] == [obs_id]
+    assert cloud.writes(table, "PATCH") == []
+    assert cloud.rows(table)[0]["notes"] == "edited on the web"
+    assert _row("images", image_id)["notes"] is None
+
+
+def test_anchor_content_conflict_reaches_measurement_push_callers_typed(two_desktops, monkeypatch, tmp_path):
+    """Callers outside the push loop (conflict plans, mosaic) get the typed error."""
+    cloud = ChildCloud()
+    obs_id, _image_id, _measurement_id = _create_full(tmp_path)
+    _copy_database(two_desktops["A"], two_desktops["B"])
+    assert _push(cloud.client())["errors"] == []
+    cloud.edit_elsewhere("observation_images", cloud.rows("observation_images")[0]["id"], notes="web")
+    two_desktops["B"].activate(monkeypatch)
+    # Desktop B's observation is linked; its image is not.
+    _set("observations", obs_id, cloud_id=str(cloud.rows("observations")[0]["id"]))
+    cloud.requests.clear()
+
+    with pytest.raises(cloud_sync.ChildAdoptionConflictError) as raised:
+        cloud_sync._push_measurements_for_observation(cloud.client(), obs_id)
+    assert raised.value.reason == "content"
+    assert cloud.writes("observation_images", "PATCH") == []

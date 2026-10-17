@@ -112,6 +112,7 @@ from utils.cloud_sync_impl.errors import (  # noqa: F401  (facade re-export)
     IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE,
     ChildAdoptionConflictError,
     ChildParentNotLinkedError,
+    _is_reviewable_child_adoption_conflict,
     CloudUploadRefusedError,
     CloudWriteRejectedError,
     raise_if_upload_refused,
@@ -2321,16 +2322,6 @@ def _linked_no_baseline_image_conflicts(
         ):
             conflicts.add(linked_id)
     return conflicts
-
-
-def _is_reviewable_child_adoption_conflict(exc: BaseException) -> bool:
-    """A keyed child create found its own cloud copy with different content.
-
-    Only a content difference is an owner decision for conflict review; a
-    copy under another parent, deleted or missing is refused outright and
-    stays an ordinary sync error.
-    """
-    return isinstance(exc, ChildAdoptionConflictError) and exc.reason == 'content'
 
 
 # Marker persisted on `observations.sync_blocked_reason` when push_all's
@@ -10323,6 +10314,9 @@ def _push_all_once(
                         _push_measurements_for_observation(client, local_obs_id)
                     except Exception as e:
                         if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
+                            raise
+                        if _is_reviewable_child_adoption_conflict(e):
+                            # Routed to conflict review by the loop's handler.
                             raise
                         failure_msg = (
                             f'obs {obs["id"]}: measurement push failed: '

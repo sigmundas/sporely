@@ -778,7 +778,13 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
         remote_row = dict(remote_measurement or {})
         local_id_value = _safe_int(local_row.get('id'))
         remote_id_value = str(remote_row.get('id') or '').strip()
-        baseline_row = (
+        # An unlinked local row never agreed with its keyed cloud copy (a
+        # differing copy is refused, never adopted), so a baseline row says
+        # nothing about which side changed: reviewed without one.
+        unlinked_pair = bool(local_row) and bool(remote_row) and not str(
+            local_row.get('cloud_id') or ''
+        ).strip()
+        baseline_row = None if unlinked_pair else (
             baseline_by_cloud_id.get(remote_id_value)
             or baseline_by_cloud_id.get(str(local_row.get('cloud_id') or '').strip())
             or (
@@ -1018,7 +1024,9 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
             ] if not _review_image_values_match(
                 local_image.get('sort_order'), remote_image.get('sort_order')
             ) else []
-            baseline_image = next(
+            # As for measurements: an unlinked local image is reviewed
+            # without a baseline row against its keyed cloud copy.
+            baseline_image = None if not local_image.get('cloud_id') else next(
                 (
                     row for row in baseline_images
                     if (
