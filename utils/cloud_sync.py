@@ -480,6 +480,7 @@ from utils.cloud_sync_impl.baseline import (  # noqa: F401  (facade re-export)
     _store_cloud_observation_snapshot,
     _store_remote_snapshot,
     _with_judged_child_rows,
+    _with_previous_child_baseline,
     forget_judged_child_rows,
     remember_judged_child_row,
 )
@@ -525,6 +526,7 @@ from utils.cloud_sync_impl.preflight import (  # noqa: F401  (facade re-export)
     _local_has_real_changes_since_snapshot,
     _local_image_snapshot_payload,
     _locally_tombstoned_snapshot_image_identity_keys,
+    _no_baseline_image_differences,
     _observation_push_diff_fields,
 )
 from utils.cloud_sync_impl.calibrations import (  # noqa: F401  (facade re-export)
@@ -2293,6 +2295,44 @@ def _format_review_needed_error(local_id: int, cloud_id: str, reasons: list[str]
     return f'{base} ({reason_text})' if reason_text else base
 
 
+def _linked_no_baseline_image_conflicts(
+    local_id: int,
+    remote_images: list[dict] | None,
+    baseline_images: list[dict] | None,
+) -> set[str]:
+    """Cloud ids of linked images with no baseline row whose copies differ.
+
+    Uses the push gate's comparison (``_no_baseline_image_differences``).
+    """
+    baseline_ids = {str((row or {}).get('id') or '').strip() for row in (baseline_images or [])}
+    remote_by_id = {
+        str((row or {}).get('id') or '').strip(): dict(row or {})
+        for row in (remote_images or [])
+        if str((row or {}).get('id') or '').strip()
+    }
+    conflicts: set[str] = set()
+    for image_row in ImageDB.get_images_for_observation(int(local_id)):
+        img = dict(image_row or {})
+        linked_id = str(img.get('cloud_id') or '').strip()
+        if not linked_id or linked_id in baseline_ids or linked_id not in remote_by_id:
+            continue
+        if _no_baseline_image_differences(
+            _local_image_snapshot_payload(img), img, _remote_image_payload(remote_by_id[linked_id]),
+        ):
+            conflicts.add(linked_id)
+    return conflicts
+
+
+def _is_reviewable_child_adoption_conflict(exc: BaseException) -> bool:
+    """A keyed child create found its own cloud copy with different content.
+
+    Only a content difference is an owner decision for conflict review; a
+    copy under another parent, deleted or missing is refused outright and
+    stays an ordinary sync error.
+    """
+    return isinstance(exc, ChildAdoptionConflictError) and exc.reason == 'content'
+
+
 # Marker persisted on `observations.sync_blocked_reason` when push_all's
 # preflight detects an unresolved three-way conflict. The observation stays
 # dirty; a subsequent sync re-evaluates and clears the marker automatically
@@ -2336,6 +2376,12 @@ def _clear_observation_conflict_review_pending(local_id: int) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+def _observation_conflict_review_pending(local_id: int) -> bool:
+    """True when the observation carries the conflict-review marker."""
+    record = ObservationDB.get_observation(int(local_id)) or {}
+    return record.get('sync_blocked_reason') == CONFLICT_REVIEW_PENDING_MARKER
 
 
 def _table_columns_for_conflict_marker(cursor) -> set[str]:
@@ -4450,7 +4496,8 @@ def finalize_sync_candidates(
     they are never silently hidden.  A candidate that fails an automatic
     step and still has manual work is passed through so the dialog can
     receive it; a candidate that fails an automatic step with no remaining
-    manual work becomes a plain sync error.
+    manual work becomes a plain sync error. A candidate with neither
+    automatic nor manual work is also returned as an error.
     """
     manual_candidates: list[dict] = []
     automatic_errors: list[dict] = []
@@ -4508,6 +4555,19 @@ def finalize_sync_candidates(
             manual_candidates.append({**candidate, 'detail': final_detail})
         elif has_automatic:
             _clear_observation_conflict_review_pending(local_id)
+        elif _observation_conflict_review_pending(local_id):
+            # The push gate blocked it for review but review finds nothing to
+            # decide: never dropped silently. It stays dirty and marked for
+            # review (the next push re-checks it) and is reported. Without
+            # the marker the candidate has simply converged.
+            automatic_errors.append({
+                'local_id': local_id, 'cloud_id': cloud_id,
+                'phase': 'classify',
+                'error': (
+                    f'observation {local_id} was flagged for conflict review, '
+                    f'but no reviewable difference was found'
+                ),
+            })
     return manual_candidates, automatic_errors
 
 
@@ -4599,15 +4659,19 @@ def _as_explicit_resolution(fn):
     return wrapper
 
 
-def _store_post_push_snapshot(client: "SporelyCloudClient", cloud_id: str, local_id: int, **kwargs) -> None:
+def _store_post_push_snapshot(client: "SporelyCloudClient", cloud_id: str, local_id: int, **kwargs) -> bool:
     """Store the post-push baseline after copying cloud-only image edits into
-    the local rows (so the baseline never moves past a stale local row)."""
+    the local rows (so the baseline never moves past a stale local row).
+
+    Returns True when cloud edits were copied into a local row."""
+    adopted: list[bool] = []
     _store_remote_snapshot(
         client, cloud_id, **kwargs,
-        before_store_images=lambda rows: _adopt_remote_image_edits_before_baseline(
-            client, cloud_id, int(local_id), rows,
-        ),
+        before_store_images=lambda rows: adopted.append(bool(
+            _adopt_remote_image_edits_before_baseline(client, cloud_id, int(local_id), rows)
+        )),
     )
+    return any(adopted)
 
 
 @_as_explicit_resolution
@@ -10219,6 +10283,11 @@ def _push_all_once(
             # below the `if not sync_images ...` guard.)
 
             images_synced = True
+            # Set when this push acknowledged the local media signature; it
+            # is acknowledged again after the post-push baseline, which may
+            # copy cloud image edits into the local rows.
+            media_signature_acknowledged = False
+            child_adoption_conflicts: list[ChildAdoptionConflictError] = []
             if sync_images:
 
                 def _push_measurements_for_current_observation() -> None:
@@ -10461,6 +10530,7 @@ def _push_all_once(
                         observation_total=total,
                         summary_warnings=original_upload_warnings,
                         original_summary=original_upload_summary,
+                        adoption_conflicts=child_adoption_conflicts,
                     )
                     if images_synced and local_obs_id > 0:
                         _push_measurements_for_current_observation()
@@ -10489,6 +10559,7 @@ def _push_all_once(
                         observation_total=total,
                         summary_warnings=original_upload_warnings,
                         original_summary=original_upload_summary,
+                        adoption_conflicts=child_adoption_conflicts,
                     )
                     if images_synced and local_obs_id > 0:
                         _push_measurements_for_current_observation()
@@ -10505,12 +10576,14 @@ def _push_all_once(
                         observation_total=total,
                         summary_warnings=original_upload_warnings,
                         original_summary=original_upload_summary,
+                        adoption_conflicts=child_adoption_conflicts,
                     )
                     if images_synced and local_obs_id > 0:
                         _push_measurements_for_current_observation()
                 if local_obs_id > 0:
                     if images_synced:
                         _refresh_local_cloud_media_signature(local_obs_id)
+                        media_signature_acknowledged = True
                     else:
                         mark_observation_dirty(local_obs_id)
                         if original_upload_warnings:
@@ -10518,6 +10591,14 @@ def _push_all_once(
                                 f"obs {obs['id']}: image push failures: "
                                 + '; '.join(original_upload_warnings)
                             )
+                # A keyed cloud copy that differs is reviewed, never linked;
+                # no baseline is stored for this observation.
+                reviewable_conflicts = [
+                    exc for exc in child_adoption_conflicts
+                    if _is_reviewable_child_adoption_conflict(exc)
+                ]
+                if reviewable_conflicts:
+                    raise reviewable_conflicts[0]
 
             # Metadata-only image PATCH pass under the fast Refresh mode
             # (`sync_images=False`). The `if sync_images:` block above gates
@@ -10600,6 +10681,7 @@ def _push_all_once(
                             )
                     if images_metadata_synced:
                         _refresh_local_cloud_media_signature(local_obs_id)
+                        media_signature_acknowledged = True
                     else:
                         mark_observation_dirty(local_obs_id)
 
@@ -10610,6 +10692,7 @@ def _push_all_once(
             if not sync_images and local_obs_id > 0:
                 try:
                     _refresh_local_cloud_media_signature(local_obs_id)
+                    media_signature_acknowledged = True
                 except Exception as sig_exc:
                     print(
                         f"[cloud_sync] Could not refresh local media signature for obs "
@@ -10656,7 +10739,11 @@ def _push_all_once(
                 if adopted_base is None:
                     # Local rows first, so a failure cannot leave the
                     # baseline at a cloud edit the local row lacks.
-                    _store_post_push_snapshot(client, cloud_id, int(obs['id']))
+                    adopted_remote_edits = _store_post_push_snapshot(client, cloud_id, int(obs['id']))
+                    if adopted_remote_edits and media_signature_acknowledged:
+                        # Adopted cloud image edits are acknowledged too, so
+                        # the next pull does not read them as local changes.
+                        _refresh_local_cloud_media_signature(local_obs_id)
                 else:
                     _store_remote_snapshot(client, cloud_id, remote=adopted_base)
 
@@ -10700,6 +10787,26 @@ def _push_all_once(
                 _set_observation_conflict_review_pending(int(obs['id']))
                 print(f"[cloud_sync] conflict push blocked: obs={obs['id']} categories=['images_no_baseline'] "
                       f"action=review_required", flush=True)
+                _advance_progress(progress_state, 1)
+                continue
+            if _is_reviewable_child_adoption_conflict(e):
+                # Like an observation adoption conflict: the child row stays
+                # unlinked and the observation goes to conflict review.
+                errors.append(_format_review_needed_error(
+                    int(obs['id']), str(cloud_id or obs.get('cloud_id') or ''),
+                    ['push_blocked', f'cloud copy with the same sync key differs: {e}'],
+                ))
+                _set_observation_conflict_review_pending(int(obs['id']))
+                print(f"[cloud_sync] conflict push blocked: obs={obs['id']} "
+                      f"categories=['child_sync_key_adoption'] action=review_required", flush=True)
+                _emit_progress(
+                    progress_cb,
+                    _format_cloud_sync_observation_status(
+                        obs,
+                        f"Observation {i + 1}/{max(1, total)} needs review before syncing",
+                    ),
+                    progress_state,
+                )
                 _advance_progress(progress_state, 1)
                 continue
             if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
@@ -11740,11 +11847,25 @@ def pull_all(
                             )
                         )
 
+                    # A linked image with no baseline row that differs: which
+                    # copy changed is unknown, so the cloud copy is never
+                    # applied over it; it goes to conflict review.
+                    no_baseline_conflict_ids = _linked_no_baseline_image_conflicts(
+                        local_id, remote_images, baseline_images,
+                    )
+                    if no_baseline_conflict_ids:
+                        errors.append(_format_review_needed_error(
+                            local_id, cloud_id, ['images without a baseline differ'],
+                        ))
+                    applicable_remote_images = [
+                        row for row in remote_images
+                        if str(row.get('id') or '').strip() not in no_baseline_conflict_ids
+                    ]
                     if remote_image_changes.get('changed'):
                         warnings = _apply_remote_images_to_local(
                             client,
                             local_id,
-                            remote_images,
+                            applicable_remote_images,
                             allow_delete=False,
                             materialize_remote_images=materialize_remote_images,
                         )
@@ -11754,6 +11875,7 @@ def pull_all(
                             remote_raw_map[key]
                             for key in remote_image_changes.get('added_keys') or []
                             if key in remote_raw_map
+                            and str(remote_raw_map[key].get('id') or '').strip() not in no_baseline_conflict_ids
                         ]
                         if added_remote_images:
                             warnings = _apply_remote_images_to_local(
@@ -11801,7 +11923,7 @@ def pull_all(
                         local_media_changed=effective_media_changed,
                     ) or bool(measurement_result.get('conflict')) or bool(
                         materialize_remote_images and remote_media_pending
-                    ) or identity_clear_verification_pending
+                    ) or identity_clear_verification_pending or bool(no_baseline_conflict_ids)
                     should_store_snapshot = (
                         should_store_snapshot
                         and not bool(conflict_fields)
@@ -11827,6 +11949,8 @@ def pull_all(
                             reasons.append("local_media_changed")
                         if measurement_result.get('conflict'):
                             reasons.append("measurement_conflict")
+                        if no_baseline_conflict_ids:
+                            reasons.append("images_no_baseline")
                         print(
                             f"[cloud_sync] sync_status transition obs {local_id}: →dirty "
                             f"caller=pull_all reasons={reasons or ['unknown']} "

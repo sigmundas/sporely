@@ -43,6 +43,7 @@ from utils.cloud_sync_impl.common import (
     _safe_int,
 )
 from utils.cloud_sync_impl.errors import (
+    ChildAdoptionConflictError,
     CloudImageBytesNotDesiredError,
     CloudSyncError,
     ImageBaselineMissingError,
@@ -542,9 +543,11 @@ def _remote_only_image_edits(
 
 def _adopt_remote_image_edits_before_baseline(
     client, obs_cloud_id: str, obs_local_id: int, remote_rows: list[dict],
-) -> None:
+) -> bool:
     """Copy cloud-only image edits into the local rows before the post-push
     baseline is stored, without marking the observation dirty.
+
+    Returns True when a local row was changed.
 
     Without this the stored baseline moves to the cloud value while the local
     row keeps the old one, and the next push sends the stale local value over
@@ -554,7 +557,8 @@ def _adopt_remote_image_edits_before_baseline(
     baseline_by_id = _baseline_images_by_cloud_id(obs_cloud_id)
     remote_by_id = {str(r.get('id') or '').strip(): r for r in remote_rows}
     if not (set(baseline_by_id) & set(remote_by_id)):
-        return
+        return False
+    adopted = False
     include = {'include_ai_crop': client._observation_images_support_ai_crop(), 'include_upload_meta': False}
     for image_row in ImageDB.get_images_for_observation(obs_local_id):
         img = dict(image_row or {})
@@ -593,7 +597,9 @@ def _adopt_remote_image_edits_before_baseline(
         if 'captured_at' in fields:
             # The local capture time is now the cloud's, not a pull-injected one.
             _record_pull_injected_captured_at(img.get('id'), remote_payload.get('captured_at'))
+        adopted = True
         print(f'[cloud_sync] Observation {obs_local_id}: adopted cloud image edits {fields} for cloud image {cloud_id}')
+    return adopted
 
 
 def _reconcile_metadata_only_linked_images(
@@ -778,13 +784,16 @@ def _push_images_for_observation(
     summary_warnings: list[str] | None = None,
     original_summary: dict | None = None,
     include_image_ids: set[int] | None = None,
+    adoption_conflicts: list | None = None,
 ) -> bool:
     """Push selected observation images for one observation.
 
     Children wait for their parent: an image without a ``cloud_id`` is
     created only when the observation's ``cloud_id`` is committed locally and
     equals ``obs_cloud_id`` (``create_child_row``); otherwise it is deferred
-    and stays dirty.
+    and stays dirty. Each :class:`ChildAdoptionConflictError` is a failed
+    image and, when ``adoption_conflicts`` is given, is appended to it so the
+    caller can route the observation to conflict review.
     """
     warnings: list[str] = []
     anchor_result = _ensure_metadata_anchors_for_public_spore_observation(
@@ -1562,6 +1571,8 @@ def _push_images_for_observation(
                 if is_image_too_large_for_plan_error(e):
                     raise
                 had_failures = True
+                if adoption_conflicts is not None and isinstance(e, ChildAdoptionConflictError):
+                    adoption_conflicts.append(e)
                 failure_msg = f'Image {img["id"]}: {type(e).__name__}: {e}'
                 print(f'[cloud_sync] {failure_msg}')
                 _record_original_upload_warning(failure_msg)

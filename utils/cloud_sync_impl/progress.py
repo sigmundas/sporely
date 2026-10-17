@@ -499,9 +499,11 @@ def summarize_sync_issues(errors: list[str] | tuple[str, ...] | None) -> dict:
                 {'local_id': local_id, 'cloud_id': None, 'push_skipped': False, 'pull_skipped': False},
             )
             entry['cloud_id'] = str(review_match.group('cloud_id') or '').strip() or None
-            entry['pull_skipped'] = True
+            # A push-blocked review is reported by the push; the pull ran.
             if 'push_blocked' in str(review_match.group('reason') or ''):
                 entry['push_skipped'] = True
+            else:
+                entry['pull_skipped'] = True
             continue
         measurement_match = _MEASUREMENT_CONFLICT_RE.match(text)
         if measurement_match:
