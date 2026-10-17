@@ -140,6 +140,35 @@ def _locally_tombstoned_snapshot_image_identity_keys(
     return keys
 
 
+def _no_baseline_image_differences(
+    local_payload: dict | None,
+    local_img: dict | None,
+    remote_payload: dict | None,
+) -> dict[str, tuple]:
+    """Fields where a linked image with no baseline row differs local vs cloud.
+
+    ``local_payload`` is ``_local_image_snapshot_payload`` of the local row
+    ``local_img``; ``remote_payload`` is ``_remote_image_payload`` of the cloud
+    row. Returns ``{field: (local, remote)}``. Which copy changed is unknown,
+    so any difference is an owner decision. The push gate and conflict review
+    both classify no-baseline images through this one comparison.
+    """
+    remote_meta = _image_metadata_payload(remote_payload)
+    local_meta = _image_metadata_payload(local_payload)
+    _preserve_unedited_remote_image_values(
+        local_meta, local_img, remote_meta,
+        captured_at_pull_injected=_captured_at_is_pull_injected(local_img),
+    )
+    for key in set(remote_meta) - set(local_meta):
+        local_meta[key] = remote_meta[key]
+    return {
+        key: (local_meta.get(key), remote_meta.get(key))
+        for key in sorted(set(local_meta) | set(remote_meta))
+        if key not in local_meta or key not in remote_meta
+        or local_meta[key] != remote_meta[key]
+    }
+
+
 def _analyze_observation_push_conflicts(
     *,
     local_obs: dict | None,
@@ -250,16 +279,11 @@ def _analyze_observation_push_conflicts(
     # A linked image with no baseline row whose local and cloud values differ:
     # which copy changed is unknown, so it is reviewed, never pushed.
     for cloud_image_id in sorted((set(remote_by_cloud_id) & set(local_by_cloud_id)) - set(baseline_by_cloud_id)):
-        remote_meta = _image_metadata_payload(remote_by_cloud_id[cloud_image_id])
-        local_meta = _image_metadata_payload(local_by_cloud_id[cloud_image_id])
-        local_img = local_images_by_cloud_id.get(cloud_image_id)
-        _preserve_unedited_remote_image_values(
-            local_meta, local_img, remote_meta,
-            captured_at_pull_injected=_captured_at_is_pull_injected(local_img),
-        )
-        for key in set(remote_meta) - set(local_meta):
-            local_meta[key] = remote_meta[key]
-        if local_meta != remote_meta:
+        if _no_baseline_image_differences(
+            local_by_cloud_id[cloud_image_id],
+            local_images_by_cloud_id.get(cloud_image_id),
+            remote_by_cloud_id[cloud_image_id],
+        ):
             image_conflict_keys.append(f'cloud:{cloud_image_id}')
 
     # ---- Measurements: mirror pull-side conflict detection (no apply) ----

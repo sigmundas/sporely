@@ -364,7 +364,15 @@ def _store_remote_snapshot(
     include_measurements: bool = True,
     accepted_asymmetry: dict | None = None,
     before_store_images=None,
+    withhold_image_ids: set[str] | frozenset[str] = frozenset(),
 ) -> None:
+    """Store the observation's baseline from the current cloud rows.
+
+    ``withhold_image_ids`` names cloud images whose difference from the local
+    row is still undecided (no baseline row, no explicit choice): they get no
+    baseline row, so every later push and pull still treats them as
+    unreviewed instead of reading the cloud copy as the agreed state.
+    """
     cloud_value = str(cloud_id or '').strip()
     if not cloud_value:
         return
@@ -424,7 +432,12 @@ def _store_remote_snapshot(
     )
     prev_asym = previous.get('accepted_asymmetry')
     additions_from_caller = accepted_asymmetry if isinstance(accepted_asymmetry, dict) else None
-    if additions_from_caller is not None or isinstance(prev_asym, dict):
+    partial_snapshot = not (include_images and include_measurements)
+    if partial_snapshot and additions_from_caller is None:
+        # Child rows were not read: pruning against an empty set would drop
+        # every cloud-side acceptance, so the previous section is kept as is.
+        accepted_asymmetry = prev_asym if isinstance(prev_asym, dict) else None
+    elif additions_from_caller is not None or isinstance(prev_asym, dict):
         # Best-effort resolve local observation id from cloud id so we can
         # apply local-side pruning rules (row deleted / relinked).  If we
         # cannot resolve it, we degrade gracefully to remote-only pruning.
@@ -480,14 +493,50 @@ def _store_remote_snapshot(
             accepted_asymmetry = reconciled
         else:
             accepted_asymmetry = None
-    _store_cloud_observation_snapshot(
-        cloud_value,
-        _cloud_observation_snapshot(
-            remote_obs,
-            images if include_images else None,
-            measurements if include_measurements else None,
-            include_images=include_images,
-            include_measurements=include_measurements,
-            accepted_asymmetry=accepted_asymmetry,
-        ),
+    withheld = {str(image_id or '').strip() for image_id in (withhold_image_ids or ())} - {''}
+    stored_images = [
+        row for row in images if str(row.get('id') or '').strip() not in withheld
+    ] if withheld else images
+    snapshot = _cloud_observation_snapshot(
+        remote_obs,
+        stored_images if include_images else None,
+        measurements if include_measurements else None,
+        include_images=include_images,
+        include_measurements=include_measurements,
+        accepted_asymmetry=accepted_asymmetry,
     )
+    if partial_snapshot:
+        snapshot = _with_previous_child_baseline(
+            snapshot,
+            _load_cloud_observation_snapshot(cloud_value),
+            keep_images=not include_images,
+            keep_measurements=not include_measurements,
+        )
+    _store_cloud_observation_snapshot(cloud_value, snapshot)
+
+
+def _with_previous_child_baseline(
+    snapshot: str,
+    previous_snapshot: str | None,
+    *,
+    keep_images: bool,
+    keep_measurements: bool,
+) -> str:
+    """Carry the previous baseline's child rows into an observation-only write.
+
+    A snapshot stored without images or measurements (the child rows were not
+    re-read, or local media changes are still pending) must not erase the
+    child baseline: with no image rows every cloud image reads as "added"
+    and the next pull re-applies cloud images over linked local rows.
+    """
+    try:
+        previous = json.loads(str(previous_snapshot or '').strip() or '{}')
+    except Exception:
+        return snapshot
+    if not isinstance(previous, dict):
+        return snapshot
+    payload = json.loads(snapshot)
+    for key, keep in (('images', keep_images), ('measurements', keep_measurements)):
+        if keep and isinstance(previous.get(key), list):
+            payload[key] = previous[key]
+    return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(',', ':'))

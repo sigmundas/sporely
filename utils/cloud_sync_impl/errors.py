@@ -165,6 +165,16 @@ class ChildAdoptionConflictError(CloudSyncError):
         self.reason = str(reason or '')
 
 
+def _is_reviewable_child_adoption_conflict(exc: BaseException) -> bool:
+    """A keyed child create found its own cloud copy with different content.
+
+    Only a content difference is an owner decision for conflict review; a
+    copy under another parent, deleted or missing is refused outright and
+    stays an ordinary sync error.
+    """
+    return isinstance(exc, ChildAdoptionConflictError) and exc.reason == 'content'
+
+
 class ChildParentNotLinkedError(CloudSyncError):
     """A child row's parent has no committed ``cloud_id`` equal to the target.
 

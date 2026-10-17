@@ -90,7 +90,9 @@ def _build_plan_from_automatic_decisions(detail: dict) -> dict:
         elif kind == 'image' and side == 'cloud_only':
             items.append({'kind': 'image', 'side': 'cloud_only',
                           'cloud_id': cloud_id, 'choice': 'download'})
-        elif kind == 'image_metadata':
+        elif kind == 'image_metadata' and action in {'auto_apply_local', 'auto_apply_cloud'}:
+            # Only a one-sided change is automatic; any other origin (no
+            # baseline, unknown) is a manual decision, never cloud-wins.
             choice = 'local' if action == 'auto_apply_local' else 'cloud'
             items.append({'kind': 'image_metadata',
                           'local_id': local_id, 'cloud_id': cloud_id,

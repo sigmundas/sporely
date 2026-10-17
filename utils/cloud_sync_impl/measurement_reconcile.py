@@ -9,11 +9,14 @@ owners may not use dynamic import machinery.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 
 from database.schema import get_connection
 
 from utils.cloud_sync_impl.common import _CLOUD_SYNC_IN_BATCH_SIZE
 from utils.cloud_sync_impl.errors import (
+    ChildAdoptionConflictError,
+    _is_reviewable_child_adoption_conflict,
     is_cloud_auth_error,
     is_cloud_temporary_unavailable_error,
 )
@@ -27,6 +30,7 @@ def _reconcile_missing_spore_measurements(
     errors: list[str],
     *,
     verify_stamped_remote: bool = True,
+    on_adoption_conflict: Callable[[int, str, ChildAdoptionConflictError], None] | None = None,
 ) -> dict[str, int]:
     """Backfill raw `public.spore_measurements` rows for observations
     that were synced pre-Stage-D or otherwise skipped the measurement
@@ -246,6 +250,12 @@ def _reconcile_missing_spore_measurements(
         except Exception as exc:
             if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
                 raise
+            if on_adoption_conflict is not None and _is_reviewable_child_adoption_conflict(exc):
+                # A keyed copy whose content differs is an owner decision,
+                # routed to conflict review by the caller; neither copy is
+                # written.
+                on_adoption_conflict(local_id, observation_cloud_ids.get(local_id, ''), exc)
+                continue
             errors.append(
                 f'obs {local_id}: measurement reconciliation failed: {exc}'
             )

@@ -38,6 +38,7 @@ from utils.cloud_sync_impl.preflight import (
     _load_local_measurement_lookup,
     _local_image_snapshot_payload,
     _locally_tombstoned_snapshot_image_identity_keys,
+    _no_baseline_image_differences,
 )
 from utils.cloud_sync_impl.push_payloads import (
     _analyze_observation_field_changes,
@@ -528,6 +529,7 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
 
     # 2. Detailed Image Differences
     local_images_raw = ImageDB.get_images_for_observation(int(local_id))
+    local_images_raw_by_id = {_safe_int(row.get('id')): dict(row or {}) for row in local_images_raw}
     # The key pairs an unlinked local image; snapshot payloads leave it out.
     local_image_payloads = [
         {**_local_image_snapshot_payload(img), 'sync_key': _normalize_sync_key_value(img.get('sync_key'))}
@@ -776,7 +778,13 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
         remote_row = dict(remote_measurement or {})
         local_id_value = _safe_int(local_row.get('id'))
         remote_id_value = str(remote_row.get('id') or '').strip()
-        baseline_row = (
+        # An unlinked local row never agreed with its keyed cloud copy (a
+        # differing copy is refused, never adopted), so a baseline row says
+        # nothing about which side changed: reviewed without one.
+        unlinked_pair = bool(local_row) and bool(remote_row) and not str(
+            local_row.get('cloud_id') or ''
+        ).strip()
+        baseline_row = None if unlinked_pair else (
             baseline_by_cloud_id.get(remote_id_value)
             or baseline_by_cloud_id.get(str(local_row.get('cloud_id') or '').strip())
             or (
@@ -1016,12 +1024,9 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
             ] if not _review_image_values_match(
                 local_image.get('sort_order'), remote_image.get('sort_order')
             ) else []
-            metadata_diff = [
-                field for field in image_metadata_fields
-                if not _review_image_values_match(local_image.get(field), remote_image.get(field))
-            ]
-            pair['metadata_diff_fields'] = metadata_diff
-            baseline_image = next(
+            # As for measurements: an unlinked local image is reviewed
+            # without a baseline row against its keyed cloud copy.
+            baseline_image = None if not local_image.get('cloud_id') else next(
                 (
                     row for row in baseline_images
                     if (
@@ -1037,29 +1042,42 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
                 None,
             )
             metadata_details = []
-            for field in metadata_diff:
-                baseline_value = (baseline_image or {}).get(field)
-                local_changed = (
-                    baseline_image is None
-                    or not _review_image_values_match(local_image.get(field), baseline_value)
-                )
-                cloud_changed = (
-                    baseline_image is None
-                    or not _review_image_values_match(remote_image.get(field), baseline_value)
-                )
-                metadata_details.append({
-                    'field': field,
-                    'baseline': baseline_value,
-                    'local': local_image.get(field),
-                    'remote': remote_image.get(field),
-                    'change_origin': (
-                        'baseline_unavailable' if baseline_image is None
-                        else 'both' if local_changed and cloud_changed
-                        else 'local' if local_changed
-                        else 'cloud' if cloud_changed
-                        else 'unknown'
-                    ),
-                })
+            if baseline_image is None:
+                # No baseline row: the push gate's comparison, so every image
+                # it blocks has a difference here to decide.
+                local_raw = local_images_raw_by_id.get(_safe_int(local_image.get('local_id')))
+                no_baseline_diff = _no_baseline_image_differences(local_image, local_raw, remote_image)
+                metadata_diff = list(no_baseline_diff)
+                for field, (local_value, remote_value) in no_baseline_diff.items():
+                    metadata_details.append({
+                        'field': field,
+                        'baseline': None,
+                        'local': local_value,
+                        'remote': remote_value,
+                        'change_origin': 'baseline_unavailable',
+                    })
+            else:
+                metadata_diff = [
+                    field for field in image_metadata_fields
+                    if not _review_image_values_match(local_image.get(field), remote_image.get(field))
+                ]
+                for field in metadata_diff:
+                    baseline_value = baseline_image.get(field)
+                    local_changed = not _review_image_values_match(local_image.get(field), baseline_value)
+                    cloud_changed = not _review_image_values_match(remote_image.get(field), baseline_value)
+                    metadata_details.append({
+                        'field': field,
+                        'baseline': baseline_value,
+                        'local': local_image.get(field),
+                        'remote': remote_image.get(field),
+                        'change_origin': (
+                            'both' if local_changed and cloud_changed
+                            else 'local' if local_changed
+                            else 'cloud' if cloud_changed
+                            else 'unknown'
+                        ),
+                    })
+            pair['metadata_diff_fields'] = metadata_diff
             pair['metadata_diff_details'] = metadata_details
 
         if pair.get('pairing') == 'identity_conflict':
@@ -1169,9 +1187,11 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
             filtered_details = []
             for detail_row in pair.get('metadata_diff_details') or []:
                 change_origin = str(detail_row.get('change_origin') or '').strip()
-                # change_origin is 'local', 'cloud', or 'both'.  Only 'both'
-                # is a true divergence; 'local'/'cloud' auto-sync.
-                if change_origin == 'both':
+                # change_origin is 'local', 'cloud', 'both' or
+                # 'baseline_unavailable'.  'both' is a true divergence, and
+                # without a baseline which side changed is unknown: both are
+                # manual.  Only 'local'/'cloud' auto-sync.
+                if change_origin not in {'local', 'cloud'}:
                     filtered_details.append(detail_row)
                 else:
                     automatic_media_decisions.append({

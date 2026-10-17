@@ -583,6 +583,9 @@ def _ensure_metadata_only_microscope_images_for_observation(
     * ``cloud_ids`` — every microscope anchor cloud id ensured this cycle.
     * ``metadata_only_cloud_ids`` — existing legitimate metadata-only
       anchors, never rows downgraded because of publication selection.
+    * ``adoption_conflicts`` — each :class:`ChildAdoptionConflictError`
+      behind a failure, kept typed so the caller can route a content
+      conflict to review.
     """
     counters = {
         'considered': 0,
@@ -592,6 +595,7 @@ def _ensure_metadata_only_microscope_images_for_observation(
         'failures': [],
         'cloud_ids': [],
         'metadata_only_cloud_ids': [],
+        'adoption_conflicts': [],
     }
     if not obs_cloud_id:
         return counters
@@ -650,6 +654,8 @@ def _ensure_metadata_only_microscope_images_for_observation(
             counters['failed'] += 1
             failure_msg = f'local_image={local_image_id}: {type(exc).__name__}: {exc}'
             counters['failures'].append(failure_msg)
+            if isinstance(exc, ChildAdoptionConflictError):
+                counters['adoption_conflicts'].append(exc)
             print(
                 f'[cloud_sync] Mosaic image metadata: failed '
                 f'{failure_msg}',
@@ -802,6 +808,7 @@ def _ensure_metadata_anchors_for_public_spore_observation(
         'failures': [],
         'cloud_ids': [],
         'metadata_only_cloud_ids': [],
+        'adoption_conflicts': [],
     }
     if obs_local_id <= 0 or not obs_cloud_id:
         return empty
