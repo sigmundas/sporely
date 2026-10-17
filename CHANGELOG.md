@@ -13,7 +13,7 @@ Requires server migrations `20261012105630`, `20261013210000`, `20261014120000` 
 - **Inherited wrong links remain until corrected.** If an older version has already linked a local observation or image to the wrong cloud record, edits and deletes can still affect that wrong cloud record after the upgrade, until the link is corrected.
 
 ### Changed
-- **Per-record sync identity.** Observations, images and measurements carry their own sync keys, and every cloud request identifies the new sync protocol. Two computers on one account no longer overwrite each other's records through shared local numbers.
+- **Per-record sync identity.** New observations, images and measurements, and existing ones whose cloud links are correct, are synced by their own independent sync keys instead of local numbers, and every cloud request identifies the new sync protocol. Two computers on one account therefore no longer collide on these records through shared local numbers. This does not repair history: a link that an older version already made to the wrong cloud record is kept until it is corrected (see the upgrade notice above), and fields already overwritten are not restored.
 - **Metadata preservation.** Syncing keeps image and observation metadata that was previously cleared or rewritten; the accepted remaining behaviours are listed in `docs/verification/2026-10-desktop-metadata-known-risks.md`.
 - **Photo location provenance.** Imported observations record where their location came from (photo GPS/EXIF, device or manual) and why a location is missing.
 
