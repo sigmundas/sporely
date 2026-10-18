@@ -92,6 +92,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Sequence
 
+from database.taxon_lookup import source_identity_matches
 from utils.taxon_identity import (
     SPORELY_NAMESPACE,
     SPORELY_SOURCE_SYSTEM,
@@ -124,6 +125,13 @@ IDENTITY_CLASSES = (
     # fall through to the external-bridge ladder and be "re-derived" from
     # itself. Report only.
     "cloud_selected_unverified_identity",
+    # An identifier that resolves to exactly one concept, but the observer's
+    # identification is not that concept's name (D3: name agreement is
+    # necessary). Split by cause: the identifier is an AI suggestion the
+    # observer changed, or the row's own identifier names another taxon
+    # (e.g. an aggregate ``coll.`` concept for a strict species). Report only.
+    "ai_suggestion_not_identification",
+    "identifier_name_mismatch",
 )
 
 #: Exactly one applies to every audited row. Counted separately from
@@ -213,6 +221,15 @@ class TaxonomyArtifact:
             int(row[0])
             for row in self._conn.execute(f"SELECT taxon_id FROM {self._taxon_table}")
         }
+        columns = {
+            row[1]
+            for row in self._conn.execute(f"PRAGMA table_info({self._taxon_table})")
+        }
+        self._name_column = next(
+            (name for name in ("canonical_scientific_name", "scientific_name")
+             if name in columns),
+            None,
+        )
 
     def _meta_value(self, table: str, key: str, tables: set[str]) -> str | None:
         if table not in tables:
@@ -240,12 +257,74 @@ class TaxonomyArtifact:
         "no mapping" from "several mappings" instead of silently collapsing
         ambiguity into whichever row sorted first.
         """
+        return self.resolve_with_route(
+            source_system=source_system, namespace=namespace,
+            external_id=external_id,
+        )[0]
+
+    def resolve_with_route(
+        self, *, source_system: str, namespace: str, external_id: str
+    ) -> tuple[set[int], str]:
+        """:meth:`resolve`, plus which table answered.
+
+        Approved bridges first; when they name nothing, the concept anchored
+        by the tuple's own source usage (the desktop's live rule,
+        ``taxon_lookup.resolve_installed_external_identity``). The search-pack
+        shape carries no canonical source columns, so there it stays
+        bridge-only.
+        """
         rows = self._conn.execute(
             f"SELECT DISTINCT taxon_id FROM {self._mapping_table} "
             "WHERE source_system = ? AND namespace = ? AND external_id = ?",
             (source_system, namespace, str(external_id)),
         )
-        return {int(row[0]) for row in rows}
+        matches = {int(row[0]) for row in rows}
+        if matches or self._taxon_table != "taxon_min":
+            return matches, self._mapping_table
+        try:
+            anchored = source_identity_matches(
+                self._conn, source_system=source_system, namespace=namespace,
+                external_id=str(external_id),
+            )
+        except sqlite3.OperationalError:
+            anchored = set()
+        return anchored, "taxon_min.canonical_source_usage"
+
+    def concept_source(self, sporely_taxon_id: object) -> str | None:
+        """``col_xr`` / ``nortaxa`` for a candidate artifact; ``None`` otherwise."""
+        if self._taxon_table != "taxon_min":
+            return None
+        try:
+            row = self._conn.execute(
+                "SELECT source_system FROM taxon_min WHERE taxon_id = ?",
+                (int(sporely_taxon_id),),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return None
+        return _text(row[0]) if row else None
+
+    def canonical_name(self, sporely_taxon_id: object) -> str | None:
+        if self._name_column is None:
+            return None
+        row = self._conn.execute(
+            f"SELECT {self._name_column} FROM {self._taxon_table} WHERE taxon_id = ?",
+            (int(sporely_taxon_id),),
+        ).fetchone()
+        return _text(row[0]) if row else None
+
+    def concepts_named(self, name: str) -> list[int]:
+        """Concepts whose canonical name is exactly ``name`` (case-insensitive).
+
+        Candidate evidence for review only: a name is never identity.
+        """
+        if self._name_column is None or not _text(name):
+            return []
+        rows = self._conn.execute(
+            f"SELECT taxon_id FROM {self._taxon_table} "
+            f"WHERE {self._name_column} = ? COLLATE NOCASE ORDER BY taxon_id",
+            (_text(name),),
+        )
+        return [int(row[0]) for row in rows]
 
     def namespaces_holding_external_id(self, external_id: object) -> list[str]:
         """Non-Sporely namespaces in which this literal value is an external ID.
@@ -283,6 +362,10 @@ AUDITED_COLUMNS = (
     "common_name",
     "ai_selected_taxon_id",
     "ai_selected_scientific_name",
+    "ai_selected_service",
+    # Read only to recover an Artsorakel id the copy path failed to record
+    # (the API carries it as ``scientific_name_id``); never written.
+    "ai_state_json",
     "scientific_name_snapshot",
     "taxon_rank_snapshot",
 )
@@ -308,6 +391,12 @@ class AuditRecord:
     refusal_reason: str | None = None
     restored_genus: str | None = None
     restored_species: str | None = None
+    #: The provider id came from the stored AI prediction, not from
+    #: ``ai_selected_taxon_id``.
+    provider_id_recovered: bool = False
+    #: Concepts whose canonical name equals the observer's identification,
+    #: for rows with no bindable identity. Review candidates, never applied.
+    name_candidate_ids: tuple[int, ...] = ()
 
     def as_dict(self) -> dict:
         return {
@@ -327,6 +416,8 @@ class AuditRecord:
             "refusal_reason": self.refusal_reason,
             "restored_genus": self.restored_genus,
             "restored_species": self.restored_species,
+            "provider_id_recovered": self.provider_id_recovered,
+            "name_candidate_ids": list(self.name_candidate_ids),
         }
 
     @classmethod
@@ -354,6 +445,8 @@ class AuditRecord:
             refusal_reason=data.get("refusal_reason"),
             restored_genus=data.get("restored_genus"),
             restored_species=data.get("restored_species"),
+            provider_id_recovered=bool(data.get("provider_id_recovered")),
+            name_candidate_ids=tuple(int(i) for i in data.get("name_candidate_ids") or ()),
         )
 
 
@@ -509,18 +602,87 @@ def _classify_name(row: dict) -> tuple[str, tuple[str, str] | None]:
     return "name_loss_repairable_from_row", binomial
 
 
-def _provider_tuple(row: dict) -> tuple[str, str, str, str] | None:
+def _recovered_provider_id(row: dict) -> str | None:
+    """The Artsorakel id the copy path failed to record, from the stored AI state.
+
+    The Artsorakel API carries its prefixed id only as ``scientific_name_id``,
+    which the desktop copy path did not read, so ``ai_selected_taxon_id``
+    stayed null although the selected prediction held the id. Recovered only
+    when every stored *selected* prediction whose name equals
+    ``ai_selected_scientific_name`` agrees on one id; ``scientific_name_id_shared``
+    (a GBIF id) is never used.
+    """
+    if _text(row.get("ai_selected_taxon_id")) is not None:
+        return None
+    if (_text(row.get("ai_selected_service")) or "").lower() != "artsorakel":
+        return None
+    chosen = _text(row.get("ai_selected_scientific_name"))
+    if chosen is None:
+        return None
+    try:
+        state = json.loads(row.get("ai_state_json") or "{}")
+    except (TypeError, ValueError):
+        return None
+    selected = state.get("selected") if isinstance(state, dict) else None
+    if not isinstance(selected, dict):
+        return None
+    ids = set()
+    for prediction in selected.values():
+        if not isinstance(prediction, dict):
+            continue
+        name = _text(
+            prediction.get("scientificName")
+            or prediction.get("scientific_name")
+            or prediction.get("name")
+        )
+        if name is None or name.casefold() != chosen.casefold():
+            continue
+        name_id = _text(prediction.get("scientific_name_id") or prediction.get("scientificNameId"))
+        if name_id is not None:
+            ids.add(name_id)
+    return next(iter(ids)) if len(ids) == 1 else None
+
+
+def _provider_tuple(row: dict) -> tuple[str, str, str, str, bool] | None:
     """The row's own provider identifier, expressed in its bridge namespace.
 
-    Returns ``(source_system, namespace, external_id, raw)``. A bare integer
-    yields ``None``: a namespace-lost integer names no registry, and inventing
-    one is the leak this stage closes.
+    Returns ``(source_system, namespace, external_id, raw, recovered)``, where
+    ``recovered`` says the id came from the stored AI state rather than
+    ``ai_selected_taxon_id``. A bare integer yields ``None``: a namespace-lost
+    integer names no registry, and inventing one is the leak this stage
+    closes.
     """
-    parsed = parse_prefixed_external_id(row.get("ai_selected_taxon_id"))
+    raw = _text(row.get("ai_selected_taxon_id"))
+    recovered = False
+    if raw is None:
+        raw = _recovered_provider_id(row)
+        recovered = raw is not None
+    parsed = parse_prefixed_external_id(raw)
     if parsed is None:
         return None
     target = parsed.bridged() or parsed
-    return (target.source_system, target.namespace, target.local_id, parsed.raw)
+    return (target.source_system, target.namespace, target.local_id, parsed.raw, recovered)
+
+
+def _identified_name(row: dict) -> str | None:
+    """The observer's identification as a name: genus and species as saved.
+
+    A name-loss row (all names null beside a provider name the observer
+    copied in) is identified by that provider name.
+    """
+    parts = [_text(row.get("genus")), _text(row.get("species"))]
+    name = " ".join(part for part in parts if part)
+    if name:
+        return name
+    if _classify_name(row)[0] == "name_loss_repairable_from_row":
+        return _text(row.get("ai_selected_scientific_name"))
+    return None
+
+
+def _same_name(left: str | None, right: str | None) -> bool:
+    return bool(left and right) and (
+        " ".join(left.split()).casefold() == " ".join(right.split()).casefold()
+    )
 
 
 def _classify_identity(
@@ -546,15 +708,19 @@ def _classify_identity(
         )
         lookup_origin = "preserved_external_identity"
     elif provider is not None:
-        lookup = provider
-        lookup_origin = "provider_snapshot_identifier"
+        lookup = provider[:4]
+        lookup_origin = (
+            "recovered_ai_prediction_identifier" if provider[4]
+            else "provider_snapshot_identifier"
+        )
     else:
         lookup = None
         lookup_origin = None
 
     resolved: set[int] = set()
+    route = None
     if lookup is not None:
-        resolved = artifact.resolve(
+        resolved, route = artifact.resolve_with_route(
             source_system=lookup[0], namespace=lookup[1], external_id=lookup[2]
         )
 
@@ -563,13 +729,48 @@ def _classify_identity(
         "preserved_namespace": lookup[1] if lookup else None,
         "preserved_external_id": lookup[2] if lookup else None,
         "preserved_raw_external_id": (lookup[3] if lookup else None),
+        "provider_id_recovered": lookup_origin == "recovered_ai_prediction_identifier",
     }
     bridge_evidence = (
         f"{lookup_origin}: {lookup[0]}/{lookup[1]}/{lookup[2]} resolved through "
-        f"{artifact.path.name}"
+        f"{artifact.path.name}:{route}"
         if lookup is not None
         else None
     )
+
+    def name_gate(candidate: int) -> tuple[str, dict] | None:
+        """D3: a resolved identifier binds only the observer's own taxon.
+
+        Name agreement is necessary, never sufficient on its own: the
+        identifier chose the concept; the name only confirms the observer
+        identified that taxon. For an AI identifier the observer must also
+        have kept the AI's name. ``None`` means the gate passes.
+        """
+        identified = _identified_name(row)
+        concept = artifact.canonical_name(candidate)
+        ai_name = _text(row.get("ai_selected_scientific_name"))
+        from_ai = lookup_origin in (
+            "provider_snapshot_identifier", "recovered_ai_prediction_identifier",
+        )
+        if from_ai and not _same_name(ai_name, identified):
+            return "ai_suggestion_not_identification", {
+                **preserved,
+                "refusal_reason": (
+                    f"{lookup[3]} is the AI suggestion {ai_name!r}; the "
+                    f"observer's identification is {identified!r}"
+                ),
+                "evidence": bridge_evidence,
+            }
+        if not _same_name(concept, identified):
+            return "identifier_name_mismatch", {
+                **preserved,
+                "refusal_reason": (
+                    f"{lookup[3]} resolves to concept {candidate} {concept!r}, "
+                    f"not the observer's identification {identified!r}"
+                ),
+                "evidence": bridge_evidence,
+            }
+        return None
 
     # ── A proof token already on the row ────────────────────────────────────
     if identity.is_proven_sporely:
@@ -604,6 +805,9 @@ def _classify_identity(
         if len(resolved) == 1:
             derived = next(iter(resolved))
             if derived == stored_id:
+                refused = name_gate(derived)
+                if refused is not None:
+                    return refused
                 return "proven_external_with_unique_bridge", {
                     **preserved,
                     "candidate_sporely_taxon_id": derived,
@@ -664,9 +868,13 @@ def _classify_identity(
     # ── Namespaced external evidence, resolved or not ───────────────────────
     if lookup is not None:
         if len(resolved) == 1:
+            candidate = next(iter(resolved))
+            refused = name_gate(candidate)
+            if refused is not None:
+                return refused
             return "proven_external_with_unique_bridge", {
                 **preserved,
-                "candidate_sporely_taxon_id": next(iter(resolved)),
+                "candidate_sporely_taxon_id": candidate,
                 "evidence": bridge_evidence,
             }
         if len(resolved) > 1:
@@ -720,6 +928,9 @@ def classify_row(row: dict, artifact: TaxonomyArtifact, *, origin: str) -> Audit
     identity_class, details = _classify_identity(row, artifact)
     name_class, binomial = _classify_name(row)
     restored_genus, restored_species = binomial if binomial else (None, None)
+    name_candidates: tuple[int, ...] = ()
+    if identity_class not in _CONFIRMED_OR_BINDABLE:
+        name_candidates = tuple(artifact.concepts_named(_identified_name(row) or ""))
     return AuditRecord(
         observation_id=int(row["id"]),
         origin=origin,
@@ -758,7 +969,18 @@ def classify_row(row: dict, artifact: TaxonomyArtifact, *, origin: str) -> Audit
         refusal_reason=details.get("refusal_reason"),
         restored_genus=restored_genus,
         restored_species=restored_species,
+        provider_id_recovered=bool(details.get("provider_id_recovered")),
+        name_candidate_ids=name_candidates,
     )
+
+
+#: Classes whose identity is already held or would be bound; name candidates
+#: are only offered for the rest.
+_CONFIRMED_OR_BINDABLE = frozenset({
+    "proven_sporely_identity",
+    "proven_external_with_unique_bridge",
+    "cloud_selected_unverified_identity",
+})
 
 
 # ── Row sources ─────────────────────────────────────────────────────────────
@@ -835,6 +1057,206 @@ def audit(
     for row in rows:
         report.records.append(classify_row(row, artifact, origin=origin))
     return report
+
+
+# ── Review summary ──────────────────────────────────────────────────────────
+
+#: The settings key under which a sync stores the last cloud state it saw
+#: (``utils/cloud_sync_impl/baseline.py``); its ``observation.taxon_identity``
+#: is the identity baseline (``sporely:<id>``, ``external:…``, ``""`` none).
+_CLOUD_SNAPSHOT_PREFIX = "sporely_cloud_snapshot_obs_"
+
+
+def _cloud_context(observation_db_path: Path) -> dict[int, dict]:
+    """Per observation: cloud id, sync status and the last-synced cloud identity.
+
+    Read-only. ``cloud_identity`` is ``None`` when no snapshot recorded an
+    identity (never synced, or synced before identity joined the snapshot).
+    """
+    conn = sqlite3.connect(f"file:{Path(observation_db_path)}?mode=ro", uri=True)
+    try:
+        present = {row[1] for row in conn.execute("PRAGMA table_info(observations)")}
+        if "cloud_id" not in present:
+            return {}
+        status = "sync_status" if "sync_status" in present else "NULL"
+        rows = conn.execute(f"SELECT id, cloud_id, {status} FROM observations").fetchall()
+        try:
+            snapshots = dict(conn.execute(
+                "SELECT key, value FROM settings WHERE key LIKE ?",
+                (_CLOUD_SNAPSHOT_PREFIX + "%",),
+            ).fetchall())
+        except sqlite3.OperationalError:
+            snapshots = {}
+    finally:
+        conn.close()
+    context = {}
+    for obs_id, cloud_id, sync_status in rows:
+        identity = None
+        raw = snapshots.get(f"{_CLOUD_SNAPSHOT_PREFIX}{_text(cloud_id) or ''}")
+        if cloud_id and raw:
+            try:
+                observation = (json.loads(raw) or {}).get("observation") or {}
+            except (TypeError, ValueError, AttributeError):
+                observation = {}
+            if isinstance(observation, dict) and "taxon_identity" in observation:
+                identity = str(observation.get("taxon_identity") or "")
+        context[int(obs_id)] = {
+            "cloud_id": _text(cloud_id),
+            "sync_status": _text(sync_status),
+            "cloud_identity": identity,
+        }
+    return context
+
+
+def _cloud_cell(context: dict) -> str:
+    if not context.get("cloud_id"):
+        return "no cloud id"
+    identity = context.get("cloud_identity")
+    known = "unknown" if identity is None else (identity or "none")
+    return f"cloud id {context['cloud_id']}, cloud identity {known}, {context.get('sync_status') or '-'}"
+
+
+def render_review_summary(
+    report: AuditReport,
+    *,
+    artifact: TaxonomyArtifact,
+    observation_db_path: Path | None = None,
+) -> str:
+    """A readable dry-run summary for the owner's review. Writes nothing."""
+    context = _cloud_context(observation_db_path) if observation_db_path else {}
+    records = report.records
+
+    def name_of(record: AuditRecord) -> str:
+        return _identified_name({**record.stored_names}) or "(no name)"
+
+    def concept(taxon_id: int | None) -> str:
+        if taxon_id is None:
+            return "-"
+        source = artifact.concept_source(taxon_id)
+        label = artifact.canonical_name(taxon_id) or "?"
+        return f"{taxon_id} {label}" + (f" ({source})" if source else "")
+
+    lines = [
+        "# Observation identity backfill — dry run",
+        "",
+        f"- Taxonomy release: `{report.release_id}` ({report.artifact})",
+        f"- Observations audited: **{report.total}** ({report.origin})",
+        f"- Every axis reconciles: {report.reconciles()}",
+        "- Nothing was written. Proposed bindings are applied only through the "
+        "gated `--apply` of a reviewed artifact.",
+        "",
+        "## Counts by identity class",
+        "",
+        "| Class | Count |",
+        "|---|---:|",
+    ]
+    counts = report.counts()
+    for name, count in counts["identity_class"].items():
+        if count:
+            lines.append(f"| {name} | {count} |")
+    lines += ["", "## Counts by proposed action", "", "| Action | Count |", "|---|---:|"]
+    for name, count in counts["proposed_action"].items():
+        if count:
+            lines.append(f"| {name} | {count} |")
+
+    bindings = [r for r in records if r.identity_class == "proven_external_with_unique_bridge"]
+    lines += [
+        "", f"## 1. Proposed bindings ({len(bindings)})", "",
+        "The identifier resolves to exactly one concept and the observer's "
+        "identification is that concept's name.", "",
+        "| Obs | Identification | Proposed concept | Identifier | Same-name concepts | Cloud |",
+        "|---:|---|---|---|---:|---|",
+    ]
+    for r in bindings:
+        source = "recovered " if r.provider_id_recovered else ""
+        same_name = len(artifact.concepts_named(name_of(r)))
+        lines.append(
+            f"| {r.observation_id} | {name_of(r)} | {concept(r.candidate_sporely_taxon_id)} "
+            f"| {source}{r.preserved_raw_external_id} | {same_name} "
+            f"| {_cloud_cell(context.get(r.observation_id, {}))} |"
+        )
+
+    for klass, title in (
+        ("ai_suggestion_not_identification", "AI suggestion the observer changed — never bound"),
+        ("identifier_name_mismatch", "Identifier names another taxon — not bound"),
+    ):
+        rows = [r for r in records if r.identity_class == klass]
+        lines += ["", f"## {title} ({len(rows)})", "",
+                  "| Obs | Identification | Reason | Name candidates |", "|---:|---|---|---|"]
+        for r in rows:
+            lines.append(
+                f"| {r.observation_id} | {name_of(r)} | {r.refusal_reason} "
+                f"| {', '.join(concept(i) for i in r.name_candidate_ids) or '-'} |"
+            )
+
+    named = [r for r in records if r.identity_class not in _CONFIRMED_OR_BINDABLE
+             and r.identity_class not in ("ai_suggestion_not_identification",
+                                          "identifier_name_mismatch")]
+    unique = [r for r in named if len(r.name_candidate_ids) == 1]
+    ambiguous = [r for r in named if len(r.name_candidate_ids) > 1]
+    lines += [
+        "", f"## 2. Name-only candidates for review ({len(unique)})", "",
+        "No usable identifier; the identification matches exactly one concept "
+        "name. Candidates only — a name is not identity, and nothing here is "
+        "applied.", "",
+        "| Obs | Identification | Candidate | Current class | Cloud |", "|---:|---|---|---|---|",
+    ]
+    for r in unique:
+        lines.append(
+            f"| {r.observation_id} | {name_of(r)} | {concept(r.name_candidate_ids[0])} "
+            f"| {r.identity_class} | {_cloud_cell(context.get(r.observation_id, {}))} |"
+        )
+    lines += [
+        "", f"## 3. Ambiguous names — your decision ({len(ambiguous)})", "",
+        "Several concepts share the name (typically a COL concept and an "
+        "unreconciled NorTaxa concept). Never chosen between automatically.", "",
+        "| Obs | Identification | Concepts | Current class |", "|---:|---|---|---|",
+    ]
+    for r in ambiguous:
+        lines.append(
+            f"| {r.observation_id} | {name_of(r)} "
+            f"| {'; '.join(concept(i) for i in r.name_candidate_ids)} | {r.identity_class} |"
+        )
+
+    disagreements = []
+    for r in records:
+        if r.identity_class not in ("proven_sporely_identity", "cloud_selected_unverified_identity"):
+            continue
+        held = r.stored_identity.get("sporely_taxon_id")
+        held_name = artifact.canonical_name(held) if held else None
+        cloud = context.get(r.observation_id, {}).get("cloud_identity")
+        notes = []
+        if held_name and not _same_name(held_name, name_of(r)):
+            notes.append(f"held concept is {held_name!r}")
+        if cloud and held and cloud != f"sporely:{held}":
+            notes.append(f"last-synced cloud identity is {cloud}")
+        if notes:
+            disagreements.append((r, "; ".join(notes)))
+    lines += [
+        "", f"## 4. Confirmed identities kept — disagreements to note ({len(disagreements)})", "",
+        "These identities are preserved as they are; listed only where the held "
+        "concept's name or the last-synced cloud identity differs.", "",
+        "| Obs | Identification | Held identity | Note |", "|---:|---|---|---|",
+    ]
+    for r, note in disagreements:
+        lines.append(
+            f"| {r.observation_id} | {name_of(r)} | {concept(r.stored_identity.get('sporely_taxon_id'))} "
+            f"({r.identity_class}) | {note} |"
+        )
+
+    rest = [r for r in named if not r.name_candidate_ids
+            and r.identity_class != "manual_or_no_identity_evidence"]
+    lines += [
+        "", f"## 5. Other identifiers left unresolved ({len(rest)})", "",
+        "| Obs | Identification | Class | Reason |", "|---:|---|---|---|",
+    ]
+    for r in rest:
+        lines.append(f"| {r.observation_id} | {name_of(r)} | {r.identity_class} | {r.refusal_reason} |")
+    no_evidence = [r for r in named if not r.name_candidate_ids
+                   and r.identity_class == "manual_or_no_identity_evidence"]
+    lines += ["", f"Rows with no identifier and no matching concept name: {len(no_evidence)} "
+              "(e.g. unidentified, genus-only text without a concept, non-fungi)."]
+    return "\n".join(lines) + "\n"
 
 
 # ── Repair ──────────────────────────────────────────────────────────────────
@@ -1176,6 +1598,11 @@ def build_parser() -> argparse.ArgumentParser:
     source.add_argument("--cloud-rows", type=Path)
     parser.add_argument("--output", type=Path, help="write the audit JSON here")
     parser.add_argument(
+        "--summary",
+        type=Path,
+        help="dry run only: also write a readable review summary (Markdown) here",
+    )
+    parser.add_argument(
         "--apply",
         type=Path,
         metavar="REVIEWED_ARTIFACT",
@@ -1232,7 +1659,16 @@ def main(argv: Iterable[str] | None = None) -> int:
         if args.apply is None:
             # Dry run: classify and report. This is the artifact a reviewer
             # reads and archives, and the only thing --apply will accept later.
-            payload = audit(rows, artifact, origin=origin).as_dict()
+            report = audit(rows, artifact, origin=origin)
+            payload = report.as_dict()
+            if args.summary:
+                args.summary.write_text(
+                    render_review_summary(
+                        report, artifact=artifact,
+                        observation_db_path=args.observations,
+                    ),
+                    encoding="utf-8",
+                )
         else:
             if origin != "desktop":
                 raise ProductionWriteRefused(
