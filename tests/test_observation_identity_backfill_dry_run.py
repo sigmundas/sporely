@@ -45,7 +45,8 @@ def artifact(tmp_path: Path):
             (61951, 'Russula emetica', 'col_xr', 'col_xr', '4TRVW'),
             (626279, 'Hydnum repandum coll.', 'nortaxa', 'nortaxa', '56280'),
             (16187, 'Hydnum repandum', 'col_xr', 'col_xr', 'XYZ1'),
-            (40672, 'Panaeolina castaneifolia', 'col_xr', 'col_xr', 'XYZ2');
+            (40672, 'Panaeolina castaneifolia', 'col_xr', 'col_xr', 'XYZ2'),
+            (626478, 'Piptoporus betulinus', 'nortaxa', 'nortaxa', '56848');
         CREATE TABLE taxon_external_id_text_min (taxon_id INTEGER, source_system TEXT,
                                                  namespace TEXT, external_id TEXT);
         INSERT INTO taxon_external_id_text_min VALUES
@@ -79,7 +80,7 @@ def _db(tmp_path: Path, rows: list[dict]) -> Path:
             taxon_identity_provenance TEXT, ai_selected_taxon_id TEXT,
             ai_selected_scientific_name TEXT, ai_selected_service TEXT, ai_state_json TEXT,
             scientific_name_snapshot TEXT, taxon_rank_snapshot TEXT,
-            cloud_id TEXT, sync_status TEXT);
+            cloud_id TEXT, sync_status TEXT, synced_at TEXT);
         CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
         """
     )
@@ -203,6 +204,105 @@ def test_apply_binds_only_the_gated_rows(tmp_path, artifact):
     conn.close()
     assert got == {1: 624659, 2: None, 3: None}
     assert status == {1: None, 2: None, 3: None}   # the repair never touches sync state
+
+
+# ── Approved batches ────────────────────────────────────────────────────────
+
+
+SYNCED = "2026-10-17T12:00:00+00:00"
+
+
+def _group_rows():
+    """One row per backfill group, two in the bridge group; cloud ids on most."""
+    return [
+        {"id": 1, "genus": "Entoloma", "species": "conferendum", **ARTSORAKEL, "cloud_id": "101",
+         "sync_status": "synced", "synced_at": SYNCED, "ai_selected_taxon_id": "NBIC:53482",
+         "ai_selected_scientific_name": "Entoloma conferendum"},
+        {"id": 2, "genus": "Entoloma", "species": "conferendum", **ARTSORAKEL,
+         "sync_status": "local", "ai_selected_taxon_id": "NBIC:53482",
+         "ai_selected_scientific_name": "Entoloma conferendum"},
+        {"id": 3, "genus": "Piptoporus", "species": "betulinus", **ARTSORAKEL, "cloud_id": "103",
+         "sync_status": "synced", "synced_at": SYNCED, "ai_selected_taxon_id": "NBIC:56848",
+         "ai_selected_scientific_name": "Piptoporus betulinus"},
+        {"id": 4, "genus": "Panaeolina", "species": "foenisecii", "cloud_id": "104",
+         "sync_status": "synced", "synced_at": SYNCED,
+         **TaxonIdentity.from_prefixed_external_id("NBIC:52330").to_row()},
+        {"id": 5, "genus": "Panaeolina", "species": "foenisecii", **ARTSORAKEL, "cloud_id": "105",
+         "sync_status": "synced", "synced_at": SYNCED, "ai_selected_taxon_id": "NBIC:52330",
+         "ai_selected_scientific_name": "Panaeolina foenisecii"},
+    ]
+
+
+def test_bindings_fall_into_the_four_groups(tmp_path, artifact):
+    from database.audit_observation_identity import backfill_group
+
+    report, records = _records(tmp_path, artifact, _group_rows())
+    assert {i: backfill_group(r, artifact) for i, r in records.items()} == {
+        1: "reviewed_bridge", 2: "reviewed_bridge", 3: "nortaxa_self_unique_name",
+        4: "same_name_recorded_identity", 5: "same_name_ai_history_only",
+    }
+
+
+def test_the_manifest_is_deterministic_and_never_approves_name_only_choices(tmp_path, artifact):
+    from database.audit_observation_identity import build_approved_manifest
+
+    report, _ = _records(tmp_path, artifact, _group_rows())
+    first = build_approved_manifest(report, artifact, groups=["reviewed_bridge"], batch_size=1, batch=1)
+    again = build_approved_manifest(report, artifact, groups=["reviewed_bridge"], batch_size=1, batch=1)
+    second = build_approved_manifest(report, artifact, groups=["reviewed_bridge"], batch_size=1, batch=2)
+    assert first == again
+    assert (first["observation_ids"], second["observation_ids"]) == ([1], [2])
+    assert first["reviewed_artifact_digest"] == report.digest()
+    with pytest.raises(ValueError):
+        build_approved_manifest(report, artifact, groups=["same_name_ai_history_only"],
+                                batch_size=10, batch=1)
+
+
+def test_a_manifest_must_match_the_reviewed_artifact_and_its_groups(tmp_path, artifact):
+    from database.audit_observation_identity import (
+        StaleAuditArtifact, TamperedAuditArtifact, build_approved_manifest, load_approved_manifest,
+    )
+
+    report, _ = _records(tmp_path, artifact, _group_rows())
+    manifest = build_approved_manifest(report, artifact, groups=["reviewed_bridge"], batch_size=10, batch=1)
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(manifest))
+    assert load_approved_manifest(path, report, artifact) == {1, 2}
+    path.write_text(json.dumps({**manifest, "observation_ids": [1, 5]}))   # hand-added ai-only row
+    with pytest.raises(TamperedAuditArtifact):
+        load_approved_manifest(path, report, artifact)
+    path.write_text(json.dumps({**manifest, "reviewed_artifact_digest": "0" * 64}))
+    with pytest.raises(StaleAuditArtifact):
+        load_approved_manifest(path, report, artifact)
+
+
+def test_an_approved_batch_binds_only_its_rows_and_marks_cloud_rows_dirty(tmp_path, artifact):
+    from database.audit_observation_identity import build_approved_manifest
+
+    db = _db(tmp_path, _group_rows())
+    report = audit(read_desktop_rows(db), artifact, origin="desktop")
+    approved = set(build_approved_manifest(
+        report, artifact, groups=["reviewed_bridge", "nortaxa_self_unique_name"],
+        batch_size=10, batch=1)["observation_ids"])
+    gate = ProductionMigrationGate(True, True, True, True, True, evidence=("test",))
+    stats = apply_repairs(report, observation_db_path=db, release_id="tax-test-01", gate=gate,
+                          approved_ids=approved, mark_dirty=True)
+    conn = sqlite3.connect(db)
+    rows = {r[0]: r[1:] for r in conn.execute(
+        "SELECT id, sporely_taxon_id, sync_status, synced_at FROM observations")}
+    conn.close()
+    assert rows == {
+        1: (7821, "dirty", None),
+        2: (7821, "local", None),       # no cloud id: already pushed as new, not re-marked
+        3: (626478, "dirty", None),
+        4: (None, "synced", SYNCED),    # not in the approved groups
+        5: (None, "synced", SYNCED),    # never approvable
+    }
+    assert (stats.identities_bound, stats.marked_dirty) == (3, 2)
+    # Idempotent: the same batch again finds nothing left to do.
+    again = audit(read_desktop_rows(db), artifact, origin="desktop")
+    assert apply_repairs(again, observation_db_path=db, release_id="tax-test-01", gate=gate,
+                         approved_ids=approved, mark_dirty=True).identities_bound == 0
 
 
 def test_the_summary_reports_cloud_context_and_every_section(tmp_path, artifact):

@@ -460,6 +460,7 @@ def test_a_second_run_proposes_nothing_and_writes_nothing(artifact, population_d
         "names_restored": 0,
         "names_skipped_changed_since_audit": 0,
         "rows_written": 0,
+        "marked_dirty": 0,
     }
     assert _snapshot(population_db) == settled
 

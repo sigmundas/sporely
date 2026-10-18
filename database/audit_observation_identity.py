@@ -92,6 +92,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Sequence
 
+from database.models import update_observation_sync_state
 from database.taxon_lookup import source_identity_matches
 from utils.taxon_identity import (
     SPORELY_NAMESPACE,
@@ -1259,6 +1260,97 @@ def render_review_summary(
     return "\n".join(lines) + "\n"
 
 
+# ── Approved backfill manifest ──────────────────────────────────────────────
+
+#: Proposed bindings split by how much the evidence settles. Only the first
+#: three may be approved; ``same_name_ai_history_only`` rests on an AI-history
+#: identifier plus name agreement while a COL concept shares the name, so the
+#: choice between the two concepts would be made from the name alone.
+BACKFILL_GROUPS = (
+    "reviewed_bridge",
+    "nortaxa_self_unique_name",
+    "same_name_recorded_identity",
+    "same_name_ai_history_only",
+)
+APPROVABLE_BACKFILL_GROUPS = BACKFILL_GROUPS[:3]
+MANIFEST_FORMAT = "sporely-identity-backfill-manifest-v1"
+
+
+def backfill_group(record: AuditRecord, artifact: TaxonomyArtifact) -> str | None:
+    """The backfill group of a proposed binding, or ``None`` for any other row."""
+    if record.identity_class != "proven_external_with_unique_bridge":
+        return None
+    if "taxon_min.canonical_source_usage" not in (record.evidence or ""):
+        return "reviewed_bridge"
+    identified = _identified_name(dict(record.stored_names))
+    if len(artifact.concepts_named(identified or "")) <= 1:
+        return "nortaxa_self_unique_name"
+    if (record.evidence or "").startswith("preserved_external_identity"):
+        return "same_name_recorded_identity"
+    return "same_name_ai_history_only"
+
+
+def build_approved_manifest(
+    report: AuditReport,
+    artifact: TaxonomyArtifact,
+    *,
+    groups: Sequence[str],
+    batch_size: int,
+    batch: int,
+) -> dict:
+    """A deterministic approved subset of the reviewed artifact's bindings.
+
+    Rows are ordered by observation id within the chosen groups and cut into
+    fixed-size batches, so the same artifact and arguments always name the
+    same observations. The manifest is bound to the artifact by its digest.
+    """
+    unknown = [g for g in groups if g not in APPROVABLE_BACKFILL_GROUPS]
+    if unknown:
+        raise ValueError(f"not approvable: {unknown}")
+    if batch_size < 1 or batch < 1:
+        raise ValueError("batch and batch_size start at 1")
+    selected = sorted(
+        r.observation_id for r in report.records
+        if backfill_group(r, artifact) in groups
+    )
+    start = (batch - 1) * batch_size
+    return {
+        "format": MANIFEST_FORMAT,
+        "reviewed_artifact_digest": report.digest(),
+        "release_id": report.release_id,
+        "groups": list(groups),
+        "batch_size": batch_size,
+        "batch": batch,
+        "rows_in_groups": len(selected),
+        "observation_ids": selected[start:start + batch_size],
+    }
+
+
+def load_approved_manifest(
+    path: Path, reviewed: AuditReport, artifact: TaxonomyArtifact
+) -> set[int]:
+    """The observation ids a manifest approves, after checking it belongs to
+    ``reviewed`` and names only approvable bindings in it."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    if data.get("format") != MANIFEST_FORMAT:
+        raise TamperedAuditArtifact(f"{path} is not an identity backfill manifest")
+    if data.get("reviewed_artifact_digest") != reviewed.digest():
+        raise StaleAuditArtifact(
+            f"{path} approves rows of a different reviewed artifact"
+        )
+    ids = {int(i) for i in data.get("observation_ids") or ()}
+    bindable = {
+        r.observation_id for r in reviewed.records
+        if backfill_group(r, artifact) in APPROVABLE_BACKFILL_GROUPS
+    }
+    outside = sorted(ids - bindable)
+    if outside:
+        raise TamperedAuditArtifact(
+            f"{path} approves observations that are not approvable bindings: {outside}"
+        )
+    return ids
+
+
 # ── Repair ──────────────────────────────────────────────────────────────────
 
 
@@ -1274,6 +1366,8 @@ class RepairStats:
     #: identity pre-image includes the name columns and aborts first.
     names_skipped_changed_since_audit: int = 0
     rows_written: int = 0
+    #: Rows with a cloud id whose bound identity was marked for the next push.
+    marked_dirty: int = 0
 
     def as_dict(self) -> dict:
         return self.__dict__.copy()
@@ -1395,8 +1489,16 @@ def apply_repairs(
     observation_db_path: Path,
     release_id: str | None,
     gate: ProductionMigrationGate,
+    approved_ids: set[int] | None = None,
+    mark_dirty: bool = False,
 ) -> RepairStats:
     """Write only the repairs the audit proved, in one transaction.
+
+    ``approved_ids`` (from :func:`load_approved_manifest`) narrows the write to
+    an approved batch. ``mark_dirty`` marks every row whose identity was bound
+    and that has a cloud id ``dirty`` in the same transaction, so the next sync
+    pushes it deterministically; a pull alone never pushes an unchanged-cloud
+    row (see the backfill plan's sync assessment).
 
     ``gate`` is required and is enforced here rather than by the caller.
     A gate that only the tests consult protects only the tests: every path
@@ -1444,6 +1546,8 @@ def apply_repairs(
 
     stats = RepairStats()
     repairs = report.repairable()
+    if approved_ids is not None:
+        repairs = [r for r in repairs if r.observation_id in approved_ids]
     if not repairs:
         return stats
 
@@ -1504,6 +1608,17 @@ def apply_repairs(
                     )
                 stats.identities_bound += 1
                 wrote = True
+                if mark_dirty:
+                    cloud_id = conn.execute(
+                        "SELECT cloud_id FROM observations WHERE id = ?",
+                        (record.observation_id,),
+                    ).fetchone()[0]
+                    if cloud_id:
+                        update_observation_sync_state(
+                            conn.cursor(), record.observation_id,
+                            sync_status="dirty", synced_at=None,
+                        )
+                        stats.marked_dirty += 1
             if record.restored_genus and record.restored_species:
                 cursor = conn.execute(
                     "UPDATE observations SET genus = ?, species = ? "
@@ -1602,6 +1717,25 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="dry run only: also write a readable review summary (Markdown) here",
     )
+    backfill = parser.add_argument_group("Identity backfill batches")
+    backfill.add_argument(
+        "--manifest-out", type=Path,
+        help="dry run only: write an approved-batch manifest bound to this run's artifact",
+    )
+    backfill.add_argument(
+        "--manifest-groups", default="reviewed_bridge",
+        help=f"comma-separated, from {', '.join(APPROVABLE_BACKFILL_GROUPS)}",
+    )
+    backfill.add_argument("--batch-size", type=int, default=10)
+    backfill.add_argument("--batch", type=int, default=1)
+    backfill.add_argument(
+        "--approved-manifest", type=Path,
+        help="with --apply: write only the observations this manifest approves",
+    )
+    backfill.add_argument(
+        "--mark-dirty", action="store_true",
+        help="with --apply: mark bound rows that have a cloud id dirty, in the same transaction",
+    )
     parser.add_argument(
         "--apply",
         type=Path,
@@ -1669,6 +1803,15 @@ def main(argv: Iterable[str] | None = None) -> int:
                     ),
                     encoding="utf-8",
                 )
+            if args.manifest_out:
+                manifest = build_approved_manifest(
+                    report, artifact,
+                    groups=[g.strip() for g in args.manifest_groups.split(",") if g.strip()],
+                    batch_size=args.batch_size, batch=args.batch,
+                )
+                args.manifest_out.write_text(
+                    json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8",
+                )
         else:
             if origin != "desktop":
                 raise ProductionWriteRefused(
@@ -1689,6 +1832,10 @@ def main(argv: Iterable[str] | None = None) -> int:
             try:
                 reviewed = load_reviewed_artifact(args.apply)
                 require_artifact_still_describes(reviewed, rows, artifact)
+                approved_ids = (
+                    load_approved_manifest(args.approved_manifest, reviewed, artifact)
+                    if args.approved_manifest else None
+                )
             except (StaleAuditArtifact, TamperedAuditArtifact) as exc:
                 # Condition 1 of the gate — "the dry-run artifact has been
                 # reviewed" — is false in substance whatever the flag says.
@@ -1707,6 +1854,8 @@ def main(argv: Iterable[str] | None = None) -> int:
                     observation_db_path=args.observations,
                     release_id=artifact.release_id,
                     gate=gate,
+                    approved_ids=approved_ids,
+                    mark_dirty=args.mark_dirty,
                 ).as_dict()
             except StaleAuditArtifact as exc:
                 raise ProductionWriteRefused(f"NEEDS_YOU — {exc}") from exc
