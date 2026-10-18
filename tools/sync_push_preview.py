@@ -9,8 +9,17 @@ Calibrations are compared with the cloud's list during a real sync, so only
 their local count is shown. ``images_without_cloud_id`` is an upper bound:
 storage-intent rules can exclude some of them.
 
+``mosaic`` predicts the spore-mosaic step with the pusher's own signature
+helpers: ``rebuild`` (stored signature missing or stale: render, upload and
+replace the cloud mosaic), ``unchanged`` (skipped, provided the cloud mosaic
+row still exists; not checked offline) or null (no public eligible
+measurements, no mosaic).
+
 Usage (from the sporely-py worktree, Sporely closed or open):
-  PYTHONPATH=. .venv/bin/python tools/sync_push_preview.py <scratch dir>
+  PYTHONPATH=. .venv/bin/python tools/sync_push_preview.py <scratch dir> [source db]
+
+``source db`` defaults to the live database; pass a copy to rehearse a
+change before applying it.
 """
 import json
 import os
@@ -20,7 +29,8 @@ from datetime import datetime
 from pathlib import Path
 
 scratch = Path(sys.argv[1])
-live = Path(os.path.expanduser("~/Library/Application Support/Sporely/mushrooms.db"))
+live = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(
+    os.path.expanduser("~/Library/Application Support/Sporely/mushrooms.db"))
 copy = scratch / f"sync-preview-{datetime.now():%Y%m%d-%H%M%S}.db"
 src = sqlite3.connect(f"file:{str(live).replace(' ', '%20')}?mode=ro", uri=True)
 dst = sqlite3.connect(copy)
@@ -37,6 +47,10 @@ schema.get_images_dir = lambda: real_images_dir
 from utils import cloud_sync  # noqa: E402
 from utils.cloud_sync_impl import pending_images  # noqa: E402
 from utils.cloud_sync_impl.child_identity import redirty_interrupted_child_creates  # noqa: E402
+from utils.cloud_sync_impl.mosaic_signature import (  # noqa: E402
+    _current_local_mosaic_signature,
+    _load_local_mosaic_signature,
+)
 from utils.cloud_sync_impl.observation_delete import pending_observation_deletes  # noqa: E402
 
 
@@ -71,6 +85,7 @@ report = {
     "pending_image_tombstones": conn.execute(
         "SELECT COUNT(*) FROM image_tombstones WHERE delete_synced_at IS NULL").fetchone()[0],
     "local_calibrations": conn.execute("SELECT COUNT(*) FROM calibrations").fetchone()[0],
+    "mosaic_rebuilds": [],
     "observations": [],
 }
 for obs_id in sorted(after):
@@ -80,10 +95,19 @@ for obs_id in sorted(after):
     images = conn.execute(
         "SELECT image_type, cloud_id IS NULL AS new FROM images WHERE observation_id = ?",
         (obs_id,)).fetchall()
+    signature = _current_local_mosaic_signature(obs_id) if row["cloud_id"] else ""
+    if not signature:
+        mosaic = None
+    elif signature == _load_local_mosaic_signature(obs_id):
+        mosaic = "unchanged"
+    else:
+        mosaic = "rebuild"
+        report["mosaic_rebuilds"].append(obs_id)
     report["observations"].append({
         **dict(row),
         "images_total": len(images),
         "images_without_cloud_id": sum(1 for i in images if i["new"]),
+        "mosaic": mosaic,
     })
 conn.close()
 print(json.dumps(report, indent=1, default=str))
