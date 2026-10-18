@@ -5508,6 +5508,22 @@ def resolve_conflict_plan(
                     failing={'op': 'push_field', 'fields': sorted(local_field_names)},
                     cause=exc,
                 )
+        # A proven identity the cloud release lacks lands as its preserved
+        # source tuple, or not at all (identity_push): read back what the
+        # cloud now holds, as for the location bundle above.
+        pushed_identity_remote = None
+        if (
+            TAXON_IDENTITY_SYNC_FIELD in local_field_names
+            and TaxonIdentity.from_row(refreshed_local).is_proven_sporely
+        ):
+            try:
+                pushed_identity_remote = client.get_observation(resolved_cloud_id)
+            except Exception as exc:
+                raise _partial_error(
+                    f'Could not read back the cloud identity after pushing it: {exc}',
+                    failing={'op': 'push_field', 'fields': [TAXON_IDENTITY_SYNC_FIELD]},
+                    cause=exc,
+                )
         for f in sorted(local_field_names):
             expected_value = _normalize_observation_field_for_baseline(
                 refreshed_local, f, local=True,
@@ -5520,6 +5536,10 @@ def resolve_conflict_plan(
                 # what it had, and that is the verified effect.
                 expected_value = _normalize_observation_field_for_baseline(
                     remote_obs, f, local=False,
+                )
+            elif f == TAXON_IDENTITY_SYNC_FIELD and pushed_identity_remote:
+                expected_value = _normalize_observation_field_for_baseline(
+                    pushed_identity_remote, f, local=False,
                 )
             executed.append({
                 'op': 'push_field', 'field': f, 'status': 'completed',

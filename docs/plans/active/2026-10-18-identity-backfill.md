@@ -66,6 +66,38 @@ Batch 1 was rehearsed on a copy, `reviewed_bridge`, 5 rows: 24, 211, 372,
 - Restoring the backup is byte-identical.
 - None of these rows has images missing from the cloud.
 
+## NorTaxa concepts missing from the cloud release (option A)
+
+The scoped cloud release (`tax-2026.10.07-01`, 52,917 concepts) contains
+none of the 12,566 NorTaxa-only concepts. The guarded RPC refuses them with
+`22023`, which previously failed the observation's push.
+
+The fix is in `utils/cloud_sync_impl/identity_push.py`:
+- the row's NorTaxa tuple is preserved in the cloud as `external_unresolved`
+  through `set_observation_identification_v2`, without writing the name;
+- the write is skipped when the cloud already holds that tuple;
+- any other refusal still fails the push.
+
+Supporting changes:
+- the new writer is blocked in pull-only mode;
+- the conflict-plan "keep local identity" step records the identity read back
+  from the cloud;
+- contract rule 28 is updated in both repositories.
+
+**Live canary (2026-10-18), observation 1032 → cloud 1502:**
+
+- **NorTaxa identity canary: PASS.**
+  - The cloud holds `external_unresolved`
+    `nortaxa/nortaxa_taxon_id/52330` (`NBIC:52330`), with the name unchanged.
+    Verified by the owner against live Supabase.
+  - The desktop kept 624659 (`external_id_resolution`) after the pull.
+  - No identity error was reported.
+- **Overall sync/image completion: FAIL, tracked independently.** New image
+  rows (7774, 7775, plus those of 1013 and 1016) were created in the cloud
+  but never linked locally (`ImageBaselineMissingError` on
+  normalization-only differences; released v0.9.27 defect). This stage does
+  not claim that the complete sync canary passed.
+
 ## Gate procedure
 
 The commands are in the owner hand-off that accompanies this plan. In order:

@@ -8,11 +8,13 @@ in Stage S4 of the cloud-sync extraction.
 from __future__ import annotations
 
 from utils.taxon_identity import (
+    SPORELY_SOURCE_SYSTEM,
+    STATE_EXTERNAL_UNRESOLVED,
     STATE_NONE,
     TaxonIdentity,
 )
 
-from utils.cloud_sync_impl.errors import CloudSyncError
+from utils.cloud_sync_impl.errors import CloudSyncError, CloudWriteRejectedError
 from utils.cloud_sync_impl.logs import logger
 from utils.cloud_sync_impl.reconciliation.identity import (
     _baseline_identity_key,
@@ -25,6 +27,13 @@ from utils.cloud_sync_impl.reconciliation.values import _normalize_observation_i
 
 class CloudSyncTaxonIdentityMixin:
     """Taxonomy identity push methods of ``SporelyCloudClient``."""
+
+    @staticmethod
+    def _is_missing_from_cloud_release(exc: CloudWriteRejectedError) -> bool:
+        """The guarded RPC's refusal of a concept absent from the active release
+        (sporely-web ``set_observation_selected_taxon_v2``: SQLSTATE ``22023``)."""
+        text = f"{exc.message or ''} {exc}"
+        return exc.code == '22023' and 'missing from the active taxonomy-v2 release' in text
 
     def _sync_observation_selected_taxon(
         self,
@@ -90,7 +99,65 @@ class CloudSyncTaxonIdentityMixin:
         )
         if remote_taxon_id == taxon_id:
             return
-        self.set_observation_selected_taxon(cloud_id, taxon_id)
+        try:
+            self.set_observation_selected_taxon(cloud_id, taxon_id)
+        except CloudWriteRejectedError as exc:
+            if not self._is_missing_from_cloud_release(exc):
+                raise
+            self._preserve_identity_missing_from_cloud_release(
+                cloud_id, obs, identity, remote_obs=remote_obs,
+            )
+
+    def _preserve_identity_missing_from_cloud_release(
+        self,
+        cloud_id: str,
+        obs: dict,
+        identity: TaxonIdentity,
+        *,
+        remote_obs: dict | None,
+    ) -> None:
+        """Keep a concept the cloud's taxonomy release lacks from blocking the push.
+
+        The desktop release holds concepts the scoped cloud release does not
+        (every NorTaxa-only concept). The guarded RPC refuses those with
+        ``22023``. Instead of failing the whole observation, the row's own
+        source tuple is preserved in the cloud as ``external_unresolved``
+        through the atomic identification RPC, without touching the name, the
+        shape the web writes for an unresolved provider identity. A proven
+        identity with no non-Sporely tuple (a picker selection) has nothing to
+        preserve and stays local; the rest of the observation still syncs.
+        """
+        if not identity.has_external_evidence or identity.source_system == SPORELY_SOURCE_SYSTEM:
+            logger.info(
+                "cloud sync: observation %s identity %s is missing from the cloud "
+                "taxonomy release and has no source tuple to preserve; kept local",
+                obs.get('id'), identity.sporely_taxon_id,
+            )
+            return
+        claim = _remote_identity_claim(remote_obs)
+        if claim is not None and claim.kind == 'external' and (
+            claim.source_system, claim.namespace, claim.external_id,
+        ) == (identity.source_system, identity.namespace, identity.external_id):
+            return
+        self._rpc('set_observation_identification_v2', {
+            'p_observation_id': int(cloud_id),
+            'p_sporely_taxon_id': None,
+            'p_identity_state': STATE_EXTERNAL_UNRESOLVED,
+            'p_source_system': identity.source_system,
+            'p_namespace': identity.namespace,
+            'p_external_id': identity.external_id,
+            'p_raw_external_id': identity.raw_external_id,
+            'p_write_name': False,
+            'p_genus': None,
+            'p_species': None,
+            'p_common_name': None,
+        })
+        logger.info(
+            "cloud sync: observation %s concept %s is missing from the cloud taxonomy "
+            "release; preserved %s/%s/%s as external_unresolved",
+            obs.get('id'), identity.sporely_taxon_id,
+            identity.source_system, identity.namespace, identity.external_id,
+        )
 
     def _maybe_clear_stale_cloud_identity(
         self,
