@@ -98,6 +98,31 @@ Supporting changes:
   normalization-only differences; released v0.9.27 defect). This stage does
   not claim that the complete sync canary passed.
 
+## Pilot batch 1: passed (2026-10-18)
+
+`reviewed_bridge`, 5 rows: 24, 211, 372, 377, 381.
+
+- **Backup:** `~/Documents/Sporely-backups/identity-backfill-pilot-20261018T184529Z`
+  (SHA-256 `3c834a50…621335`, integrity ok).
+- **Reviewed artifact:** digest `d640f234…1fff4ce`.
+- **Apply:** `identities_bound 5, marked_dirty 5, rows_written 5`. The
+  database diff against the backup was confined to those 5 rows' identity
+  and sync columns. The re-audit reconciled: proven 3 → 8, bindable 349 → 344.
+- **Owner-authorized sync:** exactly those 5 observations, identity RPCs
+  only.
+  - Cloud baselines record `sporely:614315 / 98451 / 34615 / 105619 / 146432`.
+  - The owner verified the cloud concepts and the active release live.
+  - All 5 are `synced`.
+  - The `images`, `spore_measurements` and other tables are unchanged.
+  - The final preview showed nothing pending.
+
+**Note:** the sync summary line "touched N dirty observation(s) with no real
+change (patched=0, …)" does not count the identity RPC. Like the measurement
+`pushed=N` counter (see
+`docs/verification/2026-10-desktop-metadata-known-risks.md` on
+`fix/image-create-link`), it is misleading but not a correctness problem.
+Low priority.
+
 ## Gate procedure
 
 The commands are in the owner hand-off that accompanies this plan. In order:
