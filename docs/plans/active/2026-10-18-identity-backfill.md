@@ -123,6 +123,62 @@ change (patched=0, …)" does not count the identity RPC. Like the measurement
 `fix/image-create-link`), it is misleading but not a correctness problem.
 Low priority.
 
+## Batch 2 part 1: passed (2026-10-18)
+
+`reviewed_bridge`, 39 rows. Observation 419 was cut into this batch but
+excluded by the owner: the Artsorakel selection it was copied from could not
+be confirmed. It stays a manual-review item and was verified unchanged
+locally and in the cloud (cloud 712, identity all NULL).
+
+- **Backup:** `~/Documents/Sporely-backups/identity-backfill-bridge-part1-20261018T190530Z`
+  (SHA-256 `dda5d7a6…28f1`, integrity ok).
+- **Reviewed artifact:** digest `43f0362d…`; manifest `bridge-39-part1.json`.
+- **Apply:** `identities_bound 39, marked_dirty 39, rows_written 39`. The
+  database diff was confined to those rows' identity and sync columns.
+  Re-audit: proven 47, bindable 305.
+- **Owner-authorized sync:** 39 candidates, all `dirty` → `synced`, no
+  errors, no image creates or byte uploads.
+  - All 39 cloud baselines record the approved concept. The owner verified
+    `selected_sporely_taxon_id` live: 39/39 match.
+  - `images`, `spore_measurements` and all other tables are unchanged since
+    the backup. Only the 39 observation rows and sync bookkeeping settings
+    differ.
+  - "Metadata patch" log lines on observations 456, 460, 462, 502 and 505
+    changed no stored cloud image field (existing-link reconciliation).
+  - The final preview showed nothing pending.
+
+**Unexpected: 7 spore mosaics rebuilt and re-uploaded.** Observations 518,
+525, 537, 566, 568, 570 and 637 (cloud 815, 822, 841, 873, 875, 879, 957), all
+within the 39. The preview did not report mosaics at the time.
+
+- **Cause:** their stored `mosaic_signature` was already stale before the
+  apply. Recomputing on the pre-apply backup yields the new signatures, and
+  no source file changed. Any push of these observations would have rebuilt
+  them; the backfill only made them push.
+- **Effect:** the existing v4 mosaic row is updated in place and the
+  superseded storage object removed (`utils/cloud_sync_impl/spore_mosaic.py`).
+  The owner verified one v4 row per observation, with the logged storage key.
+- **Follow-up (low priority):** older v1/v2 mosaic rows also exist for these
+  observations (2–3 rows each). They are other pipeline versions, not
+  duplicates. Whether they and their storage objects should be cleaned up is
+  outside this plan.
+- **Preview:** `tools/sync_push_preview.py` now reports `mosaic_rebuilds`.
+  Run retrospectively on the pre-sync copy of this batch, it predicts exactly
+  these 7.
+
+## Batch 2 part 2: prepared, not authorized (2026-10-18)
+
+40 `reviewed_bridge` rows, 653…838; 419 excluded again.
+
+- **Backup:** `~/Documents/Sporely-backups/identity-backfill-bridge-part2-20261018T194803Z`
+  (SHA-256 `66d8f8ff…550aef`, integrity ok).
+- **Reviewed artifact:** digest `3003e3f0…`; manifest `bridge-40-part2.json`.
+  All 40 concepts are in the cloud release; none has a cloud identity yet.
+- **Rehearsal on a copy:** `identities_bound 40, marked_dirty 40`. The preview
+  lists exactly the 40, no image creates or byte uploads, and
+  `mosaic_rebuilds` 670, 676, 696, 697, 732 and 835 (stale signatures, as in
+  part 1).
+
 ## Gate procedure
 
 The commands are in the owner hand-off that accompanies this plan. In order:
@@ -151,3 +207,7 @@ explicit selection.
 It may re-dirty observations with local images not yet uploaded: 2,471 such
 images exist, as an upper bound. Run the preview immediately before every
 Sync.
+
+Pushing an observation also rebuilds its spore mosaic when the stored
+signature is stale. The preview's `mosaic_rebuilds` lists these; report them
+to the owner with the pending list.
