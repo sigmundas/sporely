@@ -703,3 +703,19 @@ def _cloud_explicit_media_upload_selection(observation_id: int | None) -> set[in
         return all_ids - excluded
     finally:
         conn.close()
+
+
+def _local_image_is_metadata_only_anchor_source(img: dict | None) -> bool:
+    """A local microscope image whose bytes are deliberately not sent: its
+    cloud row is the metadata-only anchor this desktop creates (without a
+    capture time)."""
+    row = dict(img or {})
+    if str(row.get('image_type') or '').strip().lower() != 'microscope':
+        return False
+    obs_id, image_id = row.get('observation_id'), row.get('id')
+    if not obs_id or not image_id:
+        return False
+    try:
+        return not cloud_image_bytes_desired(obs_id, image_id, row)
+    except Exception:
+        return False

@@ -62,12 +62,19 @@ from utils.cloud_sync_impl.baseline import (
 )
 from utils.cloud_sync_impl.exif import _captured_at_is_pull_injected, _record_pull_injected_captured_at
 from utils.cloud_sync_impl.image_payloads import (
+    _IMAGE_CLOUD_FLOAT8_FIELDS,
+    _apply_pushed_sample_fields,
+    _cloud_float8_equal,
+    _image_field_same,
+    _image_value_equivalent,
+    _no_baseline_image_values_equivalent,
     _preserve_unedited_remote_image_values,
     _remote_image_payload,
 )
 from utils.cloud_sync_impl.image_policy import (
     _ensure_cloud_image_storage_intent_initialized,
     _is_generated_cloud_image,
+    _local_image_is_metadata_only_anchor_source,
     cloud_image_bytes_desired,
 )
 from utils.cloud_sync_impl.media_signature import (
@@ -273,7 +280,13 @@ def _image_create_content_matches(client, img: dict, remote: dict) -> bool:
     for key in _IMAGE_CREATE_COMPARE_EXCLUDED_KEYS:
         expected.pop(key, None)
         actual.pop(key, None)
-    return expected == actual
+    # The cloud returns a float8 at its own precision; equal in that
+    # representation is the value the create sent.
+    return set(expected) == set(actual) and all(
+        _image_value_equivalent(key, expected[key], actual[key])
+        if key in _IMAGE_CLOUD_FLOAT8_FIELDS else expected[key] == actual[key]
+        for key in expected
+    )
 
 
 # Image rows the upload-preparation step should skip because a remote-first
@@ -434,6 +447,9 @@ def _image_patch_matches_remote(payload: dict, remote_row: dict | None) -> bool:
             if _normalize_image_captured_at_for_cloud(value, local=False) != \
                     _normalize_image_captured_at_for_cloud(remote, local=False):
                 return False
+        elif key in _IMAGE_CLOUD_FLOAT8_FIELDS:
+            if not _cloud_float8_equal(value, remote):
+                return False
         elif value != remote and (value is None or remote is None or str(value) != str(remote)):
             return False
     return True
@@ -489,13 +505,20 @@ def _image_patch_three_way(
         )
         if not _image_calibration_uuid(img):
             local.pop('calibration_uuid', None)  # a local NULL calibration is never sent
-        def same(key):
-            a, b = local[key], remote_payload[key]
-            # Local flag columns default to 0 where the cloud holds NULL.
-            return a == b or (key in ('gps_source', 'ai_crop_is_custom') and bool(a) == bool(b))
+        # Compare what the push sends with what the cloud holds, in the
+        # cloud's representation: a row this client just created (or created
+        # in an interrupted run) must equal its own payload.
+        _apply_pushed_sample_fields(local, img)
+        remote_payload = dict(remote_payload)
+        _apply_pushed_sample_fields(remote_payload, remote_payload)
+        anchor_source = _local_image_is_metadata_only_anchor_source(img)
         differing = {
             key for key in _IMAGE_THREE_WAY_FIELDS
-            if key in local and key in remote_payload and not same(key)
+            if key in local and key in remote_payload
+            and not _no_baseline_image_values_equivalent(
+                key, local[key], remote_payload[key], remote_row=remote_row,
+                local_is_anchor_source=anchor_source,
+            )
         }
         return set(), differing
     edits = _remote_only_image_edits(local_payload, img, baseline_row, remote_payload, **include)
@@ -531,11 +554,17 @@ def _remote_only_image_edits(
     )
     for key in set(local_payload) - set(local):
         local[key] = baseline_payload.get(key)
+    # The push's sample normalization on every side, as in the no-baseline rule.
+    _apply_pushed_sample_fields(local, img)
+    baseline_payload = dict(baseline_payload)
+    _apply_pushed_sample_fields(baseline_payload, dict(baseline_payload))
+    remote_payload = dict(remote_payload)
+    _apply_pushed_sample_fields(remote_payload, dict(remote_payload))
     return {
         key for key, remote_value in remote_payload.items()
         if key in local and key in baseline_payload
-        and local[key] == baseline_payload[key]
-        and remote_value != baseline_payload[key]
+        and _image_field_same(key, local[key], baseline_payload[key])
+        and not _image_field_same(key, remote_value, baseline_payload[key])
     }
 
 

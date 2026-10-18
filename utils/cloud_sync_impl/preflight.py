@@ -25,11 +25,17 @@ from utils.cloud_sync_impl.common import (
 )
 from utils.cloud_sync_impl.exif import _captured_at_is_pull_injected
 from utils.cloud_sync_impl.image_payloads import (
+    _apply_pushed_sample_fields,
     _deleted_remote_image_identity_keys,
+    _image_payloads_same,
+    _no_baseline_image_values_equivalent,
     _preserve_unedited_remote_image_values,
     _remote_image_payload,
 )
-from utils.cloud_sync_impl.image_policy import should_pull_cloud_image_to_desktop
+from utils.cloud_sync_impl.image_policy import (
+    _local_image_is_metadata_only_anchor_source,
+    should_pull_cloud_image_to_desktop,
+)
 from utils.cloud_sync_impl.local_files import _resolve_existing_local_image_asset_path
 from utils.cloud_sync_impl.location_precision import _guard_local_location_precision
 from utils.cloud_sync_impl.media_signature import (
@@ -161,11 +167,20 @@ def _no_baseline_image_differences(
     )
     for key in set(remote_meta) - set(local_meta):
         local_meta[key] = remote_meta[key]
+    # The push gate's normalization: what the push sends, in the cloud's
+    # representation (``image_push._image_patch_three_way``).
+    _apply_pushed_sample_fields(local_meta, local_img)
+    remote_meta = dict(remote_meta)
+    _apply_pushed_sample_fields(remote_meta, remote_meta)
+    anchor_source = _local_image_is_metadata_only_anchor_source(local_img)
     return {
         key: (local_meta.get(key), remote_meta.get(key))
         for key in sorted(set(local_meta) | set(remote_meta))
         if key not in local_meta or key not in remote_meta
-        or local_meta[key] != remote_meta[key]
+        or not _no_baseline_image_values_equivalent(
+            key, local_meta[key], remote_meta[key], remote_row=remote_payload,
+            local_is_anchor_source=anchor_source,
+        )
     }
 
 
@@ -271,9 +286,13 @@ def _analyze_observation_push_conflicts(
         )
         if 'captured_at' not in local_meta and 'captured_at' in baseline_meta:
             local_meta['captured_at'] = baseline_meta['captured_at']
-        local_changed = local_meta != baseline_meta
-        remote_changed = remote_meta != baseline_meta
-        if local_changed and remote_changed and local_meta != remote_meta:
+        # The push's sample normalization on every side, as in the no-baseline rule.
+        _apply_pushed_sample_fields(local_meta, local_images_by_cloud_id.get(cloud_image_id))
+        for meta in (baseline_meta, remote_meta):
+            _apply_pushed_sample_fields(meta, dict(meta))
+        local_changed = not _image_payloads_same(local_meta, baseline_meta)
+        remote_changed = not _image_payloads_same(remote_meta, baseline_meta)
+        if local_changed and remote_changed and not _image_payloads_same(local_meta, remote_meta):
             image_conflict_keys.append(f'cloud:{cloud_image_id}')
 
     # A linked image with no baseline row whose local and cloud values differ:

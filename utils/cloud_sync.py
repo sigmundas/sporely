@@ -258,6 +258,7 @@ from utils.cloud_sync_impl.image_policy import (  # noqa: F401  (facade re-expor
     _ensure_cloud_image_storage_intent_initialized,
     _initialize_cloud_image_storage_desired_state_for_observation,
     _is_generated_cloud_image,
+    _local_image_is_metadata_only_anchor_source,
     _is_local_metadata_only_microscope_anchor,
     _is_metadata_only_microscope_cloud_image,
     _mark_cloud_image_storage_intent_initialized,
@@ -404,7 +405,15 @@ from utils.cloud_sync_impl.sample_source import (  # noqa: F401  (facade re-expo
     _split_legacy_sample_type_into_source,
 )
 from utils.cloud_sync_impl.image_payloads import (  # noqa: F401  (facade re-export)
+    _IMAGE_CLOUD_FLOAT8_FIELDS,
+    _apply_pushed_sample_fields,
+    _cloud_float8_equal,
     _deleted_remote_image_identity_keys,
+    _image_field_same,
+    _image_payloads_same,
+    _image_value_equivalent,
+    _is_metadata_only_anchor_row,
+    _no_baseline_image_values_equivalent,
     _preserve_unedited_remote_image_values,
     _remote_image_payload,
 )
