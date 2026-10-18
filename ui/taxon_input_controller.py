@@ -990,7 +990,8 @@ class TaxonInputController(QObject):
         resolved = identity.resolved_to(
             concept.sporely_taxon_id,
             provenance=(
-                f"taxonomy_v2:{concept.release_id}:taxon_external_id_text_min"
+                f"taxonomy_v2:{concept.release_id}:"
+                f"{getattr(concept, 'resolved_through', None) or 'taxon_external_id_text_min'}"
             ),
         )
         if not resolved.is_proven_sporely:

@@ -83,6 +83,29 @@ before commit):
    observation keeps your species and no identity from the suggestion.
 3. Sync that observation. It shows its name on the web.
 
+## Verification record (2026-10-18)
+
+Owner's desktop app on this branch, observation 1032. Values were read from
+the local database after quitting Sporely.
+
+- **Test 1 — passed.** The Artsorakel suggestion `NBIC:52330` bound 624659:
+  - proof `external_id_resolution`;
+  - provenance `…:taxon_min.canonical_source_usage`;
+  - Red List `LC` with snapshot `{"NO": "LC"}`.
+- **Test 2a — passed.** After the species was changed by hand, the identity
+  was empty and `ai_selected_taxon_id` stayed `NBIC:52330` as history.
+- **Test 2b — passed.** An explicit Scientific-dropdown pick bound 40672
+  (proof `taxonomy_v2_artifact`, its own tuple).
+- **Test 3 (cloud round trip) — deferred, not passed.** It needs the owner's
+  authorization for a live sync.
+
+Two defects were found and fixed during these checks:
+1. The Artsorakel API carries its ID only as `scientific_name_id`. The copy
+   path never read that key, so 48 of the owner's picks stored no ID.
+2. The identity commit cleared the suggestion's own Red List snapshot.
+
+Both have regression tests built from the real response shape.
+
 ## Interactions
 
 - **Cloud-sync orchestration** (unmerged `plan/cloud-sync-orchestration`):
@@ -100,6 +123,17 @@ before commit):
    instead of an aggregate, are never rebound.
 2. A reviewed bulk repair, authorized separately: backup, dry run, your
    approval, the existing gated apply, then a re-audit.
+
+## Follow-up found during the manual check (owner-approved for later)
+
+Picking a species from the **Species** field's dropdown stores no identity,
+although the list entry (`TaxonChoice`) carries a `taxon_id`
+(`ui/taxon_input_controller.py` `on_species_selected` fills in text only).
+Only a pick in the **Scientific** dropdown binds. Observers reasonably read
+both as a selection. Fix: bind the clicked entry's own concept ID, exactly as
+the Scientific pick does. Where the list shows two same-name concepts, bind
+only the entry clicked and never choose between them. A separate small stage
+after this one, with its own human check.
 
 ## Deferred until a user-facing problem is demonstrated
 

@@ -1279,6 +1279,9 @@ class InstalledTaxonConcept:
     release_id: str
     scientific_name: str | None
     rank: str | None
+    #: Which artifact table resolved an external identity to this concept
+    #: (``None`` for a plain membership lookup). Recorded in provenance.
+    resolved_through: str | None = None
 
 
 def installed_taxon_concept(db_path, sporely_taxon_id: object) -> InstalledTaxonConcept | None:
@@ -1352,6 +1355,38 @@ def namespaced_external_id_matches(
     return {int(row[0]) for row in rows}
 
 
+#: The one source whose own anchor usages identify concepts by namespace: a
+#: NorTaxa-only concept's ``canonical_external_id`` is the ``taxonID`` of the
+#: NorTaxa usage that anchors it (``build_sqlite_candidate.py`` writes the
+#: anchor usage's identifier there). See ``identity-contract.md``.
+_SOURCE_IDENTITY_NAMESPACES = {("nortaxa", "nortaxa_taxon_id")}
+
+
+def source_identity_matches(
+    conn: sqlite3.Connection,
+    *,
+    source_system: str,
+    namespace: str,
+    external_id: str,
+) -> set[int]:
+    """Concepts anchored by the source usage ``(source, namespace, external_id)``.
+
+    A concept's own anchoring usage identifies that concept and nothing else;
+    it says nothing about equivalence with any other concept, so it is no
+    bridge. Only namespaces in :data:`_SOURCE_IDENTITY_NAMESPACES` qualify.
+    Raises :class:`sqlite3.OperationalError` when ``taxon_min`` has no
+    canonical source columns.
+    """
+    if (str(source_system), str(namespace)) not in _SOURCE_IDENTITY_NAMESPACES:
+        return set()
+    rows = conn.execute(
+        "SELECT DISTINCT taxon_id FROM taxon_min "
+        "WHERE canonical_source_system = ? AND canonical_external_id = ?",
+        (str(source_system), str(external_id)),
+    ).fetchall()
+    return {int(row[0]) for row in rows}
+
+
 def resolve_installed_external_identity(
     db_path,
     *,
@@ -1363,9 +1398,12 @@ def resolve_installed_external_identity(
 
     Returns the concept only when the tuple names exactly one concept in
     ``taxon_external_id_text_min`` and that concept is a member of the same
-    taxonomy-v2 release (:func:`installed_taxon_concept`). No match, several
-    matches, a pre-v2 database or any read error all return ``None`` — the
-    caller keeps the identity unresolved rather than guessing.
+    taxonomy-v2 release (:func:`installed_taxon_concept`). When the bridge
+    table names nothing, a concept anchored by the tuple's own source usage
+    (:func:`source_identity_matches`) resolves instead, again only when it is
+    exactly one. No match, several matches, a pre-v2 database or any read
+    error all return ``None`` — the caller keeps the identity unresolved
+    rather than guessing.
     """
     source = _normalize_text(source_system)
     ns = _normalize_text(namespace)
@@ -1376,17 +1414,30 @@ def resolve_installed_external_identity(
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     except sqlite3.Error:
         return None
+    resolved_through = "taxon_external_id_text_min"
     try:
         matches = namespaced_external_id_matches(
             conn, source_system=source, namespace=ns, external_id=ext,
         )
+        if not matches:
+            try:
+                matches = source_identity_matches(
+                    conn, source_system=source, namespace=ns, external_id=ext,
+                )
+            except sqlite3.OperationalError:
+                # An artifact without canonical source columns names no anchor.
+                matches = set()
+            resolved_through = "taxon_min.canonical_source_usage"
     except sqlite3.Error:
         return None
     finally:
         conn.close()
     if len(matches) != 1:
         return None
-    return installed_taxon_concept(db_path, next(iter(matches)))
+    concept = installed_taxon_concept(db_path, next(iter(matches)))
+    if concept is None:
+        return None
+    return _dc_replace(concept, resolved_through=resolved_through)
 
 
 __all__ = [
@@ -1394,6 +1445,7 @@ __all__ = [
     "InstalledTaxonConcept",
     "installed_taxon_concept",
     "namespaced_external_id_matches",
+    "source_identity_matches",
     "resolve_installed_external_identity",
     "ManualScientificResolution",
     "TaxonChoice",

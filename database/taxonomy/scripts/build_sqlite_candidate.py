@@ -551,6 +551,17 @@ def _build_into(
             parent_id = _resolve_parent_sporely_id(row, source_usage_index)
             release_id = manifest.get("content_release_id", "")
             canonical_source_usage = row["canonical_source_usage"]
+            # ``canonical_external_id`` keeps only the identifier; the desktop
+            # resolves a NorTaxa-only concept through it as a
+            # ``nortaxa_taxon_id`` (identity-contract.md, same-source
+            # identity), so any other NorTaxa namespace would be misread.
+            if (canonical_source_usage["source"] == "nortaxa"
+                    and canonical_source_usage.get("namespace") != "nortaxa_taxon_id"):
+                raise BuildError(
+                    f"NorTaxa-anchored concept {sporely_id} has canonical "
+                    f"namespace {canonical_source_usage.get('namespace')!r}; "
+                    "same-source identity requires 'nortaxa_taxon_id'"
+                )
             taxa_rows.append((
                 sporely_id,
                 parent_id,
