@@ -225,7 +225,20 @@ Preparation:
   lists exactly the 40; 241 unlinked microscope images, none byte-desired and
   none with measurements; `mosaic_rebuilds` 901 and 914.
 
-## NorTaxa-only identities: prepared, not authorized (2026-10-19)
+## NorTaxa-only identities: applied locally, sync not yet authorized (2026-10-19)
+
+The owner approved A and B. Apply of `nortaxa-AB-40.json`:
+`identities_bound 40, marked_dirty 40, rows_written 40`, `names_restored 0`.
+Every row is bound to its NorTaxa-only concept with source, namespace, ID and
+raw ID unchanged where they existed; the original `taxon_identity_provenance`
+of all 40 is kept in `apply-nortaxa-AB-40.json` (26 NULL, 14
+`cloud:observations.taxon_identity_*`). The diff is confined to those rows;
+419 and 701 are unchanged. Re-audit: proven 127 → 167, bindable 225 → 185.
+The 08:42 UTC preview matches the approved scope: 40 observations, 26
+fallback identity writes (14 already in the cloud), mosaic rebuilds 639, 668,
+816, 826, 930, 985, and no image creates, uploads, new measurements or deletes.
+
+Preparation:
 
 Both groups bind to the NorTaxa-only concept. These concepts are absent from
 the cloud release, so the sync takes the option-A fallback: the guarded RPC
