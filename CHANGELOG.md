@@ -2,6 +2,15 @@
 
 All notable changes to Sporely are documented here.
 
+## Unreleased (desktop 0.9.28) — DRAFT, wording awaiting owner approval
+
+No server changes; works with the same server as 0.9.27.
+
+### Fixed
+- **New images were uploaded but never linked (0.9.27).** After uploading a new image, the next step compared it with the cloud row it had just created and treated small formatting differences (an unset sample type, the last digit of the scale, a missing capture time) as a conflict. The image reached the cloud, but the desktop never linked it: the observation stayed unsynced and the sync reported issues. A new image is now linked in the same sync, and images left unlinked by 0.9.27 are linked on the next sync without being uploaded again.
+- **Artsorakel suggestions for species known only in the Norwegian species list now keep their identity.** Accepting such a suggestion stored the name but no taxon identity, and could clear the Red List category. The suggestion now binds to its own Norwegian (NorTaxa) taxon and keeps the Red List category.
+- **Such identities no longer fail the cloud sync.** When the cloud taxonomy does not contain a NorTaxa-only taxon, the sync now keeps the Norwegian identifier on the cloud observation instead of reporting an error.
+
 ## 2026-10-17 (desktop 0.9.27)
 
 No server changes; works with the same server as 0.9.26.
