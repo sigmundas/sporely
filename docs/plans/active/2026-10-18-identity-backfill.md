@@ -166,18 +166,35 @@ within the 39. The preview did not report mosaics at the time.
   Run retrospectively on the pre-sync copy of this batch, it predicts exactly
   these 7.
 
-## Batch 2 part 2: prepared, not authorized (2026-10-18)
+## Batch 2 part 2: passed (2026-10-19)
 
 40 `reviewed_bridge` rows, 653…838; 419 excluded again.
 
 - **Backup:** `~/Documents/Sporely-backups/identity-backfill-bridge-part2-20261018T194803Z`
   (SHA-256 `66d8f8ff…550aef`, integrity ok).
 - **Reviewed artifact:** digest `3003e3f0…`; manifest `bridge-40-part2.json`.
-  All 40 concepts are in the cloud release; none has a cloud identity yet.
-- **Rehearsal on a copy:** `identities_bound 40, marked_dirty 40`. The preview
-  lists exactly the 40, no image creates or byte uploads, and
-  `mosaic_rebuilds` 670, 676, 696, 697, 732 and 835 (stale signatures, as in
-  part 1).
+  All 40 concepts are in the cloud release; none had a cloud identity.
+- **Rehearsal on a copy:** `identities_bound 40, marked_dirty 40`; the preview
+  predicted exactly the 40 and `mosaic_rebuilds` 670, 676, 696, 697, 732, 835.
+- **Apply:** `identities_bound 40, marked_dirty 40, rows_written 40`,
+  `names_restored 0`. The database diff was confined to those rows' identity
+  and sync columns. Re-audit: proven 47 → 87, bindable 305 → 265.
+- **Pre-sync preview (07:13 UTC):** exactly the 40, the due pending-image scan
+  added nothing, no image creates or uploads, no new measurements, no deletes,
+  and the six predicted mosaic rebuilds. The owner approved this scope.
+- **Owner-authorized sync:** 40 candidates, all `dirty` → `synced`; the
+  pending-image scan ran (`re_dirtied=0`); calibrations `pushed=0`; no image
+  uploads, creates or metadata patches; no issues reported.
+  - Exactly the six predicted mosaics were rebuilt (`Mosaic done` on 670, 676,
+    696, 697, 732, 835), with no cleanup failure. Duplicate v4 rows are
+    excluded by `UNIQUE (observation_id, version)`.
+  - The owner verified `selected_sporely_taxon_id` live: 40/40 match. Cloud 712
+    (local 419) is still NULL.
+  - Locally: all 40 `synced` with their cloud baselines on the approved
+    concept; `mosaic_signature` changed only on the six; `images`,
+    `spore_measurements` and every other table are unchanged since the backup.
+    Settings changes are sync bookkeeping only.
+  - The final preview showed nothing pending and no mosaic rebuilds.
 
 ## Gate procedure
 
