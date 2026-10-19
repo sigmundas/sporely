@@ -16,6 +16,8 @@ _PULL_ONLY_BLOCKED_CLIENT_METHODS = frozenset({
     'upload_image_file', 'upload_original_image_file',
     'set_image_storage_path',
     'set_observation_selected_taxon', 'clear_observation_selected_taxon',
+    # Preserves a concept the cloud release lacks as external_unresolved.
+    '_preserve_identity_missing_from_cloud_release',
     'set_observation_location',
     'set_image_original_storage_path',
     '_restore_missing_observation_media_keys',
@@ -61,6 +63,8 @@ _PULL_ONLY_ALLOWED_READ_METHODS = frozenset({
     '_latch_upload_refusal',
     '_latch_media_upload_refusal',
     '_raise_write_rejection',
+    # Pure classification of a write refusal; no I/O.
+    '_is_missing_from_cloud_release',
     # Calibration reads
     'list_remote_calibrations',
     'find_remote_calibration',

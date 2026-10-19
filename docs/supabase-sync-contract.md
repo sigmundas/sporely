@@ -176,6 +176,20 @@ Plain English comes first; technical terms are in parentheses.
     taxon id: the raw provider value must be retained, and any namespace hop
     must be a bridge declared in `database/taxonomy/docs/identity-contract.md`.
 
+    **A proven concept the cloud release lacks is preserved, not failed.** A
+    client's installed release can hold concepts the scoped cloud release does
+    not (every NorTaxa-only concept). When `set_observation_selected_taxon_v2`
+    refuses a proven identity with `22023` "missing from the active
+    taxonomy-v2 release", the client must not fail the observation's push.
+    If the identity carries a non-Sporely source tuple, the client preserves
+    it through `set_observation_identification_v2` as `external_unresolved`
+    with no `selected_sporely_taxon_id` and `p_write_name = false`, unless the
+    cloud row already holds that tuple. Otherwise the identity stays local.
+    The local proven identity is kept either way. Any other refusal still
+    fails the push. A later push of the row retries the guarded RPC, so the
+    concept binds once the cloud release contains it; the refusal itself
+    writes nothing.
+
     **A cloud identity received on pull is kept, never proven.** The server
     guarantees only that `selected_sporely_taxon_id` was in the active release
     when it was written; it records no producer and no release, and

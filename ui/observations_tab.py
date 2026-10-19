@@ -360,6 +360,14 @@ def _normalize_ai_prediction_taxon(prediction: dict, source: str | None = None) 
         value = pred.get(key)
         if value not in (None, "", {}, []):
             taxon[key] = value
+    # The Artsorakel API carries its prefixed identifier (``NBIC:52330``)
+    # only as ``scientific_name_id``; without this the copy path saw no id at
+    # all and stored neither ``ai_selected_taxon_id`` nor a provider identity.
+    # ``scientific_name_id_shared`` (a GBIF id) is deliberately not used.
+    if not str(taxon.get("id") or "").strip():
+        name_id = str(pred.get("scientific_name_id") or pred.get("scientificNameId") or "").strip()
+        if name_id:
+            taxon["id"] = name_id
     return taxon
 
 
@@ -17010,6 +17018,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             )
             if hasattr(self, "vernacular_input"):
                 self.vernacular_input.setText(vernacular or "")
+            # Commit the provider identity before applying the provider's
+            # Red List snapshot: the commit callback clears the Red List for
+            # the identity change, and must not clear the snapshot that
+            # belongs to this very identity.
+            self._preserve_ai_external_taxon_identity(taxon, genus, species)
             if source == "inat":
                 self._set_inaturalist_taxon_id(taxon.get("id"))
                 self._set_red_list_category(None, None)
@@ -17046,7 +17059,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 "ai_selected_probability": self._ai_prediction_score(selected_pred or {}),
                 "ai_selected_at": _current_utc_timestamp_text(),
             }
-            self._preserve_ai_external_taxon_identity(taxon, genus, species)
             self._update_selected_ai_summary_label(self._current_ai_selected_fields)
             self._set_ai_status(self.tr("Copied to taxonomy."), "#27ae60", source=source)
         self._update_taxonomy_tab_indicators()

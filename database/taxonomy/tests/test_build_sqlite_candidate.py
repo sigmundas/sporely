@@ -350,6 +350,22 @@ def test_no_dangling_relationships(tmp_path: Path) -> None:
         assert orphans == 0, table
 
 
+def test_build_refuses_a_nortaxa_anchor_outside_nortaxa_taxon_id(tmp_path: Path) -> None:
+    """The desktop resolves NorTaxa-only concepts through
+    ``canonical_external_id`` as a ``nortaxa_taxon_id``; a release anchoring
+    one on any other NorTaxa namespace must not build."""
+    release_dir = _compile(tmp_path)
+    taxa_path = release_dir / "taxa.jsonl"
+    rows = [json.loads(line) for line in taxa_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows[-1]["canonical_source_usage"] = {
+        "source": "nortaxa", "namespace": "nortaxa_dwc_id", "identifier": "row-A"}
+    taxa_path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    with pytest.raises(BuildError, match="same-source identity"):
+        build_candidate(release_dir=release_dir,
+                        registry_path=tmp_path / "registry.jsonl",
+                        output_db=tmp_path / "candidate.sqlite3")
+
+
 def test_build_refuses_existing_output(tmp_path: Path) -> None:
     release_dir = _compile(tmp_path)
     output = tmp_path / "candidate.sqlite3"

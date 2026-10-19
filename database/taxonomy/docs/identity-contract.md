@@ -109,3 +109,18 @@ mappings remain stored so the same proposal is not repeatedly raised.
 
 Confidence is a decimal from zero through one describing evidence strength. It
 never changes a non-exact relationship into identity.
+
+### Same-source identity of NorTaxa-only concepts
+
+A concept anchored by a NorTaxa usage carries that usage's `taxonID` in
+`taxon_min.canonical_external_id`, with `canonical_source_system = 'nortaxa'`
+(`build_sqlite_candidate.py` writes the anchor usage's identifier there; the
+anchor usage's namespace is `nortaxa_taxon_id`). A provider tuple
+`(nortaxa, nortaxa_taxon_id, X)` with no approved bridge therefore resolves to
+the concept whose own anchor is `X`, when exactly one such concept exists
+(`database/taxon_lookup.py` `resolve_installed_external_identity`). An
+approved bridge for the same tuple takes precedence.
+
+This identifies the concept by its own source record and nothing else. It is
+not a bridge and never evidence that the NorTaxa concept equals a COL
+concept, even one with the same name.

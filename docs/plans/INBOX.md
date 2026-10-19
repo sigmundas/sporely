@@ -5,6 +5,10 @@ Items here are not approved implementation plans.
 Add a note under the nearest heading, or use “Unsorted / needs review” when its home is unclear.
 
 ## Cloud sync / recovery
+- Value-identical image metadata PATCHes: syncs of the identity backfill logged "metadata patch … source bytes unchanged" on observations whose stored image baselines did not change (456, 460, 462, 502, 505, 442), followed by a child-change pull. The contract forbids no-op cloud writes (they advance the child-change cursor). Find which field the PATCH sends and skip it when the cloud already matches.
+- The two copies of `docs/supabase-sync-contract.md` (sporely-py and sporely-web `main`) differ by about 600 lines that predate 2026-10-19 (for example the personal-copy provenance paragraph and the pulled-identity paragraph). Reconcile them in one docs change.
+- Sync summary counters mislead: "touched N dirty observation(s) with no real change" ignores identity RPCs, and `measurement push … pushed=N` counts unchanged rows.
+- Old v1/v2 spore-mosaic rows (and storage objects) remain next to the current v4 row per observation. Decide whether to clean them up.
 
 - Add a real Reset Cloud Sync / Reset Cloud Link tool, or remove that instruction from the account-mismatch message until the tool exists.
 - Replace “Unable to save cloud login” for account-link protection failures with wording that identifies the account mismatch.
@@ -68,6 +72,11 @@ Source: former `PLAN.md`.
 Source: former `PLAN.md`; unmatched-image work also appears in `docs/hardware-sync.md`.
 
 ## Taxonomy
+- Identity backfill follow-ups (plan closed 2026-10-19, see `completed/2026-10-18-identity-backfill.md`):
+  - Observation 701 (*Russula queletii* coll.): bind its NorTaxa identity (group `nortaxa_self_unique_name`) once the image-create/link fix is in the build used for syncing. Its unlinked microscope image 5042 carries 3 `other` measurements; the sync will create a metadata-only owner-sync anchor and push them. Keep both; fresh dry run, owner GO, preview and authorized sync as for the other batches.
+  - Picking a species from the **Species** dropdown stores no identity; only the **Scientific** dropdown binds. Bind the clicked entry's own concept ID and never choose between same-name concepts (`ui/taxon_input_controller.py` `on_species_selected`).
+  - Deferred by owner decision: 419 (copied Artsorakel selection unconfirmed) and 183 `same_name_ai_history_only` rows. Unresolved without new evidence: 147 no identity evidence, 87 unresolved external IDs, 24 cloud-selected unverified, 16 AI suggestions not adopted, 5 identifier/name mismatches, 3 numeric collisions.
+  - Observations 382, 495 and 580 have no name locally or in the cloud; the only candidate is an unaccepted low-probability AI pick (`restore_lost_names` in the audit). Left unchanged by owner rule.
 
 - Consider the deferred observer-safe `Help → Taxonomy` menu described in `database/taxonomy/docs/ui-menu-recommendation.md`; keep acquisition, compilation, promotion, mapping edits, and deletion CLI-only.
 - Reconcile NorTaxa/COL duplicate candidates (Taxonomy v3 Group B): 7,338 NorTaxa concepts in 7,423 same-name pairs with a separate COL concept in `tax-2026.09.26-02`; the COL side is in the cloud scope for 2,132 pairs, the NorTaxa side never. Names and ids sit on the NorTaxa concept, so web users find no common name for species such as Cantharellus cibarius. Name equality only sizes this; identity needs reviewed evidence. Counts: `database/taxonomy/evidence/taxonomy-v3/stage0/coverage-report.json`.

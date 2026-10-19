@@ -3375,3 +3375,71 @@ def test_local_image_choice_finalizes_through_the_adoption_hook(monkeypatch):
     (args, kwargs), = snapshots
     kwargs["before_store_images"](remote_images)
     assert adopted == [("obs-cloud", 1, remote_images)]
+
+
+def test_keep_local_identity_missing_from_cloud_release_records_what_landed(monkeypatch):
+    """"Keep this device's identity" for a concept the cloud release lacks:
+    the guarded RPC refuses it and the push preserves the NorTaxa tuple
+    instead (identity_push). The completed step must record the identity the
+    cloud actually holds, so a retry after a later failure verifies against
+    it rather than reporting drift."""
+    from utils.cloud_sync_impl.errors import CloudWriteRejectedError
+    from utils.cloud_sync_impl.identity_push import CloudSyncTaxonIdentityMixin
+    from utils.taxon_identity import TaxonIdentity
+
+    resolved = TaxonIdentity.from_prefixed_external_id(
+        "NBIC:52330", scientific_name="Panaeolina foenisecii", rank="species",
+    ).resolved_to(624659, provenance="taxonomy_v2:tax-2026.10.07-01:taxon_min.canonical_source_usage")
+    local_obs = {"id": 1, "cloud_id": "917", **resolved.to_row()}
+    remote_obs_reviewed = {"id": 917, "selected_sporely_taxon_id": None,
+                           "taxon_identity_state": None}
+    local_meas = [{"id": 42, "image_id": 5, "length_um": 5.0}]
+    baseline = _baseline_from_state(local_obs, remote_obs_reviewed, [], [], local_meas, [])
+    live_remote = dict(remote_obs_reviewed)
+
+    class _Client(CloudSyncTaxonIdentityMixin):
+        def get_observation(self, cid): return dict(live_remote)
+        def _patch(self, path, payload): live_remote.update(payload)
+        def set_observation_selected_taxon(self, cloud_id, taxon_id):
+            raise CloudWriteRejectedError(
+                "RPC set_observation_selected_taxon_v2 failed", status_code=400, code="22023",
+                message=f"sporely_taxon_id {taxon_id} is missing from the active taxonomy-v2 release")
+        def _rpc(self, name, payload):
+            assert name == "set_observation_identification_v2"
+            live_remote.update({
+                "selected_sporely_taxon_id": None,
+                "taxon_identity_state": payload["p_identity_state"],
+                "taxon_identity_source_system": payload["p_source_system"],
+                "taxon_identity_namespace": payload["p_namespace"],
+                "taxon_identity_external_id": payload["p_external_id"],
+                "taxon_identity_raw_external_id": payload["p_raw_external_id"],
+            })
+
+    push_count = {"n": 0}
+
+    def _fake_push_measurements(*a, **k):
+        push_count["n"] += 1
+        if push_count["n"] == 1:
+            raise RuntimeError("transient network")
+
+    _patch_common(monkeypatch, local_obs=local_obs, remote_obs=remote_obs_reviewed,
+                  local_measurements=local_meas)
+    monkeypatch.setattr(cloud_sync, "_push_measurements_for_observation", _fake_push_measurements)
+    plan = {
+        "baseline": baseline,
+        "items": [
+            {"kind": "field", "field": cloud_sync.TAXON_IDENTITY_SYNC_FIELD, "choice": "local"},
+            {"kind": "measurement", "side": "local_only", "local_id": 42, "choice": "upload"},
+        ],
+    }
+    client = _Client()
+    with pytest.raises(cloud_sync.PartialConflictPlanError) as excinfo:
+        resolve_conflict_plan(client, 1, plan=plan)
+    partial = excinfo.value.partial_result
+    pushed = [op for op in partial["operations"]
+              if op.get("op") == "push_field" and op.get("status") == "completed"]
+    assert [op["expected_after"]["value"] for op in pushed] == [
+        "external:nortaxa:nortaxa_taxon_id:52330"]
+
+    result = resolve_conflict_plan(client, 1, plan=plan, prior_result=partial)
+    assert result["plan_applied"]
