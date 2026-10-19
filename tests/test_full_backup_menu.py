@@ -562,6 +562,7 @@ def test_restore_quiescence_includes_running_parked_workers(monkeypatch, qapp):
     worker = type("Worker", (), {"isRunning": lambda self: True})()
     app = type("App", (), {
         "findChildren": lambda self, kind: [],
+        "processEvents": lambda self, *args: None,   # pytest-qt pumps events around each test
         "_sporely_parked_threads": {worker},
     })()
     monkeypatch.setattr(QApplication, "instance", lambda: app)
@@ -577,6 +578,7 @@ def test_restore_quiescence_includes_window_owned_workers(monkeypatch, qapp):
     worker = type("Worker", (), {"isRunning": lambda self: True})()
     app = type("App", (), {
         "findChildren": lambda self, kind: [],
+        "processEvents": lambda self, *args: None,   # pytest-qt pumps events around each test
         "_sporely_parked_threads": set(),
     })()
     monkeypatch.setattr(QApplication, "instance", lambda: app)
