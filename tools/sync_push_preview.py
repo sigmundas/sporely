@@ -15,6 +15,14 @@ replace the cloud mosaic), ``unchanged`` (skipped, provided the cloud mosaic
 row still exists; not checked offline) or null (no public eligible
 measurements, no mosaic).
 
+``image_creates`` and ``measurements_without_cloud_id`` predict the child
+rows a push would create, with the pusher's own predicates: an unlinked image
+whose bytes are desired is uploaded (``bytes``); an unlinked microscope image
+that anchors public spore measurements, or (only when the server confirms the
+owner-sync parent capability, not checked offline) the owner's own
+measurements of any type, gets a metadata-only row (``anchor_public`` /
+``anchor_owner_sync``). Measurements on such an image are then pushed.
+
 Usage (from the sporely-py worktree, Sporely closed or open):
   PYTHONPATH=. .venv/bin/python tools/sync_push_preview.py <scratch dir> [source db]
 
@@ -47,6 +55,11 @@ schema.get_images_dir = lambda: real_images_dir
 from utils import cloud_sync  # noqa: E402
 from utils.cloud_sync_impl import pending_images  # noqa: E402
 from utils.cloud_sync_impl.child_identity import redirty_interrupted_child_creates  # noqa: E402
+from utils.cloud_sync_impl.image_policy import (  # noqa: E402
+    cloud_image_bytes_desired,
+    microscope_image_requires_owner_sync_anchor,
+    microscope_image_requires_public_spore_anchor,
+)
 from utils.cloud_sync_impl.mosaic_signature import (  # noqa: E402
     _current_local_mosaic_signature,
     _load_local_mosaic_signature,
@@ -86,6 +99,8 @@ report = {
         "SELECT COUNT(*) FROM image_tombstones WHERE delete_synced_at IS NULL").fetchone()[0],
     "local_calibrations": conn.execute("SELECT COUNT(*) FROM calibrations").fetchone()[0],
     "mosaic_rebuilds": [],
+    "image_creates": [],
+    "measurements_without_cloud_id": 0,
     "observations": [],
 }
 for obs_id in sorted(after):
@@ -103,10 +118,34 @@ for obs_id in sorted(after):
     else:
         mosaic = "rebuild"
         report["mosaic_rebuilds"].append(obs_id)
+    creates = []
+    if row["cloud_id"]:
+        for image in conn.execute(
+                "SELECT * FROM images WHERE observation_id = ? AND cloud_id IS NULL "
+                "ORDER BY id", (obs_id,)).fetchall():
+            image = dict(image)
+            if cloud_image_bytes_desired(obs_id, image["id"], image):
+                kind = "bytes"
+            elif str(image.get("image_type") or "").lower() != "microscope":
+                continue
+            elif microscope_image_requires_public_spore_anchor(image["id"]):
+                kind = "anchor_public"
+            elif microscope_image_requires_owner_sync_anchor(image["id"]):
+                kind = "anchor_owner_sync"
+            else:
+                continue
+            creates.append({"image_id": image["id"], "kind": kind})
+    report["image_creates"].extend({"observation_id": obs_id, **c} for c in creates)
+    unsynced_measurements = conn.execute(
+        "SELECT COUNT(*) FROM spore_measurements m JOIN images i ON i.id = m.image_id "
+        "WHERE i.observation_id = ? AND m.cloud_id IS NULL", (obs_id,)).fetchone()[0]
+    report["measurements_without_cloud_id"] += unsynced_measurements
     report["observations"].append({
         **dict(row),
         "images_total": len(images),
         "images_without_cloud_id": sum(1 for i in images if i["new"]),
+        "image_creates": len(creates),
+        "measurements_without_cloud_id": unsynced_measurements,
         "mosaic": mosaic,
     })
 conn.close()
