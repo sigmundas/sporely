@@ -196,6 +196,19 @@ within the 39. The preview did not report mosaics at the time.
     Settings changes are sync bookkeeping only.
   - The final preview showed nothing pending and no mosaic rebuilds.
 
+## Batch 2 part 3: prepared, not authorized (2026-10-19)
+
+The last 40 `reviewed_bridge` rows, 840…1004; 419 excluded again. After this
+batch only 419 remains in the group.
+
+- **Backup:** `~/Documents/Sporely-backups/identity-backfill-bridge-part3-20261019T075946Z`
+  (SHA-256 `1b74e357…50ca8c`, integrity ok).
+- **Reviewed artifact:** digest `f760f385…`; manifest `bridge-40-part3.json`.
+  All 40 concepts are in the cloud release; none has a cloud identity yet.
+- **Rehearsal on a copy:** `identities_bound 40, marked_dirty 40`. The preview
+  lists exactly the 40; 241 unlinked microscope images, none byte-desired and
+  none with measurements; `mosaic_rebuilds` 901 and 914.
+
 ## Gate procedure
 
 The commands are in the owner hand-off that accompanies this plan. In order:
