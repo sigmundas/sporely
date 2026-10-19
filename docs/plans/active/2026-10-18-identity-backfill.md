@@ -225,6 +225,38 @@ Preparation:
   lists exactly the 40; 241 unlinked microscope images, none byte-desired and
   none with measurements; `mosaic_rebuilds` 901 and 914.
 
+## NorTaxa-only identities: prepared, not authorized (2026-10-19)
+
+Both groups bind to the NorTaxa-only concept. These concepts are absent from
+the cloud release, so the sync takes the option-A fallback: the guarded RPC
+refuses them, and the NorTaxa tuple is written as `external_unresolved`
+unless the cloud already holds it. No COL equivalence is chosen.
+
+- **Group A, `nortaxa_self_unique_name` (24 rows):** the identification name
+  maps to exactly one concept. The NorTaxa ID comes from the Artsorakel
+  suggestion the user selected: 16 from `ai_selected_taxon_id`, 7 recovered
+  from the selected prediction (name equal to the selection), 1 recorded
+  identity (1025).
+- **Group B, `same_name_recorded_identity` (16 rows):** the row's own recorded
+  NorTaxa identity; a same-name COL concept exists in the cloud release and is
+  not chosen (D3). 13 already hold this tuple in the cloud; 3 (973, 992, 995)
+  are recorded only on the desktop.
+- **Observation 701 excluded until the image-link fix lands.** Its public
+  microscope image 5042 is unlinked and carries 3 `other` measurements without
+  cloud IDs. With the server's owner-sync parent capability, a push would
+  create a metadata-only anchor and push those measurements: the image-create
+  path that fails in v0.9.27 and is fixed only on `fix/image-create-link`.
+- **Backup:** `~/Documents/Sporely-backups/identity-backfill-nortaxa-20261019T081717Z`
+  (SHA-256 `d3856f9d…5cfb58c`, integrity ok).
+- **Reviewed artifact:** digest `94757a60…`. Manifests `nortaxa-A-unique-24.json`,
+  `nortaxa-B-recorded.json` and `nortaxa-AB-40.json` (one apply, whichever is
+  approved).
+- **Rehearsal of A+B on a copy:** `identities_bound 40, marked_dirty 40`,
+  `names_restored 0`; the prior NorTaxa ID and raw ID are kept on every row
+  that had one. The preview lists exactly the 40; 150 unlinked microscope
+  images, none byte-desired or with measurements; no new measurements;
+  `mosaic_rebuilds` 639, 668, 816, 826 (A) and 930, 985 (B).
+
 ## Gate procedure
 
 The commands are in the owner hand-off that accompanies this plan. In order:
