@@ -225,7 +225,27 @@ Preparation:
   lists exactly the 40; 241 unlinked microscope images, none byte-desired and
   none with measurements; `mosaic_rebuilds` 901 and 914.
 
-## NorTaxa-only identities: applied locally, sync not yet authorized (2026-10-19)
+## NorTaxa-only identities: passed (2026-10-19)
+
+**Sync (owner-authorized):** 40 candidates, all `synced`, no issues;
+calibrations `pushed=0`; no image creates or uploads; exactly the six
+predicted mosaics rebuilt (639, 668, 816, 826, 930, 985). The owner verified
+live that all 40 hold `external_unresolved` `nortaxa_taxon_id` with the
+expected ID and no `selected_sporely_taxon_id`. Locally all 40 keep their
+NorTaxa-only concept binding; cloud baselines record the NorTaxa identity;
+419 and 701 are unchanged; `images`, `spore_measurements` and every other
+table are unchanged; the final preview showed nothing pending.
+
+Two effects beyond the preview:
+
+- **Observation 532:** `ai_selected_taxon_id` NULL → `NBIC:53966`. The cloud
+  copy already held this value before the apply; the sync adopted it. It is
+  the same ID the audit had recovered from the selected prediction.
+- **Observation 442:** seven "metadata patch … source bytes unchanged" writes
+  that changed no baseline field, followed by a child-change pull of 442. As
+  on 456/460/462/502/505 in part 1, these look like value-identical image
+  PATCHes, which the sync contract forbids (they advance the child-change
+  cursor). Not caused by the backfill; follow-up for the sync subsystem.
 
 The owner approved A and B. Apply of `nortaxa-AB-40.json`:
 `identities_bound 40, marked_dirty 40, rows_written 40`, `names_restored 0`.
@@ -269,6 +289,28 @@ unless the cloud already holds it. No COL equivalence is chosen.
   that had one. The preview lists exactly the 40; 150 unlinked microscope
   images, none byte-desired or with measurements; no new measurements;
   `mosaic_rebuilds` 639, 668, 816, 826 (A) and 930, 985 (B).
+
+## Status after the NorTaxa stage (2026-10-19)
+
+**Repaired and synced:** 164 identities: 124 reviewed NorTaxa→COL bridges
+(pilot and parts 1–3) and 40 NorTaxa-only identities (A 24, B 16).
+
+**Deferred by owner decision:**
+- 183 `same_name_ai_history_only` (identifier only in AI history);
+- 419 (manual review of its copied Artsorakel selection);
+- 701 (waits for the image-link fix in the sync build).
+
+**Unresolved, no automatic repair:** 147 without identity evidence, 87
+unresolved external IDs, 24 cloud-selected identities the desktop cannot
+verify, 16 AI suggestions never adopted, 5 identifier/name mismatches, 3
+numeric-ID collisions. They stay in the audit report.
+
+**Open owner decision:** 3 observations (382, 495, 580) have lost names that
+are restorable from their own row (`restore_lost_names`).
+
+**Follow-ups outside this plan:** merge `fix/image-create-link`, then 701;
+value-identical image metadata PATCHes (above); misleading sync counters;
+old v1/v2 mosaic rows.
 
 ## Gate procedure
 
