@@ -196,10 +196,26 @@ within the 39. The preview did not report mosaics at the time.
     Settings changes are sync bookkeeping only.
   - The final preview showed nothing pending and no mosaic rebuilds.
 
-## Batch 2 part 3: prepared, not authorized (2026-10-19)
+## Batch 2 part 3: passed (2026-10-19)
 
-The last 40 `reviewed_bridge` rows, 840…1004; 419 excluded again. After this
-batch only 419 remains in the group.
+The last 40 `reviewed_bridge` rows, 840…1004; 419 excluded again. Only 419
+remains in the group.
+
+- **Apply:** `identities_bound 40, marked_dirty 40, rows_written 40`,
+  `names_restored 0`; diff confined to those rows' identity and sync columns.
+  Re-audit: proven 87 → 127, bindable 265 → 225.
+- **Owner-authorized sync** of the previewed scope: 40 candidates, all
+  `synced`; calibrations `pushed=0`; no image uploads, creates or patches; no
+  issues. Exactly the two predicted mosaics were rebuilt (901, 914), with no
+  cleanup failure.
+- **Verification:** the owner confirmed 40/40 `selected_sporely_taxon_id`
+  live and cloud 712 still NULL. Locally all 40 have cloud baselines on the
+  approved concept; only the 40 observation rows and sync bookkeeping changed
+  (including a new storage-intent list for 880); `images`,
+  `spore_measurements` and every other table are unchanged. The final preview
+  showed nothing pending.
+
+Preparation:
 
 - **Backup:** `~/Documents/Sporely-backups/identity-backfill-bridge-part3-20261019T075946Z`
   (SHA-256 `1b74e357…50ca8c`, integrity ok).
