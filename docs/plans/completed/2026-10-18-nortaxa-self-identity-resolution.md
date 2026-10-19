@@ -1,5 +1,11 @@
 # NorTaxa self-identity resolution
 
+**Closed 2026-10-19.** Tests 1, 2a and 2b passed, and the deferred NorTaxa
+round trip (Test 3) passed as the live canary on observation 1032 (see the
+identity backfill plan). The cloud fallback for NorTaxa-only concepts was added
+under option A. The Species-dropdown follow-up below is open and recorded in
+`INBOX.md`.
+
 Written 2026-10-18 against `main` @ `6cd5872`, then simplified the same day
 under the owner's taxonomy principles: Sporely is not a taxonomic authority,
 and the solution is kept proportional to the problem. Nothing is approved or

@@ -1,5 +1,13 @@
 # Observation identity backfill
 
+**Closed 2026-10-19.** 164 identities repaired and verified in the cloud:
+124 reviewed NorTaxa→COL bridges and 40 NorTaxa-only identities. Remaining
+cases are documented under "Status after the NorTaxa stage" and are not
+failures of this plan. Observation 701 and the follow-ups are in `INBOX.md`.
+Evidence (backups, reviewed artifacts, manifests, apply records with
+pre-images) is kept outside the repository under `~/Documents/Sporely-backups/`
+and indexed in `identity-backfill-EVIDENCE.md` there.
+
 Written 2026-10-18 on `feature/identity-backfill-dry-run`, based on
 `feature/nortaxa-self-identity` (`a4e8131`). This plan repairs historical
 observation identities with the existing audit tool
