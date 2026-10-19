@@ -17,7 +17,10 @@ from utils.cloud_sync_impl.reconciliation.values import (
     _keep_remote_null_for_blank_text,
     _normalize_sync_key_value,
 )
-from utils.cloud_sync_impl.sample_source import _cloud_to_desktop_sample_source
+from utils.cloud_sync_impl.sample_source import (
+    _cloud_to_desktop_sample_source,
+    _split_legacy_sample_type_into_source,
+)
 
 
 def _deleted_remote_image_identity_keys(remote_images: list[dict] | None) -> set[str]:
@@ -117,3 +120,89 @@ def _preserve_unedited_remote_image_values(
         return
     if 'original_filename' in payload and remote_row.get('original_filename') is None:
         payload.pop('original_filename', None)
+
+
+# float8 columns the cloud returns at 15 significant digits (DBL_DIG): a value
+# the desktop sent with 16-17 digits comes back as its 15-digit form. Equality
+# at that precision is representation equality, not a tolerance: any real edit
+# to a scale differs far above 1e-15 relative.
+_IMAGE_CLOUD_FLOAT8_FIELDS = frozenset({'scale_microns_per_pixel', 'resample_scale_factor'})
+
+
+def _cloud_float8_equal(a, b) -> bool:
+    if a is None or b is None or isinstance(a, bool) or isinstance(b, bool):
+        return a == b
+    try:
+        return float(f'{float(a):.15g}') == float(f'{float(b):.15g}')
+    except (TypeError, ValueError):
+        return a == b
+
+
+def _image_value_equivalent(key: str, local, remote) -> bool:
+    """Whether one image field holds the same value on both sides once the
+    cloud's own representation is applied (float8 digits, NULL flag columns)."""
+    if local == remote:
+        return True
+    if key in _IMAGE_CLOUD_FLOAT8_FIELDS:
+        return _cloud_float8_equal(local, remote)
+    if key in ('gps_source', 'ai_crop_is_custom'):
+        # Local flag columns default to 0 where the cloud holds NULL.
+        return bool(local) == bool(remote)
+    return False
+
+
+def _is_metadata_only_anchor_row(remote_row: dict | None) -> bool:
+    row = dict(remote_row or {})
+    return (
+        str(row.get('image_type') or '').strip().lower() == 'microscope'
+        and not _normalize_cloud_media_key(row.get('storage_path'))
+    )
+
+
+def _image_field_same(key: str, a, b) -> bool:
+    """Exact equality, except a float8 field compared in the cloud's precision.
+    The baselined three-way comparisons use this (and nothing broader)."""
+    return a == b or (key in _IMAGE_CLOUD_FLOAT8_FIELDS and _cloud_float8_equal(a, b))
+
+
+def _image_payloads_same(a: dict, b: dict) -> bool:
+    return set(a) == set(b) and all(_image_field_same(k, a[k], b[k]) for k in a)
+
+
+def _no_baseline_image_values_equivalent(
+    key: str, local, remote, *, remote_row: dict | None, local_is_anchor_source: bool = False,
+) -> bool:
+    """The no-baseline comparison: equal after the push's own normalization.
+
+    Beyond ``_image_value_equivalent``: a metadata-only anchor is created
+    without ``captured_at`` (``anchors._METADATA_ONLY_IMG_FIELDS``), so when
+    the local image is that anchor's source (bytes not desired,
+    ``local_is_anchor_source``) and the cloud row has no bytes, its cloud
+    NULL is a fill, not a disagreement. Every other difference stays an
+    owner decision. Sample fields are compared after
+    ``_apply_pushed_sample_fields`` on BOTH sides (callers do this).
+    """
+    if _image_value_equivalent(key, local, remote):
+        return True
+    return (
+        key == 'captured_at' and remote is None and local is not None
+        and local_is_anchor_source and _is_metadata_only_anchor_row(remote_row)
+    )
+
+
+def _apply_pushed_sample_fields(local_payload: dict, img: dict | None) -> None:
+    """Set the sample fields of a compare payload to what the push sends:
+    ``'Not_set'`` is NULL and a legacy ``sample_type='Spore_print'`` is a
+    ``sample_source`` (``_apply_image_sample_fields_to_push_payload``).
+
+    Applied to the cloud side too: a metadata-only anchor is created with the
+    raw local values, so its cloud row can hold ``'Not_set'`` or the legacy
+    spelling."""
+    row = dict(img or {})
+    condition, source = _split_legacy_sample_type_into_source(
+        row.get('sample_type'), row.get('sample_source'),
+    )
+    if 'sample_type' in local_payload:
+        local_payload['sample_type'] = _normalize_snapshot_value(condition)
+    if 'sample_source' in local_payload:
+        local_payload['sample_source'] = _normalize_snapshot_value(_cloud_to_desktop_sample_source(source))

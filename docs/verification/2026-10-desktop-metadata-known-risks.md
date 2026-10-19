@@ -88,3 +88,18 @@ The underlying weakness: the desktop infers "the user edited this" by comparing 
 6. **Keep it tested.** A standing cross-client suite, parameterized over fields, must show that editing one field never changes another on any client.
 
 The redesign should be planned as its own project, with a cross-client test suite written before the code changes.
+
+## Low-priority follow-ups
+
+- **Measurement push counter can mislead (2026-10-18).**
+  `utils/cloud_sync_impl/measurements.py` logs
+  "measurement push finalized … pushed=N" as the number of cloud IDs
+  returned. `push_measurement` also returns an ID when it skips a matching
+  row as a no-op (`measurements_skipped_noop`).
+
+  During the image create/link recovery canary, observation 1016 logged
+  `pushed=29` for 29 already-linked measurements. The preview had reported
+  none new. `spore_measurements` has no timestamp column, so the canary
+  could not tell no-ops from value-identical PATCHes.
+
+  Not a correctness problem. Report skips and writes separately.
