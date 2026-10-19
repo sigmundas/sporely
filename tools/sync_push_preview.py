@@ -16,12 +16,20 @@ row still exists; not checked offline) or null (no public eligible
 measurements, no mosaic).
 
 ``image_creates`` and ``measurements_without_cloud_id`` predict the child
-rows a push would create, with the pusher's own predicates: an unlinked image
-whose bytes are desired is uploaded (``bytes``); an unlinked microscope image
-that anchors public spore measurements, or (only when the server confirms the
-owner-sync parent capability, not checked offline) the owner's own
-measurements of any type, gets a metadata-only row (``anchor_public`` /
-``anchor_owner_sync``). Measurements on such an image are then pushed.
+rows a push would create, with the pusher's own predicates and in its order.
+The anchor pass runs first, on the storage-intent ledger as it stands: an
+unlinked microscope image that anchors public spore measurements, or the
+owner's own measurements of any type, gets a metadata-only row
+(``anchor_public`` / ``anchor_owner_sync``). The owner-sync parent capability
+is assumed supported (sporely-web migration
+``20260925120000_owner_sync_metadata_parents`` is deployed); it is not probed
+offline. The byte pass then initializes the ledger
+(``_ensure_cloud_image_storage_intent_initialized``, on the copy) and uploads
+images whose bytes are desired (``bytes``; an anchor created first is promoted
+to it). New observations are included: the push creates them before their
+images. Both are upper bounds: an observation with a cloud id may skip its
+image push when nothing changed, and measurements are pushed only for images
+that end up with a cloud parent.
 
 Usage (from the sporely-py worktree, Sporely closed or open):
   PYTHONPATH=. .venv/bin/python tools/sync_push_preview.py <scratch dir> [source db]
@@ -56,6 +64,7 @@ from utils import cloud_sync  # noqa: E402
 from utils.cloud_sync_impl import pending_images  # noqa: E402
 from utils.cloud_sync_impl.child_identity import redirty_interrupted_child_creates  # noqa: E402
 from utils.cloud_sync_impl.image_policy import (  # noqa: E402
+    _ensure_cloud_image_storage_intent_initialized,
     cloud_image_bytes_desired,
     microscope_image_requires_owner_sync_anchor,
     microscope_image_requires_public_spore_anchor,
@@ -118,23 +127,26 @@ for obs_id in sorted(after):
     else:
         mosaic = "rebuild"
         report["mosaic_rebuilds"].append(obs_id)
+    unlinked = [dict(image) for image in conn.execute(
+        "SELECT * FROM images WHERE observation_id = ? AND cloud_id IS NULL ORDER BY id",
+        (obs_id,)).fetchall()]
+    anchors = {}
+    for image in unlinked:   # anchor pass, before the ledger is initialized
+        if str(image.get("image_type") or "").lower() != "microscope":
+            continue
+        if microscope_image_requires_public_spore_anchor(image["id"]):
+            anchors[image["id"]] = "anchor_public"
+        elif (microscope_image_requires_owner_sync_anchor(image["id"])
+              and not cloud_image_bytes_desired(obs_id, image["id"], image)):
+            anchors[image["id"]] = "anchor_owner_sync"
+    if unlinked:
+        _ensure_cloud_image_storage_intent_initialized(obs_id)   # byte pass, on the copy
     creates = []
-    if row["cloud_id"]:
-        for image in conn.execute(
-                "SELECT * FROM images WHERE observation_id = ? AND cloud_id IS NULL "
-                "ORDER BY id", (obs_id,)).fetchall():
-            image = dict(image)
-            if cloud_image_bytes_desired(obs_id, image["id"], image):
-                kind = "bytes"
-            elif str(image.get("image_type") or "").lower() != "microscope":
-                continue
-            elif microscope_image_requires_public_spore_anchor(image["id"]):
-                kind = "anchor_public"
-            elif microscope_image_requires_owner_sync_anchor(image["id"]):
-                kind = "anchor_owner_sync"
-            else:
-                continue
-            creates.append({"image_id": image["id"], "kind": kind})
+    for image in unlinked:
+        if cloud_image_bytes_desired(obs_id, image["id"], image):
+            creates.append({"image_id": image["id"], "kind": "bytes"})
+        elif image["id"] in anchors:
+            creates.append({"image_id": image["id"], "kind": anchors[image["id"]]})
     report["image_creates"].extend({"observation_id": obs_id, **c} for c in creates)
     unsynced_measurements = conn.execute(
         "SELECT COUNT(*) FROM spore_measurements m JOIN images i ON i.id = m.image_id "
