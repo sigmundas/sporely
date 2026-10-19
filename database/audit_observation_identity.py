@@ -1330,7 +1330,8 @@ def load_approved_manifest(
     path: Path, reviewed: AuditReport, artifact: TaxonomyArtifact
 ) -> set[int]:
     """The observation ids a manifest approves, after checking it belongs to
-    ``reviewed`` and names only approvable bindings in it."""
+    ``reviewed`` and names only bindings of its own declared, approvable
+    groups in it."""
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     if data.get("format") != MANIFEST_FORMAT:
         raise TamperedAuditArtifact(f"{path} is not an identity backfill manifest")
@@ -1338,15 +1339,18 @@ def load_approved_manifest(
         raise StaleAuditArtifact(
             f"{path} approves rows of a different reviewed artifact"
         )
+    groups = list(data.get("groups") or ())
+    if not groups or any(g not in APPROVABLE_BACKFILL_GROUPS for g in groups):
+        raise TamperedAuditArtifact(f"{path} declares no or non-approvable groups: {groups}")
     ids = {int(i) for i in data.get("observation_ids") or ()}
     bindable = {
         r.observation_id for r in reviewed.records
-        if backfill_group(r, artifact) in APPROVABLE_BACKFILL_GROUPS
+        if backfill_group(r, artifact) in groups
     }
     outside = sorted(ids - bindable)
     if outside:
         raise TamperedAuditArtifact(
-            f"{path} approves observations that are not approvable bindings: {outside}"
+            f"{path} approves observations outside its groups {groups}: {outside}"
         )
     return ids
 

@@ -271,9 +271,36 @@ def test_a_manifest_must_match_the_reviewed_artifact_and_its_groups(tmp_path, ar
     path.write_text(json.dumps({**manifest, "observation_ids": [1, 5]}))   # hand-added ai-only row
     with pytest.raises(TamperedAuditArtifact):
         load_approved_manifest(path, report, artifact)
+    path.write_text(json.dumps({**manifest, "observation_ids": [1, 3]}))   # approvable, other group
+    with pytest.raises(TamperedAuditArtifact):
+        load_approved_manifest(path, report, artifact)
+    path.write_text(json.dumps({**manifest, "groups": ["same_name_ai_history_only"],
+                                "observation_ids": [5]}))
+    with pytest.raises(TamperedAuditArtifact):
+        load_approved_manifest(path, report, artifact)
     path.write_text(json.dumps({**manifest, "reviewed_artifact_digest": "0" * 64}))
     with pytest.raises(StaleAuditArtifact):
         load_approved_manifest(path, report, artifact)
+
+
+def test_a_row_changed_after_the_dry_run_rolls_back_the_whole_batch(tmp_path, artifact):
+    from database.audit_observation_identity import StaleAuditArtifact
+
+    db = _db(tmp_path, _group_rows())
+    report = audit(read_desktop_rows(db), artifact, origin="desktop")
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE observations SET species = 'edited' WHERE id = 3")
+    conn.commit()
+    conn.close()
+    gate = ProductionMigrationGate(True, True, True, True, True, evidence=("test",))
+    with pytest.raises(StaleAuditArtifact):
+        apply_repairs(report, observation_db_path=db, release_id="tax-test-01", gate=gate,
+                      approved_ids={1, 3}, mark_dirty=True)
+    conn = sqlite3.connect(db)
+    rows = {r[0]: r[1:] for r in conn.execute(
+        "SELECT id, sporely_taxon_id, sync_status FROM observations WHERE id IN (1, 3)")}
+    conn.close()
+    assert rows == {1: (None, "synced"), 3: (None, "synced")}   # row 1's bind was undone
 
 
 def test_an_approved_batch_binds_only_its_rows_and_marks_cloud_rows_dirty(tmp_path, artifact):
