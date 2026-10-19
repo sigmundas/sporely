@@ -74,6 +74,7 @@ Source: former `PLAN.md`.
 Source: former `PLAN.md`; unmatched-image work also appears in `docs/hardware-sync.md`.
 
 ## Taxonomy
+- Swedish vernacular names are missing from the shipped bundle `tax-2026.10.07-01` (desktop since 0.9.26), so the Swedish UI shows only the scientific name for those species. `tests/test_taxonomy_release_probes.py` fails 4 probes: Kantarell, Trattkantarell and Stjärnrödhätting are absent, and *Conocybe vexans* lists no Kraghätting. The probes were written for `tax-2026.09.30-01`, which had these names. Restore them in the next taxonomy release; not a blocker for 0.9.28 (owner, 2026-10-19).
 - Identity backfill follow-ups (plan closed 2026-10-19, see `completed/2026-10-18-identity-backfill.md`):
   - Observation 701 (*Russula queletii* coll.): bind its NorTaxa identity (group `nortaxa_self_unique_name`) once the image-create/link fix is in the build used for syncing. Its unlinked microscope image 5042 carries 3 `other` measurements; the sync will create a metadata-only owner-sync anchor and push them. Keep both; fresh dry run, owner GO, preview and authorized sync as for the other batches.
   - Picking a species from the **Species** dropdown stores no identity; only the **Scientific** dropdown binds. Bind the clicked entry's own concept ID and never choose between same-name concepts (`ui/taxon_input_controller.py` `on_species_selected`).
@@ -119,6 +120,11 @@ Source: former `PLAN.md`.
 The scoped reference-library work, including its deferred editor, quick-add, revision, cloud-sync, and public-rendering work, remains in the active reference-library plan.
 
 ## Testing / infrastructure
+- Pre-existing test failures (they also fail at v0.9.27; not blockers for 0.9.28, owner 2026-10-19):
+  - `tests/test_render_review_screenshots.py`: 3 tests (`test_registry_has_unique_semantic_ids_and_expected_groups`, `test_group_and_explicit_scenario_selection`, `test_default_renderer_emits_central_manifest_and_all_established_states`). Their expected scenario list predates newer review scenarios such as `reference.analysis-panel-five-rows`.
+  - `tests/test_live_lab_raw_controls.py::test_live_lab_review_keyboard_shortcuts_navigate_save_and_skip_text_focus`: the selected pending raw index stays 0 where 1 is expected.
+  - The 4 taxonomy release probes (see Taxonomy above).
+- The development `.venv` needs `pytest-qt` (installed 2026-10-19, 4.5.0); without it 35 tests error on the missing `qapp` fixture. It is not listed in `requirements.txt`.
 
 - Add export coverage for observations, images, measurements, calibrations, reference data, and image files; verify `app_settings.json` and full profile state are excluded.
 - Verify local database values take priority over file EXIF in Prepare Images and the Measure Info box.
