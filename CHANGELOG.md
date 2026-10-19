@@ -2,7 +2,7 @@
 
 All notable changes to Sporely are documented here.
 
-## Unreleased (desktop 0.9.28) — DRAFT, wording awaiting owner approval
+## Unreleased (desktop 0.9.28)
 
 No server changes; works with the same server as 0.9.27.
 
