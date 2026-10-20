@@ -971,6 +971,17 @@ def _hydrate_session_log_row(row) -> dict | None:
 
 
 def _lookup_adb_taxon_id_from_db(genus: str, species: str) -> int | None:
+    """Return the Artsdatabanken/NorTaxa taxon id for genus+epithet, or None.
+
+    Only destination ids are returned (``norwegian_taxon_id``, an
+    ``artsdatabanken`` accepted external id, or a legacy ``AdbTaxonId``
+    column); the internal Sporely ``taxon_id`` is never a fallback. When a
+    source matches more than one distinct id the lookup stops and returns
+    None, so the caller's unresolved path (picker search) decides.
+    """
+    class _Ambiguous(Exception):
+        pass
+
     def _single_positive_int(rows) -> int | None:
         values: set[int] = set()
         for row in rows:
@@ -982,7 +993,9 @@ def _lookup_adb_taxon_id_from_db(genus: str, species: str) -> int | None:
                 continue
             if value > 0:
                 values.add(value)
-        return next(iter(values)) if len(values) == 1 else None
+        if len(values) > 1:
+            raise _Ambiguous()
+        return next(iter(values)) if values else None
 
     try:
         from utils.vernacular_utils import resolve_vernacular_db_path
@@ -1046,24 +1059,9 @@ def _lookup_adb_taxon_id_from_db(genus: str, species: str) -> int | None:
                 (genus, species),
             ).fetchall()
             return _single_positive_int(rows)
-        elif "taxon_id" in columns:
-            extra_filter = ""
-            if "source_system" in columns:
-                extra_filter = "AND COALESCE(source_system, '') != 'artportalen_only'"
-            rows = conn.execute(
-                f"""
-                SELECT taxon_id
-                FROM taxon_min
-                WHERE genus = ? COLLATE NOCASE
-                  AND specific_epithet = ? COLLATE NOCASE
-                  AND taxon_id > 0
-                  {extra_filter}
-                """,
-                (genus, species),
-            ).fetchall()
-            return _single_positive_int(rows)
-        else:
-            return None
+        return None
+    except _Ambiguous:
+        return None
     finally:
         conn.close()
 
