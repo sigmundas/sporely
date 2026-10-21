@@ -1,0 +1,59 @@
+{
+ "by_group_status": {
+  "2030_nortaxa|absent_in_26_6": 4,
+  "2030_nortaxa|absent_in_26_7": 4,
+  "2030_nortaxa|same_source_record": 25,
+  "other_source|absent_in_26_7": 2,
+  "other_source|different_source_record": 2,
+  "other_source|same_source_record": 208,
+  "unknown|absent_in_26_7": 2
+ },
+ "backward_26_7_ids_in_26_6": {
+  "never_nortaxa|same_source_record": 208,
+  "nortaxa_in_either_release|absent_in_26_6": 4,
+  "nortaxa_in_either_release|different_source_record": 2,
+  "nortaxa_in_either_release|same_source_record": 25
+ },
+ "forward_26_6_ids_in_26_7": {
+  "2030_nortaxa_in_26_6|absent_in_26_7": 3,
+  "2030_nortaxa_in_26_6|absent_in_26_7(local_pinned_fungal_archive)": 1,
+  "2030_nortaxa_in_26_6|different_source_record": 2,
+  "2030_nortaxa_in_26_6|same_source_record": 25,
+  "other_source_in_26_6|absent_in_26_7": 2,
+  "other_source_in_26_6|same_source_record": 208
+ },
+ "reidentified_same_source_record": {
+  "VJP5T": "V2MTQ",
+  "VKW8F": "LXP7S",
+  "VKXJ3": "RBVV2"
+ },
+ "nortaxa_source_metrics": {
+  "315557": {
+   "nameCount": 36896,
+   "taxonCount": 12842,
+   "synonymCount": 24054,
+   "vernacularCount": 8838
+  },
+  "315834": {
+   "nameCount": 22015,
+   "taxonCount": 7564,
+   "synonymCount": 14451,
+   "vernacularCount": 1561
+  }
+ },
+ "sporely_exposure": {
+  "col_anchors_total": 620976,
+  "col_anchors_on_source_2030": 5024,
+  "col_aliases_on_source_2030": 0,
+  "nortaxa_bridged_onto_source_2030_anchor": 5884,
+  "desktop_observed_concepts_on_source_2030": [
+   0,
+   0
+  ],
+  "cloud_observed_concepts_on_source_2030": [
+   0,
+   0
+  ]
+ },
+ "note": "observed counts on a selected sample; no rate, interval or forecast is claimed"
+}

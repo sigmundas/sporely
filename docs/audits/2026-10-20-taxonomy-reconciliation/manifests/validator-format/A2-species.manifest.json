@@ -1,0 +1,2069 @@
+{
+ "approval_mode": "batch_by_file_sha256",
+ "columns": [
+  "nortaxa_taxon_id",
+  "nortaxa_sporely_taxon_id",
+  "col_usage_id",
+  "col_sporely_taxon_id",
+  "one_to_one",
+  "canonical_scientific_name",
+  "rank",
+  "nortaxa_authorship",
+  "col_authorship",
+  "authorship_class",
+  "classification_agree",
+  "group",
+  "group_reasons",
+  "reparent_child_count",
+  "col_in_cloud_scope"
+ ],
+ "evidence_class": "deterministic_name_rank_authorship_v1_rev3",
+ "format": "sporely-taxonomy-reconciliation-candidate-manifest-v1",
+ "member_count": 83,
+ "members": [
+  [
+   "122369",
+   621035,
+   "5YQ5G",
+   82252,
+   true,
+   "Chrysomyxa ledi",
+   "species",
+   "(Alb. & Schwein) de Bary",
+   "(Alb. & Schwein.) de Bary",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   2,
+   false
+  ],
+  [
+   "143331",
+   622181,
+   "77RJL",
+   120343,
+   true,
+   "Pleurotus eryngii",
+   "species",
+   "(DC. : Fr.) Quél.",
+   "(DC.) Quél.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "186418",
+   623312,
+   "4CYHL",
+   41132,
+   true,
+   "Paralepista flaccida",
+   "species",
+   "(Sowerby : Fr.) Vizzini",
+   "(Sowerby) Vizzini",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "desktop_observations",
+    "desktop_reference_uses"
+   ],
+   0,
+   true
+  ],
+  [
+   "204334",
+   623575,
+   "3PJ2R",
+   18409,
+   true,
+   "Imleria badia",
+   "species",
+   "(Fr. : Fr.) Vizzini",
+   "(Fr.) Vizzini",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "51928",
+   624513,
+   "65NKD",
+   88646,
+   true,
+   "Agaricus campestris",
+   "species",
+   "L. : Fr.",
+   "L.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   2,
+   true
+  ],
+  [
+   "52173",
+   624602,
+   "5TYQY",
+   78858,
+   true,
+   "Amanita vaginata",
+   "species",
+   "(Bull. : Fr.) Lam.",
+   "(Bull.) Lam.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   3,
+   true
+  ],
+  [
+   "52226",
+   624619,
+   "MB4H",
+   160322,
+   true,
+   "Bolbitius reticulatus",
+   "species",
+   "(Pers. : Fr.) Ricken",
+   "(Pers.) Ricken",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "52229",
+   624622,
+   "MB4N",
+   160326,
+   true,
+   "Bolbitius titubans",
+   "species",
+   "(Bull. : Fr.) Fr.",
+   "(Bull.) Fr.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "52559",
+   624799,
+   "YJZS",
+   617980,
+   true,
+   "Cortinarius armillatus",
+   "species",
+   "(Fr. : Fr.) Fr.",
+   "(Fr.) Fr.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "52596",
+   624817,
+   "YK96",
+   618130,
+   true,
+   "Cortinarius brunneus",
+   "species",
+   "(Pers. : Fr.) Fr.",
+   "(Pers.) Fr.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "52636",
+   624836,
+   "YKF7",
+   618213,
+   true,
+   "Cortinarius cinnamomeus",
+   "species",
+   "(L. : Fr.) Gray",
+   "(L.) Gray",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "desktop_observations"
+   ],
+   0,
+   true
+  ],
+  [
+   "52708",
+   624872,
+   "6B5V9",
+   92771,
+   true,
+   "Cortinarius evernius",
+   "species",
+   "(Fr. : Fr.) Fr.",
+   "(Fr.) Fr.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references",
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "52735",
+   624881,
+   "YKZD",
+   618600,
+   true,
+   "Cortinarius gentilis",
+   "species",
+   "(Fr. : Fr.) Fr.",
+   "(Fr.) Fr.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "52991",
+   625012,
+   "6B5QK",
+   92721,
+   true,
+   "Cortinarius traganus",
+   "species",
+   "(Fr. : Fr.) Fr.",
+   "(Fr.) Fr.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references",
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "53370",
+   625140,
+   "W9D9",
+   614905,
+   true,
+   "Clitopilus prunulus",
+   "species",
+   "(Scop. : Fr.) P. Kumm.",
+   "(Scop.) P. Kumm.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "53373",
+   625143,
+   "W9DV",
+   614919,
+   true,
+   "Clitopilus scyphoides",
+   "species",
+   "(Fr. : Fr.) Singer",
+   "(Fr.) Singer",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "53454",
+   625203,
+   "39Z7Z",
+   7721,
+   true,
+   "Entoloma byssisedum",
+   "species",
+   "(Pers. : Fr.) Donk",
+   "(Pers.) Donk",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "53467",
+   625207,
+   "6FD79",
+   96189,
+   true,
+   "Entoloma cetratum",
+   "species",
+   "(Fr. : Fr.) M.M. Moser",
+   "(Fr.) M.M. Moser",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references",
+    "desktop_observations"
+   ],
+   0,
+   true
+  ],
+  [
+   "53495",
+   625220,
+   "6FD83",
+   96210,
+   true,
+   "Entoloma cyanulum",
+   "species",
+   "(Lasch : Fr.) Noordel.",
+   "(Lasch) Noordel.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "53509",
+   625227,
+   "6FCVJ",
+   95974,
+   true,
+   "Entoloma exile",
+   "species",
+   "(Fr. : Fr.) Hesler",
+   "(Fr.) Hesler",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   2,
+   true
+  ],
+  [
+   "53645",
+   625264,
+   "6FDXM",
+   96529,
+   true,
+   "Entoloma rhodopolium",
+   "species",
+   "(Fr. : Fr.) P. Kumm.",
+   "(Fr.) P. Kumm.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   2,
+   true
+  ],
+  [
+   "53671",
+   625270,
+   "6FDNK",
+   96311,
+   true,
+   "Entoloma serrulatum",
+   "species",
+   "(Fr. : Fr.) Hesler",
+   "(Fr.) Hesler",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "53785",
+   625309,
+   "44T39",
+   34401,
+   true,
+   "Mycena epipterygia",
+   "species",
+   "(Scop. : Fr.) Gray",
+   "(Scop.) Gray",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   3,
+   true
+  ],
+  [
+   "53802",
+   625316,
+   "44T6J",
+   34483,
+   true,
+   "Mycena galopus",
+   "species",
+   "(Pers. : Fr.) P. Kumm.",
+   "(Pers.) P. Kumm.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   2,
+   true
+  ],
+  [
+   "53805",
+   625318,
+   "44T88",
+   34530,
+   true,
+   "Mycena haematopus",
+   "species",
+   "(Pers. : Fr.) P. Kumm.",
+   "(Pers.) P. Kumm.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "53844",
+   625331,
+   "44TNM",
+   34839,
+   true,
+   "Mycena polygramma",
+   "species",
+   "(Bull. : Fr.) Gray",
+   "(Bull.) Gray",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "53848",
+   625334,
+   "44TQP",
+   34885,
+   true,
+   "Mycena pura",
+   "species",
+   "(Pers. : Fr.) P. Kumm.",
+   "(Pers.) P. Kumm.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references",
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "53912",
+   625355,
+   "6NQ5K",
+   103805,
+   true,
+   "Laccaria laccata",
+   "species",
+   "(Scop. : Fr.) Cooke",
+   "(Scop.) Cooke",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references",
+    "reparent_children"
+   ],
+   2,
+   true
+  ],
+  [
+   "53961",
+   625371,
+   "6MLXJ",
+   102211,
+   true,
+   "Hygrocybe coccinea",
+   "species",
+   "(Schaeff. : Fr.) P. Kumm.",
+   "(Schaeff.) P. Kumm.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "desktop_observations",
+    "desktop_reference_uses"
+   ],
+   0,
+   true
+  ],
+  [
+   "53994",
+   625379,
+   "3NBB7",
+   16522,
+   true,
+   "Hygrocybe miniata",
+   "species",
+   "(Fr. : Fr.) P. Kumm.",
+   "(Fr.) P. Kumm.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "54066",
+   625404,
+   "3NC4P",
+   16745,
+   true,
+   "Hygrophorus nemoreus",
+   "species",
+   "(Pers. : Fr.) Fr.",
+   "(Pers.) Fr.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "54426",
+   625492,
+   "3X4LJ",
+   26511,
+   true,
+   "Macrocystidia cucumis",
+   "species",
+   "(Pers. : Fr.) Joss.",
+   "(Pers.) Joss.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "54457",
+   625508,
+   "3XZRT",
+   27827,
+   true,
+   "Marasmius oreades",
+   "species",
+   "(Bolton : Fr.) Fr.",
+   "(Bolton) Fr.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references",
+    "desktop_observations"
+   ],
+   0,
+   true
+  ],
+  [
+   "54560",
+   625555,
+   "3PP8H",
+   18480,
+   true,
+   "Infundibulicybe gibba",
+   "species",
+   "(Pers. : Fr.) Harmaja",
+   "(Pers.) Harmaja",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "54589",
+   625570,
+   "3Z8VQ",
+   29156,
+   true,
+   "Melanoleuca polioleuca",
+   "species",
+   "(Fr. : Fr.) Kühner & Maire",
+   "(Fr.) Kühner & Maire",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   3,
+   true
+  ],
+  [
+   "54611",
+   625585,
+   "7D3GH",
+   124866,
+   true,
+   "Tricholomopsis decora",
+   "species",
+   "(Fr. : Fr.) Singer",
+   "(Fr.) Singer",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "54614",
+   625587,
+   "7CRGX",
+   124472,
+   true,
+   "Tricholomopsis rutilans",
+   "species",
+   "(Schaeff. : Fr.) Singer",
+   "(Schaeff.) Singer",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "54677",
+   625609,
+   "4SF59",
+   60680,
+   true,
+   "Rhodocollybia maculata",
+   "species",
+   "(Alb. & Schwein. : Fr.) Singer",
+   "(Alb. & Schwein.) Singer",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   3,
+   true
+  ],
+  [
+   "54896",
+   625725,
+   "Y557",
+   617120,
+   true,
+   "Coprinellus micaceus",
+   "species",
+   "(Bull. : Fr.) Vilgalys, Hopple & Jacq. Johnson",
+   "(Bull.) Vilgalys, Hopple & Jacq. Johnson",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "54914",
+   625737,
+   "Y56N",
+   617145,
+   true,
+   "Coprinopsis atramentaria",
+   "species",
+   "(Bull. : Fr.) Redhead, Vilgalys & Moncalvo",
+   "(Bull.) Redhead, Vilgalys & Moncalvo",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references",
+    "desktop_observations"
+   ],
+   0,
+   true
+  ],
+  [
+   "54934",
+   625742,
+   "Y58K",
+   617197,
+   true,
+   "Coprinopsis lagopus",
+   "species",
+   "(Fr. : Fr.) Redhead, Vilgalys & Moncalvo",
+   "(Fr.) Redhead, Vilgalys & Moncalvo",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "54973",
+   625761,
+   "6NSLB",
+   103918,
+   true,
+   "Lacrymaria lacrymabunda",
+   "species",
+   "(Bull. : Fr.) Pat.",
+   "(Bull.) Pat.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references",
+    "desktop_observations",
+    "desktop_reference_uses"
+   ],
+   0,
+   true
+  ],
+  [
+   "54984",
+   625766,
+   "4DCG6",
+   41330,
+   true,
+   "Parasola plicatilis",
+   "species",
+   "(Curtis : Fr.) Redhead, Vilgalys & Hopple",
+   "(Curtis) Redhead, Vilgalys & Hopple",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "55036",
+   625781,
+   "78BHY",
+   120787,
+   true,
+   "Psathyrella microrhiza",
+   "species",
+   "(Lasch : Fr.) Konrad & Maubl.",
+   "(Lasch) Konrad & Maubl.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "desktop_observations"
+   ],
+   0,
+   true
+  ],
+  [
+   "55158",
+   625830,
+   "33PSG",
+   1062,
+   true,
+   "Cystodermella granulosa",
+   "species",
+   "(Batsch : Fr.) Harmaja",
+   "(Batsch) Harmaja",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "55233",
+   625865,
+   "3NSGX",
+   17487,
+   true,
+   "Hypholoma fasciculare",
+   "species",
+   "(Huds. : Fr.) P. Kumm.",
+   "(Huds.) P. Kumm.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "desktop_observations",
+    "desktop_reference_uses",
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "55247",
+   625874,
+   "3RF9F",
+   20595,
+   true,
+   "Kuehneromyces mutabilis",
+   "species",
+   "(Schaeff. : Fr.) Singer & A. H. Sm.",
+   "(Schaeff.) Singer & A.H. Sm.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references",
+    "desktop_observations"
+   ],
+   0,
+   true
+  ],
+  [
+   "55279",
+   625888,
+   "4GMBF",
+   44970,
+   true,
+   "Pholiota spumosa",
+   "species",
+   "(Fr. : Fr.) Singer",
+   "(Fr.) Singer",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "55321",
+   625896,
+   "535H2",
+   69355,
+   true,
+   "Stropharia aeruginosa",
+   "species",
+   "(Curtis : Fr.) Quél.",
+   "(Curtis) Quél.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "55402",
+   625921,
+   "W8RZ",
+   614603,
+   true,
+   "Clitocybe nebularis",
+   "species",
+   "(Batsch : Fr.) P. Kumm.",
+   "(Batsch) P. Kumm.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references",
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "55441",
+   625942,
+   "34XHC",
+   2546,
+   true,
+   "Dermoloma josserandii",
+   "species",
+   "Dennis & P. D. Orton",
+   "Dennis & P.D. Orton",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "55526",
+   625984,
+   "58DMC",
+   73346,
+   true,
+   "Tricholoma equestre",
+   "species",
+   "(L. : Fr.) P. Kumm.",
+   "(L.) P. Kumm.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "desktop_observations",
+    "desktop_reference_uses"
+   ],
+   0,
+   true
+  ],
+  [
+   "55551",
+   625994,
+   "58DWB",
+   73460,
+   true,
+   "Tricholoma portentosum",
+   "species",
+   "(Fr. : Fr.) Quél.",
+   "(Fr.) Quél.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "55567",
+   625998,
+   "7D3TM",
+   124959,
+   true,
+   "Tricholoma sejunctum",
+   "species",
+   "(Sowerby : Fr.) Quél.",
+   "(Sowerby) Quél.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "55738",
+   626069,
+   "5CD34",
+   76823,
+   true,
+   "Xeromphalina campanella",
+   "species",
+   "(Batsch : Fr.) Kühner & Maire",
+   "(Batsch) Kühner & Maire",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "55907",
+   626133,
+   "4NYCM",
+   54547,
+   true,
+   "Pseudohydnum gelatinosum",
+   "species",
+   "(Scop. : Fr.) P. Karst.",
+   "(Scop.) P. Karst.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "55979",
+   626153,
+   "TFVH",
+   606695,
+   true,
+   "Chalciporus piperatus",
+   "species",
+   "(Bull. : Fr.) Bataille",
+   "(Bull.) Bataille",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "56097",
+   626201,
+   "3NBTS",
+   16637,
+   true,
+   "Hygrophoropsis aurantiaca",
+   "species",
+   "(Wulfen : Fr.) Maire",
+   "(Wulfen) Maire",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "56129",
+   626215,
+   "75VQZ",
+   117425,
+   true,
+   "Paxillus involutus",
+   "species",
+   "(Batsch : Fr.) Fr.",
+   "(Batsch) Fr.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "56177",
+   626233,
+   "54T33",
+   70229,
+   true,
+   "Tapinella panuoides",
+   "species",
+   "(Fr. : Fr.) E.-J. Gilbert",
+   "(Fr.) E.-J. Gilbert",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "56529",
+   626349,
+   "4RBVZ",
+   58833,
+   true,
+   "Ramaria stricta",
+   "species",
+   "(Pers. : Fr.) Quél.",
+   "(Pers.) Quél.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "57611",
+   626792,
+   "3RS2F",
+   22034,
+   true,
+   "Lactarius necator",
+   "species",
+   "(Bull. : Fr.) Pers.",
+   "(Bull.) Pers.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "57641",
+   626802,
+   "3RS8M",
+   22162,
+   true,
+   "Lactarius scrobiculatus",
+   "species",
+   "(Scop. : Fr.) Fr.",
+   "(Scop.) Fr.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "57654",
+   626808,
+   "3RSC5",
+   22221,
+   true,
+   "Lactarius trivialis",
+   "species",
+   "(Fr. : Fr.) Fr.",
+   "(Fr.) Fr.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "57676",
+   626821,
+   "4TRHR",
+   61669,
+   true,
+   "Russula adusta",
+   "species",
+   "(Pers.: Fr.) Fr.",
+   "(Pers.) Fr.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "57725",
+   626832,
+   "799H3",
+   122646,
+   true,
+   "Russula decolorans",
+   "species",
+   "(Fr. : Fr.) Fr.",
+   "(Fr.) Fr.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "57730",
+   626835,
+   "4TRVW",
+   61951,
+   true,
+   "Russula emetica",
+   "species",
+   "(Schaeff. : Fr.) Pers.",
+   "(Schaeff.) Pers.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references",
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "57742",
+   626839,
+   "4TRXM",
+   61989,
+   true,
+   "Russula foetens",
+   "species",
+   "Pers. : Fr.",
+   "Pers.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "cloud_snapshot_references"
+   ],
+   0,
+   true
+  ],
+  [
+   "57973",
+   626909,
+   "6MHWP",
+   102062,
+   true,
+   "Hydnellum ferrugineum",
+   "species",
+   "(Fr. : Fr.) P. Karst.",
+   "(Fr.) P. Karst.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "desktop_observations",
+    "desktop_reference_uses"
+   ],
+   0,
+   true
+  ],
+  [
+   "66424",
+   627673,
+   "35CR6",
+   2754,
+   true,
+   "Diaporthe carpini",
+   "species",
+   "(Pers.: Fr.) Fuckel",
+   "(Pers.) Fuckel",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   false
+  ],
+  [
+   "66538",
+   627736,
+   "3Z6BG",
+   28884,
+   true,
+   "Melanconis juglandis",
+   "species",
+   "(Ellis & Everh.) Graves",
+   "(Ellis & Everh.) A.H. Graves",
+   "abbreviation",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   false
+  ],
+  [
+   "69850",
+   629170,
+   "3SSDF",
+   23120,
+   true,
+   "Lecanora campestris",
+   "species",
+   "(Schaerer) Hue",
+   "(Schaer.) Hue",
+   "abbreviation",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   false
+  ],
+  [
+   "69883",
+   629179,
+   "6P62K",
+   104350,
+   true,
+   "Lecanora cinereofusca",
+   "species",
+   "Magnusson",
+   "H. Magn.",
+   "abbreviation",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   false
+  ],
+  [
+   "72853",
+   630371,
+   "9YPWB",
+   133124,
+   true,
+   "Usnea molliuscula",
+   "species",
+   "Stirton",
+   "Stirt.",
+   "abbreviation",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   false
+  ],
+  [
+   "72895",
+   630382,
+   "9YPWC",
+   133125,
+   true,
+   "Usnea rubicunda",
+   "species",
+   "Stirton",
+   "Stirt.",
+   "abbreviation",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   false
+  ],
+  [
+   "75746",
+   631481,
+   "76FMH",
+   117737,
+   true,
+   "Peltula obscurans",
+   "species",
+   "(Nyl.) Gyelnik",
+   "(Nyl.) Gyeln.",
+   "abbreviation",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   false
+  ],
+  [
+   "78414",
+   632695,
+   "9ZG3Q",
+   137033,
+   true,
+   "Sticta weigelii",
+   "species",
+   "(Ach.) Vainio",
+   "(Ach.) Vain.",
+   "abbreviation",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   false
+  ],
+  [
+   "79087",
+   632968,
+   "5B7MD",
+   75260,
+   true,
+   "Verpa conica",
+   "species",
+   "(O.F. Müll.: Fr.) Sw.",
+   "(O.F. Müll.) Sw.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   true
+  ],
+  [
+   "80223",
+   633419,
+   "6H6QD",
+   97700,
+   true,
+   "Eudarluca caricis",
+   "species",
+   "(Fr. : Fr.) O.E. Erikss.",
+   "(Fr.) O.E. Erikss.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   false
+  ],
+  [
+   "81483",
+   633973,
+   "PZSY",
+   167093,
+   true,
+   "Caloplaca cerina",
+   "species",
+   "(Hedwig) Th. Fr.",
+   "(Hedw.) Th. Fr.",
+   "abbreviation",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   false
+  ],
+  [
+   "82686",
+   634484,
+   "6HK8K",
+   97770,
+   true,
+   "Eutypa lata",
+   "species",
+   "(Pers. : Fr.) Tul. & C. Tul.",
+   "(Pers.) Tul. & C. Tul.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   2,
+   false
+  ],
+  [
+   "82933",
+   634598,
+   "3P2R6",
+   18073,
+   true,
+   "Hypoxylon rubiginosum",
+   "species",
+   "(Pers.: Fr.) Fr.",
+   "(Pers.) Fr.",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   2,
+   true
+  ],
+  [
+   "82974",
+   634618,
+   "6RVDG",
+   107245,
+   true,
+   "Nemania serpens",
+   "species",
+   "(Pers.: Fr.) Gray",
+   "(Pers.) Gray",
+   "sanctioning",
+   [
+    "phylum",
+    "class",
+    "ord",
+    "family"
+   ],
+   "A2",
+   [
+    "reparent_children"
+   ],
+   1,
+   false
+  ]
+ ],
+ "members_sha256": "d1e31d31ebd3932e1ec0acacb635b0aead1c9a7d0080ee58e47e697bfe71d243",
+ "note": "Candidate only. Approves nothing. Generated by docs/audits/2026-10-20-taxonomy-reconciliation/scripts/groups.py; pinned to the release and archives above.",
+ "pins": {
+  "bridge_emission_policy": {
+   "path": "database/taxonomy/policies/mapping_policy.yml",
+   "sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb"
+  },
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "comparator": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/scripts/authorship.py",
+   "sha256": "23f75f37d0d0a1e742c20a8aa515e73b2494a3693b4c473e7a6d2e338b08cdd7"
+  },
+  "release": {
+   "content_release_id": "tax-2026.10.07-01",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.10.07-01.sqlite3.gz",
+   "gz_sha256": "bff40f0d5d70ec2be47fe415dfd4cfc623a7841553f8a7d928ed801117ca21c5",
+   "sqlite_sha256": "e349e8b1d7cdbafa688621a71f9be278ac6e381853ff7fe2763d8b856b7724f9"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "nortaxa": {
+    "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release_id": "nortaxa:1.284:2026-07-17"
+   }
+  }
+ },
+ "population": "reconciliation candidates, partition A2-species",
+ "review_status": "needs_review"
+}

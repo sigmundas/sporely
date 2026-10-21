@@ -1,0 +1,61 @@
+{
+ "matrix": {
+  "different_rank|C|C": 32,
+  "genus|A|A": 573,
+  "genus|A|B": 8,
+  "genus|B|B": 1277,
+  "genus|B|C": 4,
+  "genus|C|C": 14,
+  "higher|A|A": 202,
+  "higher|A|B": 1,
+  "higher|B|B": 128,
+  "higher|D|D": 1,
+  "infraspecific|A|A": 57,
+  "infraspecific|B|B": 27,
+  "species|A|A": 1824,
+  "species|A|B": 110,
+  "species|B|B": 1808,
+  "species|C|B": 1,
+  "species|C|C": 3,
+  "species|D|D": 2
+ },
+ "moves_by_rule": {
+  "species|A|B|authorship abbreviation -> ex_author_differs": 73,
+  "species|A|B|authorship abbreviation -> conflicting": 29,
+  "species|A|B|authorship abbreviation -> unpublished_or_doubtful": 7,
+  "genus|A|B|authorship abbreviation -> ex_author_differs": 6,
+  "genus|B|C|authorship abbreviation -> ex_author_differs": 4,
+  "genus|A|B|authorship abbreviation -> conflicting": 2,
+  "higher|A|B|authorship abbreviation -> conflicting": 1,
+  "species|C|B|not_one_to_one; classification_disagrees:class; authorship_conflicting": 1,
+  "species|A|B|authorship abbreviation -> qualified_usage": 1
+ },
+ "examples": {
+  "A|B|authorship abbreviation -> conflicting": [
+   "Bionectriaceae 628481/120415: Samuels & Rossman || Samuels & Rossmanm, 1999",
+   "Aphroditeola 621771/617776: Redhead & Manfr. Bin || Redhead & Manfr.Binder",
+   "Macrosporium 633458/78017: Fr. || Fries, 1832"
+  ],
+  "A|B|authorship abbreviation -> ex_author_differs": [
+   "Clitopilus 625136/20361: (Fr. : Fr.) P. Kumm. || (Fr. ex Rabenh.) P.Kumm.",
+   "Cytospora 627791/28965: Ehrenb. || Ehrenb. ex Fries, 1823",
+   "Hygrophoropsis 626200/68413: (J. Schröt.) Maire || (J.Schröt.) Maire ex Martin-Sans"
+  ],
+  "A|B|authorship abbreviation -> qualified_usage": [
+   "Russula neglecta 626854/122656: Singer ss. Blum (non Singer) || Singer"
+  ],
+  "A|B|authorship abbreviation -> unpublished_or_doubtful": [
+   "Biatorella flavella 623654/159686: (Nyl.) Lettau (?) || (Nyl.) Lettau",
+   "Cortinarius bovinaster 621657/618101: Niskanen, Kytöv. & Liimat. (ined.) || Niskanen, Kytöv. & Liimat.",
+   "Menegazzia chrysogaster 630045/31033: Bjerke & Elvebakk, ined. || Bjerke & Elvebakk"
+  ],
+  "B|C|authorship abbreviation -> ex_author_differs": [
+   "Calycina 628324/161167: Nees ex Gray || Nees",
+   "Epicoccum 621343/85213: Link || Link ex Schlechtendahl",
+   "Sporidesmium 621402/129567: Link || Link ex Fries, 1821"
+  ],
+  "C|B|not_one_to_one; classification_disagrees:class; authorship_conflicting": [
+   "Phaeospora rimosicola 634235/43963: (Mudd) Hepp || (Leight.) Hepp ex Stein"
+  ]
+ }
+}

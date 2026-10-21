@@ -1,0 +1,40 @@
+{
+ "rows": 605,
+ "by_subclass": {
+  "exact_copy:col_provisionally_accepted": 20,
+  "name_match:copy_of_other_record": 9,
+  "exact_copy:col_synonym": 267,
+  "exact_copy:col_accepted": 309
+ },
+ "by_subclass_rank_pairs": {
+  "exact_copy:col_accepted|same_rank|in_pairs": 240,
+  "exact_copy:col_accepted|same_rank|not_in_pairs": 69,
+  "exact_copy:col_provisionally_accepted|same_rank|in_pairs": 11,
+  "exact_copy:col_provisionally_accepted|same_rank|not_in_pairs": 9,
+  "exact_copy:col_synonym|same_rank|not_in_pairs": 267,
+  "name_match:copy_of_other_record|same_rank|in_pairs": 1,
+  "name_match:copy_of_other_record|same_rank|not_in_pairs": 8
+ },
+ "distinct_nortaxa_with_exact_copy": 596,
+ "synonym_copy_targets_by_source": {
+  "2073": 207,
+  "2010": 8,
+  "7888": 6,
+  "2014": 2,
+  "2144": 22,
+  "2011": 4,
+  "2041": 9,
+  "7103": 4,
+  "290762": 1,
+  "5244": 2,
+  "2030": 2
+ },
+ "exact_accepted_in_pairs_by_pass3": {
+  "unresolved:placement_review": 35,
+  "pragmatic_missing_authorship:missing_both_sides": 201,
+  "unresolved:ambiguity": 11,
+  "pragmatic_missing_authorship:missing_one_side": 2,
+  "unresolved:conflict": 1,
+  "pragmatic_compatible:identical": 1
+ }
+}

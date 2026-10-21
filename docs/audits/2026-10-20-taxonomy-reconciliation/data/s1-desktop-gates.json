@@ -1,0 +1,330 @@
+{
+ "dry_run": {
+  "after_structured_s1_hits_live_or_mirror": 0,
+  "changed": {},
+  "foreign_key_check_rows": 0,
+  "integrity_check": [
+   "ok",
+   "ok"
+  ],
+  "log_rows": 0,
+  "mapping_canonical_sha256": "50fb7e9caa39609df339e461657a3b50d53085d67434ac377b198577ae10c8c4",
+  "mapping_size": 988,
+  "tables_changed": [],
+  "tables_compared": 27
+ },
+ "gates_baseline": {
+  "C_snapshot_2026-10-20": {
+   "absent_ids_that_are_s1_ids": [],
+   "resolved_ids_absent_from_release": [
+    634896,
+    634897,
+    634898,
+    634899,
+    634900,
+    634901,
+    634902,
+    634903,
+    634904,
+    634905,
+    634906,
+    634907,
+    634908,
+    634910,
+    634911,
+    634912,
+    634913,
+    634914,
+    634915,
+    634916
+   ],
+   "resolved_on_s1_retirees": 0,
+   "s1_retirees_in_cloud_scope": 0,
+   "s1_survivors_in_cloud_scope": 499,
+   "selected_ids_absent_from_release": [],
+   "selected_ids_outside_cloud_scope": 0,
+   "selected_on_s1_retirees": 0
+  },
+  "G1a_desktop_s1_sporely_id_refs_live_or_mirror": 0,
+  "G1b_desktop_s1_nortaxa_id_refs_live_or_mirror(provider space, kept verbatim)": 44,
+  "G2a_desktop_ids_absent_from_installed_release": 0,
+  "G2b_desktop_ids_absent_from_S1_release(release minus S1 retirees)": 0,
+  "G3_breakdown(source|tuple|proof)": {
+   "col_xr|None/None|None": 2,
+   "nortaxa|nortaxa/nortaxa_taxon_id|external_id_resolution": 43
+  },
+  "G3_desktop_ids_outside_cloud_scope": 45,
+  "G3_pinned_observation_set_sha256": "e1dc376119d0f23dcfd47c5bc82b50f0376fa4e3a5a0638301bc546d56231daa",
+  "G3_s1_retiree_or_survivor_among_them": 0,
+  "G4_fallback_exposure_dirty_outside_cloud_scope": 2,
+  "G4_fallback_exposure_with_external_tuple": 2,
+  "G5_desktop_nortaxa_tuples_on_s1_ids": 1,
+  "G5_desktop_nortaxa_tuples_total": 184,
+  "G6_pending_sync": {
+   "conflicts": 0,
+   "observation_reference_use_sync_state_not_synced": 0,
+   "observations_not_synced": 8,
+   "reference_sync_state_not_synced": 0,
+   "tombstones_pending": 0
+  },
+  "G7_survivors_absent_from_installed_release": 0
+ },
+ "inventory_desktop": {
+  "mushrooms.images.lab_metadata": {
+   "action": "inspect",
+   "class": "unclassified",
+   "coincidence_sporely_s1_retiree": 8,
+   "rows_with_value": 6077
+  },
+  "mushrooms.observation_reference_use_cloud_remote_tombstone_markers.accepted_payload_json": {
+   "action": "remote delete marker",
+   "class": "mirror",
+   "rows_with_value": 0,
+   "s1_hits": 0
+  },
+  "mushrooms.observation_reference_use_cloud_sync_state.accepted_payload_json": {
+   "action": "mirror of cloud row; keep",
+   "class": "mirror",
+   "rows_with_value": 74,
+   "s1_hits": 0
+  },
+  "mushrooms.observation_reference_use_cloud_sync_state.conflict_json": {
+   "action": "conflict payload; must be empty in window",
+   "class": "mirror",
+   "rows_with_value": 0,
+   "s1_hits": 0
+  },
+  "mushrooms.observation_reference_use_cloud_tombstones.accepted_payload_json": {
+   "action": "pending delete payload",
+   "class": "mirror",
+   "rows_with_value": 0,
+   "s1_hits": 0
+  },
+  "mushrooms.observation_reference_uses.snapshot_json": {
+   "action": "frozen reference snapshot; keep, report",
+   "class": "historical",
+   "rows_with_value": 74,
+   "s1_hits": 0
+  },
+  "mushrooms.observations.ai_selected_taxon_id": {
+   "action": "provider id; keep",
+   "class": "live_mutable",
+   "paths:ai_selected_taxon_id": 21,
+   "rows_with_value": 477,
+   "structured_nortaxa_s1_id": 21
+  },
+  "mushrooms.observations.ai_state_json": {
+   "action": "AI provider payload; keep",
+   "class": "historical",
+   "other_id_space_equal_to_s1_nortaxa_id": 1585,
+   "rows_with_value": 284
+  },
+  "mushrooms.observations.artsdata_id": {
+   "action": "provider id (Artsdatabanken/NorTaxa); keep, report",
+   "class": "live_mutable",
+   "rows_with_value": 7,
+   "s1_hits": 0
+  },
+  "mushrooms.observations.inaturalist_taxon_id": {
+   "action": "iNaturalist id; keep",
+   "class": "live_mutable",
+   "rows_with_value": 6,
+   "s1_hits": 0
+  },
+  "mushrooms.observations.sporely_taxon_id": {
+   "action": "remap retiree->survivor",
+   "class": "live_mutable",
+   "rows_with_value": 196,
+   "s1_hits": 0
+  },
+  "mushrooms.observations.taxon_identity_external_id": {
+   "action": "remap when namespace=sporely_taxon_id; NorTaxa tuple kept verbatim (re-resolves via S1 bridge)",
+   "class": "live_mutable",
+   "paths:taxon_identity_external_id": 1,
+   "rows_with_value": 208,
+   "structured_nortaxa_s1_id": 1
+  },
+  "mushrooms.observations.taxon_identity_raw_external_id": {
+   "action": "inspect",
+   "class": "unclassified",
+   "other_id_space_equal_to_s1_nortaxa_id": 1,
+   "rows_with_value": 184
+  },
+  "mushrooms.session_logs.metadata_json": {
+   "action": "UI event log; keep",
+   "class": "historical",
+   "coincidence_sporely_s1_retiree": 14,
+   "rows_with_value": 12154
+  },
+  "mushrooms.session_logs.session_id": {
+   "action": "inspect",
+   "class": "unclassified",
+   "coincidence_sporely_s1_retiree": 14,
+   "rows_with_value": 12154
+  },
+  "mushrooms.session_logs.value": {
+   "action": "UI event log; keep",
+   "class": "historical",
+   "rows_with_value": 12097,
+   "s1_hits": 0
+  },
+  "mushrooms.settings.value": {
+   "action": "cloud snapshot / pending state: remap only together with its cloud row",
+   "class": "mirror",
+   "coincidence_sporely_s1_retiree": 7,
+   "other_id_space_equal_to_s1_nortaxa_id": 1,
+   "paths:value.observation.ai_selected_taxon_id": 22,
+   "rows_with_value": 11344,
+   "structured_nortaxa_s1_id": 22
+  },
+  "reference_values.curated_reference_fork_cloud_sync_state.accepted_payload_json": {
+   "action": "mirror of cloud row",
+   "class": "mirror",
+   "rows_with_value": 0,
+   "s1_hits": 0
+  },
+  "reference_values.curated_reference_forks.source_envelope_json": {
+   "action": "frozen fork source; keep",
+   "class": "historical",
+   "rows_with_value": 0,
+   "s1_hits": 0
+  },
+  "reference_values.curated_reference_forks.sporely_taxon_id": {
+   "action": "remap retiree->survivor",
+   "class": "live_mutable",
+   "rows_with_value": 0,
+   "s1_hits": 0
+  },
+  "reference_values.reference_cloud_remote_tombstone_markers.accepted_payload_json": {
+   "action": "remote delete marker",
+   "class": "mirror",
+   "rows_with_value": 0,
+   "s1_hits": 0
+  },
+  "reference_values.reference_cloud_sync_state.accepted_payload_json": {
+   "action": "mirror of cloud row",
+   "class": "mirror",
+   "rows_with_value": 125,
+   "s1_hits": 0
+  },
+  "reference_values.reference_cloud_sync_state.conflict_json": {
+   "action": "conflict payload; must be empty in window",
+   "class": "mirror",
+   "rows_with_value": 0,
+   "s1_hits": 0
+  },
+  "reference_values.reference_cloud_tombstones.accepted_payload_json": {
+   "action": "pending delete payload",
+   "class": "mirror",
+   "rows_with_value": 0,
+   "s1_hits": 0
+  },
+  "reference_values.reference_taxon_treatments.taxon_id": {
+   "action": "remap retiree->survivor (synced user data)",
+   "class": "live_mutable",
+   "rows_with_value": 3,
+   "s1_hits": 0
+  },
+  "reference_values.reference_values.metadata_json": {
+   "action": "legacy reference values",
+   "class": "historical",
+   "rows_with_value": 83,
+   "s1_hits": 0
+  }
+ },
+ "inventory_generated_release_rows": {
+  "scientific_name_min.taxon_id": 2160,
+  "taxon_external_id_min.taxon_id": 3149,
+  "taxon_external_id_text_min(nortaxa tuple on S1 ids, any taxon)": 0,
+  "taxon_external_id_text_min.taxon_id": 0,
+  "taxon_min.norwegian_taxon_id(S1 NorTaxa ids)": 988,
+  "taxon_min.parent_taxon_id": 0,
+  "taxon_min.taxon_id": 988,
+  "taxon_redlist_min.taxon_id": 467,
+  "vernacular_min.taxon_id": 779
+ },
+ "inventory_historical_and_profiles": {
+  "cloud-media-audit-backup-20260805-091059/mushrooms.db": "no structured S1 hit",
+  "mushrooms-before-obs451-repair-20260718.db": "no structured S1 hit",
+  "mushrooms.db.bak-2026-08-22-pre-2703-repair": {
+   "mushrooms.observations.ai_selected_taxon_id": {
+    "action": "provider id; keep",
+    "class": "live_mutable",
+    "paths:ai_selected_taxon_id": 7,
+    "rows_with_value": 297,
+    "structured_nortaxa_s1_id": 7
+   },
+   "mushrooms.settings.value": {
+    "action": "cloud snapshot / pending state: remap only together with its cloud row",
+    "class": "mirror",
+    "coincidence_sporely_s1_retiree": 7,
+    "paths:value.observation.ai_selected_taxon_id": 8,
+    "rows_with_value": 8366,
+    "structured_nortaxa_s1_id": 8
+   }
+  },
+  "mushrooms.db.bak-pre-stage4-identity-revert-20260923-231552": {
+   "mushrooms.observations.ai_selected_taxon_id": {
+    "action": "provider id; keep",
+    "class": "live_mutable",
+    "paths:ai_selected_taxon_id": 18,
+    "rows_with_value": 401,
+    "structured_nortaxa_s1_id": 18
+   },
+   "mushrooms.settings.value": {
+    "action": "cloud snapshot / pending state: remap only together with its cloud row",
+    "class": "mirror",
+    "coincidence_sporely_s1_retiree": 7,
+    "paths:value.observation.ai_selected_taxon_id": 19,
+    "rows_with_value": 9910,
+    "structured_nortaxa_s1_id": 19
+   }
+  },
+  "mushrooms.db.before-tombstone-repair-20260807-145054.bak": "no structured S1 hit",
+  "mushrooms.repair-backup-20260612-065616.db": "no structured S1 hit",
+  "mushrooms.repair-backup-20260612-065628.db": "no structured S1 hit",
+  "profiles/my_custom_profile/mushrooms.db": "no structured S1 hit",
+  "profiles/my_custom_profile/reference_values.db": "no structured S1 hit",
+  "profiles/my_custom_profile2/mushrooms.db": "no structured S1 hit",
+  "profiles/my_custom_profile2/reference_values.db": "no structured S1 hit",
+  "profiles/s7canary-test/mushrooms.db": "no structured S1 hit",
+  "profiles/s7canary-test/reference_values.db": "no structured S1 hit",
+  "profiles/s7canary-test/taxonomy_v2/vernacular_multilanguage_v2.sqlite3 (taxonomy release copy)": {
+   "content_release_id": "tax-2026.10.07-01",
+   "taxon_min_rows_on_s1_retirees": 988
+  },
+  "profiles/s7canary/mushrooms.db": "no structured S1 hit",
+  "profiles/s7canary/reference_values.db": "no structured S1 hit",
+  "profiles/s7canary/taxonomy_v2/vernacular_multilanguage_v2.sqlite3 (taxonomy release copy)": {
+   "content_release_id": "tax-2026.10.07-01",
+   "taxon_min_rows_on_s1_retirees": 988
+  },
+  "profiles/stagem-test/mushrooms.db": "no structured S1 hit",
+  "profiles/stagem-test/reference_values.db": "no structured S1 hit",
+  "profiles/stagem-test/taxonomy_v2/vernacular_multilanguage_v2.sqlite3 (taxonomy release copy)": {
+   "content_release_id": "tax-2026.09.30-01",
+   "taxon_min_rows_on_s1_retirees": 988
+  },
+  "profiles/sync-test-a/mushrooms.db": "no structured S1 hit",
+  "profiles/sync-test-a/reference_values.db": "no structured S1 hit",
+  "profiles/sync-test-b/mushrooms.db": "no structured S1 hit",
+  "profiles/sync-test-b/reference_values.db": "no structured S1 hit",
+  "profiles/sync-test-c/mushrooms.db": "no structured S1 hit",
+  "profiles/sync-test-c/reference_values.db": "no structured S1 hit",
+  "profiles/test-share/mushrooms.db": "no structured S1 hit",
+  "profiles/test-share/reference_values.db": "no structured S1 hit",
+  "taxonomy_v2/vernacular_multilanguage_v2.sqlite3 (taxonomy release copy)": {
+   "content_release_id": "tax-2026.10.07-01",
+   "taxon_min_rows_on_s1_retirees": 988
+  },
+  "taxonomy_v2/vernacular_multilanguage_v2.sqlite3.mismatched (taxonomy release copy)": {
+   "content_release_id": "tax-2026.09.30-01",
+   "taxon_min_rows_on_s1_retirees": 988
+  }
+ },
+ "s1_nortaxa_ids": {
+  "accepted": 988,
+  "synonym": 1175
+ },
+ "s1_retirees": 988
+}

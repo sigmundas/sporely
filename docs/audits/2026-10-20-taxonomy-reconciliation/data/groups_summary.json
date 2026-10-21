@@ -1,0 +1,114 @@
+{
+ "a2_reasons_any": {
+  "col-internal|within_source_manifest_kind": 4,
+  "genus|author_filtered_one_to_one": 14,
+  "genus|cloud_snapshot_references": 2,
+  "genus|reparent_children": 199,
+  "higher|author_filtered_one_to_one": 2,
+  "higher|reparent_children": 81,
+  "species|author_filtered_one_to_one": 3,
+  "species|cloud_snapshot_references": 35,
+  "species|desktop_observations": 12,
+  "species|desktop_reference_uses": 6,
+  "species|reparent_children": 48
+ },
+ "a2_reasons_sole": {
+  "col-internal|within_source_manifest_kind": 4,
+  "genus|author_filtered_one_to_one": 8,
+  "genus|reparent_children": 191,
+  "higher|author_filtered_one_to_one": 1,
+  "higher|reparent_children": 80,
+  "species|author_filtered_one_to_one": 3,
+  "species|cloud_snapshot_references": 24,
+  "species|desktop_observations": 2,
+  "species|reparent_children": 41
+ },
+ "composition": {
+  "A0|genus": 301,
+  "A0|higher": 66,
+  "A0|infraspecific": 45,
+  "A0|species": 943,
+  "A1|genus": 54,
+  "A1|higher": 12,
+  "A1|infraspecific": 10,
+  "A1|species": 766,
+  "A2|col-internal": 4,
+  "A2|genus": 223,
+  "A2|higher": 112,
+  "A2|species": 86,
+  "B-placement|infraspecific": 4,
+  "B-placement|species": 504
+ },
+ "movement_from_previous_revision_A": {
+  "col-internal|A|A2": 4,
+  "genus|A|A0": 301,
+  "genus|A|A1": 54,
+  "genus|A|A2": 216,
+  "genus|A|not_A:B": 3,
+  "genus|v2:B|A2": 7,
+  "higher|A|A0": 66,
+  "higher|A|A1": 12,
+  "higher|A|A2": 112,
+  "higher|A|not_A:B": 7,
+  "higher|A|not_A:D": 5,
+  "infraspecific|A|A0": 45,
+  "infraspecific|A|A1": 10,
+  "infraspecific|A|not_A:B": 2,
+  "species|A|A0": 943,
+  "species|A|A1": 766,
+  "species|A|A2": 86,
+  "species|A|not_A:B": 27
+ },
+ "parent_repair": {
+  "nortaxa_parent_reference": {
+   "no_parent_reference_root": 1,
+   "parent_reference_unbound": 2,
+   "parent_resolved": 12563
+  },
+  "nortaxa_parent_resolved_by_parent_source": {
+   "col_xr": 5551,
+   "nortaxa": 7012
+  },
+  "reparent_operations": 1776,
+  "reparent_operations_by_group_rank_childsource": {
+   "A2|genus|nortaxa": 1338,
+   "A2|higher|nortaxa": 366,
+   "A2|species|nortaxa": 64,
+   "B-placement|species|nortaxa": 8
+  },
+  "retirees_that_are_parents_in_candidate": 333,
+  "review2_check_rev2_partitions_retirees_parent_of_valid_source_usages": {
+   "A-genus": 0,
+   "A-higher": 0,
+   "A-species": 0
+  },
+  "shipped_builder_resolved_nortaxa_parents": 0
+ },
+ "redlist_rows_by_group": {
+  "A0": 467,
+  "A1": 240,
+  "A2": 78,
+  "B-placement": 203
+ },
+ "stage_dependency_closure": {
+  "moved_to_A2_by_stage_rank": {
+   "S1|species": 33,
+   "S2|genus": 188,
+   "S2|higher": 96,
+   "S3|genus": 19,
+   "S3|higher": 14,
+   "S3|species": 8
+  },
+  "stage_ops": {
+   "S4": 1768,
+   "S5": 8
+  },
+  "stage_sizes": {
+   "S1": 988,
+   "S2": 367,
+   "S3": 842,
+   "S4": 425,
+   "S5": 508
+  }
+ }
+}

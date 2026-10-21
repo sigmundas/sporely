@@ -1,0 +1,829 @@
+{
+ "cloud_snapshot": "2026-10-20 read-only aggregate (cloud_usage_readonly.py); active release tax-2026.10.07-01",
+ "handling": {
+  "cloud_snapshot_2026-10-20.observations.resolved_sporely_taxon_id": "operator repair before import (09.30 pattern)",
+  "cloud_snapshot_2026-10-20.observations.selected_sporely_taxon_id": "blocking for cloud import (09.30 repair refuses a selected retired id)",
+  "desktop.curated_reference_forks.sporely_taxon_id": "user reference data: needs re-key or read-time resolution",
+  "desktop.observation_reference_uses(via observation)": "follows the observation; repair must not orphan snapshot_json",
+  "desktop.observations.sporely_taxon_id": "needs desktop retired-id resolution (read time) and optional owner-run repair",
+  "desktop.observations.taxon_identity_external_id(namespace sporely_taxon_id)": "unresolved Sporely-namespace identity (pulled id); needs retired->survivor resolution",
+  "desktop.reference_taxon_treatments.taxon_id": "user reference data: needs re-key or read-time resolution (syncs to cloud)",
+  "taxonomy.child_concepts(parent_taxon_id)": "blocking: compiler cannot re-parent; partition rule excludes retirees with children",
+  "taxonomy.scientific_name_min": "re-keyed by the compiler (supersession)",
+  "taxonomy.taxon_external_id_min": "re-keyed by the compiler (supersession; accepted NorTaxa id -> reviewed_supersession row)",
+  "taxonomy.taxon_external_id_text_min": "re-keyed by the compiler (supersession)",
+  "taxonomy.taxon_redlist_min": "re-keyed by the compiler; survivor collisions need review",
+  "taxonomy.vernacular_min": "re-keyed by the compiler (supersession)"
+ },
+ "observed_ids_absent_from_release": {
+  "cloud": [
+   634896,
+   634897,
+   634898,
+   634899,
+   634900,
+   634901,
+   634902,
+   634903,
+   634904,
+   634905,
+   634906,
+   634907,
+   634908,
+   634910,
+   634911,
+   634912,
+   634913,
+   634914,
+   634915,
+   634916
+  ],
+  "desktop": []
+ },
+ "partitions": {
+  "A0-genus": {
+   "cloud_snapshot_2026-10-20.observations.resolved_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "cloud_snapshot_2026-10-20.observations.selected_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.curated_reference_forks.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observation_reference_uses(via observation)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.taxon_identity_external_id(namespace sporely_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.reference_taxon_treatments.taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "retired_concepts": 301,
+   "taxonomy.child_concepts(parent_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.scientific_name_min": {
+    "retired_ids_referenced": 301,
+    "rows": 313
+   },
+   "taxonomy.taxon_external_id_min": {
+    "retired_ids_referenced": 301,
+    "rows": 313
+   },
+   "taxonomy.taxon_external_id_text_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min.survivor_collisions": 0,
+   "taxonomy.vernacular_min": {
+    "retired_ids_referenced": 24,
+    "rows": 43
+   }
+  },
+  "A0-higher": {
+   "cloud_snapshot_2026-10-20.observations.resolved_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "cloud_snapshot_2026-10-20.observations.selected_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.curated_reference_forks.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observation_reference_uses(via observation)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.taxon_identity_external_id(namespace sporely_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.reference_taxon_treatments.taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "retired_concepts": 66,
+   "taxonomy.child_concepts(parent_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.scientific_name_min": {
+    "retired_ids_referenced": 66,
+    "rows": 66
+   },
+   "taxonomy.taxon_external_id_min": {
+    "retired_ids_referenced": 66,
+    "rows": 66
+   },
+   "taxonomy.taxon_external_id_text_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min.survivor_collisions": 0,
+   "taxonomy.vernacular_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   }
+  },
+  "A0-infraspecific": {
+   "cloud_snapshot_2026-10-20.observations.resolved_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "cloud_snapshot_2026-10-20.observations.selected_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.curated_reference_forks.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observation_reference_uses(via observation)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.taxon_identity_external_id(namespace sporely_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.reference_taxon_treatments.taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "retired_concepts": 45,
+   "taxonomy.child_concepts(parent_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.scientific_name_min": {
+    "retired_ids_referenced": 45,
+    "rows": 69
+   },
+   "taxonomy.taxon_external_id_min": {
+    "retired_ids_referenced": 45,
+    "rows": 100
+   },
+   "taxonomy.taxon_external_id_text_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min.survivor_collisions": 0,
+   "taxonomy.vernacular_min": {
+    "retired_ids_referenced": 5,
+    "rows": 8
+   }
+  },
+  "A0-species": {
+   "cloud_snapshot_2026-10-20.observations.resolved_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "cloud_snapshot_2026-10-20.observations.selected_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.curated_reference_forks.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observation_reference_uses(via observation)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.taxon_identity_external_id(namespace sporely_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.reference_taxon_treatments.taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "retired_concepts": 943,
+   "taxonomy.child_concepts(parent_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.scientific_name_min": {
+    "retired_ids_referenced": 943,
+    "rows": 2091
+   },
+   "taxonomy.taxon_external_id_min": {
+    "retired_ids_referenced": 943,
+    "rows": 3049
+   },
+   "taxonomy.taxon_external_id_text_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min": {
+    "retired_ids_referenced": 451,
+    "rows": 467
+   },
+   "taxonomy.taxon_redlist_min.survivor_collisions": 0,
+   "taxonomy.vernacular_min": {
+    "retired_ids_referenced": 361,
+    "rows": 771
+   }
+  },
+  "A1-genus": {
+   "cloud_snapshot_2026-10-20.observations.resolved_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "cloud_snapshot_2026-10-20.observations.selected_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.curated_reference_forks.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observation_reference_uses(via observation)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.taxon_identity_external_id(namespace sporely_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.reference_taxon_treatments.taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "retired_concepts": 54,
+   "taxonomy.child_concepts(parent_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.scientific_name_min": {
+    "retired_ids_referenced": 54,
+    "rows": 57
+   },
+   "taxonomy.taxon_external_id_min": {
+    "retired_ids_referenced": 54,
+    "rows": 57
+   },
+   "taxonomy.taxon_external_id_text_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min.survivor_collisions": 0,
+   "taxonomy.vernacular_min": {
+    "retired_ids_referenced": 3,
+    "rows": 4
+   }
+  },
+  "A1-higher": {
+   "cloud_snapshot_2026-10-20.observations.resolved_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "cloud_snapshot_2026-10-20.observations.selected_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.curated_reference_forks.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observation_reference_uses(via observation)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.taxon_identity_external_id(namespace sporely_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.reference_taxon_treatments.taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "retired_concepts": 12,
+   "taxonomy.child_concepts(parent_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.scientific_name_min": {
+    "retired_ids_referenced": 12,
+    "rows": 12
+   },
+   "taxonomy.taxon_external_id_min": {
+    "retired_ids_referenced": 12,
+    "rows": 12
+   },
+   "taxonomy.taxon_external_id_text_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min.survivor_collisions": 0,
+   "taxonomy.vernacular_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   }
+  },
+  "A1-infraspecific": {
+   "cloud_snapshot_2026-10-20.observations.resolved_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "cloud_snapshot_2026-10-20.observations.selected_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.curated_reference_forks.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observation_reference_uses(via observation)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.taxon_identity_external_id(namespace sporely_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.reference_taxon_treatments.taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "retired_concepts": 10,
+   "taxonomy.child_concepts(parent_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.scientific_name_min": {
+    "retired_ids_referenced": 10,
+    "rows": 12
+   },
+   "taxonomy.taxon_external_id_min": {
+    "retired_ids_referenced": 10,
+    "rows": 13
+   },
+   "taxonomy.taxon_external_id_text_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min.survivor_collisions": 0,
+   "taxonomy.vernacular_min": {
+    "retired_ids_referenced": 1,
+    "rows": 2
+   }
+  },
+  "A1-species": {
+   "cloud_snapshot_2026-10-20.observations.resolved_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "cloud_snapshot_2026-10-20.observations.selected_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.curated_reference_forks.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observation_reference_uses(via observation)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.taxon_identity_external_id(namespace sporely_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.reference_taxon_treatments.taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "retired_concepts": 766,
+   "taxonomy.child_concepts(parent_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.scientific_name_min": {
+    "retired_ids_referenced": 766,
+    "rows": 1584
+   },
+   "taxonomy.taxon_external_id_min": {
+    "retired_ids_referenced": 766,
+    "rows": 2004
+   },
+   "taxonomy.taxon_external_id_text_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min": {
+    "retired_ids_referenced": 207,
+    "rows": 240
+   },
+   "taxonomy.taxon_redlist_min.survivor_collisions": 0,
+   "taxonomy.vernacular_min": {
+    "retired_ids_referenced": 144,
+    "rows": 189
+   }
+  },
+  "A2-author-filtered": {
+   "cloud_snapshot_2026-10-20.observations.resolved_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "cloud_snapshot_2026-10-20.observations.selected_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.curated_reference_forks.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observation_reference_uses(via observation)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.taxon_identity_external_id(namespace sporely_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.reference_taxon_treatments.taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "retired_concepts": 19,
+   "taxonomy.child_concepts(parent_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.scientific_name_min": {
+    "retired_ids_referenced": 19,
+    "rows": 24
+   },
+   "taxonomy.taxon_external_id_min": {
+    "retired_ids_referenced": 19,
+    "rows": 25
+   },
+   "taxonomy.taxon_external_id_text_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min.survivor_collisions": 0,
+   "taxonomy.vernacular_min": {
+    "retired_ids_referenced": 4,
+    "rows": 8
+   }
+  },
+  "A2-col-internal": {
+   "cloud_snapshot_2026-10-20.observations.resolved_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "cloud_snapshot_2026-10-20.observations.selected_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.curated_reference_forks.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observation_reference_uses(via observation)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.taxon_identity_external_id(namespace sporely_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.reference_taxon_treatments.taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "retired_concepts": 4,
+   "taxonomy.child_concepts(parent_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.scientific_name_min": {
+    "retired_ids_referenced": 4,
+    "rows": 4
+   },
+   "taxonomy.taxon_external_id_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_external_id_text_min": {
+    "retired_ids_referenced": 4,
+    "rows": 4
+   },
+   "taxonomy.taxon_redlist_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min.survivor_collisions": 0,
+   "taxonomy.vernacular_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   }
+  },
+  "A2-genus": {
+   "cloud_snapshot_2026-10-20.observations.resolved_sporely_taxon_id": {
+    "retired_ids_referenced": 2,
+    "rows": 4
+   },
+   "cloud_snapshot_2026-10-20.observations.selected_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.curated_reference_forks.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observation_reference_uses(via observation)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.taxon_identity_external_id(namespace sporely_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.reference_taxon_treatments.taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "retired_concepts": 209,
+   "taxonomy.child_concepts(parent_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.scientific_name_min": {
+    "retired_ids_referenced": 209,
+    "rows": 242
+   },
+   "taxonomy.taxon_external_id_min": {
+    "retired_ids_referenced": 209,
+    "rows": 243
+   },
+   "taxonomy.taxon_external_id_text_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min.survivor_collisions": 0,
+   "taxonomy.vernacular_min": {
+    "retired_ids_referenced": 92,
+    "rows": 181
+   }
+  },
+  "A2-higher": {
+   "cloud_snapshot_2026-10-20.observations.resolved_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "cloud_snapshot_2026-10-20.observations.selected_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.curated_reference_forks.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observation_reference_uses(via observation)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observations.taxon_identity_external_id(namespace sporely_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.reference_taxon_treatments.taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "retired_concepts": 110,
+   "taxonomy.child_concepts(parent_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.scientific_name_min": {
+    "retired_ids_referenced": 110,
+    "rows": 117
+   },
+   "taxonomy.taxon_external_id_min": {
+    "retired_ids_referenced": 110,
+    "rows": 117
+   },
+   "taxonomy.taxon_external_id_text_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min.survivor_collisions": 0,
+   "taxonomy.vernacular_min": {
+    "retired_ids_referenced": 1,
+    "rows": 1
+   }
+  },
+  "A2-species": {
+   "cloud_snapshot_2026-10-20.observations.resolved_sporely_taxon_id": {
+    "retired_ids_referenced": 35,
+    "rows": 63
+   },
+   "cloud_snapshot_2026-10-20.observations.selected_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.curated_reference_forks.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observation_reference_uses(via observation)": {
+    "retired_ids_referenced": 6,
+    "rows": 8
+   },
+   "desktop.observations.sporely_taxon_id": {
+    "retired_ids_referenced": 12,
+    "rows": 14
+   },
+   "desktop.observations.taxon_identity_external_id(namespace sporely_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.reference_taxon_treatments.taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "retired_concepts": 83,
+   "taxonomy.child_concepts(parent_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.scientific_name_min": {
+    "retired_ids_referenced": 83,
+    "rows": 251
+   },
+   "taxonomy.taxon_external_id_min": {
+    "retired_ids_referenced": 83,
+    "rows": 396
+   },
+   "taxonomy.taxon_external_id_text_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min": {
+    "retired_ids_referenced": 77,
+    "rows": 78
+   },
+   "taxonomy.taxon_redlist_min.survivor_collisions": 0,
+   "taxonomy.vernacular_min": {
+    "retired_ids_referenced": 73,
+    "rows": 175
+   }
+  },
+  "B-placement": {
+   "cloud_snapshot_2026-10-20.observations.resolved_sporely_taxon_id": {
+    "retired_ids_referenced": 4,
+    "rows": 16
+   },
+   "cloud_snapshot_2026-10-20.observations.selected_sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.curated_reference_forks.sporely_taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.observation_reference_uses(via observation)": {
+    "retired_ids_referenced": 1,
+    "rows": 3
+   },
+   "desktop.observations.sporely_taxon_id": {
+    "retired_ids_referenced": 1,
+    "rows": 3
+   },
+   "desktop.observations.taxon_identity_external_id(namespace sporely_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "desktop.reference_taxon_treatments.taxon_id": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "retired_concepts": 508,
+   "taxonomy.child_concepts(parent_taxon_id)": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.scientific_name_min": {
+    "retired_ids_referenced": 508,
+    "rows": 1118
+   },
+   "taxonomy.taxon_external_id_min": {
+    "retired_ids_referenced": 508,
+    "rows": 1411
+   },
+   "taxonomy.taxon_external_id_text_min": {
+    "retired_ids_referenced": 0,
+    "rows": 0
+   },
+   "taxonomy.taxon_redlist_min": {
+    "retired_ids_referenced": 181,
+    "rows": 203
+   },
+   "taxonomy.taxon_redlist_min.survivor_collisions": 0,
+   "taxonomy.vernacular_min": {
+    "retired_ids_referenced": 93,
+    "rows": 160
+   }
+  }
+ }
+}

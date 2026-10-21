@@ -1,0 +1,88 @@
+{
+ "matrix": {
+  "different_rank|C|C": 32,
+  "genus|A|A": 571,
+  "genus|A|B": 3,
+  "genus|B|A": 7,
+  "genus|B|B": 1270,
+  "genus|B|C": 7,
+  "genus|C|C": 18,
+  "higher|A|A": 190,
+  "higher|A|B": 7,
+  "higher|A|D": 5,
+  "higher|B|B": 129,
+  "higher|D|D": 1,
+  "infraspecific|A|A": 55,
+  "infraspecific|A|B": 2,
+  "infraspecific|B|B": 27,
+  "species|A|A": 1795,
+  "species|A|B": 27,
+  "species|B|B": 1921,
+  "species|C|C": 3,
+  "species|D|D": 2
+ },
+ "moves_by_rule": {
+  "species|A|B|nomenclatural_status_nortaxa:illegitimate": 24,
+  "higher|A|B|authorship_missing_without_classification_support": 6,
+  "genus|B|C|authorship citation_stripped -> partial_list": 6,
+  "higher|A|D|no authorship on either side and too little classification to compare": 5,
+  "genus|B|A|same name+rank, one-to-one, authorship typography, classification agrees on phylum+class+ord+family, no competing placem": 3,
+  "genus|A|B|nomenclatural_status_nortaxa:illegitimate": 3,
+  "genus|B|A|same name+rank, one-to-one, authorship citation_stripped, classification agrees on phylum+class+ord+family, no competing": 2,
+  "genus|B|A|same name+rank, one-to-one, authorship identical, classification agrees on phylum+class+ord+family, no competing placeme": 2,
+  "species|A|B|authorship sanctioning -> conflicting": 2,
+  "higher|A|B|nomenclatural_status_nortaxa:illegitimate": 1,
+  "species|A|B|authorship abbreviation -> malformed_authorship": 1,
+  "infraspecific|A|B|nomenclatural_status_nortaxa:illegitimate": 1,
+  "infraspecific|A|B|nomenclatural_status_nortaxa:illegitimate; nomenclatural_status_col:unacceptable": 1,
+  "genus|B|C|authorship abbreviation -> partial_list": 1
+ },
+ "examples": {
+  "A|B|authorship abbreviation -> malformed_authorship": [
+   "Mycosphaerella lineolata 631573/35799: ((Roberge ex Desm.) J. Schröt. || (Roberge ex Desm.) J. Schröt."
+  ],
+  "A|B|authorship sanctioning -> conflicting": [
+   "Cistella dentata 628331/82713: (Pers: Fr..) Quél. || (Pers.) Quél.",
+   "Mitrula paludosa 628466/32914: Fr. : Fr.. || Fr."
+  ],
+  "A|B|authorship_missing_without_classification_support": [
+   "Ascomycota 634868/604076: Caval.-Sm. || ",
+   "Chytridiomycota 620986/11053: M.J. Powell || ",
+   "Entorrhizomycota 624404/147784: R. Bauer, Garnica, Oberw., Riess, Weiß & Begerow || "
+  ],
+  "A|B|nomenclatural_status_nortaxa:illegitimate": [
+   "Inocybaceae 627066/84106: Jülich || Jülich, 1982",
+   "Camarophyllus 627038/84826: (Fr.) P. Kumm. || (Fr.) P.Kumm.",
+   "Ditangium 627160/38206: P. Karst. || P.Karst."
+  ],
+  "A|B|nomenclatural_status_nortaxa:illegitimate; nomenclatural_status_col:unacceptable": [
+   "Galerina pumila var. pumila 627063/164467: (Pers. : Fr.) M. Lange || (Pers.: Fr.) M. Lange"
+  ],
+  "A|D|no authorship on either side and too little classification to compare": [
+   "Fungi 634865/152331:  || ",
+   "Basidiomycota 620982/146610:  || ",
+   "Blastocladiomycota 621617/83948:  || "
+  ],
+  "B|A|same name+rank, one-to-one, authorship citation_stripped, classification agrees on phylum+class+ord+family, no competing": [
+   "Dendrostoma 624206/32451: X.L. Fan & C.M. Tian || X.L.Fan & C.M.Tian, 2018",
+   "Roussoella 622034/87007: Sacc. || Sacc., 1888"
+  ],
+  "B|A|same name+rank, one-to-one, authorship identical, classification agrees on phylum+class+ord+family, no competing placeme": [
+   "Hydnophlebia 623539/68255: Parmasto || Parmasto",
+   "Lopharia 626648/77940: Kalchbr. & MacOwan || Kalchbr. & MacOwan"
+  ],
+  "B|A|same name+rank, one-to-one, authorship typography, classification agrees on phylum+class+ord+family, no competing placem": [
+   "Dentocorticium 621919/85068: (Parmasto) M.J. Larsen & Gilb. || (Parmasto) M.J.Larsen & Gilb.",
+   "Hydnellum 626906/68239: P. Karst. || P.Karst.",
+   "Sarcodon 626916/86996: Quél. ex P. Karst. || Quél. ex P.Karst."
+  ],
+  "B|C|authorship abbreviation -> partial_list": [
+   "Heteroradulum 622828/165032: Spirin & Malysheva || Lloyd ex Spirin & Malysheva, in Malysheva & Spirin, Fungal Biology 121 (8): 709, 2017"
+  ],
+  "B|C|authorship citation_stripped -> partial_list": [
+   "Dendrostoma 624206/163254: X.L. Fan & C.M. Tian || X. L. Fan & C. M. Tian, Persoonia 40: 126, 2018",
+   "Dentocorticium 621919/163323: (Parmasto) M.J. Larsen & Gilb. || (Parmasto) M. J. Larsen & Gilb., Norwegian Journal of Botany 21: 225, 1974",
+   "Hydnellum 626906/165886: P. Karst. || P. Karst., Meddn Soc. Fauna Flora fenn. 5: 41, 1879"
+  ]
+ }
+}

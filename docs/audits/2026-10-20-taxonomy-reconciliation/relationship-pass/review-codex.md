@@ -1,0 +1,36 @@
+# Review of the relationship pass by Codex (gpt-6.1-sol, high effort), 2026-10-21
+
+This read-only review ran through `codex exec` in a read-only sandbox. The text below is its output, unedited.
+
+**Verdict: unsound as a high-confidence matching pass.** The outputs reproduce, and many pairs are plausible matches, but B1/B2 admit evidence that does not establish independent, homotypic identity.
+
+Paths below are relative to `docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/`.
+
+1. **CORRECTNESS — copied NorTaxa synonymy drives promotions.**  
+   `scripts/relate.py:196–199,341–359` ignores relationship provenance; source 2030 is excluded only for vernaculars. **87 B2 pairs have exclusively source-2030 synonym witnesses**, including Cortinarius brunneus **52596/YK96** and Bulbothrix suffixa **71552/MFLCD**. COL’s `source/2030.yaml` identifies NorTaxa. These rows cannot count as independent corroboration.
+
+2. **CORRECTNESS — equal basionym authors do not establish homotypy.**  
+   `scripts/relate.py:352–355,427–428` promotes the inferred rule alongside source relationships. It occurs in **47 pairs; 21 B2 promotions depend entirely on it**. Cladonia bellidiflora **69044/VPCT** has basionym **727T9, Lichen bellidiflorus Ach.**, while witness **MK8KK** derives from **B23ZM, Cenomyce coccocephala Ach.** The archives publish separate basionym groups, not a homotypic connection. Likewise, Hymenoscyphus calyculus uses **3KJ87**, versus witness **6N2JV→3KJSP**; Lecidella anomaloides uses **3STTS**, versus witnesses deriving from **LQTH**. Heterotypic/uncertain evidence therefore leaks into B2.
+
+3. **CORRECTNESS — synonym qualifiers and uncertainty bypass the guards.**  
+   `scripts/relate.py:318–319` checks accepted authorships; `346–355` can admit qualified synonyms through its fallback. Lactarius trivialis **57654/3RSC5** is promoted solely through **64539/VKQS3**, *Lactarius fascinans* “**(Fr.: Fr.) Fr. ss. M.M. Moser**”; COL marks it `unacceptable`, source 2030. Qualified witnesses also occur for Cortinarius anthracinus; an unpublished witness occurs for Pseudocyphellaria dissimilis. **19 promotions use COL ambiguous-synonym witnesses; six have no other homotypic witness**, including Anamylopsora pulcherrima **65454/66JPC**, witness **6P6FW**. Merely recording `col_has_ambiguous_synonyms` does not guard promotion.
+
+4. **CORRECTNESS — author equality and “explicit” labels overstate the evidence.**  
+   `scripts/relate.py:84–115` drops initials and compares either side of sanctioning colons. Executed probes return `True` for **J.E. Lange/M. Lange**, **Sowerby: Fr./Vahl: Fr.**, and **Vahl: Fr./Fr.**  
+   B1 (`321–327`) is a **name-and-comparator lookup**, not an identifier cross-reference or consistently exact authorship match: its 88 COL witnesses comprise **53 identical, 14 abbreviation, 21 other comparator classes**. The synonym pointers are real, but inferred author equivalence must remain explicit. **Ten promoted pairs have `source_verified=True` homotypic items whose synonym authorships the underlying comparator rejects**, including qualifiers and conflicting author strings. B3’s `False` flags are honest; B2’s inferred flags are honest individually but do not justify high-confidence promotion.
+
+5. **RISK — vernacular provenance is only partly established.**  
+   Archive scans reproduced **6,032/6,691** Norwegian rows attributed to source 2030; all 6,032 names occur in current NorTaxa. Those rows are correctly excluded from independent vernacular evidence (`213–217`). However, blank provenance is treated as independent: **27/42 shared-vernacular pairs**, including **five B5 pairs**, involve COL rows with empty `sourceID`. Thus Cladonia pocillum’s *kalkbeger* independence is unproven. Reuse checks cover NorTaxa accepted concepts, higher ranks and aggregate wording; the ten B5 names also proved unique in the non-2030 COL subset.
+
+6. **RISK — conflict precedence is conservative, but “conflict” does not mean different taxon.**  
+   The precedence reproduced correctly; no promoted pair carries recorded contradictions/ambiguities. In **10 sampled X1 pairs**, the stated conflicting fields/pointers existed. Nevertheless, Gyalideopsis graminicola **76419/3HNRL** and Glossodium japonicum **76485/NY7LL** differ in class while retaining matching names/authors and families: these warrant placement review, not a conclusion of distinct identity. In **15 sampled B3 pairs**, two “same basionym author” decisions collapse sanctioning versus validating authors: Cucurbitaria spartii and Pyrenopeziza petiolaris. Keep those equivalences unresolved.
+
+7. **CORRECTNESS/CLEANUP — field inventory mixes valid omissions with incorrect coverage claims.**  
+   Confirmed: **119,821 basionym IDs; 131,311 NameRelation rows** with the stated breakdown; **3,348 TypeMaterial rows**; NorTaxa’s absent basionym field; and the documented compiler omissions/status handling (`database/taxonomy/scripts/normalize_col_xr.py:177–208`, `national_source.py:808–826`, `compile_release.py:2162–2167`).  
+   Correct `README.md:33,35,38`: **93.6% means any populated link**; IF `RecordID` links cover **314,076/806,448 = 38.9%**, although **2,039 pair concepts** is correct. Combination authorship covers **45.4%**, basionym authorship **17.0%**. `nameAlternativeID` contains **647 IRMNG and 601 WoRMS LSIDs**, not WoRMS only.
+
+**Sample and false-promotion rate.** Deterministic seed **20261021**, sampling 12 per B1/B2 × placement-difference stratum: **48 promotions**, including **24 placement-differing**; checked each accepted/witness row. Also inspected all 21 inferred-only B2 promotions, 15 B3 pairs and 10 X1 pairs. **Seven/48 (14.6%) have unsupported high-confidence evidence**, including Lactarius trivialis and Buellia mamillana; this unweighted stratified proportion is not a population estimate. A full witness census finds **107/566 (18.9%)** without independent, unqualified, unambiguous, source-verified identity evidence, including **39/194** placement-differing pairs. **Source-proven distinct-taxon matches: 0/48 observed; their true rate remains undetermined.**
+
+**Worked examples.** Agree with the five bucket assignments: pocillum B3; stereoclada/taminium B6; sphagneti B2; spathula X2. Entoloma sphagneti **53677/6FDPL** has genuine support through **59943/SKHS5**, COL’s basionym relationship, and Dyntaxa’s explicit homotypic row. Pocillum’s identity remains inferred; its vernacular independence is unsupported, and the COL basionym group contains **18 usages**, not 11.
+
+**Ran:** project Python `-B`; immutable SQLite reads; direct archive scans; **368 COL and 278 NorTaxa selected rows matched intermediates exactly**; Dyntaxa worked-example verification; all-194 placement-field checks (**94 family, 42 order, 58 both**); author counterexamples; complete `relate.main()` rerun with outputs redirected to memory—**all 2,805 rows, 1,647 evidence rows, 566 promotions and summary matched**. No network, writes or commits. No external nomenclatural adjudication or proof of equal taxonomic circumscription.

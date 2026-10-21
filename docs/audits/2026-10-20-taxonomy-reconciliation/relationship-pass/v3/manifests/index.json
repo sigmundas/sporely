@@ -1,0 +1,99 @@
+{
+ "excluded": {
+  "count": 0,
+  "path": "../data/manifest_exclusions.csv"
+ },
+ "note": "Alternative grouping of the 2,805 not-in-S1 species pairs; members also occur in the S1 package's A1/A2/B candidate partitions (column s1_package_partition). Never approve both groupings for the same member. S1 (A0) members do not occur here.",
+ "partitions": {
+  "rel3-pragmatic-compatible-author-standard": {
+   "file_sha256": "f165e41b77c9392721daaded0acfb6dc3cb9f3559a8d2f1043a3aaabb6db3b08",
+   "member_count": 895,
+   "members_sha256": "526a5dd0f7d4b76d1234bce286bdc171120baad363a8569c34fd72aa5db66080",
+   "path": "rel3-pragmatic-compatible-author-standard.manifest.json",
+   "validator_format": true
+  },
+  "rel3-pragmatic-compatible-held-new-entrants": {
+   "file_sha256": "6b5f17a3f845a43f4382473cfb4a2624dc8af32157be78cc6bf64db8c0e88959",
+   "member_count": 2,
+   "members_sha256": "3c5f0105198f4a5bfdcc620cbc781e60512d8a5d43c0fcfab2daaa15cc346187",
+   "path": "rel3-pragmatic-compatible-held-new-entrants.manifest.json",
+   "validator_format": true
+  },
+  "rel3-pragmatic-compatible-icn": {
+   "file_sha256": "e2d87f7d4e3c0e37c1e0833b5642d78d44590243a8804f6fa0b0875039a5eb02",
+   "member_count": 87,
+   "members_sha256": "ede0a57c90622017882b000750cd7177d65a9d65008e996ead81d11d760d7503",
+   "path": "rel3-pragmatic-compatible-icn.manifest.json",
+   "validator_format": true
+  },
+  "rel3-pragmatic-compatible-identical": {
+   "file_sha256": "44142c7fc734fc028a8be84eee193412d6a830c42e725834b4373ccff7da4cc0",
+   "member_count": 185,
+   "members_sha256": "54e9750733469b8372b118cddc55385ae29e239abedee14e2e4d27acd23a9285",
+   "path": "rel3-pragmatic-compatible-identical.manifest.json",
+   "validator_format": true
+  },
+  "rel3-pragmatic-missing-authorship": {
+   "file_sha256": "4d52d98d9046e90a4b6258cc71af6e4cccfb996183f7a7694bd0b6c8f50961a5",
+   "member_count": 234,
+   "members_sha256": "1f692d38cc4451a92c339867fe5664d982ba3be588702cc8065ea65a2589381e",
+   "path": "rel3-pragmatic-missing-authorship.manifest.json",
+   "validator_format": true
+  },
+  "rel3-verified": {
+   "file_sha256": "dc46d4a89f4a14d2a76f1b04b39eefcc7547ac6f46bdf0dd112c57b8a15e9acd",
+   "member_count": 147,
+   "members_sha256": "cbabfb78f42b38e51443e554f427c180fd5198ecf5431e82442035b81ab7b3fe",
+   "path": "rel3-verified.manifest.json",
+   "validator_format": true
+  }
+ },
+ "pins": {
+  "bridge_emission_policy": {
+   "path": "database/taxonomy/policies/mapping_policy.yml",
+   "sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb"
+  },
+  "checklistbank_release": {
+   "alias": "COL26.7 XR",
+   "dataset_key": 315834,
+   "doi": "10.48580/dgykv",
+   "endpoint": "/dataset/315834/nameusage/{id}/source (cached 2026-10-21)"
+  },
+  "checklistbank_source_records": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/v3/data/checklistbank_source_records.csv",
+   "sha256": "9a1f88d70b92b0ebf3ccec3035af163f6ea3751dd3c19abbd9ba7c774cd7a8b9"
+  },
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "comparator": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/v3/scripts/authors_v3.py",
+   "sha256": "10cebf1f49c365ad4e1df2ed0a51dc9f3e3a79d903e2b21757de2dbbe390af5c"
+  },
+  "relationship_rules": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/v3/scripts/relate_v3.py",
+   "sha256": "7d3d5492922b6a24501f98ed0c83a2de9a05f207da2d30326b4500adaa202b49"
+  },
+  "release": {
+   "content_release_id": "tax-2026.10.07-01",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.10.07-01.sqlite3.gz",
+   "gz_sha256": "bff40f0d5d70ec2be47fe415dfd4cfc623a7841553f8a7d928ed801117ca21c5",
+   "sqlite_sha256": "e349e8b1d7cdbafa688621a71f9be278ac6e381853ff7fe2763d8b856b7724f9"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "nortaxa": {
+    "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release_id": "nortaxa:1.284:2026-07-17"
+   }
+  }
+ },
+ "precedence": "disjoint by construction (one group per pair)",
+ "review_status": "proposal_not_approved",
+ "rule_revision": "relationship pass 3 (after relationship-pass/v2/review-codex.md)"
+}

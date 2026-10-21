@@ -1,0 +1,41 @@
+{
+ "matrix": {
+  "different_rank|C|C": 32,
+  "genus|A|A": 573,
+  "genus|B|A": 1,
+  "genus|B|B": 1284,
+  "genus|C|C": 18,
+  "higher|A|A": 202,
+  "higher|B|B": 129,
+  "higher|D|D": 1,
+  "infraspecific|A|A": 57,
+  "infraspecific|B|B": 27,
+  "species|A|A": 1818,
+  "species|A|B": 6,
+  "species|B|A": 4,
+  "species|B|B": 1915,
+  "species|C|C": 3,
+  "species|D|D": 2
+ },
+ "moves_by_rule": {
+  "species|A|B|authorship typography -> conflicting": 5,
+  "species|B|A|authorship conflicting -> abbreviation": 4,
+  "genus|B|A|authorship conflicting -> abbreviation": 1,
+  "species|A|B|authorship typography -> unpublished_or_doubtful": 1
+ },
+ "examples": {
+  "A|B|authorship typography -> conflicting": [
+   "Dothidea sambuci 627884/5754: Pers.: Fr. || (Pers.) Fr.",
+   "Helvella crispa 632950/14541: Scop.: Fr. || (Scop.) Fr.",
+   "Lophiostoma clematidis 623831/135299: (Phukhams. K.D. Hyde) Andreasen, Jaklitsch & Voglmayr || (Phukhams. & K.D. Hyde) Andreasen, Jaklitsch & Voglmayr"
+  ],
+  "A|B|authorship typography -> unpublished_or_doubtful": [
+   "Ramaria ammophila 626337/603885: nom. prov. || nom.prov."
+  ],
+  "B|A|authorship conflicting -> abbreviation": [
+   "Macrosporium 633458/78017: Fr. || Fries, 1832",
+   "Acarospora squamulosa 634763/131378: (Schrader) Trevis. || (Schrad.) Trevis.",
+   "Dendrostoma leiphaemia 624207/2326: (Fries) Senan. & K.D. Hyde || (Fr.) Senan. & K.D. Hyde"
+  ]
+ }
+}

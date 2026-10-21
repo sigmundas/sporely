@@ -1,0 +1,246 @@
+{
+ "dry_run": {
+  "ALL": {
+   "changed": {
+    "curated_reference_forks.sporely_taxon_id": 0,
+    "observations.sporely_taxon_id": 17,
+    "observations.taxon_identity_external_id": 0,
+    "reference_taxon_treatments.taxon_id": 0,
+    "settings.cloud_snapshot.taxon_identity": 0
+   },
+   "copy_sha256_before": {
+    "mushrooms.db": "cc3479ef64ad3ab9087f1941b27f663433d102231220ecf5eb0ef9cabf5ce1cc",
+    "reference_values.db": "f33cdbfed3b45c1c807f3c419139d247181e16b28e3df94449242e11075b3a1e"
+   },
+   "mapping_sha256": "c005f74166932cd74c354201c8195269ce3f3b660e27d52607aac518714b849c",
+   "mapping_size": 3130,
+   "scope": "ALL",
+   "verify": {
+    "all_survivors_in_release": true,
+    "integrity_check": [
+     "ok",
+     "ok"
+    ],
+    "log_rows": 17,
+    "observation_ids_absent_from_release_after": 0,
+    "retirees_remaining_in_observations": 0,
+    "row_counts_unchanged": true,
+    "sync_key_and_cloud_id_unchanged": true
+   }
+  },
+  "S1": {
+   "changed": {
+    "curated_reference_forks.sporely_taxon_id": 0,
+    "observations.sporely_taxon_id": 0,
+    "observations.taxon_identity_external_id": 0,
+    "reference_taxon_treatments.taxon_id": 0,
+    "settings.cloud_snapshot.taxon_identity": 0
+   },
+   "copy_sha256_before": {
+    "mushrooms.db": "cc3479ef64ad3ab9087f1941b27f663433d102231220ecf5eb0ef9cabf5ce1cc",
+    "reference_values.db": "f33cdbfed3b45c1c807f3c419139d247181e16b28e3df94449242e11075b3a1e"
+   },
+   "mapping_sha256": "50fb7e9caa39609df339e461657a3b50d53085d67434ac377b198577ae10c8c4",
+   "mapping_size": 988,
+   "scope": "S1",
+   "verify": {
+    "all_survivors_in_release": true,
+    "integrity_check": [
+     "ok",
+     "ok"
+    ],
+    "log_rows": 0,
+    "observation_ids_absent_from_release_after": 0,
+    "retirees_remaining_in_observations": 0,
+    "row_counts_unchanged": true,
+    "sync_key_and_cloud_id_unchanged": true
+   }
+  }
+ },
+ "inventory": {
+  "ALL": [
+   {
+    "id_space": "sporely",
+    "location": "mushrooms.observations.sporely_taxon_id",
+    "migration_action": "remap old->survivor",
+    "rows_referencing_retiree": 17,
+    "rows_with_value": 196
+   },
+   {
+    "id_space": "sporely",
+    "location": "mushrooms.observations.taxon_identity_* (namespace sporely_taxon_id)",
+    "migration_action": "remap external_id old->survivor",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 24
+   },
+   {
+    "id_space": "provider (nortaxa/\u2026)",
+    "location": "mushrooms.observations.taxon_identity_* (provider tuples)",
+    "migration_action": "keep tuple verbatim; it re-resolves to the survivor via the bridge",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 208
+   },
+   {
+    "id_space": "inaturalist",
+    "location": "mushrooms.observations.inaturalist_taxon_id",
+    "migration_action": "none (not a Sporely id)",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 6
+   },
+   {
+    "id_space": "provider",
+    "location": "mushrooms.observations.ai_selected_taxon_id",
+    "migration_action": "none (provider id)",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 477
+   },
+   {
+    "id_space": "inaturalist",
+    "location": "mushrooms.observations.ai_state_json (inat_predictions[].taxon.id)",
+    "migration_action": "none (iNaturalist ids)",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 272
+   },
+   {
+    "id_space": "sporely tuple",
+    "location": "mushrooms.settings[sporely_cloud_snapshot_obs_*].observation.taxon_identity",
+    "migration_action": "remap only together with the cloud row it mirrors (three-way consistency)",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 208
+   },
+   {
+    "id_space": "reference taxon id (Sporely)",
+    "location": "mushrooms.observation_reference_uses.snapshot_json.taxon_id",
+    "migration_action": "historical snapshot: keep; report",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 2
+   },
+   {
+    "id_space": "reference taxon id (Sporely)",
+    "location": "mushrooms.observation_reference_use_cloud_sync_state.accepted_payload_json.snapshot_json.taxon_id",
+    "migration_action": "mirror of cloud: keep",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 2
+   },
+   {
+    "id_space": "sporely (text)",
+    "location": "reference_values.reference_taxon_treatments.taxon_id",
+    "migration_action": "remap old->survivor (synced user data)",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 3
+   },
+   {
+    "id_space": "sporely",
+    "location": "reference_values.curated_reference_forks.sporely_taxon_id",
+    "migration_action": "remap old->survivor",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 0
+   },
+   {
+    "id_space": "sporely (mirror)",
+    "location": "reference_values.reference_cloud_sync_state.accepted_payload_json.taxon_id",
+    "migration_action": "mirror of cloud: keep",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 3
+   }
+  ],
+  "S1": [
+   {
+    "id_space": "sporely",
+    "location": "mushrooms.observations.sporely_taxon_id",
+    "migration_action": "remap old->survivor",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 196
+   },
+   {
+    "id_space": "sporely",
+    "location": "mushrooms.observations.taxon_identity_* (namespace sporely_taxon_id)",
+    "migration_action": "remap external_id old->survivor",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 24
+   },
+   {
+    "id_space": "provider (nortaxa/\u2026)",
+    "location": "mushrooms.observations.taxon_identity_* (provider tuples)",
+    "migration_action": "keep tuple verbatim; it re-resolves to the survivor via the bridge",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 208
+   },
+   {
+    "id_space": "inaturalist",
+    "location": "mushrooms.observations.inaturalist_taxon_id",
+    "migration_action": "none (not a Sporely id)",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 6
+   },
+   {
+    "id_space": "provider",
+    "location": "mushrooms.observations.ai_selected_taxon_id",
+    "migration_action": "none (provider id)",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 477
+   },
+   {
+    "id_space": "inaturalist",
+    "location": "mushrooms.observations.ai_state_json (inat_predictions[].taxon.id)",
+    "migration_action": "none (iNaturalist ids)",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 272
+   },
+   {
+    "id_space": "sporely tuple",
+    "location": "mushrooms.settings[sporely_cloud_snapshot_obs_*].observation.taxon_identity",
+    "migration_action": "remap only together with the cloud row it mirrors (three-way consistency)",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 208
+   },
+   {
+    "id_space": "reference taxon id (Sporely)",
+    "location": "mushrooms.observation_reference_uses.snapshot_json.taxon_id",
+    "migration_action": "historical snapshot: keep; report",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 2
+   },
+   {
+    "id_space": "reference taxon id (Sporely)",
+    "location": "mushrooms.observation_reference_use_cloud_sync_state.accepted_payload_json.snapshot_json.taxon_id",
+    "migration_action": "mirror of cloud: keep",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 2
+   },
+   {
+    "id_space": "sporely (text)",
+    "location": "reference_values.reference_taxon_treatments.taxon_id",
+    "migration_action": "remap old->survivor (synced user data)",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 3
+   },
+   {
+    "id_space": "sporely",
+    "location": "reference_values.curated_reference_forks.sporely_taxon_id",
+    "migration_action": "remap old->survivor",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 0
+   },
+   {
+    "id_space": "sporely (mirror)",
+    "location": "reference_values.reference_cloud_sync_state.accepted_payload_json.taxon_id",
+    "migration_action": "mirror of cloud: keep",
+    "rows_referencing_retiree": 0,
+    "rows_with_value": 3
+   }
+  ]
+ },
+ "mappings": {
+  "ALL": {
+   "file": "id-mapping-ALL.json",
+   "sha256": "99b6420c1f36082e5ffff045e70530c6098ab6eed3a342db96581270952e6d97",
+   "size": 3130
+  },
+  "S1": {
+   "file": "id-mapping-S1.json",
+   "sha256": "86f4726a72588ebb2ffed9e817fb1497177be17485d3d1c559210e1ea562a876",
+   "size": 988
+  }
+ }
+}

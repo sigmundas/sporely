@@ -1,0 +1,1987 @@
+{
+ "approval_mode": "batch_by_file_sha256",
+ "columns": [
+  "nortaxa_taxon_id",
+  "nortaxa_sporely_taxon_id",
+  "col_usage_id",
+  "col_sporely_taxon_id",
+  "one_to_one",
+  "canonical_scientific_name",
+  "rank",
+  "nortaxa_authorship",
+  "col_authorship",
+  "accepted_author_cmp",
+  "group",
+  "subclass",
+  "reason",
+  "provenance_class",
+  "checklistbank_source_record",
+  "placement_differs",
+  "s1_package_partition"
+ ],
+ "evidence_class": "relationship_pass_v3:pragmatic_compatible:icn_compatible",
+ "format": "sporely-taxonomy-reconciliation-candidate-manifest-v1",
+ "member_count": 87,
+ "members": [
+  [
+   "128567",
+   621437,
+   "3B58S",
+   8397,
+   true,
+   "Eriopezia caesia",
+   "species",
+   "(Pers.: Fr.) Rehm",
+   "(Pers.) Rehm",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "129236",
+   621496,
+   "Q5LV",
+   167628,
+   true,
+   "Calycina vulgaris",
+   "species",
+   "(Fr. : Fr.) Baral",
+   "(Fr.) Baral",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "131449",
+   621628,
+   "3RQPM",
+   21655,
+   true,
+   "Lachnum patulum",
+   "species",
+   "(Pers.: Fr.) Rehm",
+   "(Pers.) Rehm",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "131450",
+   621629,
+   "3SCYB",
+   22707,
+   true,
+   "Lasiobelonium lonicerae",
+   "species",
+   "(Alb. & Schwein.: Fr.) Raitv.",
+   "(Alb. & Schwein.) Raitv.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "137198",
+   621949,
+   "ZD4L",
+   620337,
+   true,
+   "Creosphaeria sassafras",
+   "species",
+   "(Schwein. : Fr.) Y.M. Ju, F. San Martín & J.D. Rogers",
+   "(Schwein.) Y.M. Ju, F. San Martín & J.D. Rogers",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "143331",
+   622181,
+   "77RJL",
+   120343,
+   true,
+   "Pleurotus eryngii",
+   "species",
+   "(DC. : Fr.) Quél.",
+   "(DC.) Quél.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "172104",
+   623021,
+   "4LY4F",
+   51888,
+   true,
+   "Porodisculus pendulus",
+   "species",
+   "(Fr. : Fr.) Murrill",
+   "(Fr.) Murrill",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "173041",
+   623123,
+   "FMTG",
+   152685,
+   true,
+   "Apiosporina morbosa",
+   "species",
+   "(Schwein.: Fr.) Arx",
+   "(Schwein.) Arx",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord"
+   ],
+   "B-placement"
+  ],
+  [
+   "52173",
+   624602,
+   "5TYQY",
+   78858,
+   true,
+   "Amanita vaginata",
+   "species",
+   "(Bull. : Fr.) Lam.",
+   "(Bull.) Lam.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "52229",
+   624622,
+   "MB4N",
+   160326,
+   true,
+   "Bolbitius titubans",
+   "species",
+   "(Bull. : Fr.) Fr.",
+   "(Bull.) Fr.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "52559",
+   624799,
+   "YJZS",
+   617980,
+   true,
+   "Cortinarius armillatus",
+   "species",
+   "(Fr. : Fr.) Fr.",
+   "(Fr.) Fr.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "52596",
+   624817,
+   "YK96",
+   618130,
+   true,
+   "Cortinarius brunneus",
+   "species",
+   "(Pers. : Fr.) Fr.",
+   "(Pers.) Fr.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "52636",
+   624836,
+   "YKF7",
+   618213,
+   true,
+   "Cortinarius cinnamomeus",
+   "species",
+   "(L. : Fr.) Gray",
+   "(L.) Gray",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "52708",
+   624872,
+   "6B5V9",
+   92771,
+   true,
+   "Cortinarius evernius",
+   "species",
+   "(Fr. : Fr.) Fr.",
+   "(Fr.) Fr.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "52735",
+   624881,
+   "YKZD",
+   618600,
+   true,
+   "Cortinarius gentilis",
+   "species",
+   "(Fr. : Fr.) Fr.",
+   "(Fr.) Fr.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "52991",
+   625012,
+   "6B5QK",
+   92721,
+   true,
+   "Cortinarius traganus",
+   "species",
+   "(Fr. : Fr.) Fr.",
+   "(Fr.) Fr.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "53370",
+   625140,
+   "W9D9",
+   614905,
+   true,
+   "Clitopilus prunulus",
+   "species",
+   "(Scop. : Fr.) P. Kumm.",
+   "(Scop.) P. Kumm.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "53373",
+   625143,
+   "W9DV",
+   614919,
+   true,
+   "Clitopilus scyphoides",
+   "species",
+   "(Fr. : Fr.) Singer",
+   "(Fr.) Singer",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "53785",
+   625309,
+   "44T39",
+   34401,
+   true,
+   "Mycena epipterygia",
+   "species",
+   "(Scop. : Fr.) Gray",
+   "(Scop.) Gray",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "53802",
+   625316,
+   "44T6J",
+   34483,
+   true,
+   "Mycena galopus",
+   "species",
+   "(Pers. : Fr.) P. Kumm.",
+   "(Pers.) P. Kumm.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "53805",
+   625318,
+   "44T88",
+   34530,
+   true,
+   "Mycena haematopus",
+   "species",
+   "(Pers. : Fr.) P. Kumm.",
+   "(Pers.) P. Kumm.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "53844",
+   625331,
+   "44TNM",
+   34839,
+   true,
+   "Mycena polygramma",
+   "species",
+   "(Bull. : Fr.) Gray",
+   "(Bull.) Gray",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "53848",
+   625334,
+   "44TQP",
+   34885,
+   true,
+   "Mycena pura",
+   "species",
+   "(Pers. : Fr.) P. Kumm.",
+   "(Pers.) P. Kumm.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "53961",
+   625371,
+   "6MLXJ",
+   102211,
+   true,
+   "Hygrocybe coccinea",
+   "species",
+   "(Schaeff. : Fr.) P. Kumm.",
+   "(Schaeff.) P. Kumm.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "54304",
+   625450,
+   "MRY2",
+   162540,
+   true,
+   "Bovista nigrescens",
+   "species",
+   "Pers. : Pers.",
+   "Pers.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "54306",
+   625451,
+   "MRYC",
+   162546,
+   true,
+   "Bovista plumbea",
+   "species",
+   "Pers. : Pers.",
+   "Pers.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "54341",
+   625458,
+   "3WLN6",
+   26252,
+   true,
+   "Lycoperdon umbrinum",
+   "species",
+   "Pers. : Pers.",
+   "Pers.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "54426",
+   625492,
+   "3X4LJ",
+   26511,
+   true,
+   "Macrocystidia cucumis",
+   "species",
+   "(Pers. : Fr.) Joss.",
+   "(Pers.) Joss.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "54457",
+   625508,
+   "3XZRT",
+   27827,
+   true,
+   "Marasmius oreades",
+   "species",
+   "(Bolton : Fr.) Fr.",
+   "(Bolton) Fr.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "54519",
+   625534,
+   "3HTFP",
+   12967,
+   true,
+   "Gymnopilus picreus",
+   "species",
+   "(Pers. : Fr.) P. Karst.",
+   "(Pers.) P. Karst.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "54589",
+   625570,
+   "3Z8VQ",
+   29156,
+   true,
+   "Melanoleuca polioleuca",
+   "species",
+   "(Fr. : Fr.) Kühner & Maire",
+   "(Fr.) Kühner & Maire",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "54611",
+   625585,
+   "7D3GH",
+   124866,
+   true,
+   "Tricholomopsis decora",
+   "species",
+   "(Fr. : Fr.) Singer",
+   "(Fr.) Singer",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "54934",
+   625742,
+   "Y58K",
+   617197,
+   true,
+   "Coprinopsis lagopus",
+   "species",
+   "(Fr. : Fr.) Redhead, Vilgalys & Moncalvo",
+   "(Fr.) Redhead, Vilgalys & Moncalvo",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "54973",
+   625761,
+   "6NSLB",
+   103918,
+   true,
+   "Lacrymaria lacrymabunda",
+   "species",
+   "(Bull. : Fr.) Pat.",
+   "(Bull.) Pat.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "55036",
+   625781,
+   "78BHY",
+   120787,
+   true,
+   "Psathyrella microrhiza",
+   "species",
+   "(Lasch : Fr.) Konrad & Maubl.",
+   "(Lasch) Konrad & Maubl.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "55122",
+   625813,
+   "6WSBV",
+   111610,
+   true,
+   "Resupinatus applicatus",
+   "species",
+   "(Batsch : Fr.) Gray",
+   "(Batsch) Gray",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "55247",
+   625874,
+   "3RF9F",
+   20595,
+   true,
+   "Kuehneromyces mutabilis",
+   "species",
+   "(Schaeff. : Fr.) Singer & A. H. Sm.",
+   "(Schaeff.) Singer & A.H. Sm.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "55321",
+   625896,
+   "535H2",
+   69355,
+   true,
+   "Stropharia aeruginosa",
+   "species",
+   "(Curtis : Fr.) Quél.",
+   "(Curtis) Quél.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "55526",
+   625984,
+   "58DMC",
+   73346,
+   true,
+   "Tricholoma equestre",
+   "species",
+   "(L. : Fr.) P. Kumm.",
+   "(L.) P. Kumm.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "55551",
+   625994,
+   "58DWB",
+   73460,
+   true,
+   "Tricholoma portentosum",
+   "species",
+   "(Fr. : Fr.) Quél.",
+   "(Fr.) Quél.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "55567",
+   625998,
+   "7D3TM",
+   124959,
+   true,
+   "Tricholoma sejunctum",
+   "species",
+   "(Sowerby : Fr.) Quél.",
+   "(Sowerby) Quél.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "56097",
+   626201,
+   "3NBTS",
+   16637,
+   true,
+   "Hygrophoropsis aurantiaca",
+   "species",
+   "(Wulfen : Fr.) Maire",
+   "(Wulfen) Maire",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "56129",
+   626215,
+   "75VQZ",
+   117425,
+   true,
+   "Paxillus involutus",
+   "species",
+   "(Batsch : Fr.) Fr.",
+   "(Batsch) Fr.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "56153",
+   626223,
+   "3J32H",
+   13119,
+   true,
+   "Gyroporus castaneus",
+   "species",
+   "(Bull. : Fr.) Quél.",
+   "(Bull.) Quél.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "56154",
+   626224,
+   "3J32J",
+   13120,
+   true,
+   "Gyroporus cyanescens",
+   "species",
+   "(Bull. : Fr.) Quél.",
+   "(Bull.) Quél.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "56177",
+   626233,
+   "54T33",
+   70229,
+   true,
+   "Tapinella panuoides",
+   "species",
+   "(Fr. : Fr.) E.-J. Gilbert",
+   "(Fr.) E.-J. Gilbert",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "56258",
+   626267,
+   "VW6K",
+   614191,
+   true,
+   "Clavulina coralloides",
+   "species",
+   "(L. : Fr.) J. Schröt.",
+   "(L.) J. Schröt.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "56744",
+   626428,
+   "6MPSW",
+   102406,
+   true,
+   "Hyphodontia spathulata",
+   "species",
+   "(Schrad. : Fr.) Parmasto",
+   "(Schrad.) Parmasto",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "57114",
+   626583,
+   "P2FW",
+   164730,
+   true,
+   "Byssomerulius corium",
+   "species",
+   "(Pers. : Fr.) Parmasto",
+   "(Pers.) Parmasto",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "57264",
+   626657,
+   "4CHTM",
+   40889,
+   true,
+   "Panus conchatus",
+   "species",
+   "(Bull. : Fr.) Fr.",
+   "(Bull.) Fr.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "57357",
+   626705,
+   "587WB",
+   72810,
+   true,
+   "Trichaptum abietinum",
+   "species",
+   "(Pers. ex J.F. Gmel. : Fr.) Ryvarden",
+   "(Pers. ex J.F. Gmel.) Ryvarden",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "57611",
+   626792,
+   "3RS2F",
+   22034,
+   true,
+   "Lactarius necator",
+   "species",
+   "(Bull. : Fr.) Pers.",
+   "(Bull.) Pers.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "57641",
+   626802,
+   "3RS8M",
+   22162,
+   true,
+   "Lactarius scrobiculatus",
+   "species",
+   "(Scop. : Fr.) Fr.",
+   "(Scop.) Fr.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "57654",
+   626808,
+   "3RSC5",
+   22221,
+   true,
+   "Lactarius trivialis",
+   "species",
+   "(Fr. : Fr.) Fr.",
+   "(Fr.) Fr.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "57676",
+   626821,
+   "4TRHR",
+   61669,
+   true,
+   "Russula adusta",
+   "species",
+   "(Pers.: Fr.) Fr.",
+   "(Pers.) Fr.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "57725",
+   626832,
+   "799H3",
+   122646,
+   true,
+   "Russula decolorans",
+   "species",
+   "(Fr. : Fr.) Fr.",
+   "(Fr.) Fr.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "57730",
+   626835,
+   "4TRVW",
+   61951,
+   true,
+   "Russula emetica",
+   "species",
+   "(Schaeff. : Fr.) Pers.",
+   "(Schaeff.) Pers.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "57742",
+   626839,
+   "4TRXM",
+   61989,
+   true,
+   "Russula foetens",
+   "species",
+   "Pers. : Fr.",
+   "Pers.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "57973",
+   626909,
+   "6MHWP",
+   102062,
+   true,
+   "Hydnellum ferrugineum",
+   "species",
+   "(Fr. : Fr.) P. Karst.",
+   "(Fr.) P. Karst.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "58194",
+   626975,
+   "33TK7",
+   1559,
+   true,
+   "Dacryonaema rufum",
+   "species",
+   "(Fr. : Fr.) Nannf.",
+   "(Fr.) Nannf.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "67130",
+   628035,
+   "4KRGF",
+   50875,
+   true,
+   "Podosphaera clandestina",
+   "species",
+   "(Wallr.: Fr.) Lév.",
+   "(Wallr.) Lév.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord"
+   ],
+   "B-placement"
+  ],
+  [
+   "67239",
+   628082,
+   "NSNT",
+   164396,
+   true,
+   "Bulgaria inquinans",
+   "species",
+   "(Pers.: Fr.) Fr.",
+   "(Pers.) Fr.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "67553",
+   628239,
+   "6BP4P",
+   93489,
+   true,
+   "Cudoniella acicularis",
+   "species",
+   "(Bull.: Fr.) J. Schröt.",
+   "(Bull.) J. Schröt.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "67625",
+   628273,
+   "43SL8",
+   32934,
+   true,
+   "Mniaecia jungermanniae",
+   "species",
+   "(Fr : Fr.) Boud.",
+   "(Fr.) Boud.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "67683",
+   628299,
+   "7DBQG",
+   125166,
+   true,
+   "Tympanis truncatula",
+   "species",
+   "(Pers.: Fr.) Rehm",
+   "(Pers.) Rehm",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "67691",
+   628304,
+   "7FMB7",
+   128374,
+   true,
+   "Velutarina rufo-olivacea",
+   "species",
+   "(Alb. & Schwein.: Fr.) Korf",
+   "(Alb. & Schwein.) Korf",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "67734",
+   628331,
+   "5Z8FP",
+   82713,
+   true,
+   "Cistella dentata",
+   "species",
+   "(Pers: Fr..) Quél.",
+   "(Pers.) Quél.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   ""
+  ],
+  [
+   "67930",
+   628422,
+   "42WXQ",
+   32095,
+   true,
+   "Microglossum olivaceum",
+   "species",
+   "(Pers.: Fr.) Gillet",
+   "(Pers.) Gillet",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "67973",
+   628445,
+   "4FKBZ",
+   43132,
+   true,
+   "Phacidium lacerum",
+   "species",
+   "Fr. : Fr.",
+   "Fr.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord"
+   ],
+   "B-placement"
+  ],
+  [
+   "67976",
+   628447,
+   "777NW",
+   119287,
+   true,
+   "Phacidium vaccinii",
+   "species",
+   "Fr. : Fr.",
+   "Fr.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord"
+   ],
+   "B-placement"
+  ],
+  [
+   "68019",
+   628466,
+   "43RN9",
+   32914,
+   true,
+   "Mitrula paludosa",
+   "species",
+   "Fr. : Fr..",
+   "Fr.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   ""
+  ],
+  [
+   "68138",
+   628505,
+   "3ZBBX",
+   29349,
+   true,
+   "Melanospora chionea",
+   "species",
+   "(Fr. : Fr.) Corda",
+   "(Fr.) Corda",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord"
+   ],
+   "B-placement"
+  ],
+  [
+   "68407",
+   628620,
+   "9STP",
+   131880,
+   true,
+   "Actidium hysterioides",
+   "species",
+   "Fr. : Fr.",
+   "Fr.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord"
+   ],
+   "B-placement"
+  ],
+  [
+   "68415",
+   628626,
+   "72MSR",
+   114695,
+   true,
+   "Lophium mytilinum",
+   "species",
+   "(Pers.: Fr.) Fr.",
+   "(Pers.) Fr.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord"
+   ],
+   "B-placement"
+  ],
+  [
+   "71787",
+   629976,
+   "PLQNZ",
+   165628,
+   true,
+   "Hypogymnia rugosa",
+   "species",
+   "(G.K. Merr.) Pike in Hale",
+   "(G.K.Merr.) Pike",
+   "compatible:in_host_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:in_host_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   ""
+  ],
+  [
+   "76236",
+   631649,
+   "MBDFV",
+   160363,
+   true,
+   "Ceratostomella stricta",
+   "species",
+   "(Pers.: Fr.) Sacc.",
+   "(Pers.) Sacc.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "79087",
+   632968,
+   "5B7MD",
+   75260,
+   true,
+   "Verpa conica",
+   "species",
+   "(O.F. Müll.: Fr.) Sw.",
+   "(O.F. Müll.) Sw.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "79373",
+   633068,
+   "75CQ5",
+   117077,
+   true,
+   "Otidea alutacea",
+   "species",
+   "(Pers: Fr.) Massee",
+   "(Pers.) Massee",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "79374",
+   633069,
+   "75CPV",
+   117073,
+   true,
+   "Otidea bufonia",
+   "species",
+   "(Pers.: Fr.) Boud.",
+   "(Pers.) Boud.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "79378",
+   633072,
+   "6TD28",
+   108337,
+   true,
+   "Otidea concinna",
+   "species",
+   "(Pers.: Fr.) Sacc.",
+   "(Pers.) Sacc.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "79385",
+   633075,
+   "4B2VL",
+   40200,
+   true,
+   "Otidea onotica",
+   "species",
+   "(Pers.: Fr.) Fuckel",
+   "(Pers.) Fuckel",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "80518",
+   633524,
+   "WZYS",
+   615441,
+   true,
+   "Coleroa chaetomium",
+   "species",
+   "(Kunze: Fr.) Rabenh.",
+   "(Kunze) Rabenh.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord"
+   ],
+   "B-placement"
+  ],
+  [
+   "80538",
+   633529,
+   "3FYZ4",
+   10982,
+   true,
+   "Gibbera vaccinii",
+   "species",
+   "(Sowerby: Fr.) Fr.",
+   "(Sowerby) Fr.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord"
+   ],
+   "B-placement"
+  ],
+  [
+   "81242",
+   633865,
+   "3SGPL",
+   22907,
+   true,
+   "Lasiosphaeris hispida",
+   "species",
+   "(Tode: Fr.) Clem.",
+   "(Tode) Clem.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "82801",
+   634533,
+   "674F5",
+   89743,
+   true,
+   "Annulohypoxylon annulatum",
+   "species",
+   "(Schwein.: Fr.) Y.M. Ju, J.D. Rogers & H.M. Hsieh",
+   "(Schwein.) Y.M. Ju, J.D. Rogers & H.M. Hsieh",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "82825",
+   634539,
+   "LWJ8",
+   159294,
+   true,
+   "Biscogniauxia atropunctata",
+   "species",
+   "(Schwein.: Fr.) Pouzar",
+   "(Schwein.) Pouzar",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "82933",
+   634598,
+   "3P2R6",
+   18073,
+   true,
+   "Hypoxylon rubiginosum",
+   "species",
+   "(Pers.: Fr.) Fr.",
+   "(Pers.) Fr.",
+   "compatible:sanctioning_omitted",
+   "pragmatic_compatible",
+   "icn_compatible",
+   "authorship_compatible:sanctioning_omitted",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ]
+ ],
+ "members_sha256": "ede0a57c90622017882b000750cd7177d65a9d65008e996ead81d11d760d7503",
+ "note": "Candidate only. Approves nothing. checklistbank_source_record is traceable origin, not independent corroboration. Generated by docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/v3/scripts/export_manifests_v3.py.",
+ "pins": {
+  "bridge_emission_policy": {
+   "path": "database/taxonomy/policies/mapping_policy.yml",
+   "sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb"
+  },
+  "checklistbank_release": {
+   "alias": "COL26.7 XR",
+   "dataset_key": 315834,
+   "doi": "10.48580/dgykv",
+   "endpoint": "/dataset/315834/nameusage/{id}/source (cached 2026-10-21)"
+  },
+  "checklistbank_source_records": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/v3/data/checklistbank_source_records.csv",
+   "sha256": "9a1f88d70b92b0ebf3ccec3035af163f6ea3751dd3c19abbd9ba7c774cd7a8b9"
+  },
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "comparator": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/v3/scripts/authors_v3.py",
+   "sha256": "10cebf1f49c365ad4e1df2ed0a51dc9f3e3a79d903e2b21757de2dbbe390af5c"
+  },
+  "relationship_rules": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/v3/scripts/relate_v3.py",
+   "sha256": "7d3d5492922b6a24501f98ed0c83a2de9a05f207da2d30326b4500adaa202b49"
+  },
+  "release": {
+   "content_release_id": "tax-2026.10.07-01",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.10.07-01.sqlite3.gz",
+   "gz_sha256": "bff40f0d5d70ec2be47fe415dfd4cfc623a7841553f8a7d928ed801117ca21c5",
+   "sqlite_sha256": "e349e8b1d7cdbafa688621a71f9be278ac6e381853ff7fe2763d8b856b7724f9"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "nortaxa": {
+    "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release_id": "nortaxa:1.284:2026-07-17"
+   }
+  }
+ },
+ "population": "relationship pass 3 candidates, partition rel3-pragmatic-compatible-icn",
+ "review_status": "needs_review"
+}

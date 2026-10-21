@@ -1,0 +1,1439 @@
+{
+ "approval_mode": "batch_by_file_sha256",
+ "columns": [
+  "nortaxa_taxon_id",
+  "nortaxa_sporely_taxon_id",
+  "col_usage_id",
+  "col_sporely_taxon_id",
+  "one_to_one",
+  "canonical_scientific_name",
+  "rank",
+  "nortaxa_authorship",
+  "col_authorship",
+  "authorship_class",
+  "classification_agree",
+  "group",
+  "group_reasons",
+  "reparent_child_count",
+  "col_in_cloud_scope"
+ ],
+ "evidence_class": "deterministic_name_rank_authorship_v1_rev3",
+ "format": "sporely-taxonomy-reconciliation-candidate-manifest-v1",
+ "member_count": 66,
+ "members": [
+  [
+   "122205",
+   621008,
+   "626MS",
+   84230,
+   true,
+   "Synchytriaceae",
+   "family",
+   "J. Schröt.",
+   "J.Schröt., 1892",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "122246",
+   621014,
+   "8X3",
+   131195,
+   true,
+   "Cystobasidiaceae",
+   "family",
+   "Gäum.",
+   "Gäum., 1926",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "122251",
+   621016,
+   "62563",
+   84126,
+   true,
+   "Heterogastridiaceae",
+   "family",
+   "Oberw. & R. Bauer",
+   "Oberw. & R.Bauer",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "122260",
+   621017,
+   "CQL",
+   150317,
+   true,
+   "Microbotryaceae",
+   "family",
+   "R.T. Moore",
+   "R.T.Moore, 1996",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "122358",
+   621029,
+   "7Y9",
+   130131,
+   true,
+   "Chaconiaceae",
+   "family",
+   "Cummins & Y. Hirats.",
+   "Cummins & Y.Hirats.",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "122557",
+   621069,
+   "HQG",
+   155260,
+   true,
+   "Uropyxidaceae",
+   "family",
+   "Cummins & Y. Hirats.",
+   "Cummins & Y.Hirats., 1983",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "123088",
+   621158,
+   "62782",
+   84258,
+   true,
+   "Pucciniosiraceae",
+   "family",
+   "Cummins & Y. Hirats.",
+   "Cummins & Y.Hirats.",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "123098",
+   621162,
+   "FKK",
+   152606,
+   true,
+   "Raveneliaceae",
+   "family",
+   "Leppik",
+   "Leppik, 1972",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "123181",
+   621179,
+   "623QQ",
+   84043,
+   true,
+   "Exobasidiaceae",
+   "family",
+   "J. Schröt.",
+   "J.Schröt., 1888",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "123218",
+   621185,
+   "623GP",
+   84026,
+   true,
+   "Gjaerumiaceae",
+   "family",
+   "R. Bauer, M. Lutz & Oberw.",
+   "R.Bauer, M.Lutz & Oberw.",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "123359",
+   621217,
+   "CK4",
+   150201,
+   true,
+   "Melanotaeniaceae",
+   "family",
+   "Begerow, R. Bauer & Oberw.",
+   "Begerow, R.Bauer & Oberw., 1998",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "123848",
+   621235,
+   "BR4",
+   146749,
+   true,
+   "Lahmiaceae",
+   "family",
+   "O.E. Erikss.",
+   "O.E.Erikss., 1986",
+   "citation_stripped",
+   [
+    "phylum",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "127424",
+   621250,
+   "626JK",
+   84220,
+   true,
+   "Pacisporaceae",
+   "family",
+   "C. Walker, Błaszk., A. Schüssler & Schwarzott",
+   "C.Walker, Błaszk., A.Schüssler & Schwarzott",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "127445",
+   621262,
+   "623VN",
+   84051,
+   true,
+   "Geosiphonaceae",
+   "family",
+   "Engl. & E. Gilg",
+   "Engl. & E.Gilg",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "127455",
+   621268,
+   "623XC",
+   84055,
+   true,
+   "Diversisporaceae",
+   "family",
+   "C. Walker & A. Schüssler",
+   "C.Walker & A.Schüssler",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "129106",
+   621465,
+   "GTX",
+   153373,
+   true,
+   "Sydowiellaceae",
+   "family",
+   "Lar.N. Vassiljeva",
+   "Lar.N.Vassiljeva",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "135592",
+   621831,
+   "BH9",
+   146595,
+   true,
+   "Jaapiaceae",
+   "family",
+   "Manfr. Binder, K.H. Larss. & Hibbett",
+   "Manfr.Binder, K.H.Larss. & Hibbett",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   true
+  ],
+  [
+   "137194",
+   621948,
+   "8LH",
+   131060,
+   true,
+   "Corynesporascaceae",
+   "family",
+   "Sivan.",
+   "Sivan., 1996",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "137396",
+   621963,
+   "CSX",
+   150368,
+   true,
+   "Mikronegeriaceae",
+   "family",
+   "Cummins & Y. Hirats.",
+   "Cummins & Y.Hirats.",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "138609",
+   622032,
+   "G99",
+   153187,
+   true,
+   "Seuratiaceae",
+   "family",
+   "Vuill. ex M.E. Barr",
+   "Vuill. ex M.E.Barr, 1987",
+   "citation_stripped",
+   [
+    "phylum"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "145294",
+   622598,
+   "625PB",
+   84158,
+   true,
+   "Planistromellaceae",
+   "family",
+   "M.E. Barr",
+   "M.E.Barr, 1996",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "162765",
+   622767,
+   "6GQ",
+   97575,
+   true,
+   "Antennulariellaceae",
+   "family",
+   "Woron.",
+   "Woron., 1925",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "169981",
+   622801,
+   "FVQ",
+   152969,
+   true,
+   "Saccotheciaceae",
+   "family",
+   "Bonord.",
+   "Bonord., 1864",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "172701",
+   623061,
+   "D8G",
+   150797,
+   true,
+   "Neoantrodiellaceae",
+   "family",
+   "Y.C. Dai, B.K. Cui, Jia J. Chen & H.S. Yuan",
+   "Y.C.Dai, B.K.Cui, Jia J.Chen & H.S.Yuan",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   true
+  ],
+  [
+   "173031",
+   623116,
+   "624W7",
+   84109,
+   true,
+   "Hypoxylaceae",
+   "family",
+   "DC.",
+   "DC., 1805",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   true
+  ],
+  [
+   "186435",
+   623315,
+   "626Q5",
+   84233,
+   true,
+   "Tilachlidiaceae",
+   "family",
+   "L. Lombard & Crous",
+   "L.Lombard & Crous",
+   "typography",
+   [
+    "phylum",
+    "class"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "187007",
+   623351,
+   "9DP",
+   131590,
+   true,
+   "Discosiaceae",
+   "family",
+   "Maharachch. & K.D. Hyde",
+   "Maharachch. & K.D.Hyde, 2015",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "187008",
+   623352,
+   "625W3",
+   84173,
+   true,
+   "Pestalotiopsidaceae",
+   "family",
+   "Maharachch. & K.D. Hyde",
+   "Maharachch. & K.D.Hyde, 2015",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "187009",
+   623353,
+   "73C",
+   115423,
+   true,
+   "Bartaliniaceae",
+   "family",
+   "Wijayaw., Maharachch. & K.D. Hyde",
+   "Wijayaw., Maharachch. & K.D.Hyde",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "191442",
+   623485,
+   "625N8",
+   84155,
+   true,
+   "Piskurozymaceae",
+   "family",
+   "Xin Zhan Liu, F.Y. Bai, M. Groenew. & Boekhout",
+   "Xin Zhan Liu, F.Y.Bai, M.Groenew. & Boekhout",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "204258",
+   623568,
+   "624W3",
+   84108,
+   true,
+   "Hyphodiscaceae",
+   "family",
+   "Ekanayaka & K.D. Hyde",
+   "Ekanayaka & K.D.Hyde",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "204422",
+   623582,
+   "HKQ",
+   155236,
+   true,
+   "Tubakiaceae",
+   "family",
+   "U. Braun, J.Z. Groenew. & Crous",
+   "U.Braun, J.Z.Groenew. & Crous",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "214025",
+   623704,
+   "88J",
+   130786,
+   true,
+   "Chytriomycetaceae",
+   "family",
+   "Letcher",
+   "Letcher, 2011",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "214895",
+   623727,
+   "9YL4F",
+   132254,
+   true,
+   "Nigrogranaceae",
+   "family",
+   "Jaklitsch & Voglmayr",
+   "Jaklitsch & Voglmayr, 2016",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "220356",
+   623844,
+   "9YKZK",
+   132225,
+   true,
+   "Dacryobolaceae",
+   "family",
+   "Jülich",
+   "Jülich, 1982",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   true
+  ],
+  [
+   "223232",
+   623920,
+   "H8S",
+   154656,
+   true,
+   "Thyridariaceae",
+   "family",
+   "Q. Tian & K.D. Hyde",
+   "Q.Tian & K.D.Hyde, 2013",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "223242",
+   623922,
+   "CVD",
+   150371,
+   true,
+   "Mollisiaceae",
+   "family",
+   "Rehm",
+   "Rehm, 1891",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "223439",
+   623963,
+   "624BJ",
+   84081,
+   true,
+   "Cladochytriaceae",
+   "family",
+   "J. Schröt.",
+   "J.Schröt., 1892",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "226278",
+   624015,
+   "626T2",
+   84240,
+   true,
+   "Vizellaceae",
+   "family",
+   "H.J.Swart",
+   "H.J.Swart, 1971",
+   "citation_stripped",
+   [
+    "phylum",
+    "class"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "228089",
+   624133,
+   "85R",
+   130462,
+   true,
+   "Chlorociboriaceae",
+   "family",
+   "Baral & P.R. Johnst.",
+   "Baral & P.R.Johnst.",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   true
+  ],
+  [
+   "293971",
+   624167,
+   "B2RVQ",
+   140659,
+   true,
+   "Pseudohalonectriaceae",
+   "family",
+   "Hongsanan & K.D. Hyde",
+   "Hongsanan & K.D.Hyde",
+   "typography",
+   [
+    "phylum",
+    "class"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "295779",
+   624191,
+   "625N9",
+   84156,
+   true,
+   "Pisorisporiaceae",
+   "family",
+   "Réblová & J. Fourn.",
+   "Réblová & J.Fourn.",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "295782",
+   624193,
+   "9FS",
+   131596,
+   true,
+   "Dothidotthiaceae",
+   "family",
+   "Crous & A.J.L. Phillips",
+   "Crous & A.J.L.Phillips",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "298303",
+   624363,
+   "9YL4Q",
+   132261,
+   true,
+   "Podosporaceae",
+   "family",
+   "X. Wei Wang & Houbraken",
+   "X.Wei Wang & Houbraken",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "298413",
+   624383,
+   "9D6",
+   131589,
+   true,
+   "Discinellaceae",
+   "family",
+   "Ekanayaka & K.D. Hyde",
+   "Ekanayaka & K.D.Hyde",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "298631",
+   624400,
+   "H22",
+   153749,
+   true,
+   "Teratosphaeriaceae",
+   "family",
+   "Crous & U. Braun",
+   "Crous & U.Braun, 2007",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "298832",
+   624412,
+   "V254J",
+   608628,
+   true,
+   "Lichinellaceae",
+   "family",
+   "M. Prieto & M. Schultz",
+   "M.Prieto & M.Schultz",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "298880",
+   624421,
+   "B2PKJ",
+   139720,
+   true,
+   "Asterosporiaceae",
+   "family",
+   "Senan., Maharachch. & K.D. Hyde",
+   "Senan., Maharachch. & K.D.Hyde",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "298947",
+   624426,
+   "9YKY9",
+   132213,
+   true,
+   "Camptobasidiaceae",
+   "family",
+   "R.T. Moore",
+   "R.T.Moore",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "298952",
+   624429,
+   "626X8",
+   84247,
+   true,
+   "Saccardiaceae",
+   "family",
+   "Höhn.",
+   "Höhn., 1909",
+   "citation_stripped",
+   [
+    "phylum",
+    "class"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "53305",
+   625119,
+   "8W6",
+   131192,
+   true,
+   "Cyphellaceae",
+   "family",
+   "Lotsy",
+   "Lotsy, 1907",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   true
+  ],
+  [
+   "54483",
+   625517,
+   "9XCVF",
+   131917,
+   true,
+   "Nidulariaceae",
+   "family",
+   "Dumort.",
+   "Dumort., 1822",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   true
+  ],
+  [
+   "55181",
+   625841,
+   "GNV",
+   153239,
+   true,
+   "Stephanosporaceae",
+   "family",
+   "Oberw. & E. Horak",
+   "Oberw. & E.Horak",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   true
+  ],
+  [
+   "55617",
+   626024,
+   "TWTB4",
+   607838,
+   true,
+   "Tulostomataceae",
+   "family",
+   "E. Fisch.",
+   "E. Fisch., 1900",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   true
+  ],
+  [
+   "56137",
+   626217,
+   "FPX",
+   152876,
+   true,
+   "Rhizopogonaceae",
+   "family",
+   "Gäum. & C. W. Dodge",
+   "Gäum. & C.W.Dodge",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   true
+  ],
+  [
+   "56755",
+   626434,
+   "BC4",
+   146485,
+   true,
+   "Hysterangiaceae",
+   "family",
+   "E. Fisch.",
+   "E.Fisch.",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   true
+  ],
+  [
+   "56773",
+   626438,
+   "62697",
+   84201,
+   true,
+   "Phallaceae",
+   "family",
+   "Corda",
+   "Corda, 1842",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   true
+  ],
+  [
+   "56900",
+   626507,
+   "9YL2H",
+   132236,
+   true,
+   "Hyphodermataceae",
+   "family",
+   "Jülich",
+   "Jülich, 1982",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   true
+  ],
+  [
+   "57177",
+   626612,
+   "9YL4P",
+   132260,
+   true,
+   "Podoscyphaceae",
+   "family",
+   "D.A. Reid",
+   "D.A.Reid",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   true
+  ],
+  [
+   "58213",
+   626982,
+   "625YH",
+   84183,
+   true,
+   "Phragmoxenidiaceae",
+   "family",
+   "Oberw. & R. Bauer",
+   "Oberw. & R.Bauer",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "58221",
+   626983,
+   "HD8",
+   155150,
+   true,
+   "Tremellaceae",
+   "family",
+   "Fr.",
+   "Fr., 1821",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   true
+  ],
+  [
+   "66361",
+   627645,
+   "7Z2",
+   130178,
+   true,
+   "Chaetosphaerellaceae",
+   "family",
+   "Huhndorf, A.N. Mill. & F.A. Fernández",
+   "Huhndorf, A.N.Mill. & F.A.Fernández",
+   "typography",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "68449",
+   628636,
+   "BPL",
+   146615,
+   true,
+   "Laboulbeniaceae",
+   "family",
+   "G. Winter",
+   "G.Winter, 1886",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "76210",
+   631637,
+   "D3G",
+   150432,
+   true,
+   "Myriangiaceae",
+   "family",
+   "Nyl.",
+   "Nyl., 1854",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ],
+  [
+   "78995",
+   632934,
+   "6SF",
+   107830,
+   true,
+   "Ascodesmidaceae",
+   "family",
+   "J. Schröt.",
+   "J.Schröt., 1893",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   true
+  ],
+  [
+   "82629",
+   634449,
+   "7J8",
+   129414,
+   true,
+   "Cainiaceae",
+   "family",
+   "J.C. Krug",
+   "J.C.Krug, 1978",
+   "citation_stripped",
+   [
+    "phylum",
+    "class",
+    "ord"
+   ],
+   "A0",
+   [],
+   0,
+   false
+  ]
+ ],
+ "members_sha256": "bf8787ccbcaa067321dc434e57448171627b15d083c7ec9268c76d008665b904",
+ "note": "Candidate only. Approves nothing. Generated by docs/audits/2026-10-20-taxonomy-reconciliation/scripts/groups.py; pinned to the release and archives above.",
+ "pins": {
+  "bridge_emission_policy": {
+   "path": "database/taxonomy/policies/mapping_policy.yml",
+   "sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb"
+  },
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "comparator": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/scripts/authorship.py",
+   "sha256": "23f75f37d0d0a1e742c20a8aa515e73b2494a3693b4c473e7a6d2e338b08cdd7"
+  },
+  "release": {
+   "content_release_id": "tax-2026.10.07-01",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.10.07-01.sqlite3.gz",
+   "gz_sha256": "bff40f0d5d70ec2be47fe415dfd4cfc623a7841553f8a7d928ed801117ca21c5",
+   "sqlite_sha256": "e349e8b1d7cdbafa688621a71f9be278ac6e381853ff7fe2763d8b856b7724f9"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "nortaxa": {
+    "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release_id": "nortaxa:1.284:2026-07-17"
+   }
+  }
+ },
+ "population": "reconciliation candidates, partition A0-higher",
+ "review_status": "needs_review"
+}

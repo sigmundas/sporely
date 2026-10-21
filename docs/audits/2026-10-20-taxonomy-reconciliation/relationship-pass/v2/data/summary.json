@@ -1,0 +1,63 @@
+{
+ "outcomes": {
+  "unresolved": 976,
+  "pragmatic": 1671,
+  "verified": 158
+ },
+ "by_outcome_reason": {
+  "pragmatic|authorship_candidate(needs_author_standard)": 1207,
+  "pragmatic|authorship_compatible": 86,
+  "pragmatic|authorship_identical": 181,
+  "pragmatic|documented_homotypy_but_combining_author_attribution_differs": 51,
+  "pragmatic|same_basionym_author_combining_author_attribution_differs": 146,
+  "unresolved|accepted_authors_differ;name_only": 46,
+  "unresolved|accepted_authors_differ;shared_synonymy_undocumented_or_ineligible": 31,
+  "unresolved|accepted_authors_differ_despite_documented_homotypy": 7,
+  "unresolved|ambiguity": 466,
+  "unresolved|conflict": 263,
+  "unresolved|placement_review": 163,
+  "verified|col:NameRelation:basionym+col:basionymID": 139,
+  "verified|col:NameRelation:basionym+col:basionymID+dyntaxa:homotypicSynonym": 18,
+  "verified|dyntaxa:homotypicSynonym": 1
+ },
+ "pass1_566": {
+  "B1_explicit_xref|pragmatic": 55,
+  "B1_explicit_xref|unresolved": 32,
+  "B1_explicit_xref|verified": 2,
+  "B2_shared_homotypic|pragmatic": 274,
+  "B2_shared_homotypic|unresolved": 47,
+  "B2_shared_homotypic|verified": 156
+ },
+ "pass1_566_coarse": {
+  "B2_shared_homotypic|pragmatic": 274,
+  "B2_shared_homotypic|verified": 156,
+  "B1_explicit_xref|pragmatic": 55,
+  "B1_explicit_xref|verified": 2,
+  "B2_shared_homotypic|conflict": 13,
+  "B2_shared_homotypic|review": 34,
+  "B1_explicit_xref|review": 31,
+  "B1_explicit_xref|conflict": 1
+ },
+ "identifier_cross_references": 0,
+ "evidence_items": {
+  "shared_synonym_undocumented|original": 602,
+  "shared_norwegian_vernacular|copied_from_nortaxa": 642,
+  "homotypic_documented|original": 1135,
+  "shared_synonym_undocumented|copied_from_nortaxa": 893,
+  "inaturalist_id_agrees": 592,
+  "homotypic_documented|copied_from_nortaxa": 110,
+  "synonym_listing_match|original": 83,
+  "shared_norwegian_vernacular|unverified_blank_source": 27,
+  "shared_norwegian_vernacular|independent:col_source_2041": 11,
+  "shared_norwegian_vernacular|independent:col_source_53131": 2,
+  "shared_norwegian_vernacular|independent:col_source_2011": 4,
+  "homotypic_documented": 1
+ },
+ "witness_exclusions": {
+  "witness_authorship": 1263,
+  "col_name_status": 987,
+  "qualified_or_unpublished": 70,
+  "col_status": 76
+ },
+ "pairs_with_independent_vernacular": 15
+}

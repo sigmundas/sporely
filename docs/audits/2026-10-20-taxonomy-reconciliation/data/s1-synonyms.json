@@ -1,0 +1,1056 @@
+{
+ "part_a_counts": {
+  "retirees_with_synonyms": 457,
+  "shipped_release_context": {
+   "release_text_bridge_rows_reviewed_supersession_by_role": {
+    "accepted": 1353,
+    "synonym": 4779
+   },
+   "workdb_usages_synonym_promoted_to_reviewed_supersession": 4779
+  },
+  "synonym_any_flag": 1019,
+  "synonym_blocked_status": 1016,
+  "synonym_comparator_self_class": {
+   "identical": 1094,
+   "malformed_authorship": 1,
+   "missing_both": 35,
+   "qualified_usage": 38,
+   "unpublished_or_doubtful": 7
+  },
+  "synonym_nomenclatural_status": {
+   "": 159,
+   "dubious": 2,
+   "illegitimate": 994,
+   "notvalidlypublished": 3,
+   "orthographic": 17
+  },
+  "synonym_qualified": 38,
+  "synonym_unpublished_or_doubtful": 7,
+  "synonym_usages": 1175,
+  "usages_by_src_binding_class_reason": {
+   "nortaxa|alias|intra_source_synonym|synonym_of_accepted": 1175,
+   "nortaxa|anchor||": 988
+  }
+ },
+ "part_b_sample_build": {
+  "current_block_sha256": "5c4dea54e452821d2bb0a7aeeed562879ed6f581c558c4d3468133d46ef83070",
+  "current_block_source": "compile_release.py:1083-1092",
+  "results": {
+   "current": {
+    "bridge_rows": [
+     [
+      1975,
+      "131617",
+      "accepted",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      1975,
+      "55304",
+      "synonym",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      1975,
+      "61134",
+      "synonym",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      1975,
+      "61298",
+      "synonym",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      1975,
+      "61315",
+      "synonym",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      16436,
+      "294404",
+      "accepted",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      163777,
+      "144991",
+      "accepted",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      163777,
+      "65564",
+      "synonym",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      163777,
+      "65587",
+      "synonym",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      163777,
+      "83488",
+      "synonym",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      163777,
+      "83516",
+      "synonym",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      163777,
+      "83517",
+      "synonym",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      163777,
+      "83535",
+      "synonym",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      163777,
+      "83575",
+      "synonym",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      604267,
+      "122732",
+      "accepted",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      604267,
+      "122733",
+      "synonym",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      604267,
+      "122734",
+      "synonym",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      604267,
+      "122735",
+      "synonym",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      604267,
+      "122736",
+      "synonym",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      604267,
+      "122737",
+      "synonym",
+      "authoritative_bridge:reviewed_supersession"
+     ]
+    ],
+    "build_error": null,
+    "nortaxa_int_rows": [
+     [
+      1975,
+      55304,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      1975,
+      61134,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      1975,
+      61298,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      1975,
+      61315,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      1975,
+      131617,
+      "accepted",
+      "reviewed_supersession"
+     ],
+     [
+      16436,
+      294404,
+      "accepted",
+      "reviewed_supersession"
+     ],
+     [
+      163777,
+      65564,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      65587,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      83488,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      83516,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      83517,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      83535,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      83575,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      144991,
+      "accepted",
+      "reviewed_supersession"
+     ],
+     [
+      604267,
+      122732,
+      "accepted",
+      "reviewed_supersession"
+     ],
+     [
+      604267,
+      122733,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      604267,
+      122734,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      604267,
+      122735,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      604267,
+      122736,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      604267,
+      122737,
+      "synonym",
+      "synonym_of_accepted"
+     ]
+    ],
+    "scientific_names": [
+     [
+      1975,
+      "Deconica montana",
+      1,
+      "col_xr",
+      null
+     ],
+     [
+      1975,
+      "Deconica physaloides",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      1975,
+      "Psilocybe atrorufa",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      1975,
+      "Psilocybe montana",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      1975,
+      "Psilocybe physaloides",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      16436,
+      "Hygrocybe conica",
+      1,
+      "col_xr",
+      null
+     ],
+     [
+      163777,
+      "Allarthonia lapidicola",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      "Arthonia fusca var. ecrustacea",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      "Arthonia fusca var. granulata",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      "Arthonia lapidicola",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      "Arthonia leucodontis",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      "Arthonia muscigena",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      "Bryostigma leucodontis",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      "Bryostigma muscigenum",
+      1,
+      "col_xr",
+      null
+     ],
+     [
+      604267,
+      "Puccinia hieracii var. hieracii",
+      1,
+      "col_xr",
+      null
+     ],
+     [
+      604267,
+      "Puccinia jaceae",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      604267,
+      "Puccinia leontodontis",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      604267,
+      "Puccinia taraxaci",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      604267,
+      "Puccinia tinctoriae",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      604267,
+      "Puccinia tinctoriicola",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ]
+    ],
+    "taxon_min_ids": [
+     1975,
+     16436,
+     163777,
+     604267
+    ]
+   },
+   "proposed": {
+    "bridge_rows": [
+     [
+      1975,
+      "131617",
+      "accepted",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      16436,
+      "294404",
+      "accepted",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      163777,
+      "144991",
+      "accepted",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      604267,
+      "122732",
+      "accepted",
+      "authoritative_bridge:reviewed_supersession"
+     ]
+    ],
+    "build_error": null,
+    "nortaxa_int_rows": [
+     [
+      1975,
+      55304,
+      "synonym",
+      "synonym_of_accepted;inherited_via_supersession:621669"
+     ],
+     [
+      1975,
+      61134,
+      "synonym",
+      "synonym_of_accepted;inherited_via_supersession:621669;nomenclatural_status:illegitimate"
+     ],
+     [
+      1975,
+      61298,
+      "synonym",
+      "synonym_of_accepted;inherited_via_supersession:621669;nomenclatural_status:illegitimate"
+     ],
+     [
+      1975,
+      61315,
+      "synonym",
+      "synonym_of_accepted;inherited_via_supersession:621669;nomenclatural_status:illegitimate"
+     ],
+     [
+      1975,
+      131617,
+      "accepted",
+      "reviewed_supersession"
+     ],
+     [
+      16436,
+      294404,
+      "accepted",
+      "reviewed_supersession"
+     ],
+     [
+      163777,
+      65564,
+      "synonym",
+      "synonym_of_accepted;inherited_via_supersession:622435"
+     ],
+     [
+      163777,
+      65587,
+      "synonym",
+      "synonym_of_accepted;inherited_via_supersession:622435"
+     ],
+     [
+      163777,
+      83488,
+      "synonym",
+      "synonym_of_accepted;inherited_via_supersession:622435;nomenclatural_status:illegitimate"
+     ],
+     [
+      163777,
+      83516,
+      "synonym",
+      "synonym_of_accepted;inherited_via_supersession:622435;nomenclatural_status:illegitimate"
+     ],
+     [
+      163777,
+      83517,
+      "synonym",
+      "synonym_of_accepted;inherited_via_supersession:622435;nomenclatural_status:illegitimate"
+     ],
+     [
+      163777,
+      83535,
+      "synonym",
+      "synonym_of_accepted;inherited_via_supersession:622435;nomenclatural_status:illegitimate"
+     ],
+     [
+      163777,
+      83575,
+      "synonym",
+      "synonym_of_accepted;inherited_via_supersession:622435;nomenclatural_status:illegitimate"
+     ],
+     [
+      163777,
+      144991,
+      "accepted",
+      "reviewed_supersession"
+     ],
+     [
+      604267,
+      122732,
+      "accepted",
+      "reviewed_supersession"
+     ],
+     [
+      604267,
+      122733,
+      "synonym",
+      "synonym_of_accepted;inherited_via_supersession:621093;nomenclatural_status:illegitimate"
+     ],
+     [
+      604267,
+      122734,
+      "synonym",
+      "synonym_of_accepted;inherited_via_supersession:621093;nomenclatural_status:illegitimate"
+     ],
+     [
+      604267,
+      122735,
+      "synonym",
+      "synonym_of_accepted;inherited_via_supersession:621093;nomenclatural_status:illegitimate"
+     ],
+     [
+      604267,
+      122736,
+      "synonym",
+      "synonym_of_accepted;inherited_via_supersession:621093;nomenclatural_status:illegitimate"
+     ],
+     [
+      604267,
+      122737,
+      "synonym",
+      "synonym_of_accepted;inherited_via_supersession:621093;nomenclatural_status:illegitimate"
+     ]
+    ],
+    "scientific_names": [
+     [
+      1975,
+      "Deconica montana",
+      1,
+      "col_xr",
+      null
+     ],
+     [
+      1975,
+      "Deconica physaloides",
+      0,
+      "nortaxa",
+      "synonym_of_accepted;inherited_via_supersession:621669;nomenclatural_status:illegitimate"
+     ],
+     [
+      1975,
+      "Psilocybe atrorufa",
+      0,
+      "nortaxa",
+      "synonym_of_accepted;inherited_via_supersession:621669;nomenclatural_status:illegitimate"
+     ],
+     [
+      1975,
+      "Psilocybe montana",
+      0,
+      "nortaxa",
+      "synonym_of_accepted;inherited_via_supersession:621669"
+     ],
+     [
+      1975,
+      "Psilocybe physaloides",
+      0,
+      "nortaxa",
+      "synonym_of_accepted;inherited_via_supersession:621669;nomenclatural_status:illegitimate"
+     ],
+     [
+      16436,
+      "Hygrocybe conica",
+      1,
+      "col_xr",
+      null
+     ],
+     [
+      163777,
+      "Allarthonia lapidicola",
+      0,
+      "nortaxa",
+      "synonym_of_accepted;inherited_via_supersession:622435;nomenclatural_status:illegitimate"
+     ],
+     [
+      163777,
+      "Arthonia fusca var. ecrustacea",
+      0,
+      "nortaxa",
+      "synonym_of_accepted;inherited_via_supersession:622435;nomenclatural_status:illegitimate"
+     ],
+     [
+      163777,
+      "Arthonia fusca var. granulata",
+      0,
+      "nortaxa",
+      "synonym_of_accepted;inherited_via_supersession:622435;nomenclatural_status:illegitimate"
+     ],
+     [
+      163777,
+      "Arthonia lapidicola",
+      0,
+      "nortaxa",
+      "synonym_of_accepted;inherited_via_supersession:622435"
+     ],
+     [
+      163777,
+      "Arthonia leucodontis",
+      0,
+      "nortaxa",
+      "synonym_of_accepted;inherited_via_supersession:622435;nomenclatural_status:illegitimate"
+     ],
+     [
+      163777,
+      "Arthonia muscigena",
+      0,
+      "nortaxa",
+      "synonym_of_accepted;inherited_via_supersession:622435"
+     ],
+     [
+      163777,
+      "Bryostigma leucodontis",
+      0,
+      "nortaxa",
+      "synonym_of_accepted;inherited_via_supersession:622435;nomenclatural_status:illegitimate"
+     ],
+     [
+      163777,
+      "Bryostigma muscigenum",
+      1,
+      "col_xr",
+      null
+     ],
+     [
+      604267,
+      "Puccinia hieracii var. hieracii",
+      1,
+      "col_xr",
+      null
+     ],
+     [
+      604267,
+      "Puccinia jaceae",
+      0,
+      "nortaxa",
+      "synonym_of_accepted;inherited_via_supersession:621093;nomenclatural_status:illegitimate"
+     ],
+     [
+      604267,
+      "Puccinia leontodontis",
+      0,
+      "nortaxa",
+      "synonym_of_accepted;inherited_via_supersession:621093;nomenclatural_status:illegitimate"
+     ],
+     [
+      604267,
+      "Puccinia taraxaci",
+      0,
+      "nortaxa",
+      "synonym_of_accepted;inherited_via_supersession:621093;nomenclatural_status:illegitimate"
+     ],
+     [
+      604267,
+      "Puccinia tinctoriae",
+      0,
+      "nortaxa",
+      "synonym_of_accepted;inherited_via_supersession:621093;nomenclatural_status:illegitimate"
+     ],
+     [
+      604267,
+      "Puccinia tinctoriicola",
+      0,
+      "nortaxa",
+      "synonym_of_accepted;inherited_via_supersession:621093;nomenclatural_status:illegitimate"
+     ]
+    ],
+    "taxon_min_ids": [
+     1975,
+     16436,
+     163777,
+     604267
+    ]
+   },
+   "proposed_compiler_unchanged_builder": {
+    "bridge_rows": [
+     [
+      1975,
+      "131617",
+      "accepted",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      16436,
+      "294404",
+      "accepted",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      163777,
+      "144991",
+      "accepted",
+      "authoritative_bridge:reviewed_supersession"
+     ],
+     [
+      604267,
+      "122732",
+      "accepted",
+      "authoritative_bridge:reviewed_supersession"
+     ]
+    ],
+    "build_error": null,
+    "nortaxa_int_rows": [
+     [
+      1975,
+      55304,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      1975,
+      61134,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      1975,
+      61298,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      1975,
+      61315,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      1975,
+      131617,
+      "accepted",
+      "reviewed_supersession"
+     ],
+     [
+      16436,
+      294404,
+      "accepted",
+      "reviewed_supersession"
+     ],
+     [
+      163777,
+      65564,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      65587,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      83488,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      83516,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      83517,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      83535,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      83575,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      144991,
+      "accepted",
+      "reviewed_supersession"
+     ],
+     [
+      604267,
+      122732,
+      "accepted",
+      "reviewed_supersession"
+     ],
+     [
+      604267,
+      122733,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      604267,
+      122734,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      604267,
+      122735,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      604267,
+      122736,
+      "synonym",
+      "synonym_of_accepted"
+     ],
+     [
+      604267,
+      122737,
+      "synonym",
+      "synonym_of_accepted"
+     ]
+    ],
+    "scientific_names": [
+     [
+      1975,
+      "Deconica montana",
+      1,
+      "col_xr",
+      null
+     ],
+     [
+      1975,
+      "Deconica physaloides",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      1975,
+      "Psilocybe atrorufa",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      1975,
+      "Psilocybe montana",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      1975,
+      "Psilocybe physaloides",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      16436,
+      "Hygrocybe conica",
+      1,
+      "col_xr",
+      null
+     ],
+     [
+      163777,
+      "Allarthonia lapidicola",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      "Arthonia fusca var. ecrustacea",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      "Arthonia fusca var. granulata",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      "Arthonia lapidicola",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      "Arthonia leucodontis",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      "Arthonia muscigena",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      "Bryostigma leucodontis",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      163777,
+      "Bryostigma muscigenum",
+      1,
+      "col_xr",
+      null
+     ],
+     [
+      604267,
+      "Puccinia hieracii var. hieracii",
+      1,
+      "col_xr",
+      null
+     ],
+     [
+      604267,
+      "Puccinia jaceae",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      604267,
+      "Puccinia leontodontis",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      604267,
+      "Puccinia taraxaci",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      604267,
+      "Puccinia tinctoriae",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ],
+     [
+      604267,
+      "Puccinia tinctoriicola",
+      0,
+      "nortaxa",
+      "synonym_of_accepted"
+     ]
+    ],
+    "taxon_min_ids": [
+     1975,
+     16436,
+     163777,
+     604267
+    ]
+   }
+  },
+  "sample_retirees": [
+   624178,
+   621093,
+   621669,
+   622435
+  ],
+  "sample_survivors": [
+   16436,
+   604267,
+   1975,
+   163777
+  ]
+ },
+ "part_c_full_s1_decision": {
+  "current": {
+   "accepted_anchor|bridge_emitted=True|reviewed_supersession": 988,
+   "synonym|bridge_emitted=True|reviewed_supersession": 1175
+  },
+  "proposed": {
+   "accepted_anchor|bridge_emitted=True|reviewed_supersession": 988,
+   "synonym|bridge_emitted=False|intra_source_synonym": 1175
+  }
+ }
+}

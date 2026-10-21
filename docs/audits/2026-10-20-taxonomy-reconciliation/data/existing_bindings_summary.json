@@ -1,0 +1,96 @@
+{
+ "any_reason_counts": {
+  "1_qualified_or_unpublished_authorship": 226,
+  "2_col_provisionally_accepted": 146,
+  "3_competing_placement": 60,
+  "4_not_unique": 7,
+  "5_class_or_phylum_disagrees": 554,
+  "6_missing_authorship_unsupported": 71,
+  "7_genus_family_not_confirmed": 489,
+  "8_order_or_family_only": 3029
+ },
+ "bindings": 16424,
+ "blocker_counts": {
+  "missing_authorship|authorship_missing_without_classification_support": 71,
+  "missing_authorship|col_provisionally_accepted": 9,
+  "missing_authorship|genus_family_not_confirmed": 88,
+  "missing_authorship|nomenclatural_status_col": 1,
+  "missing_authorship|nomenclatural_status_nortaxa": 1,
+  "missing_authorship|nortaxa_has_another_live_concept_of_same_name_rank": 2,
+  "missing_authorship|not_one_to_one": 2,
+  "strict|authorship_qualified_usage": 5,
+  "strict|authorship_unpublished_or_doubtful": 96,
+  "strict|classification_disagrees": 3583,
+  "strict|col_provisionally_accepted": 137,
+  "strict|col_synonym_elsewhere_same_authorship": 7,
+  "strict|external_id_conflict": 49,
+  "strict|genus_family_not_confirmed": 401,
+  "strict|nomenclatural_status_col": 108,
+  "strict|nomenclatural_status_nortaxa": 124,
+  "strict|nortaxa_has_another_live_concept_of_same_name_rank": 5,
+  "strict|nortaxa_synonym_elsewhere_same_authorship": 6,
+  "strict|not_one_to_one": 5
+ },
+ "by_class": {
+  "missing_authorship|fail": 140,
+  "missing_authorship|pass": 1993,
+  "strict|fail": 3982,
+  "strict|pass": 10309
+ },
+ "by_class_rank": {
+  "missing_authorship|genus|fail": 95,
+  "missing_authorship|genus|pass": 1069,
+  "missing_authorship|higher|fail": 40,
+  "missing_authorship|higher|pass": 281,
+  "missing_authorship|infraspecific|pass": 18,
+  "missing_authorship|species|fail": 5,
+  "missing_authorship|species|pass": 625,
+  "strict|genus|fail": 454,
+  "strict|genus|pass": 729,
+  "strict|higher|fail": 6,
+  "strict|higher|pass": 75,
+  "strict|infraspecific|fail": 83,
+  "strict|infraspecific|pass": 173,
+  "strict|species|fail": 3439,
+  "strict|species|pass": 9332
+ },
+ "failing_in_cloud_scope": 1051,
+ "passing_by_ratification_group_rank": {
+  "A0-equivalent|genus": 729,
+  "A0-equivalent|higher": 75,
+  "A0-equivalent|infraspecific": 173,
+  "A0-equivalent|species": 9332,
+  "A1-equivalent|genus": 1069,
+  "A1-equivalent|higher": 281,
+  "A1-equivalent|infraspecific": 18,
+  "A1-equivalent|species": 625
+ },
+ "primary_reason_exclusive": {
+  "1_qualified_or_unpublished_authorship": 226,
+  "2_col_provisionally_accepted": 51,
+  "3_competing_placement": 59,
+  "4_not_unique": 7,
+  "5_class_or_phylum_disagrees": 525,
+  "6_missing_authorship_unsupported": 70,
+  "7_genus_family_not_confirmed": 427,
+  "8_order_or_family_only": 2757
+ },
+ "primary_reason_exclusive_total": 4122,
+ "single_blocker": {
+  "authorship_missing_without_classification_support": 42,
+  "authorship_qualified_usage": 1,
+  "authorship_unpublished_or_doubtful": 1,
+  "classification_disagrees": 3265,
+  "col_provisionally_accepted": 28,
+  "col_synonym_elsewhere_same_authorship": 3,
+  "external_id_conflict": 39,
+  "genus_family_not_confirmed": 228,
+  "nomenclatural_status_nortaxa": 93,
+  "nortaxa_synonym_elsewhere_same_authorship": 1
+ },
+ "synonym_of_accepted_usages_bound_to_col_via_host": {
+  "on_failing_legacy_host": 1424,
+  "on_other_host": 8448,
+  "on_passing_legacy_host": 3308
+ }
+}

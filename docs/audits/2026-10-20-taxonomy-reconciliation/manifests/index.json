@@ -1,0 +1,136 @@
+{
+ "partitions": {
+  "A0-genus": {
+   "file_sha256": "5d44a8e37fbf08e52435a3bde9057a40f54b006f99f883dcb744cef4febdb6a5",
+   "member_count": 301,
+   "members_sha256": "c0c2103c30b58c11a401b1d478f4621bf78b1ea92a72097689b6123e0a175601",
+   "path": "validator-format/A0-genus.manifest.json",
+   "validator_format": true
+  },
+  "A0-higher": {
+   "file_sha256": "dce9e40d40f408cf93031b8a517cbb0698f6c3f73031abdebdfd73656af6aad8",
+   "member_count": 66,
+   "members_sha256": "bf8787ccbcaa067321dc434e57448171627b15d083c7ec9268c76d008665b904",
+   "path": "validator-format/A0-higher.manifest.json",
+   "validator_format": true
+  },
+  "A0-infraspecific": {
+   "file_sha256": "6706b6a67ee8c3f02ded7c82a7d142fc7dcc50f4e1c3608af975531750668668",
+   "member_count": 45,
+   "members_sha256": "5b0c9080e7841bfdbe6ffb633e05ac48cbdf92a44d92cba0fcb18d224bdac14e",
+   "path": "validator-format/A0-infraspecific.manifest.json",
+   "validator_format": true
+  },
+  "A0-species": {
+   "file_sha256": "62790e59dd7dc8acdcdc2a30099e085bc425f9d46a2ac1bff2424efcd9e4a9a9",
+   "member_count": 943,
+   "members_sha256": "7fd5ef6bf67dab4b3144fabf2c88d95895d19dbf35835637062e3a7dd2fade4f",
+   "path": "validator-format/A0-species.manifest.json",
+   "validator_format": true
+  },
+  "A1-genus": {
+   "file_sha256": "e11d4c02ee40f660cf16bacd831834adeb375e57b16c7b87da74201bf5db3e3f",
+   "member_count": 54,
+   "members_sha256": "ed18e52e1f7cb66962d8ab0e652f3aa559839dcfc78e1ef8e12bcdaf1d48af6d",
+   "path": "validator-format/A1-genus.manifest.json",
+   "validator_format": true
+  },
+  "A1-higher": {
+   "file_sha256": "dd09b7c3c41b344d9b106310e20eb3ab7cd682644035c4ff3b692899b6b071d4",
+   "member_count": 12,
+   "members_sha256": "e4ecd92f0306c7b78a0905e8d5d899cd2689092fbc0a71ca25a8878b833faaa5",
+   "path": "validator-format/A1-higher.manifest.json",
+   "validator_format": true
+  },
+  "A1-infraspecific": {
+   "file_sha256": "cae9b8172adb721efd598d1cb7a18cf075b01f4ca06bfc4ca45175cf28cfb705",
+   "member_count": 10,
+   "members_sha256": "79c4ea51d0f3af2e35374dd79bf01323133da6476f4700affc79f8b985e94b4a",
+   "path": "validator-format/A1-infraspecific.manifest.json",
+   "validator_format": true
+  },
+  "A1-species": {
+   "file_sha256": "86fdbc236d78586d841dc082c20f28c3311924c1db994583ea911a03efbba21d",
+   "member_count": 766,
+   "members_sha256": "226921de7a84acc650575da12bad2b16eb5ae8b63a0a60ae80f05b1999a00fba",
+   "path": "validator-format/A1-species.manifest.json",
+   "validator_format": true
+  },
+  "A2-author-filtered": {
+   "member_count": 19,
+   "members_sha256": "dae42fec014a1c85ec496c3de24f5698832ae81df4f9d3ac4a602a5a0f38be11",
+   "path": "A2-author-filtered.jsonl",
+   "required_validator_change": "verify_supersession_manifest_approvals requires one_to_one is True and a NorTaxa->COL member; these members are one-to-one only after authorship filtering",
+   "validator_format": false
+  },
+  "A2-col-internal": {
+   "member_count": 4,
+   "members_sha256": "edbe16eb33e87b5e63c8767452f79bc940c455a6b43d23ff63fae2adc2a81e63",
+   "path": "A2-col-internal.jsonl",
+   "required_validator_change": "a within-source (COL->COL) manifest kind and record shape do not exist",
+   "validator_format": false
+  },
+  "A2-genus": {
+   "file_sha256": "11b2d8ecd7b2eb7b604578b37fd3b14869e4fcae340fc69ca0b2ec60cd4aa521",
+   "member_count": 209,
+   "members_sha256": "35d0d42d7ac5aab3d7dae72818fd0e27ae97f32867d097e1408048ea98d6b832",
+   "path": "validator-format/A2-genus.manifest.json",
+   "validator_format": true
+  },
+  "A2-higher": {
+   "file_sha256": "c3341886474b8007a27966c087026e9558b6093a62468d9fa0a9404ef908e0d9",
+   "member_count": 110,
+   "members_sha256": "3412f7d87970d2aa7afaef5ba8c6af56d0ee1d174d0b2d4f1c09f51f1a46c170",
+   "path": "validator-format/A2-higher.manifest.json",
+   "validator_format": true
+  },
+  "A2-species": {
+   "file_sha256": "2e6f29afc2d1d8fbfe3360af4b49e5c1207f14cd79e906e586056b83e235ad97",
+   "member_count": 83,
+   "members_sha256": "d1e31d31ebd3932e1ec0acacb635b0aead1c9a7d0080ee58e47e697bfe71d243",
+   "path": "validator-format/A2-species.manifest.json",
+   "validator_format": true
+  },
+  "B-placement": {
+   "file_sha256": "a5928ab4ff9fce4570af295ff885a37891ff21f3d4f4a4949410c77febbe4c5a",
+   "member_count": 508,
+   "members_sha256": "74daf20c833c2cce7f3cca4675101122a1fdde19a8764245d685cb47ffcd6a44",
+   "path": "validator-format/B-placement.manifest.json",
+   "validator_format": true
+  }
+ },
+ "pins": {
+  "bridge_emission_policy": {
+   "path": "database/taxonomy/policies/mapping_policy.yml",
+   "sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb"
+  },
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "comparator": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/scripts/authorship.py",
+   "sha256": "23f75f37d0d0a1e742c20a8aa515e73b2494a3693b4c473e7a6d2e338b08cdd7"
+  },
+  "release": {
+   "content_release_id": "tax-2026.10.07-01",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.10.07-01.sqlite3.gz",
+   "gz_sha256": "bff40f0d5d70ec2be47fe415dfd4cfc623a7841553f8a7d928ed801117ca21c5",
+   "sqlite_sha256": "e349e8b1d7cdbafa688621a71f9be278ac6e381853ff7fe2763d8b856b7724f9"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "nortaxa": {
+    "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release_id": "nortaxa:1.284:2026-07-17"
+   }
+  }
+ },
+ "precedence": "A2 > A1 > A0 (disjoint)",
+ "review_status": "proposal_not_approved",
+ "rule_revision": "deterministic_name_rank_authorship_v1 rev3 (after review-2)"
+}

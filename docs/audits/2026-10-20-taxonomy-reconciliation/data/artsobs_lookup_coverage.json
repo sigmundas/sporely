@@ -1,0 +1,268 @@
+{
+ "after_A0": {
+  "desktop_observations_concept_verified": {
+   "ambiguous_none": 18,
+   "another_concept_cases": [
+    {
+     "id_holders": [
+      55368
+     ],
+     "observations": 1,
+     "stored_concept": 55311
+    },
+    {
+     "id_holders": [
+      626199
+     ],
+     "observations": 1,
+     "stored_concept": 56092
+    },
+    {
+     "id_holders": [
+      626822
+     ],
+     "observations": 1,
+     "stored_concept": 61673
+    }
+   ],
+   "concept_verified": 166,
+   "concept_verified_pct": 85.1,
+   "id_of_another_concept": 3,
+   "metric": "returned destination id belongs to the observation's own stored Sporely concept (stored-id provenance itself not re-verified)",
+   "no_match": 4,
+   "observations_with_stored_id": 195,
+   "wrong_rank": 4
+  },
+  "desktop_observations_name_lookup": {
+   "ambiguous_none": 52,
+   "fallthrough_sporely_id": 9,
+   "id_returned_pct_including_wrong_rank": 85.9,
+   "metric": "NAME-BASED lookup success with a species-rank id; NOT concept correctness",
+   "name_lookup_rank_ok": 480,
+   "name_lookup_rank_ok_pct": 83.8,
+   "no_match": 20,
+   "observations": 573,
+   "wrong_rank": 12
+  },
+  "observed_ids_desktop_or_cloud": {
+   "ambiguous_none": 17,
+   "fallthrough_sporely_id": 5,
+   "ids": 234,
+   "not_in_release": 20,
+   "not_species_rank_no_lookup": 8,
+   "plausible_twin": 9,
+   "verified": 173,
+   "verified_pct": 73.9,
+   "wrong_rank": 2
+  },
+  "species_name_keys_returning_wrong_rank_id": 129,
+  "species_rank": {
+   "ambiguous_none": 275,
+   "concepts": 180975,
+   "fallthrough_sporely_id": 150564,
+   "plausible_twin": 2802,
+   "verified": 27205,
+   "verified_pct": 15.0,
+   "wrong_rank": 129
+  },
+  "species_rank_cloud_scope": {
+   "ambiguous_none": 96,
+   "concepts": 49557,
+   "fallthrough_sporely_id": 41942,
+   "plausible_twin": 561,
+   "verified": 6878,
+   "verified_pct": 13.9,
+   "wrong_rank": 80
+  },
+  "species_rank_with_nortaxa_id": {
+   "ambiguous_none": 246,
+   "concepts": 27505,
+   "plausible_twin": 6,
+   "verified": 27205,
+   "verified_pct": 98.9,
+   "wrong_rank": 48
+  }
+ },
+ "after_A_all_groups": {
+  "desktop_observations_concept_verified": {
+   "ambiguous_none": 19,
+   "another_concept_cases": [
+    {
+     "id_holders": [
+      55368
+     ],
+     "observations": 1,
+     "stored_concept": 55311
+    },
+    {
+     "id_holders": [
+      626199
+     ],
+     "observations": 1,
+     "stored_concept": 56092
+    },
+    {
+     "id_holders": [
+      626822
+     ],
+     "observations": 1,
+     "stored_concept": 61673
+    }
+   ],
+   "concept_verified": 165,
+   "concept_verified_pct": 84.6,
+   "id_of_another_concept": 3,
+   "metric": "returned destination id belongs to the observation's own stored Sporely concept (stored-id provenance itself not re-verified)",
+   "no_match": 4,
+   "observations_with_stored_id": 195,
+   "wrong_rank": 4
+  },
+  "desktop_observations_name_lookup": {
+   "ambiguous_none": 67,
+   "fallthrough_sporely_id": 9,
+   "id_returned_pct_including_wrong_rank": 83.2,
+   "metric": "NAME-BASED lookup success with a species-rank id; NOT concept correctness",
+   "name_lookup_rank_ok": 463,
+   "name_lookup_rank_ok_pct": 80.8,
+   "no_match": 20,
+   "observations": 573,
+   "wrong_rank": 14
+  },
+  "observed_ids_desktop_or_cloud": {
+   "ambiguous_none": 21,
+   "fallthrough_sporely_id": 5,
+   "ids": 234,
+   "not_in_release": 20,
+   "not_species_rank_no_lookup": 8,
+   "plausible_twin": 4,
+   "verified": 173,
+   "verified_pct": 73.9,
+   "wrong_rank": 3
+  },
+  "species_name_keys_returning_wrong_rank_id": 140,
+  "species_rank": {
+   "ambiguous_none": 278,
+   "concepts": 180122,
+   "fallthrough_sporely_id": 150560,
+   "plausible_twin": 1963,
+   "verified": 27180,
+   "verified_pct": 15.1,
+   "wrong_rank": 141
+  },
+  "species_rank_cloud_scope": {
+   "ambiguous_none": 106,
+   "concepts": 49557,
+   "fallthrough_sporely_id": 41940,
+   "plausible_twin": 402,
+   "verified": 7020,
+   "verified_pct": 14.2,
+   "wrong_rank": 89
+  },
+  "species_rank_with_nortaxa_id": {
+   "ambiguous_none": 261,
+   "concepts": 27505,
+   "plausible_twin": 7,
+   "verified": 27180,
+   "verified_pct": 98.8,
+   "wrong_rank": 57
+  }
+ },
+ "before": {
+  "desktop_observations_concept_verified": {
+   "ambiguous_none": 5,
+   "another_concept_cases": [
+    {
+     "id_holders": [
+      55368
+     ],
+     "observations": 1,
+     "stored_concept": 55311
+    },
+    {
+     "id_holders": [
+      626199
+     ],
+     "observations": 1,
+     "stored_concept": 56092
+    },
+    {
+     "id_holders": [
+      626822
+     ],
+     "observations": 1,
+     "stored_concept": 61673
+    }
+   ],
+   "concept_verified": 165,
+   "concept_verified_pct": 84.6,
+   "id_of_another_concept": 3,
+   "metric": "returned destination id belongs to the observation's own stored Sporely concept (stored-id provenance itself not re-verified)",
+   "no_match": 4,
+   "observations_with_stored_id": 195,
+   "wrong_rank": 18
+  },
+  "desktop_observations_name_lookup": {
+   "ambiguous_none": 51,
+   "fallthrough_sporely_id": 9,
+   "id_returned_pct_including_wrong_rank": 86.0,
+   "metric": "NAME-BASED lookup success with a species-rank id; NOT concept correctness",
+   "name_lookup_rank_ok": 465,
+   "name_lookup_rank_ok_pct": 81.2,
+   "no_match": 20,
+   "observations": 573,
+   "wrong_rank": 28
+  },
+  "observed_ids_desktop_or_cloud": {
+   "ambiguous_none": 18,
+   "fallthrough_sporely_id": 5,
+   "ids": 234,
+   "not_in_release": 20,
+   "not_species_rank_no_lookup": 8,
+   "plausible_twin": 17,
+   "verified": 160,
+   "verified_pct": 68.4,
+   "wrong_rank": 6
+  },
+  "species_name_keys_returning_wrong_rank_id": 141,
+  "species_rank": {
+   "ambiguous_none": 298,
+   "concepts": 181918,
+   "fallthrough_sporely_id": 150564,
+   "plausible_twin": 3717,
+   "verified": 27198,
+   "verified_pct": 15.0,
+   "wrong_rank": 141
+  },
+  "species_rank_cloud_scope": {
+   "ambiguous_none": 96,
+   "concepts": 49557,
+   "fallthrough_sporely_id": 41942,
+   "plausible_twin": 1001,
+   "verified": 6429,
+   "verified_pct": 13.0,
+   "wrong_rank": 89
+  },
+  "species_rank_with_nortaxa_id": {
+   "ambiguous_none": 243,
+   "concepts": 27505,
+   "plausible_twin": 5,
+   "verified": 27198,
+   "verified_pct": 98.9,
+   "wrong_rank": 59
+  }
+ },
+ "cuphophyllus_virgineus_before": [
+  "wrong_rank"
+ ],
+ "desktop_name_keys_with_wrong_rank_id": {
+  "after_A0": 5,
+  "after_A_all_groups": 6,
+  "before": 9
+ },
+ "hygrocybe_conica_before": "ambiguous_none",
+ "notes": [
+  "fallthrough_sporely_id counts as no id (bug being fixed separately)",
+  "verified = destination id belongs to the same concept/rank; wrong_rank ids are not coverage",
+  "R2/H10 baseline = desktop_observations_concept_verified.concept_verified_pct (before); desktop_observations_name_lookup measures name-based lookup success only"
+ ]
+}
