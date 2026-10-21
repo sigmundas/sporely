@@ -1,0 +1,119 @@
+{
+ "by_category": {
+  "ambiguous": 56,
+  "missing": 1,
+  "name_author_differs": 8,
+  "name_exact": 87,
+  "synonym_match": 30
+ },
+ "by_category_x_agreement": {
+  "ambiguous|different_id_not_in_pinned_xr": 2,
+  "ambiguous|same": 39,
+  "ambiguous|sporely_has_no_col_identity": 15,
+  "missing|gbif_none": 1,
+  "name_author_differs|different_id_not_in_pinned_xr": 2,
+  "name_author_differs|same": 5,
+  "name_author_differs|sporely_has_no_col_identity": 1,
+  "name_exact|same": 85,
+  "name_exact|sporely_has_no_col_identity": 2,
+  "synonym_match|different": 3,
+  "synonym_match|different_id_not_in_pinned_xr": 1,
+  "synonym_match|same": 6,
+  "synonym_match|sporely_has_no_col_identity": 20
+ },
+ "by_provenance_category": {
+  "copy_differs_from_sporely_reference": 5,
+  "copy_is_sporely_reference": 20,
+  "copy_where_sporely_has_no_col_identity": 2,
+  "no_copy_of_this_taxonID": 155
+ },
+ "by_provenance_x_status": {
+  "copy_differs_from_sporely_reference|synonym": 5,
+  "copy_is_sporely_reference|accepted": 20,
+  "copy_where_sporely_has_no_col_identity|synonym": 2,
+  "no_copy_of_this_taxonID|": 155
+ },
+ "by_reference_x_agreement": {
+  "approved_bridge|different_id_not_in_pinned_xr": 1,
+  "approved_bridge|same": 39,
+  "audit_pragmatic|different_id_not_in_pinned_xr": 1,
+  "audit_pragmatic|same": 21,
+  "audit_unresolved|different": 1,
+  "audit_unresolved|same": 23,
+  "audit_verified|same": 16,
+  "automatic_name_bind|different_id_not_in_pinned_xr": 2,
+  "automatic_name_bind|same": 28,
+  "compiler_ambiguous|sporely_has_no_col_identity": 9,
+  "compiler_single_candidate|same": 1,
+  "none|sporely_has_no_col_identity": 25,
+  "synonym_of_bridged_concept|different": 2,
+  "synonym_of_bridged_concept|different_id_not_in_pinned_xr": 1,
+  "synonym_of_bridged_concept|gbif_none": 1,
+  "synonym_of_bridged_concept|same": 7,
+  "synonym_of_nortaxa_only|sporely_has_no_col_identity": 4
+ },
+ "by_stratum_x_category": {
+  "A1|ambiguous": 3,
+  "A1|name_exact": 17,
+  "A2|ambiguous": 5,
+  "A2|name_author_differs": 2,
+  "A2|name_exact": 12,
+  "A2|synonym_match": 1,
+  "B1|ambiguous": 1,
+  "B1|name_author_differs": 2,
+  "B1|name_exact": 17,
+  "B2|ambiguous": 3,
+  "B2|name_exact": 7,
+  "C1|ambiguous": 9,
+  "C1|name_exact": 6,
+  "C2|ambiguous": 9,
+  "C2|name_exact": 11,
+  "C3|ambiguous": 7,
+  "C3|name_author_differs": 1,
+  "C3|name_exact": 11,
+  "C3|synonym_match": 1,
+  "D|ambiguous": 5,
+  "D|name_author_differs": 1,
+  "D|name_exact": 1,
+  "D|synonym_match": 18,
+  "E|ambiguous": 10,
+  "F|ambiguous": 3,
+  "F|missing": 1,
+  "F|name_exact": 1,
+  "F|synonym_match": 10,
+  "X|ambiguous": 1,
+  "X|name_author_differs": 2,
+  "X|name_exact": 4
+ },
+ "clb_nt_found": 182,
+ "clb_xr_type": {
+  "exact": 79,
+  "higherrank": 8,
+  "variant": 95
+ },
+ "gbif_col_target_not_in_pinned_xr_fungi_set": 6,
+ "gbif_matchType": {
+  "EXACT": 177,
+  "HIGHERRANK": 1,
+  "VARIANT": 4
+ },
+ "gbif_nt_found": 182,
+ "gbif_nt_with_nubKey": 178,
+ "gbif_target_is_copy": 23,
+ "gbif_vs_clb_same_target": 158,
+ "nub_same_canonical": 176,
+ "population_distinct_anchors": 604,
+ "population_pairs": 605,
+ "population_same_id_by_col_status": {
+  "accepted": 309,
+  "provisionally accepted": 20,
+  "synonym": 267
+ },
+ "population_same_id_distinct_anchors": 596,
+ "population_same_id_same_rank_accepted": 329,
+ "population_same_nortaxa_id": 596,
+ "population_source": {
+  "2030": 605
+ },
+ "sample_rows": 182
+}
