@@ -1,6 +1,6 @@
 {
   "format": "sporely-source-continuity-holds-v1",
-  "semantics": "Owner-decided holds for a source refresh. A held record's flagged relationship is not applied to the changed source record: the compile leaves the current source usage (and its direct synonyms) out, applies no mapping to it and allocates nothing for it. The original approval, its historical Sporely ids and any supersession retirement stay as they are. A hold names one record; every other flag still stops preparation. A held relationship is a publication blocker until its impact is assessed.",
+  "semantics": "Owner-decided holds for a source refresh. A held record's flagged relationship is not applied to the changed source record: the compile leaves the current source usage (and its direct synonyms) out, applies no mapping to it and allocates nothing for it. The original approval, its historical Sporely ids and any supersession retirement stay as they are. A hold names one record; every other flag still stops preparation. A held relationship is a publication blocker until its impact is assessed. A hold may instead name a source_usage: when NorTaxa would rebind that usage to another Sporely id (registry alias conflict), the compile leaves the existing binding and does not rebind; any unlisted conflict still stops the compile.",
   "holds": [
     {
       "record_id": "taxonomy-v3-1a-nortaxa-52015-to-col-33PVS",
@@ -33,6 +33,134 @@
       "decided_at": "2026-10-23",
       "decision": "Not equivalent identities: a species-to-'coll.' change is a concept change (barcoding shows identical-looking mushrooms are distinct species). Hold the current-source relationship; keep historical ids and approvals; do not redirect species identities to aggregates.",
       "observed_change": "NorTaxa 1.292 renames 55440 Dermoloma cuneifolium to 'Dermoloma cuneifolium coll.' and changes authorship '(Fr. : Fr.) Bon' -> '(Fr.) Singer ex Bon'"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/128204",
+      "reason": "nortaxa_1292_identity_change_pending_review",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the disposable R2 candidate: no automatic reassignment of source ids, no Sporely concept merges, no change to historical identities, pending verification of publications and COL treatment.",
+      "observed_change": "Ascochyta stipae: automatic_exact binding would move from sporely_taxon_id=621324, cannot rebind to 154449"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/294034",
+      "reason": "nortaxa_1292_identity_change_pending_review",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the disposable R2 candidate: no automatic reassignment of source ids, no Sporely concept merges, no change to historical identities, pending verification of publications and COL treatment.",
+      "observed_change": "Dermoloma alexandri: synonym binding would move from sporely_taxon_id=2534, cannot rebind to 2545"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/52027",
+      "reason": "nortaxa_1292_identity_change_pending_review",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the disposable R2 candidate: no automatic reassignment of source ids, no Sporely concept merges, no change to historical identities, pending verification of publications and COL treatment.",
+      "observed_change": "Echinoderma pseudoasperula coll.: synonym binding would move from sporely_taxon_id=624546, cannot rebind to 634908"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/54741",
+      "reason": "nortaxa_1292_identity_change_pending_review",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the disposable R2 candidate: no automatic reassignment of source ids, no Sporely concept merges, no change to historical identities, pending verification of publications and COL treatment.",
+      "observed_change": "Hohenbuehelia abietina: synonym binding would move from sporely_taxon_id=15524, cannot rebind to 15533"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/58500",
+      "reason": "nortaxa_1292_identity_change_pending_review",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the disposable R2 candidate: no automatic reassignment of source ids, no Sporely concept merges, no change to historical identities, pending verification of publications and COL treatment.",
+      "observed_change": "Cystolepiota pseudoasperula: synonym binding would move from sporely_taxon_id=624546, cannot rebind to 634908"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/58559",
+      "reason": "nortaxa_1292_identity_change_pending_review",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the disposable R2 candidate: no automatic reassignment of source ids, no Sporely concept merges, no change to historical identities, pending verification of publications and COL treatment.",
+      "observed_change": "Lepiota pseudoasperula: synonym binding would move from sporely_taxon_id=624546, cannot rebind to 634908"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/62451",
+      "reason": "nortaxa_1292_identity_change_pending_review",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the disposable R2 candidate: no automatic reassignment of source ids, no Sporely concept merges, no change to historical identities, pending verification of publications and COL treatment.",
+      "observed_change": "Clavulina cristata var. incarnata: synonym binding would move from sporely_taxon_id=627117, cannot rebind to 614211"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/67495",
+      "reason": "nortaxa_1292_identity_change_pending_review",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the disposable R2 candidate: no automatic reassignment of source ids, no Sporely concept merges, no change to historical identities, pending verification of publications and COL treatment.",
+      "observed_change": "Ascocoryne solitaria: synonym binding would move from sporely_taxon_id=628208, cannot rebind to 154532"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/67718",
+      "reason": "nortaxa_1292_identity_change_pending_review",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the disposable R2 candidate: no automatic reassignment of source ids, no Sporely concept merges, no change to historical identities, pending verification of publications and COL treatment.",
+      "observed_change": "Belonidium leucostomum: synonym binding would move from sporely_taxon_id=628320, cannot rebind to 634896"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/69728",
+      "reason": "nortaxa_1292_identity_change_pending_review",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the disposable R2 candidate: no automatic reassignment of source ids, no Sporely concept merges, no change to historical identities, pending verification of publications and COL treatment.",
+      "observed_change": "Arctopeltis thuleana: synonym binding would move from sporely_taxon_id=629133, cannot rebind to 51346"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/70320",
+      "reason": "nortaxa_1292_identity_change_pending_review",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the disposable R2 candidate: no automatic reassignment of source ids, no Sporely concept merges, no change to historical identities, pending verification of publications and COL treatment.",
+      "observed_change": "Lecanora thuleana: synonym binding would move from sporely_taxon_id=629309, cannot rebind to 51346"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/70995",
+      "reason": "nortaxa_1292_identity_change_pending_review",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the disposable R2 candidate: no automatic reassignment of source ids, no Sporely concept merges, no change to historical identities, pending verification of publications and COL treatment.",
+      "observed_change": "Megalospora marginiflexa: synonym binding would move from sporely_taxon_id=629635, cannot rebind to 114873"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/75713",
+      "reason": "nortaxa_1292_identity_change_pending_review",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the disposable R2 candidate: no automatic reassignment of source ids, no Sporely concept merges, no change to historical identities, pending verification of publications and COL treatment.",
+      "observed_change": "Thyrea granatica: synonym binding would move from sporely_taxon_id=152153, cannot rebind to 167358"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/84852",
+      "reason": "nortaxa_1292_identity_change_pending_review",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the disposable R2 candidate: no automatic reassignment of source ids, no Sporely concept merges, no change to historical identities, pending verification of publications and COL treatment.",
+      "observed_change": "Coryne solitaria: synonym binding would move from sporely_taxon_id=628208, cannot rebind to 154532"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/85412",
+      "reason": "nortaxa_1292_identity_change_pending_review",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the disposable R2 candidate: no automatic reassignment of source ids, no Sporely concept merges, no change to historical identities, pending verification of publications and COL treatment.",
+      "observed_change": "Tubercularia albida: synonym binding would move from sporely_taxon_id=628208, cannot rebind to 154532"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/87475",
+      "reason": "nortaxa_1292_identity_change_pending_review",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the disposable R2 candidate: no automatic reassignment of source ids, no Sporely concept merges, no change to historical identities, pending verification of publications and COL treatment.",
+      "observed_change": "Lecanora thulensis var. feracissima: synonym binding would move from sporely_taxon_id=629133, cannot rebind to 51346"
     }
   ]
 }

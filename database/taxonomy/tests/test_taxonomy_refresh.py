@@ -294,3 +294,53 @@ def test_held_nortaxa_usage_is_withheld_but_backbone_is_not():
                                  "identifiers": ["nortaxa/nortaxa_taxon_id/1"]}}}
     assert continuity_held_usages(receipt) == {("nortaxa", "nortaxa_taxon_id", "52024")}
     assert continuity_blockers(receipt) == ["b"]
+
+
+# ----- per-release BOM corrections -------------------------------------------
+
+def _bom_row():
+    import hashlib
+    from col_xr_corrections import BOM
+    header = ("ID", "scientificName", "status", "rank", "parentID", "genus")
+    raw = b"\t".join([b"VR3R9", BOM + b"Janbinmorpha", b"accepted", b"genus", b"P", BOM + b"Janbinmorpha"]) + b"\n"
+    correction = {"line_number": 7, "row_taxon_id": "VR3R9", "raw_row_bytes": len(raw),
+                  "raw_row_sha256": hashlib.sha256(raw).hexdigest(), "expected_bom_count": 2,
+                  "bom_fields": ["scientificName", "genus"], "expected_columns": 6, "correction_id": "c1"}
+    return header, raw, correction
+
+
+def test_release_bom_correction_removes_only_approved_boms():
+    from col_xr_corrections import apply_release_bom_correction
+    header, raw, correction = _bom_row()
+    applied = apply_release_bom_correction(raw, line_number=7, normalized_header=header, correction=correction,
+                                           max_line_bytes=1 << 20, max_field_bytes=1 << 20)
+    assert applied.record.semantic_fields[1] == "Janbinmorpha"
+    assert applied.record.raw_fields[1].startswith("﻿")  # raw bytes preserved
+    with pytest.raises(AcquisitionError, match="fingerprint"):
+        apply_release_bom_correction(raw.replace(b"P", b"Q"), line_number=7, normalized_header=header,
+                                     correction=correction, max_line_bytes=1 << 20, max_field_bytes=1 << 20)
+    with pytest.raises(AcquisitionError, match="approved fields"):
+        apply_release_bom_correction(raw, line_number=7, normalized_header=header,
+                                     correction={**correction, "bom_fields": ["scientificName", "status"]},
+                                     max_line_bytes=1 << 20, max_field_bytes=1 << 20)
+
+
+def test_release_corrections_bind_archive_and_list_rows():
+    from col_xr_corrections import load_release_bom_corrections
+    policy = {"correction_policy_schema_version": 2, "approval_status": "approved", "approved_by": "owner",
+              "archive_sha256": "a" * 64, "dataset_key": 1, "release_label": "x", "member_sha256": "m",
+              "corrections": [{"line_number": 7}]}
+    assert set(load_release_bom_corrections(policy, archive_sha256="a" * 64, dataset_key=1, release_label="x")) == {7}
+    with pytest.raises(AcquisitionError, match="archive_sha256"):
+        load_release_bom_corrections(policy, archive_sha256="b" * 64, dataset_key=1, release_label="x")
+
+
+def test_usage_holds_are_listed_in_receipt(tmp_path):
+    usage = "nortaxa/nortaxa_taxon_id/128204"
+    receipt = _receipt(tmp_path, holds={usage: {"source_usage": usage, **HOLD}})
+    assert list(receipt["held_alias_conflicts"]) == [usage]
+    path = tmp_path / "holds.json"
+    path.write_text(json.dumps({"format": carry_forward.HOLDS_FORMAT,
+                                "holds": [{"record_id": "m-3", "source_usage": usage, **HOLD}]}))
+    with pytest.raises(carry_forward.HoldError, match="both"):
+        carry_forward.load_holds(path)

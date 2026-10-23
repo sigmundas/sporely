@@ -1045,6 +1045,8 @@ def compile_release(
     # Registry conflicts are collected over phases 2c and 2e and reported
     # together, so a refresh sees every identity conflict at once.
     alias_conflicts: list[dict] = []
+    held_conflicts = set(((continuity_receipt or {}).get("held_alias_conflicts") or {}))
+    held_conflicts_applied: list[dict] = []
     for proposal in sorted(cross_source_proposals,
                            key=lambda p: p.source_usage):
         if proposal.proposal_class != PROPOSAL_AUTOMATIC_EXACT:
@@ -1069,8 +1071,9 @@ def compile_release(
         except RegistryError as exc:
             if "alias conflict" not in str(exc):
                 raise CompilerError(str(exc)) from exc
-            alias_conflicts.append({"phase": "automatic_exact", "usage": "/".join(bridge_su),
-                                    "name": bridge_rec.scientific_name, "message": str(exc)})
+            entry = {"phase": "automatic_exact", "usage": "/".join(bridge_su),
+                     "name": bridge_rec.scientific_name, "message": str(exc)}
+            (held_conflicts_applied if entry["usage"] in held_conflicts else alias_conflicts).append(entry)
             continue
         auto_alias_applied[bridge_su] = evidence_class_for_reason(
             proposal.evidence.get("reason", "")
@@ -1129,10 +1132,10 @@ def compile_release(
         except RegistryError as exc:
             if "alias conflict" not in str(exc):
                 raise CompilerError(str(exc)) from exc
-            alias_conflicts.append({"phase": "synonym", "usage": "/".join(synonym_key),
-                                    "accepted": "/".join(accepted_key),
-                                    "name": synonym_rec.scientific_name if synonym_rec else "",
-                                    "message": str(exc)})
+            entry = {"phase": "synonym", "usage": "/".join(synonym_key),
+                     "accepted": "/".join(accepted_key),
+                     "name": synonym_rec.scientific_name if synonym_rec else "", "message": str(exc)}
+            (held_conflicts_applied if entry["usage"] in held_conflicts else alias_conflicts).append(entry)
             continue
         synonym_alias_applied.add(synonym_key)
     if alias_conflicts:
@@ -1732,6 +1735,8 @@ def compile_release(
                                        if r.get("status") == "held"),
                 "withheld_source_usages": sorted(continuity_withheld, key=lambda r: r["usage"]),
                 "withheld_vernacular_rows": continuity_vernaculars_withheld,
+                "held_alias_conflicts_not_rebound": sorted(held_conflicts_applied, key=lambda c: c["usage"]),
+                "held_alias_conflicts_not_seen": sorted(held_conflicts - {c["usage"] for c in held_conflicts_applied}),
                 "approved_mappings_not_applicable": sorted(
                     reviewed_only_inapplicable_records, key=lambda r: r["mapping_id"]),
             }

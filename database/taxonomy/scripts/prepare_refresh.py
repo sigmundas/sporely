@@ -291,9 +291,11 @@ def concept_impact(receipt: dict, registry_before: Path, registry_after: Path,
                                                 "FROM taxon_redlist_min WHERE taxon_id = ?")],
             }
     out = []
-    for record_id, record in sorted(receipt["records"].items()):
-        if record["status"] != "held":
-            continue
+    held = [(rid, r) for rid, r in sorted(receipt["records"].items()) if r["status"] == "held"]
+    held += [(usage, {"kind": "registry_alias_conflict", "reasons": [hold.get("observed_change", "")],
+                      "identifiers": [usage]})
+             for usage, hold in sorted((receipt.get("held_alias_conflicts") or {}).items())]
+    for record_id, record in held:
         identifiers = [tuple(i.split("/", 2)) for i in record["identifiers"]]
         taxa = sorted({before[i] for i in identifiers if i in before} | {after[i] for i in identifiers if i in after})
         out.append({

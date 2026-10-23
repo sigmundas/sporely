@@ -65,10 +65,16 @@ def load_holds(path: Path | None) -> dict[str, dict]:
         raise HoldError("holds file has an unknown format")
     holds = {}
     for hold in doc.get("holds") or []:
-        for key in ("record_id", "reason", "decided_by", "decided_at"):
-            if not str(hold.get(key, "")).strip():
+        # A hold names one reviewed record (record_id) or one source usage
+        # whose registry binding would change (source_usage, "src/ns/id").
+        target = hold.get("record_id") or hold.get("source_usage")
+        for key, value in (("record_id or source_usage", target), ("reason", hold.get("reason")),
+                           ("decided_by", hold.get("decided_by")), ("decided_at", hold.get("decided_at"))):
+            if not str(value or "").strip():
                 raise HoldError(f"hold lacks {key}: {hold}")
-        holds[hold["record_id"]] = hold
+        if hold.get("record_id") and hold.get("source_usage"):
+            raise HoldError(f"hold names both a record and a usage: {hold}")
+        holds[target] = hold
     return holds
 COMPARED_FIELDS = ("scientific_name", "rank", "taxonomic_status", "accepted", "parent", "kingdom")
 
@@ -174,6 +180,8 @@ def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_di
                   anchors: dict[int, tuple], holds: dict[str, dict] | None = None) -> dict:
     records = reviewed_records(manual_mappings, supersessions, anchors)
     holds = holds or {}
+    usage_holds = {k: v for k, v in holds.items() if v.get("source_usage")}
+    holds = {k: v for k, v in holds.items() if not v.get("source_usage")}
     unknown = sorted(set(holds) - {r["record_id"] for r in records})
     if unknown:
         raise HoldError(f"holds name records that are not approved reviewed records: {unknown}")
@@ -210,6 +218,9 @@ def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_di
         "current_pins": current_pins,
         "summary": summary,
         "carried_sha256": hashlib.sha256(json.dumps(carried).encode()).hexdigest(),
+        # Source usages whose registry binding the compile must not change
+        # (owner holds); every other alias conflict still stops the compile.
+        "held_alias_conflicts": {usage: hold for usage, hold in sorted(usage_holds.items())},
         "records": out_records,
     }
 
