@@ -1314,19 +1314,7 @@ def run_export(
     with tempfile.TemporaryDirectory(prefix="sporely_cloud_export_verify_") as scratch:
         scratch_path = Path(scratch)
         src = verify_source(artifact_gz, manifest, scratch_path)
-        if not candidate_validation_only:
-            from database.taxonomy.scripts.release_decision import (
-                ReleaseDecisionError, require_release_decision)
-            with _open_ro(src.decompressed_sqlite_path) as meta_conn:
-                approval = meta_conn.execute(
-                    "SELECT value FROM taxonomy_meta WHERE key = 'release_approval'").fetchone()
-            try:
-                require_release_decision(
-                    meta_value=approval[0] if approval else None,
-                    content_release_id=src.content_release_id,
-                    sqlite_sha256=src.sqlite_sha256, decision_path=release_decision)
-            except ReleaseDecisionError as exc:
-                raise ExportError(str(exc)) from exc
+        release_marker = _release_marker(src, release_decision, candidate_validation_only)
 
         release_id = src.content_release_id
         gen_at = generated_at or _iso_utc()
@@ -1363,6 +1351,7 @@ def run_export(
                 replace=False,
                 dry_run=True,
                 generated_at=gen_at,
+                release_marker=release_marker,
             )
             try:
                 if _existing_matches_staged(output_dir, staged):
@@ -1415,6 +1404,7 @@ def run_export(
             replace=replace,
             dry_run=False,
             generated_at=gen_at,
+            release_marker=release_marker,
         )
         return result
 
@@ -1439,6 +1429,7 @@ _DETERMINISTIC_MANIFEST_KEYS = (
     "dangling_parent_references",
     "files",
     "whole_export_sha256",
+    "release_approval",
 )
 
 
@@ -1516,6 +1507,37 @@ def _existing_matches_staged(existing_dir: Path, staged: ExportResult) -> bool:
     return True
 
 
+def _release_marker(src: "SourceContext", release_decision: Optional[Path],
+                    candidate_validation_only: bool) -> Optional[dict]:
+    """The export manifest's ``release_approval`` entry, or ``None``.
+
+    A pending (candidate_build_only) artifact is exported only with a release
+    decision bound to it (``importable: true``) or for local validation
+    (``export_use: candidate_validation_only``, ``importable: false``), which
+    an importer must refuse.
+    """
+    from database.taxonomy.scripts.release_decision import (
+        ReleaseDecisionError, require_release_decision)
+    with _open_ro(src.decompressed_sqlite_path) as meta_conn:
+        row = meta_conn.execute(
+            "SELECT value FROM taxonomy_meta WHERE key = 'release_approval'").fetchone()
+    status = row[0] if row else None
+    if not status:
+        return None
+    if candidate_validation_only and release_decision is None:
+        return {"status": status, "export_use": "candidate_validation_only", "importable": False}
+    try:
+        decision = require_release_decision(
+            meta_value=status, content_release_id=src.content_release_id,
+            sqlite_sha256=src.sqlite_sha256, decision_path=release_decision)
+    except ReleaseDecisionError as exc:
+        raise ExportError(str(exc)) from exc
+    return {"status": status, "export_use": "release", "importable": True,
+            "decision": {k: decision[k] for k in (
+                "content_release_id", "sqlite_sha256", "approved_by", "approved_at",
+                "decision_reference")}}
+
+
 def _stage_and_finalize(
     *,
     src: SourceContext,
@@ -1525,6 +1547,7 @@ def _stage_and_finalize(
     replace: bool,
     dry_run: bool,
     generated_at: str,
+    release_marker: Optional[dict] = None,
 ) -> ExportResult:
     output_parent.mkdir(parents=True, exist_ok=True)
     tmp_output = output_parent / f".{output_final_name}.staging.{os.getpid()}"
@@ -1593,6 +1616,7 @@ def _stage_and_finalize(
             policy_hashes=hash_policies(policy_dir),
             whole_export_hash=we_hash,
             generated_at=generated_at,
+            release_marker=release_marker,
         )
         manifest_bytes = (canonical_dumps(manifest_dict) + "\n").encode("utf-8")
         manifest_path = tmp_output / MANIFEST_FILENAME
@@ -1677,6 +1701,7 @@ def _build_manifest_dict(
     policy_hashes: dict[str, str],
     whole_export_hash: str,
     generated_at: str,
+    release_marker: Optional[dict] = None,
 ) -> dict:
     # Authoritative external-id namespace counts (from the namespaced file).
     ns_counts: dict[str, int] = {}
@@ -1694,7 +1719,9 @@ def _build_manifest_dict(
             key = obj["source_system"]
             legacy_source_counts[key] = legacy_source_counts.get(key, 0) + 1
 
-    return {
+    # Only artifacts carrying a release_approval marker gain the key, so the
+    # manifest of an ordinary release is byte-identical to before.
+    return ({"release_approval": release_marker} if release_marker else {}) | {
         "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
         "export_schema_version": EXPORT_SCHEMA_VERSION,
         "exporter_version": EXPORTER_VERSION,

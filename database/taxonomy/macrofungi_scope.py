@@ -611,6 +611,12 @@ def build_export(
         "source_hashes": source_hashes,
         "files": files,
     }
+    # Carry the W1 export's release marker (candidate_build_only artifacts):
+    # an importer must refuse a release_approval with importable false.
+    w1_marker = json.loads((w1_dir / "taxonomy_export_manifest.json").read_text(
+        encoding="utf-8")).get("release_approval")
+    if w1_marker:
+        export_manifest["release_approval"] = w1_marker
     (output_dir / "taxonomy_export_manifest.json").write_bytes(canonical_json_bytes(export_manifest))
     archive_path = output_dir / "scoped-export.jsonl.gz"
     dataset_order = [item["name"] for item in files]

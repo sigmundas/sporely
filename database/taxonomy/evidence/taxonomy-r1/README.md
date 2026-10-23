@@ -33,7 +33,12 @@ The artifact carries `taxonomy_meta.release_approval =
 pending:candidate_build_only`. `promote_desktop_bundle.py` and the cloud
 export refuse it without `--release-decision` naming its content_release_id
 and sqlite_sha256 (`scripts/release_decision.py`); `--candidate-validation-only`
-exports for local validation only.
+exports for local validation only. Both the W1 export manifest and the
+scoped (`macrofungi_scope.py`) manifest then carry `release_approval`
+(`export_use: candidate_validation_only`, `importable: false`, or
+`importable: true` with the bound decision). The sporely-web importer
+(`prepare-production-release-import.mjs` `verifyRelease`) does not read this
+key yet; it must refuse `importable: false` before such an export is imported.
 
 ## Fresh reference check (2026-10-23)
 

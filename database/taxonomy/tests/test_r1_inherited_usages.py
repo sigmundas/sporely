@@ -246,8 +246,70 @@ def test_candidate_only_release_is_marked_and_not_exported_for_import(tmp_path: 
     assert conn.execute("SELECT value FROM taxonomy_meta WHERE key='release_approval'"
                         ).fetchone()[0] == "pending:candidate_build_only"
     conn.close()
+    # (c) pending without a decision: refused.
     with pytest.raises(ExportError, match="candidate_build_only"):
         _export_and_scope(tmp_path, release)
+
+
+def _pending_artifact(tmp_path: Path):
+    """A pending candidate as the exporter receives it: gz + outer manifest."""
+    import gzip
+    import shutil
+    from database.taxonomy import cloud_export as ce
+
+    release, _own, _host = _release(tmp_path, "names_only", release_approval="pending",
+                                    approval_scope="candidate_build_only")
+    _db(tmp_path, release).close()
+    sqlite_path = tmp_path / "candidate.sqlite3"
+    art = tmp_path / "artifact"
+    art.mkdir()
+    gz_path = art / "tax-2026.10.23-02.sqlite3.gz"
+    with sqlite_path.open("rb") as src, gz_path.open("wb") as raw, \
+            gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as gz:
+        shutil.copyfileobj(src, gz)
+    manifest = art / "manifest.json"
+    manifest.write_text(json.dumps({
+        "manifest_schema_version": 1, "taxonomy_schema_version": 2,
+        "content_release_id": "tax-2026.10.23-02", "state": "candidate", "publication": "none",
+        "gz_artifact": gz_path.name, "gz_sha256": ce.sha256_file(gz_path),
+        "gz_bytes": gz_path.stat().st_size, "sqlite_sha256": ce.sha256_file(sqlite_path),
+        "sqlite_bytes": sqlite_path.stat().st_size}), encoding="utf-8")
+    policies = tmp_path / "policies"
+    policies.mkdir()
+    for name in ce.POLICY_HASH_TARGETS[:2]:
+        (policies / name).write_text(f"# stub {name}\n", encoding="utf-8")
+    return ce, gz_path, manifest, policies, ce.sha256_file(sqlite_path)
+
+
+def test_validation_only_export_of_a_pending_candidate_is_marked(tmp_path: Path) -> None:
+    ce, gz, manifest, policies, _sha = _pending_artifact(tmp_path)
+    out = tmp_path / "validation"
+    ce.run_export(artifact_gz=gz, manifest=manifest, output_dir=out, policy_dir=policies,
+                  generated_at="2099-01-01T00:00:00Z", candidate_validation_only=True)
+    marker = json.loads((out / ce.MANIFEST_FILENAME).read_text(encoding="utf-8"))["release_approval"]
+    assert marker == {"status": "pending:candidate_build_only",
+                      "export_use": "candidate_validation_only", "importable": False}
+
+
+def test_bound_release_decision_allows_the_export(tmp_path: Path) -> None:
+    from database.taxonomy.cloud_export import ExportError
+
+    ce, gz, manifest, policies, sha = _pending_artifact(tmp_path)
+    decision = tmp_path / "decision.json"
+    good = {"format": "sporely-taxonomy-release-decision-v1", "decision": "release_approved",
+            "content_release_id": "tax-2026.10.23-02", "sqlite_sha256": sha,
+            "approved_by": "owner", "approved_at": "2026-10-23", "decision_reference": "test"}
+    decision.write_text(json.dumps({**good, "sqlite_sha256": "0" * 64}), encoding="utf-8")
+    with pytest.raises(ExportError, match="different artifact"):
+        ce.run_export(artifact_gz=gz, manifest=manifest, output_dir=tmp_path / "x",
+                      policy_dir=policies, release_decision=decision)
+    decision.write_text(json.dumps(good), encoding="utf-8")
+    out = tmp_path / "release"
+    ce.run_export(artifact_gz=gz, manifest=manifest, output_dir=out, policy_dir=policies,
+                  generated_at="2099-01-01T00:00:00Z", release_decision=decision)
+    marker = json.loads((out / ce.MANIFEST_FILENAME).read_text(encoding="utf-8"))["release_approval"]
+    assert marker["importable"] is True and marker["export_use"] == "release"
+    assert marker["decision"]["sqlite_sha256"] == sha
 
 
 def test_redlist_lookup_follows_a_retired_id(tmp_path: Path) -> None:
