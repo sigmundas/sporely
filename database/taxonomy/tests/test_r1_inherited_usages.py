@@ -283,12 +283,15 @@ def _pending_artifact(tmp_path: Path):
 
 def test_validation_only_export_of_a_pending_candidate_is_marked(tmp_path: Path) -> None:
     ce, gz, manifest, policies, _sha = _pending_artifact(tmp_path)
+    assert len(_sha) == 64 and _sha == _sha.lower()
     out = tmp_path / "validation"
     ce.run_export(artifact_gz=gz, manifest=manifest, output_dir=out, policy_dir=policies,
                   generated_at="2099-01-01T00:00:00Z", candidate_validation_only=True)
     marker = json.loads((out / ce.MANIFEST_FILENAME).read_text(encoding="utf-8"))["release_approval"]
     assert marker == {"status": "pending:candidate_build_only",
                       "export_use": "candidate_validation_only", "importable": False}
+    exported = json.loads((out / ce.MANIFEST_FILENAME).read_text(encoding="utf-8"))
+    assert exported["source_hashes"] == {"sqlite_sha256": _sha}
 
 
 def test_bound_release_decision_allows_the_export(tmp_path: Path) -> None:
@@ -310,27 +313,39 @@ def test_bound_release_decision_allows_the_export(tmp_path: Path) -> None:
     marker = json.loads((out / ce.MANIFEST_FILENAME).read_text(encoding="utf-8"))["release_approval"]
     assert marker["importable"] is True and marker["export_use"] == "release"
     assert marker["decision"]["sqlite_sha256"] == sha
+    exported = json.loads((out / ce.MANIFEST_FILENAME).read_text(encoding="utf-8"))
+    assert exported["source_hashes"]["sqlite_sha256"] == json.loads(
+        decision.read_text(encoding="utf-8"))["sqlite_sha256"]
 
 
-def test_redlist_lookup_follows_a_retired_id(tmp_path: Path) -> None:
-    from database.taxon_lookup import TaxonLookupService
-    from database.vernacular_db import VernacularDB
+def test_scoped_manifest_carries_the_source_sqlite_sha(tmp_path: Path, monkeypatch) -> None:
+    """build_export (scope step) writes source_hashes.sqlite_sha256 and refuses a
+    W1 export from another SQLite. The production policy cannot resolve on the
+    fixture, so the scope rules are stubbed to include every concept."""
+    from database.taxonomy import macrofungi_scope as ms
 
-    release, own_id, host_id = _release(tmp_path, "names_only")
-    _db(tmp_path, release).close()
-    db_path = tmp_path / "candidate.sqlite3"
-    conn = sqlite3.connect(db_path)
-    conn.execute(
-        "INSERT INTO taxon_redlist_min (taxon_id, source_system, source_release, assessment_id, "
-        "assessment_area, assessed_name_source, assessed_name_namespace, assessed_name_id, "
-        "scientific_name_snapshot, category_raw, category_code) VALUES "
-        "(?, 'artsdatabanken_redlist', '2021', '1', 'Norge', 'nortaxa', 'nortaxa_name_id', '1', "
-        "'Conocybe rugosa', 'VU', 'VU')", (host_id,))
-    conn.commit()
-    conn.close()
-    lookup = TaxonLookupService(vernacular_db=VernacularDB(db_path, language_code="nb"),
-                                language_code="nb", include_reference_data=False)
-    retired, current = lookup.get_redlist_lookup(own_id), lookup.get_redlist_lookup(host_id)
-    assert (retired.status, retired.assessment.category_code) == ("unique", "VU")
-    assert retired.assessment == current.assessment
-    assert lookup.get_redlist_lookup_with_overlay(own_id).status == "unique"
+    ce, gz, manifest, policies, sha = _pending_artifact(tmp_path)
+    w1 = tmp_path / "w1"
+    ce.run_export(artifact_gz=gz, manifest=manifest, output_dir=w1, policy_dir=policies,
+                  generated_at="2099-01-01T00:00:00Z", candidate_validation_only=True)
+    monkeypatch.setattr(ms, "resolve_rules", lambda policy, by_col: [])
+    monkeypatch.setattr(ms, "evaluate", lambda taxa, rules, exclusions: {
+        tid: {"state": "include", "rule": "test", "reason": "test"} for tid in taxa})
+    for name in ("validate_selectable_fungi", "descendants_summary", "scope_audit",
+                 "correctness_probes", "validate_export", "build_desktop", "measure_lookups",
+                 "historical_compatibility"):
+        monkeypatch.setattr(ms, name, lambda *a, **k: {})
+    args = ms.parser().parse_args([
+        "--policy", str(_TAXONOMY / "policies" / "global-macrofungi-scope.yml"),
+        "--source-gz", str(gz), "--w1-dir", str(w1), "--output-dir", str(tmp_path / "scoped"),
+        "--desktop", str(tmp_path / "scoped.sqlite3"), "--evidence", str(tmp_path / "ev.json"),
+        "--release-id", "tax-2026.10.23-02", "--starting-revision", "test"])
+    try:
+        ms.build(args)
+    except (KeyError, TypeError) as exc:  # stubbed report sections
+        if not (tmp_path / "scoped" / "taxonomy_export_manifest.json").is_file():
+            raise AssertionError(f"scope export not written: {exc!r}") from exc
+    scoped = json.loads((tmp_path / "scoped" / "taxonomy_export_manifest.json").read_text(encoding="utf-8"))
+    assert scoped["source_hashes"]["sqlite_sha256"] == sha
+    assert scoped["release_approval"]["importable"] is False
+

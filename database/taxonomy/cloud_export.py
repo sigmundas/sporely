@@ -1417,6 +1417,7 @@ _DETERMINISTIC_MANIFEST_KEYS = (
     "taxonomy_schema_version",
     "scope_predicate_id",
     "source",
+    "source_hashes",
     "policy_hashes",
     "included_concept_count",
     "excluded_concept_count",
@@ -1734,6 +1735,9 @@ def _build_manifest_dict(
             "gz_sha256": src.gz_sha256,
             "sqlite_sha256": src.sqlite_sha256,
         },
+        # The decompressed source SQLite's SHA-256: what a release decision
+        # binds as sqlite_sha256, so an importer can check the two agree.
+        "source_hashes": {"sqlite_sha256": src.sqlite_sha256},
         "policy_hashes": dict(sorted(policy_hashes.items())),
         "included_concept_count": len(scope.concept_ids),
         "excluded_concept_count": scope.excluded_count,
