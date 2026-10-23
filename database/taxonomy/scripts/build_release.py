@@ -343,6 +343,9 @@ class Options:
     # Freeze descriptor SHA-256 of the independently reviewed set; --promote
     # requires it and refuses (no bundle writes) when the fresh freeze differs.
     expect_freeze_sha256: str | None = None
+    # Owner release decision for a candidate_build_only artifact; forwarded
+    # to promote_desktop_bundle.py, which validates it against the artifact.
+    release_decision: Path | None = None
 
 
 def _script(name: str) -> str:
@@ -677,7 +680,9 @@ def build(options: Options, run: Runner | None = None, python: str = sys.executa
                      f"not promoting: freeze {freeze_sha} is not the reviewed freeze {options.expect_freeze_sha256}")
             run("promote", [_script("promote_desktop_bundle.py"), "--frozen-dir", rel(b / "frozen"),
                             "--expect-freeze-sha256", options.expect_freeze_sha256, "--bundle-dir", rel(options.bundle_dir),
-                            "--registry-manifest", rel(REPO_ROOT / recipe.registry / "manifest.json")])
+                            "--registry-manifest", rel(REPO_ROOT / recipe.registry / "manifest.json")]
+                + (["--release-decision", str(options.release_decision.resolve())]
+                   if options.release_decision else []))
             report["promoted"] = True
     elif options.promote:
         raise BuildError("not promoting: no publication baseline for freezing")
@@ -716,6 +721,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="skip the comparison with the bundled release")
     parser.add_argument("--expect-sqlite-sha256",
                         help="SQLite SHA-256 of an earlier independent run; --promote requires equality")
+    parser.add_argument("--release-decision", type=Path, default=None,
+                        help="release decision for a candidate_build_only artifact; forwarded to promotion")
     parser.add_argument("--expect-freeze-sha256",
                         help="freeze.json SHA-256 of the reviewed frozen set; required by --promote")
     return parser
@@ -727,7 +734,8 @@ def main(argv: list[str] | None = None) -> int:
                       recipe_path=args.recipe.resolve(), archive_root=args.archive_root.resolve(),
                       promote=args.promote, compare_baseline=not args.no_baseline,
                       expect_sqlite_sha256=args.expect_sqlite_sha256,
-                      expect_freeze_sha256=args.expect_freeze_sha256)
+                      expect_freeze_sha256=args.expect_freeze_sha256,
+                      release_decision=args.release_decision)
     try:
         report = build(options)
     except BuildError as exc:

@@ -180,7 +180,7 @@ def pipeline(tmp_path, monkeypatch):
     counter = iter(range(100))
 
     def run(*, differ=False, allocate=False, promote=False, recipe=br.DEFAULT_RECIPE, bundle_dir=None,
-            expect=None, freeze_expect="reviewed"):
+            expect=None, freeze_expect="reviewed", release_decision=None):
         build_dir = tmp_path / f"build{next(counter)}"
         runner = FakeRunner(build_dir, differ=differ, allocate=allocate)
         if promote and bundle_dir is None:
@@ -193,7 +193,7 @@ def pipeline(tmp_path, monkeypatch):
             (bundle_dir/'old.gz').write_bytes(gzip.compress(baseline.read_bytes()))
         options = br.Options(release_id=RELEASE, build_dir=build_dir, recipe_path=recipe,
                              bundle_dir=bundle_dir or tmp_path / "no-bundle", promote=promote,
-                             expect_sqlite_sha256=expect,
+                             expect_sqlite_sha256=expect, release_decision=release_decision,
                              expect_freeze_sha256=(REVIEWED_FREEZE if freeze_expect == "reviewed" and promote
                                                    else (None if freeze_expect == "reviewed" else freeze_expect)))
         run.last = (build_dir, runner, bundle_dir)
@@ -350,3 +350,21 @@ def test_promotion_requires_equality_with_an_earlier_independent_run(pipeline):
     assert second["matches_expected"] and second["promoted"]
     with pytest.raises(br.BuildError, match="differs from the earlier run"):
         pipeline(promote=True, expect="00" * 32)
+
+
+def test_promote_forwards_the_release_decision(pipeline, tmp_path):
+    decision = tmp_path / "decision.json"
+    decision.write_text("{}")
+    pipeline(promote=True, release_decision=decision)
+    _build_dir, runner, _bundle = pipeline.last
+    argv = dict(runner.calls)["promote"]
+    assert argv[argv.index("--release-decision") + 1] == str(decision.resolve())
+    pipeline(promote=True)
+    assert "--release-decision" not in dict(pipeline.last[1].calls)["promote"]
+
+
+def test_the_cli_accepts_a_release_decision(tmp_path):
+    args = br.build_parser().parse_args(["--release-id", RELEASE, "--build-dir", str(tmp_path / "b"),
+                                         "--promote", "--expect-freeze-sha256", "0" * 64,
+                                         "--release-decision", str(tmp_path / "d.json")])
+    assert args.release_decision == tmp_path / "d.json"
