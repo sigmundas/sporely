@@ -1,0 +1,38 @@
+{
+  "format": "sporely-source-continuity-holds-v1",
+  "semantics": "Owner-decided holds for a source refresh. A held record's flagged relationship is not applied to the changed source record: the compile leaves the current source usage (and its direct synonyms) out, applies no mapping to it and allocates nothing for it. The original approval, its historical Sporely ids and any supersession retirement stay as they are. A hold names one record; every other flag still stops preparation. A held relationship is a publication blocker until its impact is assessed.",
+  "holds": [
+    {
+      "record_id": "taxonomy-v3-1a-nortaxa-52015-to-col-33PVS",
+      "reason": "nortaxa_species_to_coll_concept_change",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Not equivalent identities: a species-to-'coll.' change is a concept change (barcoding shows identical-looking mushrooms are distinct species). Hold the current-source relationship; keep historical ids and approvals; do not redirect species identities to aggregates.",
+      "observed_change": "NorTaxa 1.292 renames 52015 Cystolepiota moelleri to 'Cystolepiota moelleri coll.'"
+    },
+    {
+      "record_id": "taxonomy-v3-1a-nortaxa-52025-to-col-38HQG",
+      "reason": "nortaxa_species_to_coll_concept_change",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Not equivalent identities: a species-to-'coll.' change is a concept change (barcoding shows identical-looking mushrooms are distinct species). Hold the current-source relationship; keep historical ids and approvals; do not redirect species identities to aggregates.",
+      "observed_change": "NorTaxa 1.292 renames 52025 Echinoderma jacobi to 'Echinoderma jacobi coll.'"
+    },
+    {
+      "record_id": "taxonomy-v3-2-nortaxa-52024-superseded-by-col-38HQF",
+      "reason": "nortaxa_species_to_coll_concept_change",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Not equivalent identities: a species-to-'coll.' change is a concept change (barcoding shows identical-looking mushrooms are distinct species). Hold the current-source relationship; keep historical ids and approvals; do not redirect species identities to aggregates.",
+      "observed_change": "NorTaxa 1.292 renames 52024 Echinoderma hystrix to 'Echinoderma hystrix coll.'"
+    },
+    {
+      "record_id": "taxonomy-v3-2-nortaxa-55440-superseded-by-col-34XGY",
+      "reason": "nortaxa_species_to_coll_concept_change",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Not equivalent identities: a species-to-'coll.' change is a concept change (barcoding shows identical-looking mushrooms are distinct species). Hold the current-source relationship; keep historical ids and approvals; do not redirect species identities to aggregates.",
+      "observed_change": "NorTaxa 1.292 renames 55440 Dermoloma cuneifolium to 'Dermoloma cuneifolium coll.' and changes authorship '(Fr. : Fr.) Bon' -> '(Fr.) Singer ex Bon'"
+    }
+  ]
+}

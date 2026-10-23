@@ -177,6 +177,168 @@ def identity_comparison(previous_sqlite: Path, candidate_sqlite: Path) -> dict:
             "newly_retired": len(set(new_retired) - set(old_retired))}
 
 
+# ----- candidate metrics -----------------------------------------------------
+
+VERNACULAR_LANGUAGES = ("nb", "nn", "sv", "en")
+
+
+def sqlite_metrics(path: Path) -> dict:
+    with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as conn:
+        q = lambda sql, *a: conn.execute(sql, a).fetchall()
+        dup = {rank: q("SELECT count(*), coalesce(sum(c),0) FROM (SELECT count(*) c FROM taxon_min "
+                       "WHERE taxon_rank = ? GROUP BY lower(canonical_scientific_name) HAVING c > 1)", rank)[0]
+               for rank in ("species", "genus")}
+        return {
+            "taxa": q("SELECT count(*) FROM taxon_min")[0][0],
+            "accepted_concepts": q("SELECT count(*) FROM taxon_min WHERE taxonomic_status = 'accepted'")[0][0],
+            "identical_label_duplicates": {rank: {"labels": v[0], "rows": v[1]} for rank, v in dup.items()},
+            "vernacular_rows": {lang: q("SELECT count(*) FROM vernacular_min WHERE language_code = ?", lang)[0][0]
+                                for lang in VERNACULAR_LANGUAGES},
+            "vernacular_concepts": {lang: q("SELECT count(DISTINCT taxon_id) FROM vernacular_min "
+                                            "WHERE language_code = ?", lang)[0][0] for lang in VERNACULAR_LANGUAGES},
+            "redlist_rows_resolved": q("SELECT count(*) FROM taxon_redlist_min WHERE taxon_id IS NOT NULL")[0][0],
+            "supersession_rows": q("SELECT count(*) FROM taxon_supersession_min")[0][0],
+        }
+
+
+def _supersession_ids(path: Path) -> set[str]:
+    with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as conn:
+        try:
+            return {r[0] for r in conn.execute("SELECT supersession_id FROM taxon_supersession_min")}
+        except sqlite3.OperationalError:
+            return set()
+
+
+def _external_map(path: Path) -> dict[tuple, set[int]]:
+    out: dict[tuple, set[int]] = {}
+    with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as conn:
+        for taxon, system, namespace, value in conn.execute(
+                "SELECT taxon_id, source_system, namespace, external_id FROM taxon_external_id_text_min"):
+            out.setdefault((system, namespace, value), set()).add(taxon)
+        for taxon, system, value in conn.execute(
+                "SELECT taxon_id, source_system, CAST(external_id AS TEXT) FROM taxon_external_id_min"):
+            out.setdefault((system, "int", value), set()).add(taxon)
+    return out
+
+
+def external_id_changes(previous: Path, candidate: Path) -> dict:
+    old, new = _external_map(previous), _external_map(candidate)
+    out: dict[str, dict[str, int]] = {}
+    for key in old.keys() | new.keys():
+        kind = ("lost" if key not in new else "gained" if key not in old
+                else "retargeted" if old[key] != new[key] else None)
+        if kind:
+            bucket = out.setdefault(f"{key[0]}/{key[1]}", {"lost": 0, "gained": 0, "retargeted": 0})
+            bucket[kind] += 1
+    return dict(sorted(out.items()))
+
+
+def compare_metrics(previous: Path, candidate: Path) -> dict:
+    a, b = sqlite_metrics(previous), sqlite_metrics(candidate)
+    prev_sup, cand_sup = _supersession_ids(previous), _supersession_ids(candidate)
+    def delta(x, y):
+        return {k: delta(x[k], y.get(k)) for k in x} if isinstance(x, dict) else {"previous": x, "candidate": y,
+                                                                                    "delta": (y or 0) - (x or 0)}
+    return {"metrics": delta(a, b),
+            "supersessions_retained": len(prev_sup & cand_sup), "supersessions_previous": len(prev_sup),
+            "supersessions_dropped": sorted(prev_sup - cand_sup)[:50],
+            "external_ids": external_id_changes(previous, candidate)}
+
+
+def supersession_groups(ledger: dict, candidate: Path) -> dict:
+    present = _supersession_ids(candidate)
+    groups: dict[str, dict[str, int]] = {}
+    for entry in ledger.get("supersessions") or []:
+        group = ("r1_pending_release_decision" if entry.get("release_approval") == "pending"
+                 else "approved_earlier")
+        bucket = groups.setdefault(group, {"total": 0, "retained": 0})
+        bucket["total"] += 1
+        bucket["retained"] += entry["supersession_id"] in present
+    return groups
+
+
+def concept_impact(receipt: dict, registry_before: Path, registry_after: Path,
+                   previous: Path, candidate: Path) -> list[dict]:
+    """What happens to every concept a held relationship touches."""
+    def lookup(path):
+        index: dict[tuple, int] = {}
+        with path.open(encoding="utf-8") as handle:
+            for line in handle:
+                row = json.loads(line)
+                if "sporely_taxon_id" in row:
+                    index[(row["source"], row["namespace"], row["identifier"])] = int(row["sporely_taxon_id"])
+        return index
+    before, after = lookup(registry_before), lookup(registry_after)
+
+    def describe(path: Path, taxon: int) -> dict:
+        with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as conn:
+            q = lambda sql: conn.execute(sql, (taxon,)).fetchall()
+            row = q("SELECT canonical_scientific_name, taxon_rank, taxonomic_status, canonical_source_system, "
+                    "canonical_external_id FROM taxon_min WHERE taxon_id = ?")
+            retired = q("SELECT current_taxon_id, supersession_id FROM taxon_supersession_min WHERE retired_taxon_id = ?")
+            return {
+                "live": bool(row), "taxon_min": list(row[0]) if row else None,
+                "retired_to": list(retired[0]) if retired else None,
+                "external_ids": sorted(f"{s}/{n}/{v}" for s, n, v in q(
+                    "SELECT source_system, namespace, external_id FROM taxon_external_id_text_min WHERE taxon_id = ?"))
+                + sorted(f"{s}/{v}" for s, v in q(
+                    "SELECT source_system, external_id FROM taxon_external_id_min WHERE taxon_id = ?")),
+                "scientific_names": sorted(f"{l}:{n}:{s}" for l, n, s in q(
+                    "SELECT language_code, scientific_name, source FROM scientific_name_min WHERE taxon_id = ?")),
+                "vernaculars": sorted(f"{l}:{n}" for l, n in q(
+                    "SELECT language_code, vernacular_name FROM vernacular_min WHERE taxon_id = ?")),
+                "redlist": [list(r) for r in q("SELECT assessment_area, category_code, scientific_name_snapshot "
+                                                "FROM taxon_redlist_min WHERE taxon_id = ?")],
+            }
+    out = []
+    for record_id, record in sorted(receipt["records"].items()):
+        if record["status"] != "held":
+            continue
+        identifiers = [tuple(i.split("/", 2)) for i in record["identifiers"]]
+        taxa = sorted({before[i] for i in identifiers if i in before} | {after[i] for i in identifiers if i in after})
+        out.append({
+            "record_id": record_id, "kind": record["kind"], "reasons": record["reasons"],
+            "identifiers": {"/".join(i): {"registry_before": before.get(i), "registry_after": after.get(i)}
+                            for i in identifiers},
+            "new_allocation_for_held_usage": any(i not in before and i in after for i in identifiers),
+            "concepts": {str(t): {"previous": describe(previous, t), "candidate": describe(candidate, t)} for t in taxa},
+        })
+    return out
+
+
+def col_churn(previous_dir: Path, current_dir: Path, archive: Path, anchors: dict[int, tuple],
+              receipt: dict) -> dict:
+    """Real COL id churn between the two COL inputs. ``col:sourceID`` of the
+    vanished usages is read from the previous archive (provenance only);
+    replacement candidates stay report-only."""
+    import zipfile
+    old = {v for (_, v) in _snapshot_all(previous_dir)}
+    new = {v for (_, v) in _snapshot_all(current_dir)}
+    missing = old - new
+    anchored = {ident[2] for ident in anchors.values() if ident[0] == "col_xr"}
+    reviewed = {i.split("/", 2)[2] for r in receipt["records"].values() for i in r["identifiers"]
+                if i.startswith("col_xr/")}
+    source_ids: dict[str, int] = {}
+    if missing and archive.is_file():
+        with zipfile.ZipFile(archive) as z:
+            member = next(n for n in z.namelist() if n.casefold().endswith("nameusage.tsv"))
+            with z.open(member) as handle:
+                header = handle.readline().decode("utf-8-sig").rstrip("\r\n").split("\t")
+                id_col = header.index("col:ID")
+                src_col = header.index("col:sourceID") if "col:sourceID" in header else None
+                for raw in handle:
+                    fields = raw.decode("utf-8", "replace").rstrip("\r\n").split("\t")
+                    if len(fields) > id_col and fields[id_col] in missing:
+                        key = fields[src_col] if src_col is not None and len(fields) > src_col else ""
+                        source_ids[key or "(none)"] = source_ids.get(key or "(none)", 0) + 1
+    return {"previous_usages": len(old), "current_usages": len(new), "vanished": len(missing),
+            "new": len(new - old), "vanished_registry_anchors": len(missing & anchored),
+            "registry_col_anchors": len(anchored), "vanished_reviewed_targets": len(missing & reviewed),
+            "reviewed_col_targets": len(reviewed),
+            "vanished_by_source_id": dict(sorted(source_ids.items(), key=lambda kv: -kv[1])[:15]),
+            "vanished_nortaxa_2030": source_ids.get("2030", 0)}
+
+
 # ----- report ----------------------------------------------------------------
 
 def write_report(build_dir: Path, report: dict) -> None:
@@ -184,7 +346,8 @@ def write_report(build_dir: Path, report: dict) -> None:
         json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
     lines = [f"# Taxonomy refresh {report['release_id']}", "",
              f"Outcome: **{report['outcome']}**" + (f" — {report['stop_reason']}" if report.get("stop_reason") else ""), ""]
-    for section in ("acquisition", "source_diffs", "continuity", "build", "identity", "coverage", "publication"):
+    for section in ("acquisition", "source_diffs", "continuity", "identity_conflicts", "build", "identity", "comparison",
+                    "held_concept_impact", "col_churn", "coverage", "publication"):
         if section in report:
             lines += [f"## {section}", "", "```json",
                       json.dumps(report[section], indent=1, sort_keys=True, ensure_ascii=False)[:6000], "```", ""]
@@ -270,10 +433,12 @@ def prepare(args: argparse.Namespace) -> dict:
             previous_pins=previous_pins, current_pins=current_pins,
             manual_mappings=json.loads((REPO_ROOT / recipe["policies"]["manual_mappings"]).read_text()),
             supersessions=json.loads((REPO_ROOT / recipe["policies"]["concept_supersessions"]).read_text()),
-            anchors=carry_forward.registry_anchors(registry_path))
+            anchors=carry_forward.registry_anchors(registry_path),
+            holds=carry_forward.load_holds(args.holds))
         receipt_path = work / "continuity-receipt.json"
         receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
         flagged = {rid: r for rid, r in receipt["records"].items() if r["status"] == "flagged"}
+        held = {rid: r for rid, r in receipt["records"].items() if r["status"] == "held"}
         reason_counts: dict[str, int] = {}
         for record in flagged.values():
             for reason in record["reasons"]:
@@ -285,6 +450,7 @@ def prepare(args: argparse.Namespace) -> dict:
             "summary": receipt["summary"], "flag_reasons": dict(sorted(reason_counts.items())),
             "flagged_blocking": carry_forward_blockers(receipt),
             "flagged_examples": dict(list(sorted(flagged.items()))[:25]),
+            "held_by_owner_decision": held,
             "col_churn_candidates_report_only": col_churn_candidates(
                 receipt, previous_dirs["col_xr"], current_dirs["col_xr"]),
         }
@@ -302,6 +468,11 @@ def prepare(args: argparse.Namespace) -> dict:
             try:
                 return build_release.build(options, python=args.python)
             except build_release.BuildError as exc:
+                conflicts = registry_conflicts(build_dir / name / "logs" / "compileA.err")
+                if conflicts:
+                    report["identity_conflicts"] = conflicts
+                    raise RefreshStop(f"build {name}: {len(conflicts)} registry alias conflicts (source usages "
+                                      "bound to one Sporely id would move to another); see identity_conflicts") from exc
                 raise RefreshStop(f"build {name} failed: {str(exc)[-1500:]}") from exc
         build_report = run_build("build-1", recipe)
         report["build"] = {"build-1": _build_summary(build_report)}
@@ -320,8 +491,21 @@ def prepare(args: argparse.Namespace) -> dict:
         report["build"]["reviewed_identity_only"] = diagnostics.get("counts", {}).get("reviewed_identity_only_sources")
         candidate = final / f"{args.release_id}-A.sqlite3"
         report["identity"] = {"vs_previous": identity_comparison(previous_sqlite, candidate)}
+        report["comparison"] = {"vs_previous": compare_metrics(previous_sqlite, candidate)}
         for label, path in (args.compare_sqlite or []):
-            report["identity"][f"vs_{label}"] = identity_comparison(_open_sqlite(Path(path), work), candidate)
+            other = _open_sqlite(Path(path), work)
+            report["identity"][f"vs_{label}"] = identity_comparison(other, candidate)
+            report["comparison"][f"vs_{label}"] = compare_metrics(other, candidate)
+        report["comparison"]["supersession_groups"] = supersession_groups(
+            json.loads((REPO_ROOT / recipe["policies"]["concept_supersessions"]).read_text()), candidate)
+        report["held_concept_impact"] = concept_impact(receipt, registry_path, final / "registry-A.jsonl",
+                                                       previous_sqlite, candidate)
+        if "col_xr" in overrides:
+            old_col = next((s for s in json.loads(args.previous_recipe.read_text())["sources"]
+                            if s["code"] == "col_xr"), None)
+            report["col_churn"] = col_churn(previous_dirs["col_xr"], current_dirs["col_xr"],
+                                            args.archive_root.resolve() / old_col["release_dir"] / "archive.zip",
+                                            carry_forward.registry_anchors(registry_path), receipt)
         report["coverage"] = {"candidate": build_report["coverage"]["candidate"],
                               "delta_vs_bundled": build_report["coverage"].get("delta"),
                               "bundled_release_id": build_report["coverage"].get("baseline_release_id")}
@@ -355,8 +539,9 @@ def prepare(args: argparse.Namespace) -> dict:
         report["publication"].update({
             "release_approval_meta": {k: v for k, v in meta.items() if "approval" in k or k in ("state", "publication")},
             "blockers": ([f"{len(unexplained)} concepts stop being live without a supersession"] if unexplained else [])
-                        + ([f"{sum(1 for r in receipt['records'].values() if r['status'] == 'flagged')} "
-                            "reviewed records flagged (Dyntaxa ones unapplied)"] if flagged else [])
+                        + ([f"{len(flagged)} reviewed records flagged (Dyntaxa ones unapplied)"] if flagged else [])
+                        + ([f"{len(held)} relationships held by owner decision; impact must be assessed "
+                            "(see held_concept_impact)"] if held else [])
                         + ["release decision required for the exact frozen artifact (candidate_build_only "
                            "approvals pending) before promote/export/import"],
         })
@@ -365,6 +550,19 @@ def prepare(args: argparse.Namespace) -> dict:
         report["stop_reason"] = str(stop)
     write_report(build_dir, report)
     return report
+
+
+def registry_conflicts(err_log: Path) -> list[dict]:
+    """The compiler's collected registry alias conflicts, from its error log."""
+    if not err_log.is_file():
+        return []
+    text = err_log.read_text(encoding="utf-8", errors="replace")
+    if "registry alias conflict" not in text or "[" not in text:
+        return []
+    try:
+        return json.loads(text[text.index("["):text.rindex("]") + 1])
+    except ValueError:
+        return []
 
 
 def carry_forward_blockers(receipt: dict) -> list[str]:
@@ -396,6 +594,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="new source release dir (repository-relative); repeatable")
     parser.add_argument("--archive-root", type=Path, required=True,
                         help="tree holding <release_dir>/archive.zip for every recipe source and the workbook")
+    parser.add_argument("--holds", type=Path, default=None,
+                        help="owner-decided continuity holds (named records quarantined, not applied)")
     parser.add_argument("--fetch", action="store_true",
                         help="run an approved acquisition when a new source archive is missing")
     parser.add_argument("--compare-sqlite", nargs=2, action="append", metavar=("LABEL", "PATH"),

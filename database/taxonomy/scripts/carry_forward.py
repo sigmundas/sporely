@@ -47,6 +47,29 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from compile_release import _iter_taxa  # noqa: E402
 
 RECEIPT_FORMAT = "sporely-source-continuity-receipt-v1"
+HOLDS_FORMAT = "sporely-source-continuity-holds-v1"
+
+
+class HoldError(ValueError):
+    pass
+
+
+def load_holds(path: Path | None) -> dict[str, dict]:
+    """Owner-decided holds: named records whose flagged relationship is
+    quarantined instead of stopping the refresh. Each needs a reason and a
+    decision; a hold never applies to any record it does not name."""
+    if path is None:
+        return {}
+    doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    if doc.get("format") != HOLDS_FORMAT:
+        raise HoldError("holds file has an unknown format")
+    holds = {}
+    for hold in doc.get("holds") or []:
+        for key in ("record_id", "reason", "decided_by", "decided_at"):
+            if not str(hold.get(key, "")).strip():
+                raise HoldError(f"hold lacks {key}: {hold}")
+        holds[hold["record_id"]] = hold
+    return holds
 COMPARED_FIELDS = ("scientific_name", "rank", "taxonomic_status", "accepted", "parent", "kingdom")
 
 
@@ -148,8 +171,12 @@ def registry_anchors(registry_jsonl: Path) -> dict[int, tuple[str, str, str]]:
 
 def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_dirs: dict[str, Path],
                   previous_pins: dict, current_pins: dict, manual_mappings: dict, supersessions: dict,
-                  anchors: dict[int, tuple]) -> dict:
+                  anchors: dict[int, tuple], holds: dict[str, dict] | None = None) -> dict:
     records = reviewed_records(manual_mappings, supersessions, anchors)
+    holds = holds or {}
+    unknown = sorted(set(holds) - {r["record_id"] for r in records})
+    if unknown:
+        raise HoldError(f"holds name records that are not approved reviewed records: {unknown}")
     wanted = {identifier for record in records for identifier in record["identifiers"]}
     old = load_index(previous_dirs.values(), wanted)
     new = load_index(current_dirs.values(), wanted)
@@ -163,10 +190,15 @@ def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_di
             "kind": record["kind"], "approval_sha256": record["approval_sha256"],
             "identifiers": ["/".join(i) for i in record["identifiers"]],
             "status": "flagged" if reasons else "carried", "reasons": reasons}
+        hold = holds.get(record["record_id"])
+        if hold is not None:
+            if not reasons:
+                raise HoldError(f"hold on {record['record_id']} is stale: the record is carried")
+            out_records[record["record_id"]].update(status="held", hold=hold)
     carried = sorted(rid for rid, r in out_records.items() if r["status"] == "carried")
     summary: dict[str, dict[str, int]] = {}
     for record in out_records.values():
-        bucket = summary.setdefault(record["kind"], {"carried": 0, "flagged": 0})
+        bucket = summary.setdefault(record["kind"], {"carried": 0, "flagged": 0, "held": 0})
         bucket[record["status"]] += 1
     return {
         "format": RECEIPT_FORMAT,
@@ -193,6 +225,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--concept-supersessions", type=Path, required=True)
     parser.add_argument("--registry", type=Path, required=True, help="assembled registry jsonl")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--holds", type=Path, default=None, help="owner-decided holds file")
     args = parser.parse_args(argv)
     pairs = lambda values: {v.split("=", 1)[0]: Path(v.split("=", 1)[1]) for v in values}
     receipt = build_receipt(
@@ -200,7 +233,7 @@ def main(argv: list[str] | None = None) -> int:
         previous_pins=json.loads(args.previous_pins.read_text()), current_pins=json.loads(args.current_pins.read_text()),
         manual_mappings=json.loads(args.manual_mappings.read_text()),
         supersessions=json.loads(args.concept_supersessions.read_text()),
-        anchors=registry_anchors(args.registry))
+        anchors=registry_anchors(args.registry), holds=load_holds(args.holds))
     args.output.write_text(json.dumps(receipt, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
     print(json.dumps(receipt["summary"], sort_keys=True))
     return 0

@@ -151,7 +151,7 @@ MAPPINGS = {"mappings": [
         "target": {"source_usage": {"source": "col_xr", "namespace": "col_usage_id", "identifier": "C9"}}}]}
 
 
-def _receipt(tmp_path):
+def _receipt(tmp_path, holds=None):
     col = _norm(tmp_path, "col", [_row("col_xr", "col_usage_id", f"C{n}", f"Genus sp{n}") for n in range(1, 6)])
     old = _norm(tmp_path, "dyn-old", [
         _row("dyntaxa", "dyntaxa_taxon_id", "T:1", "Genus sp1"),
@@ -171,7 +171,7 @@ def _receipt(tmp_path):
     return carry_forward.build_receipt(
         release_id="tax-2026.10.23-02", previous_dirs={"col_xr": col, "dyntaxa": old},
         current_dirs={"col_xr": col, "dyntaxa": new}, previous_pins=pins("1"), current_pins=pins("2"),
-        manual_mappings=MAPPINGS, supersessions={"supersessions": []}, anchors={})
+        manual_mappings=MAPPINGS, supersessions={"supersessions": []}, anchors={}, holds=holds)
 
 
 def test_receipt_carries_unchanged_and_typography_and_flags_changes(tmp_path):
@@ -183,7 +183,7 @@ def test_receipt_carries_unchanged_and_typography_and_flags_changes(tmp_path):
     assert any(r.endswith("authorship_changed") for r in records["m-4"]["reasons"])
     assert {r.rsplit(":", 1)[1] for r in records["m-5"]["reasons"]} >= {"taxonomic_status_changed", "accepted_changed"}
     assert "rej" not in records
-    assert receipt["summary"]["dyntaxa_mapping"] == {"carried": 2, "flagged": 3}
+    assert receipt["summary"]["dyntaxa_mapping"] == {"carried": 2, "flagged": 3, "held": 0}
 
 
 def test_missing_and_ambiguous_identifiers_are_flagged():
@@ -263,3 +263,34 @@ def test_identity_comparison_separates_supersession_from_unexplained(tmp_path):
     result = prepare_refresh.identity_comparison(db("a", [1, 2, 3], []), db("b", [1, 4], [(2, 1)]))
     assert result["stopped_by_supersession"] == 1 and result["stopped_unexplained"] == [3]
     assert result["new_live"] == 1
+
+
+HOLD = {"reason": "nortaxa_species_to_coll_concept_change", "decided_by": "owner", "decided_at": "2026-10-23"}
+
+
+def test_hold_quarantines_only_the_named_flagged_record(tmp_path):
+    receipt = _receipt(tmp_path, holds={"m-3": {"record_id": "m-3", **HOLD}})
+    assert receipt["records"]["m-3"]["status"] == "held"
+    assert receipt["records"]["m-4"]["status"] == "flagged"  # other flags are untouched
+
+
+def test_stale_or_unknown_holds_are_refused(tmp_path):
+    with pytest.raises(carry_forward.HoldError, match="stale"):
+        _receipt(tmp_path, holds={"m-1": {"record_id": "m-1", **HOLD}})
+    (tmp_path / "x").mkdir()
+    with pytest.raises(carry_forward.HoldError, match="not approved"):
+        _receipt(tmp_path / "x", holds={"nope": {"record_id": "nope", **HOLD}})
+    path = tmp_path / "holds.json"
+    path.write_text(json.dumps({"format": carry_forward.HOLDS_FORMAT, "holds": [{"record_id": "m-3"}]}))
+    with pytest.raises(carry_forward.HoldError, match="reason"):
+        carry_forward.load_holds(path)
+
+
+def test_held_nortaxa_usage_is_withheld_but_backbone_is_not():
+    from compile_release import continuity_held_usages
+    receipt = {"records": {"a": {"status": "held", "kind": "supersession",
+                                 "identifiers": ["col_xr/col_usage_id/C1", "nortaxa/nortaxa_taxon_id/52024"]},
+                           "b": {"status": "flagged", "kind": "nortaxa_mapping",
+                                 "identifiers": ["nortaxa/nortaxa_taxon_id/1"]}}}
+    assert continuity_held_usages(receipt) == {("nortaxa", "nortaxa_taxon_id", "52024")}
+    assert continuity_blockers(receipt) == ["b"]

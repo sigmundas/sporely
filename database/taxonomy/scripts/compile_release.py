@@ -431,6 +431,22 @@ def continuity_inapplicable(mapping: "ManualMapping", receipt: dict) -> str | No
     return None
 
 
+def continuity_held_usages(receipt: dict | None) -> set[tuple[str, str, str]]:
+    """Current non-backbone source usages of owner-held records. The compile
+    leaves them (and their direct synonyms) out of its inputs, so a held
+    relationship is not applied to the changed source record; supersessions
+    themselves (retirements of historical ids) stay applied."""
+    held: set[tuple[str, str, str]] = set()
+    for record in (receipt or {}).get("records", {}).values():
+        if record.get("status") != "held":
+            continue
+        for identifier in record.get("identifiers") or []:
+            source, namespace, value = identifier.split("/", 2)
+            if source != BACKBONE_SOURCE:
+                held.add((source, namespace, value))
+    return held
+
+
 def continuity_blockers(receipt: dict | None) -> list[str]:
     """Flagged NorTaxa mappings and supersessions: these bind or retire ids
     without a pin check, so a flagged one stops the compile for review."""
@@ -743,6 +759,35 @@ def compile_release(
             p for p in normalized_source_dirs if _read_report(p).source_code == source_code
         )
         per_source_records[source_code] = list(_iter_taxa(source_dir))
+    compiled_source_pins = {
+        code: (f"{code}:{_release_string(report.source_release)}",
+               report.archive_sha256)
+        for code, report in source_reports.items()
+    }
+    continuity_receipt = load_continuity_receipt(continuity_receipt_path, compiled_source_pins)
+    held_usages = continuity_held_usages(continuity_receipt)
+    continuity_withheld: list[dict] = []
+    withheld_core_rows: set[tuple[str, str, str]] = set()
+    continuity_vernaculars_withheld = 0
+    if held_usages:
+        for source_code, records in per_source_records.items():
+            kept = []
+            for record in records:
+                key = (record.source_code, record.taxon_id_namespace, record.taxon_id_value)
+                # The accepted reference is a same-source taxonID under its own
+                # namespace (e.g. nortaxa_accepted_name_usage_id): match the value.
+                accepted_value = str((record.accepted_name_usage_id or {}).get("value") or "")
+                accepted_key = next((h for h in held_usages if h[0] == record.source_code
+                                     and h[2] == accepted_value and accepted_value != key[2]), None)
+                if key in held_usages or accepted_key is not None:
+                    withheld_core_rows.add((record.source_code, record.core_row_id_namespace,
+                                            record.core_row_id_value))
+                    continuity_withheld.append({"usage": "/".join(key), "name": record.scientific_name,
+                                                "held_via": "/".join(key if key in held_usages else accepted_key)})
+                    continue
+                kept.append(record)
+            per_source_records[source_code] = kept
+    for source_code in source_reports:
         all_records.extend(per_source_records[source_code])
 
     # Cross-source usage index for manual-mapping target resolution and for
@@ -820,12 +865,6 @@ def compile_release(
     # Apply approved manual exact mappings first, so their target IDs (either
     # pre-existing anchors or targets to be allocated) are recorded before
     # any source-native allocation.
-    compiled_source_pins = {
-        code: (f"{code}:{_release_string(report.source_release)}",
-               report.archive_sha256)
-        for code, report in source_reports.items()
-    }
-    continuity_receipt = load_continuity_receipt(continuity_receipt_path, compiled_source_pins)
     blockers = continuity_blockers(continuity_receipt)
     if blockers:
         raise CompilerError(
@@ -837,6 +876,10 @@ def compile_release(
     approved_exact = []
     for m in manual_mappings:
         if m.relationship != "exact" or m.review_status != "approved":
+            continue
+        if m.source_usage in held_usages:
+            reviewed_only_inapplicable_records.append(
+                {"mapping_id": m.mapping_id, "source": m.source_usage[0], "reason": "held_by_owner_decision"})
             continue
         if m.source_usage[0] in REVIEWED_IDENTITY_ONLY_SOURCES:
             reason = reviewed_only_mapping_inapplicable(m, compiled_source_pins)
@@ -999,6 +1042,9 @@ def compile_release(
     # the proposal class — is what a projection needs in order to apply
     # `mapping_policy.authoritative_bridge_emission` without reclassifying.
     auto_alias_applied: dict[tuple[str, str, str], str] = {}
+    # Registry conflicts are collected over phases 2c and 2e and reported
+    # together, so a refresh sees every identity conflict at once.
+    alias_conflicts: list[dict] = []
     for proposal in sorted(cross_source_proposals,
                            key=lambda p: p.source_usage):
         if proposal.proposal_class != PROPOSAL_AUTOMATIC_EXACT:
@@ -1021,7 +1067,11 @@ def compile_release(
                 first_seen_source_release=_release_string(bridge_rec.source_release),
             )
         except RegistryError as exc:
-            raise CompilerError(str(exc)) from exc
+            if "alias conflict" not in str(exc):
+                raise CompilerError(str(exc)) from exc
+            alias_conflicts.append({"phase": "automatic_exact", "usage": "/".join(bridge_su),
+                                    "name": bridge_rec.scientific_name, "message": str(exc)})
+            continue
         auto_alias_applied[bridge_su] = evidence_class_for_reason(
             proposal.evidence.get("reason", "")
         )
@@ -1077,8 +1127,19 @@ def compile_release(
                 ),
             )
         except RegistryError as exc:
-            raise CompilerError(str(exc)) from exc
+            if "alias conflict" not in str(exc):
+                raise CompilerError(str(exc)) from exc
+            alias_conflicts.append({"phase": "synonym", "usage": "/".join(synonym_key),
+                                    "accepted": "/".join(accepted_key),
+                                    "name": synonym_rec.scientific_name if synonym_rec else "",
+                                    "message": str(exc)})
+            continue
         synonym_alias_applied.add(synonym_key)
+    if alias_conflicts:
+        raise CompilerError(
+            f"{len(alias_conflicts)} registry alias conflict(s): source usages already bound to one "
+            f"Sporely id would be rebound to another: "
+            + json.dumps(sorted(alias_conflicts, key=lambda c: c["usage"]), ensure_ascii=False))
 
     # Persist registry BEFORE emitting outputs, so a crash after registry
     # flush leaves the identity commitment intact and re-runs are idempotent.
@@ -1404,6 +1465,9 @@ def compile_release(
                     str(entry["core_row_id"]["value"]),
                 )
                 sporely_id = core_row_id_to_sporely.get(key)
+                if sporely_id is None and key in withheld_core_rows:
+                    continuity_vernaculars_withheld += 1
+                    continue
                 if sporely_id is None:
                     known = source_known_core_row_ids.get(
                         entry["source_code"], set()
@@ -1664,6 +1728,10 @@ def compile_release(
                 "receipt_release_id": continuity_receipt.get("release_id"),
                 "receipt_carried_sha256": continuity_receipt.get("carried_sha256"),
                 "approved_mappings_applied_by_continuity": dict(sorted(continuity_applied.items())),
+                "held_records": sorted(rid for rid, r in continuity_receipt.get("records", {}).items()
+                                       if r.get("status") == "held"),
+                "withheld_source_usages": sorted(continuity_withheld, key=lambda r: r["usage"]),
+                "withheld_vernacular_rows": continuity_vernaculars_withheld,
                 "approved_mappings_not_applicable": sorted(
                     reviewed_only_inapplicable_records, key=lambda r: r["mapping_id"]),
             }
