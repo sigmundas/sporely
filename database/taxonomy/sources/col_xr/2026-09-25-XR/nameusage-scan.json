@@ -1,7 +1,68 @@
 {
-  "accepted_count": 5237496,
-  "applied_correction_count": 0,
-  "applied_corrections": [],
+  "accepted_count": 5237501,
+  "applied_correction_count": 5,
+  "applied_corrections": [
+    {
+      "correction_id": "col-xr-2026-09-25-nameusage-5BK77-bom-v1",
+      "fields": [
+        "namePublishedInPage"
+      ],
+      "line": 367823,
+      "raw_bytes_preserved": true,
+      "raw_row_sha256": "91c4aa71cd4ea70d5c0c55b23dfaa92e60aa5bf76667ca8fcccdecaf5b14e0c0",
+      "removed_code_point_count": 2,
+      "row_taxon_id": "5BK77"
+    },
+    {
+      "correction_id": "col-xr-2026-09-25-nameusage-VR3R9-bom-v1",
+      "fields": [
+        "scientificName",
+        "uninomial"
+      ],
+      "line": 2090652,
+      "raw_bytes_preserved": true,
+      "raw_row_sha256": "a96a588fcbec1b1df30589acd103cc7d10b993cb5129f5686a1ddea1bac5a8f7",
+      "removed_code_point_count": 2,
+      "row_taxon_id": "VR3R9"
+    },
+    {
+      "correction_id": "col-xr-2026-09-25-nameusage-BOLD.AHC6816-bom-v1",
+      "fields": [
+        "genus",
+        "species"
+      ],
+      "line": 5632468,
+      "raw_bytes_preserved": true,
+      "raw_row_sha256": "e19245fe63db7c8dcbba3ce04d0a976938f5324c0632a14156fdab4082d06143",
+      "removed_code_point_count": 2,
+      "row_taxon_id": "BOLD.AHC6816"
+    },
+    {
+      "correction_id": "col-xr-2026-09-25-nameusage-BOLD.AHC6815-bom-v1",
+      "fields": [
+        "genus",
+        "species"
+      ],
+      "line": 7754462,
+      "raw_bytes_preserved": true,
+      "raw_row_sha256": "421a09e7c7fdfc6fd5d106d61b6f8642b3f4c5990915fb378984f6fcc22ba118",
+      "removed_code_point_count": 2,
+      "row_taxon_id": "BOLD.AHC6815"
+    },
+    {
+      "correction_id": "col-xr-2026-09-25-nameusage-VR3RB-bom-v1",
+      "fields": [
+        "genericName",
+        "genus",
+        "scientificName"
+      ],
+      "line": 8449776,
+      "raw_bytes_preserved": true,
+      "raw_row_sha256": "6ff2f79608f4e2a1178f55eb8de4093b3086a5bf749447a084a739a6a73576cb",
+      "removed_code_point_count": 3,
+      "row_taxon_id": "VR3RB"
+    }
+  ],
   "audit_fields_present": {
     "code": true,
     "extinct": true,
@@ -184,35 +245,14 @@
   "fungi_root_rows": 1,
   "header_profile": "checklistbank-col-xr-2026-07-17",
   "identifier_shape_counts": {
-    "ascii_token": 2168381,
+    "ascii_token": 2168383,
     "decimal": 26453,
-    "uppercase_alphanumeric": 6284760
+    "uppercase_alphanumeric": 6284763
   },
-  "malformed_row_count": 5,
-  "malformed_row_samples": [
-    {
-      "line": 367823,
-      "reason": "unapproved BOM occurrence in NameUsage"
-    },
-    {
-      "line": 2090652,
-      "reason": "unapproved BOM occurrence in NameUsage"
-    },
-    {
-      "line": 5632468,
-      "reason": "unapproved BOM occurrence in NameUsage"
-    },
-    {
-      "line": 7754462,
-      "reason": "unapproved BOM occurrence in NameUsage"
-    },
-    {
-      "line": 8449776,
-      "reason": "unapproved BOM occurrence in NameUsage"
-    }
-  ],
+  "malformed_row_count": 0,
+  "malformed_row_samples": [],
   "missing_required_value_counts": {
-    "authorship": 2333236,
+    "authorship": 2333238,
     "id": 0,
     "parent_id": 5,
     "rank": 0,
@@ -672,7 +712,7 @@
     "family": 30532,
     "form": 75951,
     "forma specialis": 61,
-    "genus": 459914,
+    "genus": 459915,
     "gigaclass": 2,
     "infraclass": 28,
     "infrafamily": 1,
@@ -700,7 +740,7 @@
     "section botany": 272,
     "section zoology": 26,
     "series zoology": 8,
-    "species": 4899357,
+    "species": 4899359,
     "species aggregate": 229,
     "subclass": 226,
     "subfamily": 12270,
@@ -721,10 +761,10 @@
     "superorder": 174,
     "supertribe": 32,
     "tribe": 11148,
-    "unranked": 2168589,
+    "unranked": 2168591,
     "variety": 383368
   },
-  "removed_semantic_bom_code_points": 0,
+  "removed_semantic_bom_code_points": 11,
   "representative_nonempty_rows": 100,
   "required_column_mapping": {
     "authorship": 8,
@@ -734,7 +774,7 @@
     "scientific_name": 7,
     "status": 6
   },
-  "row_count": 8479594,
+  "row_count": 8479599,
   "scan_schema_version": 1,
   "self_parent_reference_count": 0,
   "semantic_probes": {
@@ -801,18 +841,15 @@
   },
   "sha256": "b9cea53ea2ee74c5f12fcc098d876406fef768fc05f3ea6087131af4fc8d8cf2",
   "status_distribution": {
-    "accepted": 5072325,
+    "accepted": 5072330,
     "ambiguous synonym": 140450,
     "misapplied": 6480,
     "provisionally accepted": 165171,
     "synonym": 3095168
   },
   "synonym_or_related_count": 3242098,
-  "terminal_validation_findings": [
-    "NameUsage contains 5 genuine malformed rows",
-    "observed 11 unapproved BOM occurrences"
-  ],
-  "unapproved_bom_occurrence_count": 11,
+  "terminal_validation_findings": [],
+  "unapproved_bom_occurrence_count": 0,
   "uncompressed_bytes_read": 3113420424,
   "unknown_columns": [
     "clb:merged"

@@ -55,7 +55,7 @@
     "planned_device": 16777232,
     "staged_nearest_existing_ancestor": "/private/tmp/claude-501/-Users-sigmundas-Documents-Code-sporely-sporely-py/14061c68-f564-40d9-a8a0-526e7acfabd0/scratchpad/refresh/archives/database/taxonomy/sources/col_xr"
   },
-  "lifecycle_outcome": "quarantined",
+  "lifecycle_outcome": "promoted_from_quarantine",
   "manifest_schema_version": 1,
   "network_preflight": {
     "accept_ranges": "bytes",
@@ -95,6 +95,12 @@
   },
   "request_definition_sha256": "1708aed0d524fff411e7c929f1e1053253c3738dd1e6ab58718f7cd733840e82",
   "source_code": "col_xr",
-  "state": "quarantined",
-  "validation": null
+  "state": "validated",
+  "validation": {
+    "corrections": "source-corrections.json",
+    "promoted_archive": "archive.zip",
+    "report": "validation.json",
+    "result": "passed",
+    "validated_at": "2026-10-23T20:20:58.630473Z"
+  }
 }
