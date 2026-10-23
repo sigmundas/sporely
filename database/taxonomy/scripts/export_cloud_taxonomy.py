@@ -85,6 +85,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Reserved: compression is not enabled by default in W1.",
     )
     p.add_argument(
+        "--release-decision",
+        type=Path,
+        default=None,
+        help="Owner release decision; required for a candidate_build_only artifact.",
+    )
+    p.add_argument(
+        "--candidate-validation-only",
+        action="store_true",
+        help="Export a candidate_build_only artifact for local validation only (not for import).",
+    )
+    p.add_argument(
         "--quiet",
         action="store_true",
         help="Suppress non-error stdout.",
@@ -161,6 +172,8 @@ def main(argv: list[str] | None = None) -> int:
             policy_dir=policies,
             replace=args.replace,
             verify_only=args.verify_only,
+            release_decision=args.release_decision,
+            candidate_validation_only=args.candidate_validation_only,
         )
         elapsed = time.monotonic() - start
         # ru_maxrss is kilobytes on Linux, bytes on macOS. Report raw.

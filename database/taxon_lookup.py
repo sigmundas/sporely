@@ -990,6 +990,8 @@ class TaxonLookupService:
             taxon_id_int = int(sporely_taxon_id)
         except (TypeError, ValueError):
             return RedlistLookupResult(status="none")
+        # A retired id reads its survivor's assessments (same resolver as display).
+        taxon_id_int = self.current_taxon_id(taxon_id_int) or taxon_id_int
         assessments = self._fetch_redlist_rows(
             taxon_id_int, str(area), str(source_release)
         )
@@ -1073,6 +1075,7 @@ class TaxonLookupService:
             primary_id_int = int(sporely_taxon_id)
         except (TypeError, ValueError):
             return primary
+        primary_id_int = self.current_taxon_id(primary_id_int) or primary_id_int
         rows = self._fetch_local_rows(
             "SELECT canonical_scientific_name FROM taxon_min "
             "WHERE taxon_id = ? LIMIT 1",
@@ -1176,6 +1179,27 @@ class TaxonLookupService:
     def display_language_code(self, value: str | None) -> None:
         if self.vernacular_db is not None:
             self.vernacular_db.display_language_code = value or None
+
+    def current_taxon_id(self, sporely_taxon_id: object) -> int | None:
+        """The concept that is current for ``sporely_taxon_id`` in the installed release.
+
+        A live id returns itself; an id a reviewed supersession retired returns
+        its survivor (``taxon_supersession_min``); anything else returns
+        ``None``. Resolution only: callers decide whether to show or store it.
+        """
+        try:
+            taxon_id = int(sporely_taxon_id)
+        except (TypeError, ValueError):
+            return None
+        if self._fetch_local_rows(
+                "SELECT 1 FROM taxon_min WHERE taxon_id = ? LIMIT 1", (taxon_id,)):
+            return taxon_id
+        if not self._has_local_table("taxon_supersession_min"):
+            return None
+        rows = self._fetch_local_rows(
+            "SELECT current_taxon_id FROM taxon_supersession_min "
+            "WHERE retired_taxon_id = ? LIMIT 1", (taxon_id,))
+        return int(rows[0][0]) if rows else None
 
     def display_scientific_name(self, sporely_taxon_id: object) -> str | None:
         """The scientific name to show for a concept in the UI language.

@@ -1,0 +1,3031 @@
+{
+ "approval_mode": "batch_by_file_sha256",
+ "columns": [
+  "nortaxa_taxon_id",
+  "nortaxa_sporely_taxon_id",
+  "col_usage_id",
+  "col_sporely_taxon_id",
+  "one_to_one",
+  "canonical_scientific_name",
+  "rank",
+  "nortaxa_authorship",
+  "col_authorship",
+  "accepted_author_cmp",
+  "group",
+  "subclass",
+  "reason",
+  "provenance_class",
+  "checklistbank_source_record",
+  "placement_differs",
+  "s1_package_partition"
+ ],
+ "derived_from": {
+  "file_sha256": "dc46d4a89f4a14d2a76f1b04b39eefcc7547ac6f46bdf0dd112c57b8a15e9acd",
+  "member_count": 147,
+  "members_sha256": "cbabfb78f42b38e51443e554f427c180fd5198ecf5431e82442035b81ab7b3fe",
+  "path": "database/taxonomy/evidence/taxonomy-r1/manifests/source/rel3-verified.manifest.json"
+ },
+ "evidence_class": "relationship_pass_v3:verified",
+ "format": "sporely-taxonomy-reconciliation-candidate-manifest-v1",
+ "held_out": [
+  {
+   "nortaxa_taxon_id": "186418",
+   "reason": "Paralepista flaccida -> COL 4CYHL: live reference to the retiring id (1 desktop observation(s) store sporely_taxon_id 623312); retiring it needs a reviewed desktop/cloud remap"
+  },
+  {
+   "nortaxa_taxon_id": "204334",
+   "reason": "Imleria badia -> COL 3PJ2R: live reference to the retiring id (1 cloud observation(s) resolve to 623575 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  {
+   "nortaxa_taxon_id": "52330",
+   "reason": "Panaeolina foenisecii -> COL 4C943: live reference to the retiring id (3 desktop observation(s) store sporely_taxon_id 624659; 13 cloud observation(s) resolve to 624659 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  {
+   "nortaxa_taxon_id": "53467",
+   "reason": "Entoloma cetratum -> COL 6FD79: live reference to the retiring id (1 desktop observation(s) store sporely_taxon_id 625207; 2 cloud observation(s) resolve to 625207 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  {
+   "nortaxa_taxon_id": "53671",
+   "reason": "Entoloma serrulatum -> COL 6FDNK: live reference to the retiring id (1 cloud observation(s) resolve to 625270 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  {
+   "nortaxa_taxon_id": "53912",
+   "reason": "Laccaria laccata -> COL 6NQ5K: live reference to the retiring id (3 cloud observation(s) resolve to 625355 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  {
+   "nortaxa_taxon_id": "53994",
+   "reason": "Hygrocybe miniata -> COL 3NBB7: live reference to the retiring id (1 cloud observation(s) resolve to 625379 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  {
+   "nortaxa_taxon_id": "54560",
+   "reason": "Infundibulicybe gibba -> COL 3PP8H: live reference to the retiring id (1 cloud observation(s) resolve to 625555 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  {
+   "nortaxa_taxon_id": "54614",
+   "reason": "Tricholomopsis rutilans -> COL 7CRGX: live reference to the retiring id (2 cloud observation(s) resolve to 625587 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  {
+   "nortaxa_taxon_id": "54896",
+   "reason": "Coprinellus micaceus -> COL Y557: live reference to the retiring id (1 cloud observation(s) resolve to 625725 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  {
+   "nortaxa_taxon_id": "54914",
+   "reason": "Coprinopsis atramentaria -> COL Y56N: live reference to the retiring id (1 desktop observation(s) store sporely_taxon_id 625737; 2 cloud observation(s) resolve to 625737 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  {
+   "nortaxa_taxon_id": "54984",
+   "reason": "Parasola plicatilis -> COL 4DCG6: live reference to the retiring id (3 cloud observation(s) resolve to 625766 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  {
+   "nortaxa_taxon_id": "55233",
+   "reason": "Hypholoma fasciculare -> COL 3NSGX: live reference to the retiring id (1 desktop observation(s) store sporely_taxon_id 625865); retiring it needs a reviewed desktop/cloud remap"
+  },
+  {
+   "nortaxa_taxon_id": "55279",
+   "reason": "Pholiota spumosa -> COL 4GMBF: live reference to the retiring id (1 cloud observation(s) resolve to 625888 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  {
+   "nortaxa_taxon_id": "55402",
+   "reason": "Clitocybe nebularis -> COL W8RZ: live reference to the retiring id (1 cloud observation(s) resolve to 625921 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  {
+   "nortaxa_taxon_id": "55738",
+   "reason": "Xeromphalina campanella -> COL 5CD34: live reference to the retiring id (1 cloud observation(s) resolve to 626069 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  {
+   "nortaxa_taxon_id": "55979",
+   "reason": "Chalciporus piperatus -> COL TFVH: live reference to the retiring id (1 cloud observation(s) resolve to 626153 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  {
+   "nortaxa_taxon_id": "57186",
+   "reason": "Cerrena unicolor -> COL 69MXD: live reference to the retiring id (1 cloud observation(s) resolve to 626615 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  }
+ ],
+ "member_count": 129,
+ "members": [
+  [
+   "120296",
+   621007,
+   "4MRTX",
+   52241,
+   true,
+   "Proliferodiscus tricolor",
+   "species",
+   "(Sowerby: Fr.) Baral",
+   "(Sowerby) Baral",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "133553",
+   621762,
+   "49XHK",
+   40069,
+   true,
+   "Ophiognomonia setacea",
+   "species",
+   "(Pers. : Fr.) Sogonov",
+   "(Pers.) Sogonov",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID+dyntaxa:homotypicSynonym",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "144988",
+   622432,
+   "NJNV",
+   163736,
+   true,
+   "Bryoplaca jungermanniae",
+   "species",
+   "(Vahl) Søchting et al.",
+   "(Vahl) Søchting, Frödén & Arup",
+   "candidate:et_al",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "145036",
+   622464,
+   "6J9BR",
+   98372,
+   true,
+   "Flavoplaca oasis",
+   "species",
+   "(A.Massal.) Arup et al.",
+   "(A. Massal.) Arup, Frödén & Søchting",
+   "candidate:et_al",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "145057",
+   622478,
+   "3SJ3Y",
+   22947,
+   true,
+   "Lathagrium fuscovirens",
+   "species",
+   "(With.) Otálora et al.",
+   "(With.) Otálora, P.M. Jørg. & Wedin",
+   "candidate:et_al",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "145067",
+   622483,
+   "6PDY3",
+   104966,
+   true,
+   "Leproplaca obliterans",
+   "species",
+   "(Nyl.) Arup et al.",
+   "(Nyl.) Arup, Frödén & Søchting",
+   "candidate:et_al",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "145096",
+   622499,
+   "47BPK",
+   38286,
+   true,
+   "Nevesia sampaiana",
+   "species",
+   "(Tav.) P.M.Jørg et al.",
+   "(Tav.) P.M. Jørg., L. Lindblom, Wedin & S. Ekman",
+   "candidate:et_al",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID+dyntaxa:homotypicSynonym",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord"
+   ],
+   "B-placement"
+  ],
+  [
+   "145194",
+   622569,
+   "7FHC2",
+   128292,
+   true,
+   "Variospora flavescens",
+   "species",
+   "(Huds.) Arup et al.",
+   "(Huds.) Arup, Frödén & Søchting",
+   "candidate:et_al",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "186829",
+   623336,
+   "3RYQR",
+   22556,
+   true,
+   "Lambiella sphacelata",
+   "species",
+   "(Th.Fr.) M.Westb. & Resl",
+   "(Th. Fr.) M. Westb. & Resl",
+   "identical",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID+dyntaxa:homotypicSynonym",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord"
+   ],
+   "B-placement"
+  ],
+  [
+   "187234",
+   623384,
+   "VFWF",
+   612738,
+   true,
+   "Circinaria contorta",
+   "species",
+   "(Hoffm.) A.Nordin et al.",
+   "(Hoffm.) A. Nordin, Savić & Tibell",
+   "candidate:et_al",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "187338",
+   623457,
+   "6NKKK",
+   103510,
+   true,
+   "Kiliasia pennina",
+   "species",
+   "(Schaer.) Kistenich et al.",
+   "(Schaer.) Kistenich, Timdal, Bendiksby & S. Ekman",
+   "candidate:et_al",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "213042",
+   623655,
+   "4W3GK",
+   64107,
+   true,
+   "Scutula curvispora",
+   "species",
+   "(D.Hawksw. & Miądl.) Diederich",
+   "(D. Hawksw. & Miądl.) Diederich",
+   "identical",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "213189",
+   623677,
+   "4FZMD",
+   44354,
+   true,
+   "Phellodon fuligineoalbus",
+   "species",
+   "(J.C. Schmidt : Fr.) R.E. Baird",
+   "(J.C. Schmidt) R.E. Baird",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "213190",
+   623678,
+   "4FZN2",
+   44369,
+   true,
+   "Phellodon violascens",
+   "species",
+   "(Alb. & Schwein. : Fr.) A.M. Ainsw.",
+   "(Alb. & Schwein.) A.M. Ainsw.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "213630",
+   623698,
+   "6P5F6",
+   104258,
+   true,
+   "Leccinellum crocipodium",
+   "species",
+   "(Letell.) Della Maggiora & Trassinelli",
+   "(Letell.) Della Magg. & Trassin.",
+   "candidate:surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID+dyntaxa:homotypicSynonym",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "51928",
+   624513,
+   "65NKD",
+   88646,
+   true,
+   "Agaricus campestris",
+   "species",
+   "L. : Fr.",
+   "L.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "52226",
+   624619,
+   "MB4H",
+   160322,
+   true,
+   "Bolbitius reticulatus",
+   "species",
+   "(Pers. : Fr.) Ricken",
+   "(Pers.) Ricken",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "52439",
+   624711,
+   "44K62",
+   33910,
+   true,
+   "Multiclavula mucida",
+   "species",
+   "(Pers. : Fr.) R.H. Petersen",
+   "(Pers.) R.H. Petersen",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "53344",
+   625132,
+   "6QZZG",
+   106408,
+   true,
+   "Merismodes anomala",
+   "species",
+   "(Pers. : Fr.) Singer",
+   "(Pers.) Singer",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "53454",
+   625203,
+   "39Z7Z",
+   7721,
+   true,
+   "Entoloma byssisedum",
+   "species",
+   "(Pers. : Fr.) Donk",
+   "(Pers.) Donk",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "53495",
+   625220,
+   "6FD83",
+   96210,
+   true,
+   "Entoloma cyanulum",
+   "species",
+   "(Lasch : Fr.) Noordel.",
+   "(Lasch) Noordel.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "53509",
+   625227,
+   "6FCVJ",
+   95974,
+   true,
+   "Entoloma exile",
+   "species",
+   "(Fr. : Fr.) Hesler",
+   "(Fr.) Hesler",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "53645",
+   625264,
+   "6FDXM",
+   96529,
+   true,
+   "Entoloma rhodopolium",
+   "species",
+   "(Fr. : Fr.) P. Kumm.",
+   "(Fr.) P. Kumm.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "53677",
+   625274,
+   "6FDPL",
+   96338,
+   true,
+   "Entoloma sphagneti",
+   "species",
+   "Navaeu",
+   "Naveau",
+   "different",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID+dyntaxa:homotypicSynonym",
+   "original",
+   [
+    "name_match:col_usage_from_other_source"
+   ],
+   [],
+   ""
+  ],
+  [
+   "54066",
+   625404,
+   "3NC4P",
+   16745,
+   true,
+   "Hygrophorus nemoreus",
+   "species",
+   "(Pers. : Fr.) Fr.",
+   "(Pers.) Fr.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "54665",
+   625606,
+   "744D3",
+   116387,
+   true,
+   "Mycetinis scorodonius",
+   "species",
+   "(Fr. : Fr.) Wilson & Desjardin",
+   "(Fr.) A.W. Wilson & Desjardin",
+   "candidate:initials_one_side+sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "54677",
+   625609,
+   "4SF59",
+   60680,
+   true,
+   "Rhodocollybia maculata",
+   "species",
+   "(Alb. & Schwein. : Fr.) Singer",
+   "(Alb. & Schwein.) Singer",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "54853",
+   625691,
+   "3KV7B",
+   14829,
+   true,
+   "Henningsomyces candidus",
+   "species",
+   "(Pers. : Fr.) Kuntze",
+   "(Pers.) Kuntze",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID+dyntaxa:homotypicSynonym",
+   "original",
+   [
+    "name_match:col_usage_from_other_source"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "55158",
+   625830,
+   "33PSG",
+   1062,
+   true,
+   "Cystodermella granulosa",
+   "species",
+   "(Batsch : Fr.) Harmaja",
+   "(Batsch) Harmaja",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "55907",
+   626133,
+   "4NYCM",
+   54547,
+   true,
+   "Pseudohydnum gelatinosum",
+   "species",
+   "(Scop. : Fr.) P. Karst.",
+   "(Scop.) P. Karst.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "56256",
+   626265,
+   "5Z998",
+   82744,
+   true,
+   "Clavulina cinerea",
+   "species",
+   "(Bull. : Fr.) J. Schröt.",
+   "(Bull.) J. Schröt.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "56264",
+   626269,
+   "VW8Z",
+   614234,
+   true,
+   "Clavulina rugosa",
+   "species",
+   "(Bull. : Fr.) J. Schröt.",
+   "(Bull.) J. Schröt.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "56404",
+   626307,
+   "5BS9Q",
+   75811,
+   true,
+   "Vuilleminia comedens",
+   "species",
+   "(Nees : Fr.) Maire",
+   "(Nees) Maire",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "56529",
+   626349,
+   "4RBVZ",
+   58833,
+   true,
+   "Ramaria stricta",
+   "species",
+   "(Pers. : Fr.) Quél.",
+   "(Pers.) Quél.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "56700",
+   626419,
+   "4T2CY",
+   60983,
+   true,
+   "Rickenella swartzii",
+   "species",
+   "(Fr. : Fr.) Kuyper",
+   "(Fr.) Kuyper",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "56824",
+   626462,
+   "33TFK",
+   1550,
+   true,
+   "Dacryobolus sudans",
+   "species",
+   "(Alb. & Schwein. : Fr.) Fr.",
+   "(Alb. & Schwein.) Fr.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "56846",
+   626476,
+   "6V83B",
+   108980,
+   true,
+   "Phaeolus schweinitzii",
+   "species",
+   "(Fr. : Fr.) Pat.",
+   "(Fr.) Pat.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "56870",
+   626493,
+   "VJPXF",
+   612876,
+   true,
+   "Postia persicina",
+   "species",
+   "Niemelä & Y.C. Dai",
+   "Niemelä & Y.C.Dai",
+   "identical",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID+dyntaxa:homotypicSynonym",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "56875",
+   626496,
+   "4M32N",
+   52021,
+   true,
+   "Postia tephroleuca",
+   "species",
+   "(Fr. : Fr.) Jülich",
+   "(Fr.) Jülich",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "56911",
+   626510,
+   "6HV6D",
+   97930,
+   true,
+   "Fibroporia vaillantii",
+   "species",
+   "(DC. : Fr.) Parmasto",
+   "(DC.) Parmasto",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "57126",
+   626586,
+   "SYFT",
+   605413,
+   true,
+   "Ceriporia reticulata",
+   "species",
+   "(Hoffm. : Fr.) Domański",
+   "(Hoffm.) Domański",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "57245",
+   626645,
+   "3TTP8",
+   24664,
+   true,
+   "Leptoporus mollis",
+   "species",
+   "(Pers. : Fr.) Quél.",
+   "(Pers.) Quél.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "dyntaxa:homotypicSynonym",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "57253",
+   626651,
+   "46KGD",
+   37828,
+   true,
+   "Neolentinus adhaerens",
+   "species",
+   "(Alb. & Schwein. : Fr.) Redhead & Ginns",
+   "(Alb. & Schwein.) Redhead & Ginns",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "57254",
+   626652,
+   "46KGK",
+   37832,
+   true,
+   "Neolentinus lepideus",
+   "species",
+   "(Fr. : Fr.) Redhead & Ginns",
+   "(Fr.) Redhead & Ginns",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "57317",
+   626685,
+   "6Z4FW",
+   113272,
+   true,
+   "Skeletocutis amorpha",
+   "species",
+   "(Fr. : Fr.) Kotl. & Pouzar",
+   "(Fr.) Kotl. & Pouzar",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "57358",
+   626706,
+   "587WT",
+   72821,
+   true,
+   "Trichaptum fuscoviolaceum",
+   "species",
+   "(Ehrenb. : Fr.) Ryvarden",
+   "(Ehrenb.) Ryvarden",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "57435",
+   626727,
+   "D9CR",
+   150847,
+   true,
+   "Amylostereum chailletii",
+   "species",
+   "(Pers. : Fr.) Boidin",
+   "(Pers.) Boidin",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "65365",
+   627276,
+   "77NNN",
+   120220,
+   true,
+   "Placopsis gelida",
+   "species",
+   "(L.) Lindsay",
+   "(L.) Linds.",
+   "candidate:surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   ""
+  ],
+  [
+   "65374",
+   627282,
+   "6VMX3",
+   109771,
+   true,
+   "Placynthiella hyporhoda",
+   "species",
+   "(Th.Fr.) Coppins & P. James",
+   "(Th. Fr.) Coppins & P. James",
+   "identical",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "65827",
+   627446,
+   "XDXJ",
+   616101,
+   true,
+   "Combea californica",
+   "species",
+   "(Th.Fr.) Follmann & Geyer",
+   "(Th. Fr.) Follmann & M. Geyer",
+   "candidate:initials_one_side",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "65850",
+   627452,
+   "35N36",
+   3348,
+   true,
+   "Dichosporidium nigrocinctum",
+   "species",
+   "(Ehrenb.:Fr.) Thor",
+   "(Ehrenb.) G. Thor",
+   "candidate:initials_one_side+sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "65900",
+   627470,
+   "6L3K6",
+   100463,
+   true,
+   "Graphidastra byssiseda",
+   "species",
+   "(Müll.Arg.) Thor",
+   "(Müll. Arg.) G. Thor",
+   "candidate:initials_one_side",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "65956",
+   627492,
+   "6P5N9",
+   104322,
+   true,
+   "Lecanographa microcarpella",
+   "species",
+   "(Müll.Arg.) Egea & Torrente",
+   "(Müll. Arg.) Egea & Torrente",
+   "identical",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "66205",
+   627580,
+   "3T63H",
+   23911,
+   true,
+   "Lentomitella cirrhosa",
+   "species",
+   "(Pers.: Fr.) Réblová",
+   "(Pers.) Réblová",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID+dyntaxa:homotypicSynonym",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "66424",
+   627673,
+   "35CR6",
+   2754,
+   true,
+   "Diaporthe carpini",
+   "species",
+   "(Pers.: Fr.) Fuckel",
+   "(Pers.) Fuckel",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID+dyntaxa:homotypicSynonym",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "66527",
+   627731,
+   "3KXY4",
+   14886,
+   true,
+   "Hercospora tiliae",
+   "species",
+   "(Pers. : Fr.) Tul. & C. Tul.",
+   "(Pers.) Tul. & C. Tul.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID+dyntaxa:homotypicSynonym",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "66593",
+   627770,
+   "66RJH",
+   89607,
+   true,
+   "Anisogramma virgultorum",
+   "species",
+   "(Fr. : Fr.) Theiss. & Syd.",
+   "(Fr.) Theiss. & Syd.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "66598",
+   627774,
+   "5VNWX",
+   79617,
+   true,
+   "Apiognomonia erythrostoma",
+   "species",
+   "(Pers.: Fr.) Höhn.",
+   "(Pers.) Höhn.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID+dyntaxa:homotypicSynonym",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "66625",
+   627788,
+   "322NW",
+   47,
+   true,
+   "Cryptosporella hypodermia",
+   "species",
+   "(Fr. : Fr.) Sacc.",
+   "(Fr.) Sacc.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "66627",
+   627790,
+   "322PH",
+   56,
+   true,
+   "Cryptosporella suffusa",
+   "species",
+   "(Fr. : Fr.) L.C. Mejía & Castl.",
+   "(Fr.) L.C. Mejía & Castl.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "66630",
+   627792,
+   "6D3B6",
+   95056,
+   true,
+   "Diaporthella aristata",
+   "species",
+   "(Fr. : Fr.) Petr.",
+   "(Fr.) Petr.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "66667",
+   627813,
+   "3XRXC",
+   27084,
+   true,
+   "Mamianiella coryli",
+   "species",
+   "(Batsch: Fr.) Höhn.",
+   "(Batsch) Höhn.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID+dyntaxa:homotypicSynonym",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "66674",
+   627817,
+   "49XGV",
+   40053,
+   true,
+   "Ophiognomonia melanostyla",
+   "species",
+   "(DC.: Fr.) Sacc.",
+   "(DC.) Sacc.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID+dyntaxa:homotypicSynonym",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "66698",
+   627828,
+   "4XDR2",
+   65476,
+   true,
+   "Sillia ferruginea",
+   "species",
+   "(Pers.: Fr.) P. Karst.",
+   "(Pers.) P. Karst.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "66753",
+   627858,
+   "5CBWP",
+   76683,
+   true,
+   "Xenotypa aterrima",
+   "species",
+   "(Fr. : Fr.) Petr.",
+   "(Fr.) Petr.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "66784",
+   627874,
+   "3HKYB",
+   12647,
+   true,
+   "Guignardia reticulata",
+   "species",
+   "(DC.: Fr.) Aa",
+   "(DC.) Aa",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "67417",
+   628171,
+   "4P6N5",
+   54903,
+   true,
+   "Pseudopeziza trifolii",
+   "species",
+   "(Biv. : Fr.) Fuckel",
+   "(Biv.) Fuckel",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "67576",
+   628248,
+   "3GQHV",
+   11978,
+   true,
+   "Godronia fuliginosa",
+   "species",
+   "(Pers.: Fr.) Seaver",
+   "(Pers.) Seaver",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "67629",
+   628275,
+   "746R9",
+   116492,
+   true,
+   "Neobulgaria pura",
+   "species",
+   "(Pers. : Fr.) Petr.",
+   "(Pers.) Petr.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "67722",
+   628322,
+   "NFYM",
+   163506,
+   true,
+   "Brunnipila calyculiformis",
+   "species",
+   "(Schumach.: Fr.) Baral",
+   "(Schumach.) Baral",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "67749",
+   628338,
+   "349ZZ",
+   1845,
+   true,
+   "Dasyscyphella nivea",
+   "species",
+   "(R. Hedw.: Fr.) Raitv.",
+   "(R. Hedw.) Raitv.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "67862",
+   628382,
+   "4F93H",
+   42277,
+   true,
+   "Perrotia flammea",
+   "species",
+   "(Alb. & Schwein.: Fr.) Boud.",
+   "(Alb. & Schwein.) Boud.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "68084",
+   628485,
+   "3N8NS",
+   16244,
+   true,
+   "Hydropisphaera peziza",
+   "species",
+   "(Tode: Fr.) Dumort.",
+   "(Tode) Dumort.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "68380",
+   628601,
+   "6KJKW",
+   99866,
+   true,
+   "Glonium graphicum",
+   "species",
+   "(Fr. : Fr.) Duby",
+   "(Fr.) Duby",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "68827",
+   628773,
+   "69FW3",
+   91680,
+   true,
+   "Catillaria atomarioides",
+   "species",
+   "(Müll. Arg.) Kilias",
+   "(Müll. Arg.) H. Kilias",
+   "candidate:initials_one_side",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "68921",
+   628814,
+   "4ZBF2",
+   66956,
+   true,
+   "Sporastatia testudinea",
+   "species",
+   "(Ach.) Massal.",
+   "(Ach.) A. Massal.",
+   "candidate:initials_one_side",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "69175",
+   628895,
+   "VPHM",
+   613437,
+   true,
+   "Cladonia macrophylla",
+   "species",
+   "(Schaerer) Stenham.",
+   "(Schaer.) Stenh.",
+   "candidate:surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   ""
+  ],
+  [
+   "69233",
+   628909,
+   "VPKB",
+   613471,
+   true,
+   "Cladonia pleurota",
+   "species",
+   "(Flörke) Schaerer",
+   "(Flörke) Schaer.",
+   "candidate:surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "69476",
+   628995,
+   "PZ2C",
+   167015,
+   true,
+   "Calopadia fusca",
+   "species",
+   "(Müll.Arg) Vezda",
+   "(Müll. Arg.) Vězda",
+   "identical",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "69480",
+   628998,
+   "PZ2K",
+   167021,
+   true,
+   "Calopadia puiggarii",
+   "species",
+   "(Müll.Arg.) Vezda",
+   "(Müll. Arg.) Vězda",
+   "identical",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "69597",
+   629063,
+   "LR7PB",
+   159049,
+   true,
+   "Aspicilia dudinensis",
+   "species",
+   "(Magnusson) Oxner",
+   "(H.Magn.) Oxner",
+   "candidate:initials_one_side+surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "69615",
+   629073,
+   "LR8H3",
+   159062,
+   true,
+   "Aspicilia indissimilis",
+   "species",
+   "(Magnusson) Räsänen",
+   "(H.Magn.) Räsänen",
+   "candidate:initials_one_side+surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "69618",
+   629075,
+   "LR8KN",
+   159063,
+   true,
+   "Aspicilia karelica",
+   "species",
+   "(Magnusson) Oxner",
+   "(H. Magn.) Oxner",
+   "candidate:initials_one_side+surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "69620",
+   629076,
+   "LR8N7",
+   159064,
+   true,
+   "Aspicilia laevatoides",
+   "species",
+   "(Magnusson) Oxner",
+   "(H.Magn.) Oxner",
+   "candidate:initials_one_side+surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "69621",
+   629077,
+   "LR8NR",
+   159065,
+   true,
+   "Aspicilia laxula",
+   "species",
+   "(Magnusson) Brodo",
+   "(H. Magn.) Brodo",
+   "candidate:initials_one_side+surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "69641",
+   629083,
+   "LR9B9",
+   159077,
+   true,
+   "Aspicilia njuljae",
+   "species",
+   "(Magnusson) Räsänen",
+   "(H.Magn.) Räsänen",
+   "candidate:initials_one_side+surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "69642",
+   629084,
+   "LR9BC",
+   159078,
+   true,
+   "Aspicilia nordlandica",
+   "species",
+   "(Magnusson) Degel.",
+   "(H. Magn.) Degel.",
+   "candidate:initials_one_side+surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "69647",
+   629087,
+   "LR9NB",
+   159079,
+   true,
+   "Aspicilia pergibbosa",
+   "species",
+   "(Magnusson) Räsänen",
+   "(H. Magn.) Räsänen",
+   "candidate:initials_one_side+surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "69850",
+   629170,
+   "3SSDF",
+   23120,
+   true,
+   "Lecanora campestris",
+   "species",
+   "(Schaerer) Hue",
+   "(Schaer.) Hue",
+   "candidate:surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "70069",
+   629230,
+   "PS4Z5",
+   166110,
+   true,
+   "Lecanora lecanoricola",
+   "species",
+   "(Alstrup, D. Hawksw. & R. Sant.) Rambold & Triebel",
+   "(Alstrup et al.) Rambold & Triebel",
+   "candidate:et_al",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "70278",
+   629293,
+   "3ST3K",
+   23262,
+   true,
+   "Lecanora subcarnea",
+   "species",
+   "(Liljeblad) Ach.",
+   "(Lilj.) Ach.",
+   "candidate:surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "70464",
+   629379,
+   "4RC3D",
+   58932,
+   true,
+   "Ramboldia plicatula",
+   "species",
+   "(Müll.Arg.) Kantvilas & Elix",
+   "(Müll. Arg.) Kantvilas & Elix",
+   "identical",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "71223",
+   629734,
+   "6K4JW",
+   99348,
+   true,
+   "Fuscopannaria cheiroloba",
+   "species",
+   "(Müll.Arg.) P.M. Jørg.",
+   "(Müll. Arg.) P.M. Jørg.",
+   "identical",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord"
+   ],
+   "B-placement"
+  ],
+  [
+   "71266",
+   629753,
+   "3SY98",
+   23509,
+   true,
+   "Leioderma duplicatum",
+   "species",
+   "(Müll. Arg.) D. Galloway & P.M. Jørg.",
+   "(Müll. Arg.) D.J. Galloway & P.M. Jørg.",
+   "candidate:initials_prefix",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord"
+   ],
+   "B-placement"
+  ],
+  [
+   "71415",
+   629817,
+   "6WJP4",
+   110804,
+   true,
+   "Psoroma hypnorum",
+   "species",
+   "(Vahl) S.F. Gray",
+   "(Vahl) Gray",
+   "candidate:initials_one_side",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord"
+   ],
+   "B-placement"
+  ],
+  [
+   "71522",
+   629864,
+   "MB5XK",
+   160348,
+   true,
+   "Bryoria simplicior",
+   "species",
+   "(Vainio) Brodo & D. Hawksw.",
+   "(Vain.) Brodo & D. Hawksw.",
+   "candidate:surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "71648",
+   629917,
+   "MHLDY",
+   161214,
+   true,
+   "Cetrelia japonica",
+   "species",
+   "(Zahlbr.) Culb. & Culb.",
+   "(Zahlbr.) W. Culb. & C. Culb.",
+   "candidate:initials_one_side",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "71650",
+   629919,
+   "69MPK",
+   92060,
+   true,
+   "Cetrelia olivetorum",
+   "species",
+   "(Nyl.) W. Culb. & C. Culb.",
+   "(Nyl.) W.L. Culb. & C.F. Culb.",
+   "candidate:initials_prefix",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "71654",
+   629921,
+   "9XJRD",
+   131980,
+   true,
+   "Cetrelia sanguinea",
+   "species",
+   "(Schaer.) Culb. & Culb.",
+   "(Schaer.) W.L. Culb. & C.F. Culb.",
+   "candidate:initials_one_side",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "71929",
+   630017,
+   "3Z6S4",
+   28954,
+   true,
+   "Melanelixia fuliginosa",
+   "species",
+   "(Fr. ex Duby) O. Blanco et al.",
+   "(Fr. ex Duby) O. Blanco, A. Crespo, Divakar, Essl., D. Hawksw. & Lumbsch",
+   "candidate:et_al",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "71933",
+   630021,
+   "3Z6SD",
+   28960,
+   true,
+   "Melanelixia subargentifera",
+   "species",
+   "(Nyl.) O. Blanco et al.",
+   "(Nyl.) O. Blanco, A. Crespo, Divakar, Essl., D. Hawksw. & Lumbsch",
+   "candidate:et_al",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "71935",
+   630023,
+   "3Z6SH",
+   28962,
+   true,
+   "Melanelixia villosella",
+   "species",
+   "(Essl.) O. Blanco et al.",
+   "(Essl.) O. Blanco, A. Crespo, Divakar, Essl., D. Hawksw. & Lumbsch",
+   "candidate:et_al",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "72606",
+   630297,
+   "4PHTL",
+   55445,
+   true,
+   "Psiloparmelia flavobrunnea",
+   "species",
+   "(Müll.Arg.) Elix & Nash",
+   "(Müll. Arg.) Elix & T.H. Nash",
+   "candidate:initials_one_side",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "73168",
+   630461,
+   "5C6T8",
+   76376,
+   true,
+   "Xanthoparmelia mougeotina",
+   "species",
+   "(Nyl.) D. Galloway",
+   "(Nyl.) D.J. Galloway",
+   "candidate:initials_prefix",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "73579",
+   630627,
+   "36P3H",
+   5295,
+   true,
+   "Diplotomma venustum",
+   "species",
+   "Körber",
+   "Körb.",
+   "candidate:surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "73828",
+   630760,
+   "4QYJH",
+   58376,
+   true,
+   "Pyxine convexior",
+   "species",
+   "(Müll.Arg.) Swinscow & Krog",
+   "(Müll. Arg.) Swinscow & Krog",
+   "identical",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "73859",
+   630769,
+   "4QYKP",
+   58400,
+   true,
+   "Pyxine pyxinoides",
+   "species",
+   "(Müll.Arg.) Kalb",
+   "(Müll. Arg.) Kalb",
+   "identical",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "74063",
+   630877,
+   "KLKB",
+   157639,
+   true,
+   "Bapalmuia palmularis",
+   "species",
+   "(Müll.Arg.) Sérusiaux",
+   "(Müll. Arg.) Sérus.",
+   "candidate:surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "74064",
+   630878,
+   "KLKD",
+   157641,
+   true,
+   "Bapalmuia rubicunda",
+   "species",
+   "(Müll.Arg.) Sérusiaux",
+   "(Müll. Arg.) Sérus.",
+   "candidate:surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "74192",
+   630950,
+   "77VJ4",
+   120399,
+   true,
+   "Porpidia nadvornikiana",
+   "species",
+   "(Vezda) Hertel",
+   "(Vězda) Hertel",
+   "identical",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "74206",
+   630954,
+   "4LZF3",
+   51965,
+   true,
+   "Porpidia umbonifera",
+   "species",
+   "(Müll.Arg.) Rambold",
+   "(Müll. Arg.) Rambold",
+   "identical",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "75154",
+   631292,
+   "RV4L",
+   171530,
+   true,
+   "Catolechia wahlenbergii",
+   "species",
+   "(Ach.) Körber",
+   "(Ach.) Körb.",
+   "candidate:surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord"
+   ],
+   "B-placement"
+  ],
+  [
+   "75503",
+   631412,
+   "NN92T",
+   163995,
+   true,
+   "Ephebe multispora",
+   "species",
+   "(E. Dahl) A. Henssen",
+   "(E.Dahl) Henssen",
+   "candidate:initials_one_side",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "76232",
+   631646,
+   "SQ87",
+   604536,
+   true,
+   "Ceratostomella cuspidata",
+   "species",
+   "(Fr. : Fr.) Réblová",
+   "(Fr.) Réblová",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "77317",
+   632184,
+   "3HNQQ",
+   12782,
+   true,
+   "Gyalidea subscutellaris",
+   "species",
+   "(Vezda) Vezda",
+   "(Vězda) Vězda",
+   "identical",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord+family"
+   ],
+   "B-placement"
+  ],
+  [
+   "78478",
+   632716,
+   "76F7P",
+   117693,
+   true,
+   "Peltigera horizontalis",
+   "species",
+   "(Hudson) Baumg.",
+   "(Huds.) Baumg.",
+   "candidate:surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "78635",
+   632780,
+   "48DZR",
+   39030,
+   true,
+   "Ochrolechia subviridis",
+   "species",
+   "(Höeg) Erichsen",
+   "(Høeg) Erichsen",
+   "identical",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "79398",
+   633077,
+   "4P2QT",
+   54702,
+   true,
+   "Pseudombrophila porcina",
+   "species",
+   "(Svrček & Kubička ) Brumm.",
+   "(Svrček & Kubička) Brumm.",
+   "identical",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID+dyntaxa:homotypicSynonym",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "80056",
+   633347,
+   "3R3DC",
+   20240,
+   true,
+   "Karstenula rhodostoma",
+   "species",
+   "(Alb. & Schwein.: Fr.) Speg.",
+   "(Alb. & Schwein.) Speg.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "80223",
+   633419,
+   "6H6QD",
+   97700,
+   true,
+   "Eudarluca caricis",
+   "species",
+   "(Fr. : Fr.) O.E. Erikss.",
+   "(Fr.) O.E. Erikss.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "80451",
+   633491,
+   "4ZD85",
+   67497,
+   true,
+   "Sporormiella affinis",
+   "species",
+   "(Sacc., E. Bommer, M. Rousseau) Ahmed & Cain",
+   "(Sacc., E. Bommer & M. Rousseau) S.I. Ahmed & Cain",
+   "candidate:initials_one_side",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "80521",
+   633526,
+   "WZZP",
+   615458,
+   true,
+   "Coleroa robertiani",
+   "species",
+   "(Fr. : Fr.) E. Müll.",
+   "(Fr.) E. Müll.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord"
+   ],
+   "B-placement"
+  ],
+  [
+   "80583",
+   633556,
+   "7FMTX",
+   128400,
+   true,
+   "Venturia macularis",
+   "species",
+   "(Fr. : Fr.) E. Müll. & Arx",
+   "(Fr.) E. Müll. & Arx",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:ord"
+   ],
+   "B-placement"
+  ],
+  [
+   "80756",
+   633637,
+   "4QS8W",
+   58222,
+   true,
+   "Pyrenula cruenta",
+   "species",
+   "(Mont.) Vainio",
+   "(Mont.) Vain.",
+   "candidate:surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "81524",
+   633987,
+   "MFXS7",
+   161036,
+   true,
+   "Caloplaca dovrensis",
+   "species",
+   "(Magnusson) Degel.",
+   "(H.Magn.) Degel.",
+   "candidate:initials_one_side+surname_abbreviation",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A1-species"
+  ],
+  [
+   "82686",
+   634484,
+   "6HK8K",
+   97770,
+   true,
+   "Eutypa lata",
+   "species",
+   "(Pers. : Fr.) Tul. & C. Tul.",
+   "(Pers.) Tul. & C. Tul.",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ],
+  [
+   "82835",
+   634546,
+   "LWL4",
+   159332,
+   true,
+   "Biscogniauxia repanda",
+   "species",
+   "(Fr. : Fr.) Kuntze",
+   "(Fr.) Kuntze",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID+dyntaxa:homotypicSynonym",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "82856",
+   634558,
+   "33ZDJ",
+   1780,
+   true,
+   "Daldinia eschscholtzii",
+   "species",
+   "(Ehrenb.: Fr.) Rehm",
+   "(Ehrenb.) Rehm",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [
+    "placement_differs:family"
+   ],
+   "B-placement"
+  ],
+  [
+   "82974",
+   634618,
+   "6RVDG",
+   107245,
+   true,
+   "Nemania serpens",
+   "species",
+   "(Pers.: Fr.) Gray",
+   "(Pers.) Gray",
+   "compatible:sanctioning_omitted",
+   "verified",
+   "verified",
+   "col:NameRelation:basionym+col:basionymID",
+   "original",
+   [
+    "name_match:col_usage_from_other_source(local_sourceID_only)"
+   ],
+   [],
+   "A2-species"
+  ]
+ ],
+ "members_sha256": "9f5badb9b037aa0c91c3da59aa76d9cf68f0a8a7f1d2390e4330dccfe71a402c",
+ "note": "R1 derived manifest: the source manifest's members minus the pairs held out of R1. Members, columns and pins are copied unchanged. Generated by database/taxonomy/evidence/taxonomy-r1/generate_r1_supersessions.py.",
+ "pins": {
+  "bridge_emission_policy": {
+   "path": "database/taxonomy/policies/mapping_policy.yml",
+   "sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb"
+  },
+  "checklistbank_release": {
+   "alias": "COL26.7 XR",
+   "dataset_key": 315834,
+   "doi": "10.48580/dgykv",
+   "endpoint": "/dataset/315834/nameusage/{id}/source (cached 2026-10-21)"
+  },
+  "checklistbank_source_records": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/v3/data/checklistbank_source_records.csv",
+   "sha256": "9a1f88d70b92b0ebf3ccec3035af163f6ea3751dd3c19abbd9ba7c774cd7a8b9"
+  },
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "comparator": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/v3/scripts/authors_v3.py",
+   "sha256": "10cebf1f49c365ad4e1df2ed0a51dc9f3e3a79d903e2b21757de2dbbe390af5c"
+  },
+  "relationship_rules": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/v3/scripts/relate_v3.py",
+   "sha256": "7d3d5492922b6a24501f98ed0c83a2de9a05f207da2d30326b4500adaa202b49"
+  },
+  "release": {
+   "content_release_id": "tax-2026.10.07-01",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.10.07-01.sqlite3.gz",
+   "gz_sha256": "bff40f0d5d70ec2be47fe415dfd4cfc623a7841553f8a7d928ed801117ca21c5",
+   "sqlite_sha256": "e349e8b1d7cdbafa688621a71f9be278ac6e381853ff7fe2763d8b856b7724f9"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "nortaxa": {
+    "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release_id": "nortaxa:1.284:2026-07-17"
+   }
+  }
+ },
+ "population": "relationship pass 3 candidates, partition rel3-verified",
+ "review_status": "needs_review"
+}

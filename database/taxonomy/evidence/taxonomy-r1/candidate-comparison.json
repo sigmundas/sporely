@@ -1,0 +1,217 @@
+{
+ "labels": {
+  "installed": {
+   "redundant_rows": 5606,
+   "redundant_rows_species": 3706,
+   "identical_label_groups": 5533
+  },
+  "candidate": {
+   "redundant_rows": 4495,
+   "redundant_rows_species": 2595,
+   "identical_label_groups": 4424
+  }
+ },
+ "accepted_concepts": {
+  "installed": 633542,
+  "candidate": 632382,
+  "by_rank_species": [
+   181918,
+   180803
+  ]
+ },
+ "retired": {
+  "r1_pairs": 1160,
+  "map_rows": 2513,
+  "r1_retired_absent_from_candidate": 1160,
+  "r1_retired_in_map_to_expected_survivor": 1160,
+  "map_targets_live": 2513,
+  "map_retired_still_live": 0,
+  "installed_live_ids_lost": 0,
+  "lost_examples": [],
+  "new_ids": 0
+ },
+ "hierarchy": {
+  "dangling_parents": 0,
+  "installed_dangling_parents": 0,
+  "parent_changed_vs_installed": 0,
+  "parent_changes": []
+ },
+ "external_ids": {
+  "installed": {
+   "int:artportalen:accepted": [
+    7636,
+    7635
+   ],
+   "int:artportalen:publishing": [
+    815,
+    815
+   ],
+   "int:artportalen:synonym": [
+    549,
+    549
+   ],
+   "int:artsdatabanken:accepted": [
+    33727,
+    33727
+   ],
+   "int:artsdatabanken:synonym": [
+    27856,
+    27856
+   ],
+   "int:inaturalist:accepted": [
+    8032,
+    7993
+   ],
+   "text:col_xr/col_usage_id:accepted": [
+    620976,
+    620976
+   ],
+   "text:dyntaxa/dyntaxa_taxon_id:accepted": [
+    2361,
+    2361
+   ],
+   "text:nortaxa/nortaxa_taxon_id:accepted": [
+    4737,
+    4737
+   ],
+   "text:nortaxa/nortaxa_taxon_id:synonym": [
+    4779,
+    4779
+   ],
+   "bridges:authoritative": 11877,
+   "taxon_min.inaturalist_taxon_id": 7958,
+   "taxon_min.norwegian_taxon_id": 12566,
+   "taxon_min.swedish_taxon_id": 0
+  },
+  "candidate": {
+   "int:artportalen:accepted": [
+    7636,
+    7635
+   ],
+   "int:artportalen:publishing": [
+    815,
+    815
+   ],
+   "int:artportalen:synonym": [
+    549,
+    549
+   ],
+   "int:artsdatabanken:accepted": [
+    33727,
+    33727
+   ],
+   "int:artsdatabanken:synonym": [
+    27856,
+    27856
+   ],
+   "int:inaturalist:accepted": [
+    8032,
+    7993
+   ],
+   "text:col_xr/col_usage_id:accepted": [
+    620976,
+    620976
+   ],
+   "text:dyntaxa/dyntaxa_taxon_id:accepted": [
+    2361,
+    2361
+   ],
+   "text:nortaxa/nortaxa_taxon_id:accepted": [
+    5897,
+    5897
+   ],
+   "text:nortaxa/nortaxa_taxon_id:synonym": [
+    4779,
+    4779
+   ],
+   "bridges:authoritative": 13037,
+   "taxon_min.inaturalist_taxon_id": 7958,
+   "taxon_min.norwegian_taxon_id": 11406,
+   "taxon_min.swedish_taxon_id": 0
+  },
+  "distinct_(system,id,role)_lost": 0,
+  "lost_by_system": {},
+  "gained_by_system": {
+   "nortaxa/nortaxa_taxon_id:accepted": 1160
+  },
+  "distinct_(system,id)_lost_any_role": 0
+ },
+ "integrity": {
+  "concepts_with_2plus_accepted_nortaxa_int": 0,
+  "installed_concepts_with_2plus_accepted_nortaxa_int": 0,
+  "concepts_with_2plus_nortaxa_accepted_bridges": 0,
+  "nortaxa_accepted_bridge_ids_on_2plus_concepts": 0,
+  "concepts_with_2plus_artportalen_publishing": 0,
+  "installed_concepts_with_2plus_artportalen_publishing": 0,
+  "concepts_with_2plus_inaturalist_accepted": 0,
+  "installed_concepts_with_2plus_inaturalist_accepted": 0,
+  "redlist_rows": [
+   7866,
+   7866
+  ],
+  "redlist_resolved_on_retired_ids": 0
+ },
+ "p10": {
+  "r1_anchor_bridges": 1160,
+  "inherited_name_rows": 1686,
+  "inherited_extid_rows_int": 1691,
+  "inherited_extid_rows_text": 0,
+  "reviewed_supersession_bridges": [
+   6132,
+   7292
+  ],
+  "r1_anchor_bridges_on_expected_survivor": 1160,
+  "bridges_for_usages_inherited_from_r1": 0
+ },
+ "references": {
+  "desktop_observations_with_id": 196,
+  "desktop_obs_on_any_retired_id": 0,
+  "desktop_obs_on_r1_retired_id": 0,
+  "desktop_obs_ids_absent_and_unmapped_candidate": 0,
+  "desktop_obs_ids_absent_installed": 0,
+  "desktop_identity_external_sporely_on_retired": 0,
+  "reference_treatments_on_retired": 0,
+  "curated_forks_on_retired": 0,
+  "cloud_snapshot_hits": {
+   "resolved:absent_from_candidate": 20
+  },
+  "cloud_snapshot_rows_absent_from_installed": {
+   "resolved": 20
+  },
+  "all_retired_resolvable": true
+ },
+ "candidate": {
+  "content_release_id": "tax-2026.10.23-01",
+  "state": "candidate",
+  "publication": "none",
+  "sqlite_sha256": "18915dd7979c7fb38954c1997d5d295e1198f7c4f3755f6bb5cb61ff5191170a",
+  "gz_sha256": "94a33bfb84017eb640e515ecc7f584df4d9463f07c46271c7817ddabcb4374a6",
+  "freeze_json_sha256": "4ca50835693d227ae976236f5e86b89886ac933c61f703f5472b7efe90048efa",
+  "deterministic_two_builds": true,
+  "new_allocations": 0,
+  "built_from": "feature/taxonomy-reconciliation-r1",
+  "installed_baseline": "tax-2026.10.07-01 (sqlite e349e8b1...)",
+  "note": "Candidate only: not installed, promoted or published. Reference counts come from read-only copies of the owner's desktop databases and an aggregate cloud snapshot of 2026-10-20.",
+  "release_approval_meta": "pending:candidate_build_only",
+  "rebuilt_at_review_fixes": "Only taxonomy_meta differs from the 766d183 build (dc0f53df...): compiler_manifest_sha256 and the new release_approval key; every data table is identical."
+ },
+ "export_populations": {
+  "full_cloud_export": {
+   "inherited_names": 1686,
+   "r1_anchor_bridges": 1160
+  },
+  "macrofungi_cloud_scope": {
+   "inherited_names": 910,
+   "r1_anchor_bridges": 539
+  },
+  "desktop_sqlite": {
+   "inherited_name_rows": 1686,
+   "inherited_external_id_rows": 1691,
+   "r1_anchor_bridges": 1160
+  }
+ },
+ "fresh_reference_check_2026-10-23": {
+  "desktop": "fresh SQLite-backup copies of mushrooms.db/reference_values.db: 0 references to the 2,513 retired ids (R1 1,160 + earlier 1,353); 7 observations on 5 of the 18 held (live) ids. reference-check/desktop-2026-10-23.json",
+  "cloud": "read-only (BEGIN READ ONLY ... ROLLBACK) against production, active release tax-2026.10.07-01, 782 observations: 0 rows on any R1 or earlier retired id across selected/resolved/identity/reference uses/resolution_link/reference and curation tables; held ids: 35 resolved observations and 35 resolution_link rows on 16 ids, 3 observation_reference_uses on 1 id, 0 selected. reference-check/cloud-2026-10-23.jsonl"
+ }
+}

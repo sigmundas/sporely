@@ -611,6 +611,17 @@ def build_export(
         "source_hashes": source_hashes,
         "files": files,
     }
+    # Carry the W1 export's release marker (candidate_build_only artifacts):
+    # an importer must refuse a release_approval with importable false.
+    w1_manifest = json.loads((w1_dir / "taxonomy_export_manifest.json").read_text(encoding="utf-8"))
+    w1_marker = w1_manifest.get("release_approval")
+    # The W1 export must come from the same source SQLite as this scope.
+    w1_sqlite = (w1_manifest.get("source_hashes") or {}).get("sqlite_sha256") \
+        or (w1_manifest.get("source") or {}).get("sqlite_sha256")
+    if w1_sqlite and w1_sqlite != source_hashes.get("sqlite_sha256"):
+        raise ScopeError("W1 export was produced from a different source SQLite")
+    if w1_marker:
+        export_manifest["release_approval"] = w1_marker
     (output_dir / "taxonomy_export_manifest.json").write_bytes(canonical_json_bytes(export_manifest))
     archive_path = output_dir / "scoped-export.jsonl.gz"
     dataset_order = [item["name"] for item in files]
@@ -795,7 +806,10 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         "w1_manifest_sha256": sha256_file(args.w1_dir / "taxonomy_export_manifest.json"),
     }
     with tempfile.TemporaryDirectory(prefix="sporely-macrofungi-") as directory:
-        connection, _ = _source_connection(args.source_gz, Path(directory))
+        connection, source_sqlite = _source_connection(args.source_gz, Path(directory))
+        # The decompressed source SQLite's SHA-256: what a release decision
+        # binds as sqlite_sha256 (carried in both manifests' source_hashes).
+        source_hashes["sqlite_sha256"] = sha256_file(source_sqlite)
         taxa, by_col = load_taxa(connection)
         rules = resolve_rules(policy, by_col)
         results = evaluate(taxa, rules, policy.get("source_characteristic_exclusions", []))

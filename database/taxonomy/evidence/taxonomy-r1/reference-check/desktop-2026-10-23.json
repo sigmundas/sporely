@@ -1,0 +1,54 @@
+{
+ "total_observations": 634,
+ "checks": {
+  "observations.sporely_taxon_id": {
+   "r1": 0,
+   "earlier": 0,
+   "held": 7
+  },
+  "observations.taxon_identity(sporely namespace)": {
+   "r1": 0,
+   "earlier": 0,
+   "held": 0
+  },
+  "reference_taxon_treatments.taxon_id": {
+   "r1": 0,
+   "earlier": 0,
+   "held": 0
+  },
+  "curated_reference_forks.sporely_taxon_id": {
+   "r1": 0,
+   "earlier": 0,
+   "held": 0
+  }
+ },
+ "per_id": {
+  "observations.sporely_taxon_id": [
+   {
+    "grp": "held",
+    "id": 624659,
+    "n": 3
+   },
+   {
+    "grp": "held",
+    "id": 625737,
+    "n": 1
+   },
+   {
+    "grp": "held",
+    "id": 625865,
+    "n": 1
+   },
+   {
+    "grp": "held",
+    "id": 625207,
+    "n": 1
+   },
+   {
+    "grp": "held",
+    "id": 623312,
+    "n": 1
+   }
+  ]
+ }
+}

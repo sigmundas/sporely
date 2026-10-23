@@ -263,6 +263,19 @@ CREATE TABLE taxonomy_meta (
     key   TEXT PRIMARY KEY,
     value TEXT
 );
+
+-- Additive (schema version unchanged): every concept a reviewed supersession
+-- retired, mapped to the concept that is current in this release. A retired
+-- concept has no taxon_min row, so this is how a stored retired id still
+-- resolves. One row per retired id; current_taxon_id is always a live
+-- taxon_min row (the compiler refuses chains).
+CREATE TABLE taxon_supersession_min (
+    retired_taxon_id    INTEGER PRIMARY KEY,
+    current_taxon_id    INTEGER NOT NULL,
+    supersession_id     TEXT,
+    content_release_id  TEXT NOT NULL,
+    FOREIGN KEY (current_taxon_id) REFERENCES taxon_min(taxon_id)
+);
 """
 
 CREATE_INDEXES_SQL = """
@@ -367,6 +380,18 @@ def _resolve_parent_sporely_id(
     return source_usage_index.get(key)
 
 
+def inherited_usage_note(usage: dict) -> str:
+    """The ``note`` of a P10 inherited usage: ``|``-separated, fixed order."""
+    return "|".join((
+        usage.get("alias_reason") or "",
+        str(usage["inheritance"]),
+        f"superseded_from={usage.get('superseded_from_sporely_taxon_id')}",
+        f"evidence_class={usage.get('bridge_evidence_class') or ''}",
+        f"taxonomic_status={usage.get('taxonomic_status') or ''}",
+        f"nomenclatural_status={usage.get('nomenclatural_status') or ''}",
+    ))
+
+
 def _release_supersessions(manifest: dict, ledger_path: Path) -> dict[int, Supersession]:
     """The supersessions this release applied, keyed by retired concept.
 
@@ -453,6 +478,7 @@ def build_candidate(
         raise BuildError(f"unexpected release state: {manifest.get('state')}")
 
     superseded_rekeys: dict[str, list[dict]] = {}
+    supersessions: dict[int, Supersession] | None = None
     if concept_supersessions_path is not None:
         supersessions = _release_supersessions(manifest, concept_supersessions_path)
         try:
@@ -497,6 +523,8 @@ def build_candidate(
             inaturalist_refresh_sha256=(_sha256_file(inaturalist_refresh_path)
                                         if inaturalist_refresh_path else None),
             superseded_rekeys=superseded_rekeys if concept_supersessions_path is not None else None,
+            supersession_ids=({retired: s.supersession_id for retired, s in supersessions.items()}
+                              if supersessions is not None else None),
         )
         os.replace(tmp_db, output_db)
         committed = True
@@ -525,6 +553,7 @@ def _build_into(
     inaturalist_refresh: InaturalistRefresh | None = None,
     inaturalist_refresh_sha256: str | None = None,
     superseded_rekeys: dict[str, list[dict]] | None = None,
+    supersession_ids: dict[int, str] | None = None,
 ) -> dict:
     conn = sqlite3.connect(str(tmp_db), isolation_level=None)
     conn.execute("PRAGMA locking_mode = EXCLUSIVE")
@@ -619,6 +648,14 @@ def _build_into(
             sci_name = u.get("scientific_name") or ""
             authorship = u.get("authorship") or ""
             note = (u.get("alias_reason") or "") or None
+            if u.get("inheritance"):
+                # P10: a usage re-keyed as a name under a names_only
+                # supersession. Its provenance travels in the note (the cloud
+                # export carries it verbatim), so the release itself shows it
+                # was inherited, from which concept, under which evidence
+                # class and with which statuses. It never becomes a bridge
+                # unless its own class is eligible.
+                note = inherited_usage_note(u)
             is_preferred = 1 if u["identity_binding"] == "anchor" else 0
             if sci_name:
                 scientific_name_rows.append((
@@ -969,6 +1006,19 @@ def _build_into(
                 [(i + 1, *row) for i, row in enumerate(redlist_rows)],
             )
 
+        # --- Retired-id map (additive, see taxon_supersession_min) -----------
+        supersession_rows = sorted(
+            (int(pair["superseded_sporely_taxon_id"]),
+             int(pair["current_sporely_taxon_id"]),
+             (supersession_ids or {}).get(int(pair["superseded_sporely_taxon_id"])),
+             manifest.get("content_release_id", ""))
+            for pair in (manifest.get("counts") or {}).get("concept_supersessions") or [])
+        conn.executemany(
+            "INSERT INTO taxon_supersession_min (retired_taxon_id, current_taxon_id, "
+            "supersession_id, content_release_id) VALUES (?, ?, ?, ?)",
+            supersession_rows,
+        )
+
         # --- Metadata --------------------------------------------------------
         meta = [
             ("taxonomy_schema_version", str(TAXONOMY_SCHEMA_VERSION)),
@@ -982,6 +1032,9 @@ def _build_into(
             # the standard that admitted them.
             ("bridge_emission_policy_sha256", bridge_policy.policy_sha256),
         ]
+        release_approval = (manifest.get("release_approval") or {}).get("status")
+        if release_approval:
+            meta.append(("release_approval", str(release_approval)))
         if overlay_sha256:
             meta.append(("publishing_overlay[artportalen].sha256", overlay_sha256))
         if inaturalist_refresh_sha256:
@@ -1068,6 +1121,15 @@ def _build_into(
     ))
     if orphans[0][0]:
         raise BuildError(f"taxon_redlist_min orphans: {orphans[0][0]}")
+    # Every retired id resolves to a live concept, and no retired id is live.
+    unresolved = conn.execute(
+        "SELECT COUNT(*) FROM taxon_supersession_min s WHERE NOT EXISTS "
+        "(SELECT 1 FROM taxon_min t WHERE t.taxon_id = s.current_taxon_id) "
+        "OR EXISTS (SELECT 1 FROM taxon_min t WHERE t.taxon_id = s.retired_taxon_id)"
+    ).fetchone()[0]
+    if unresolved:
+        raise BuildError(f"taxon_supersession_min: {unresolved} retired ids do not "
+                         "resolve to a live concept or are still live")
 
     # --- National preferred names are provenanced and searchable -----------
     # Each one must trace to an authoritative reviewed bridge row carrying the
@@ -1112,7 +1174,7 @@ def _build_into(
         for table in (
             "taxon_min", "scientific_name_min", "vernacular_min",
             "taxon_external_id_min", "taxon_external_id_text_min",
-            "taxon_redlist_min", "taxonomy_meta",
+            "taxon_redlist_min", "taxonomy_meta", "taxon_supersession_min",
         )
     }
 

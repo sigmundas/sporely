@@ -1,0 +1,535 @@
+{
+ "approval_mode": "batch_by_file_sha256",
+ "columns": [
+  "nortaxa_taxon_id",
+  "nortaxa_sporely_taxon_id",
+  "col_usage_id",
+  "col_sporely_taxon_id",
+  "one_to_one",
+  "canonical_scientific_name",
+  "rank",
+  "nortaxa_authorship",
+  "col_authorship",
+  "accepted_author_cmp",
+  "alias_strict_accepted_cmp",
+  "group",
+  "subclass",
+  "reasons",
+  "nortaxa_source_row",
+  "col_source_row",
+  "placement",
+  "audit_flags"
+ ],
+ "evidence_class": "decision_package_e:E-E1-default-class-error",
+ "format": "sporely-taxonomy-reconciliation-candidate-manifest-v1",
+ "member_count": 20,
+ "members": [
+  [
+   "226944",
+   624069,
+   "9ZFFZ",
+   136780,
+   true,
+   "Sagiolechia monoseptata",
+   "species",
+   "Ertz & Tønsberg, 2021",
+   "Ertz & Tønsberg",
+   "identical",
+   "identical",
+   "E1",
+   "default_class_error",
+   "class Sordariomycetes (order Incertae sedis) vs Lecanoromycetes; family Gomphillaceae / Sagiolechiaceae",
+   "nortaxa:taxon.txt#226944",
+   "col:NameUsage.tsv#9ZFFZ (sourceID 2073)",
+   [
+    "class",
+    "family"
+   ],
+   []
+  ],
+  [
+   "296700",
+   624265,
+   "TR575",
+   607459,
+   true,
+   "Umbilicaria koidzumii",
+   "species",
+   "M. Satô",
+   "M.Sato",
+   "identical",
+   "identical",
+   "E1",
+   "default_class_error",
+   "class Sordariomycetes (order Incertae sedis) vs Lecanoromycetes; family Umbilicariaceae / Umbilicariaceae",
+   "nortaxa:taxon.txt#296700",
+   "col:NameUsage.tsv#TR575 (sourceID 2041)",
+   [
+    "class"
+   ],
+   []
+  ],
+  [
+   "76367",
+   631721,
+   "64PXV",
+   87503,
+   true,
+   "Actinoplaca strigulacea",
+   "species",
+   "Müll.Arg.",
+   "Müll. Arg.",
+   "identical",
+   "identical",
+   "E1",
+   "default_class_error",
+   "class Sordariomycetes (order Incertae sedis) vs Lecanoromycetes; family Gomphillaceae / Gomphillaceae",
+   "nortaxa:taxon.txt#76367",
+   "col:NameUsage.tsv#64PXV (sourceID 2073)",
+   [
+    "class"
+   ],
+   []
+  ],
+  [
+   "76386",
+   631734,
+   "68TY7",
+   91225,
+   true,
+   "Caleniopsis laevigata",
+   "species",
+   "(Müll.Arg.) Vezda & Poelt",
+   "(Müll. Arg.) Vězda & Poelt",
+   "identical",
+   "identical",
+   "E1",
+   "default_class_error",
+   "class Sordariomycetes (order Incertae sedis) vs Lecanoromycetes; family Gomphillaceae / Gomphillaceae",
+   "nortaxa:taxon.txt#76386",
+   "col:NameUsage.tsv#68TY7 (sourceID 2073)",
+   [
+    "class"
+   ],
+   []
+  ],
+  [
+   "76409",
+   631747,
+   "3HNNS",
+   12737,
+   true,
+   "Gyalectidium filicinum",
+   "species",
+   "Müll.Arg.",
+   "Müll. Arg.",
+   "identical",
+   "identical",
+   "E1",
+   "default_class_error",
+   "class Sordariomycetes (order Incertae sedis) vs Lecanoromycetes; family Gomphillaceae / Gomphillaceae",
+   "nortaxa:taxon.txt#76409",
+   "col:NameUsage.tsv#3HNNS (sourceID 2073)",
+   [
+    "class"
+   ],
+   []
+  ],
+  [
+   "76417",
+   631749,
+   "3HNRF",
+   12798,
+   true,
+   "Gyalideopsis epicorticis",
+   "species",
+   "(A. Funk) Tønsberg & Vezda",
+   "(A. Funk) Tønsberg & Vězda",
+   "identical",
+   "identical",
+   "E1",
+   "default_class_error",
+   "class Sordariomycetes (order Incertae sedis) vs Lecanoromycetes; family Gomphillaceae / Gomphillaceae",
+   "nortaxa:taxon.txt#76417",
+   "col:NameUsage.tsv#3HNRF (sourceID 2073)",
+   [
+    "class"
+   ],
+   []
+  ],
+  [
+   "76419",
+   631750,
+   "3HNRL",
+   12802,
+   true,
+   "Gyalideopsis graminicola",
+   "species",
+   "Vezda & Kantvilas",
+   "Vězda & Kantvilas",
+   "identical",
+   "identical",
+   "E1",
+   "default_class_error",
+   "class Sordariomycetes (order Incertae sedis) vs Lecanoromycetes; family Gomphillaceae / Gomphillaceae",
+   "nortaxa:taxon.txt#76419",
+   "col:NameUsage.tsv#3HNRL (sourceID 2073)",
+   [
+    "class"
+   ],
+   []
+  ],
+  [
+   "76422",
+   631751,
+   "3HNRT",
+   12807,
+   true,
+   "Gyalideopsis lambinonii",
+   "species",
+   "Vezda",
+   "Vězda",
+   "identical",
+   "identical",
+   "E1",
+   "default_class_error",
+   "class Sordariomycetes (order Incertae sedis) vs Lecanoromycetes; family Gomphillaceae / Gomphillaceae",
+   "nortaxa:taxon.txt#76422",
+   "col:NameUsage.tsv#3HNRT (sourceID 2073)",
+   [
+    "class"
+   ],
+   []
+  ],
+  [
+   "76427",
+   631754,
+   "3HNS2",
+   12813,
+   true,
+   "Gyalideopsis muscicola",
+   "species",
+   "P. James & Vezda",
+   "P. James & Vězda",
+   "identical",
+   "identical",
+   "E1",
+   "default_class_error",
+   "class Sordariomycetes (order Incertae sedis) vs Lecanoromycetes; family Gomphillaceae / Gomphillaceae",
+   "nortaxa:taxon.txt#76427",
+   "col:NameUsage.tsv#3HNS2 (sourceID 2073)",
+   [
+    "class"
+   ],
+   [
+    "redlist_rows_on_retired:1"
+   ]
+  ],
+  [
+   "76432",
+   631757,
+   "NZ5ZX",
+   164643,
+   true,
+   "Gyalideopsis piceicola",
+   "species",
+   "(Nyl.) Vezda & Poelt",
+   "(Nyl.) Vězda & Poelt",
+   "identical",
+   "identical",
+   "E1",
+   "default_class_error",
+   "class Sordariomycetes (order Incertae sedis) vs Lecanoromycetes; family Gomphillaceae / Gomphillaceae",
+   "nortaxa:taxon.txt#76432",
+   "col:NameUsage.tsv#NZ5ZX (sourceID 2041)",
+   [
+    "class"
+   ],
+   [
+    "redlist_rows_on_retired:1"
+   ]
+  ],
+  [
+   "76434",
+   631758,
+   "3HNSC",
+   12820,
+   true,
+   "Gyalideopsis rogersii",
+   "species",
+   "Vezda & Hafellner",
+   "Vězda & Hafellner",
+   "identical",
+   "identical",
+   "E1",
+   "default_class_error",
+   "class Sordariomycetes (order Incertae sedis) vs Lecanoromycetes; family Gomphillaceae / Gomphillaceae",
+   "nortaxa:taxon.txt#76434",
+   "col:NameUsage.tsv#3HNSC (sourceID 2073)",
+   [
+    "class"
+   ],
+   []
+  ],
+  [
+   "76436",
+   631759,
+   "3HNSD",
+   12821,
+   true,
+   "Gyalideopsis rubescens",
+   "species",
+   "Vezda",
+   "Vězda",
+   "identical",
+   "identical",
+   "E1",
+   "default_class_error",
+   "class Sordariomycetes (order Incertae sedis) vs Lecanoromycetes; family Gomphillaceae / Gomphillaceae",
+   "nortaxa:taxon.txt#76436",
+   "col:NameUsage.tsv#3HNSD (sourceID 2073)",
+   [
+    "class"
+   ],
+   []
+  ],
+  [
+   "76440",
+   631761,
+   "3HNSP",
+   12827,
+   true,
+   "Gyalideopsis vainioi",
+   "species",
+   "Kalb & Vezda",
+   "Kalb & Vězda",
+   "identical",
+   "identical",
+   "E1",
+   "default_class_error",
+   "class Sordariomycetes (order Incertae sedis) vs Lecanoromycetes; family Gomphillaceae / Gomphillaceae",
+   "nortaxa:taxon.txt#76440",
+   "col:NameUsage.tsv#3HNSP (sourceID 2073)",
+   [
+    "class"
+   ],
+   []
+  ],
+  [
+   "76504",
+   631794,
+   "4XQM9",
+   65614,
+   true,
+   "Siphula fastigiata",
+   "species",
+   "(Nyl.) Nyl",
+   "(Nyl.) Nyl.",
+   "identical",
+   "identical",
+   "E1",
+   "default_class_error",
+   "class Sordariomycetes (order Incertae sedis) vs Lecanoromycetes; family Icmadophilaceae / Icmadophilaceae",
+   "nortaxa:taxon.txt#76504",
+   "col:NameUsage.tsv#4XQM9 (sourceID 2073)",
+   [
+    "class"
+   ],
+   []
+  ],
+  [
+   "76921",
+   631991,
+   "4H5B4",
+   47267,
+   true,
+   "Phyllobathelium epiphyllum",
+   "species",
+   "(Müll.Arg.) Müll.Arg.",
+   "(Müll. Arg.) Müll. Arg.",
+   "identical",
+   "identical",
+   "E1",
+   "default_class_error",
+   "class Sordariomycetes (order Incertae sedis) vs Dothideomycetes; family Phyllobatheliaceae / Strigulaceae",
+   "nortaxa:taxon.txt#76921",
+   "col:NameUsage.tsv#4H5B4 (sourceID 2073)",
+   [
+    "class",
+    "family"
+   ],
+   []
+  ],
+  [
+   "77065",
+   632066,
+   "567P7",
+   71005,
+   true,
+   "Thelenella brasiliensis",
+   "species",
+   "(Müll.Arg.) Vain.",
+   "(Müll. Arg.) Vain.",
+   "identical",
+   "identical",
+   "E1",
+   "default_class_error",
+   "class Sordariomycetes (order Incertae sedis) vs Lecanoromycetes; family Thelenellaceae / Thelenellaceae",
+   "nortaxa:taxon.txt#77065",
+   "col:NameUsage.tsv#567P7 (sourceID 2073)",
+   [
+    "class"
+   ],
+   []
+  ],
+  [
+   "77144",
+   632106,
+   "TR4HP",
+   607433,
+   true,
+   "Umbilicaria africana",
+   "species",
+   "(Jatta) Krog & Swinscow",
+   "(Jatta) Krog & Swinscow, 1986",
+   "identical",
+   "identical",
+   "E1",
+   "default_class_error",
+   "class Sordariomycetes (order Incertae sedis) vs Lecanoromycetes; family Umbilicariaceae / Umbilicariaceae",
+   "nortaxa:taxon.txt#77144",
+   "col:NameUsage.tsv#TR4HP (sourceID 2011)",
+   [
+    "class"
+   ],
+   []
+  ],
+  [
+   "77164",
+   632115,
+   "TR52Z",
+   607447,
+   true,
+   "Umbilicaria haplocarpa",
+   "species",
+   "Nyl.",
+   "Nyl., 1859",
+   "identical",
+   "identical",
+   "E1",
+   "default_class_error",
+   "class Sordariomycetes (order Incertae sedis) vs Lecanoromycetes; family Umbilicariaceae / Umbilicariaceae",
+   "nortaxa:taxon.txt#77164",
+   "col:NameUsage.tsv#TR52Z (sourceID 2011)",
+   [
+    "class"
+   ],
+   []
+  ],
+  [
+   "77199",
+   632129,
+   "TR65K",
+   607480,
+   true,
+   "Umbilicaria thamnodes",
+   "species",
+   "Hue",
+   "Hue, 1900",
+   "identical",
+   "identical",
+   "E1",
+   "default_class_error",
+   "class Sordariomycetes (order Incertae sedis) vs Lecanoromycetes; family Umbilicariaceae / Umbilicariaceae",
+   "nortaxa:taxon.txt#77199",
+   "col:NameUsage.tsv#TR65K (sourceID 2011)",
+   [
+    "class"
+   ],
+   []
+  ],
+  [
+   "77202",
+   632132,
+   "TR67H",
+   607481,
+   true,
+   "Umbilicaria umbilicarioides",
+   "species",
+   "(Stein) Krog & Swinscow",
+   "(Stein) Krog & Swinscow, 1986",
+   "identical",
+   "identical",
+   "E1",
+   "default_class_error",
+   "class Sordariomycetes (order Incertae sedis) vs Lecanoromycetes; family Umbilicariaceae / Umbilicariaceae",
+   "nortaxa:taxon.txt#77202",
+   "col:NameUsage.tsv#TR67H (sourceID 2011)",
+   [
+    "class"
+   ],
+   []
+  ]
+ ],
+ "members_sha256": "d5ee4ec2088d3d831623cde8044f3627f522ca431faa7ef4b10b1c9bae091513",
+ "note": "Candidate only. Approves nothing. IPNI author identity is supporting evidence only. Generated by docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/decision-package-e/scripts/build_package.py.",
+ "pins": {
+  "author_diagnose": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/author-standards/scripts/diagnose.py",
+   "sha256": "bac309c86bbb20e0c46b4b55f46062350b34bfc135dbf03f54d59c761b87f038"
+  },
+  "author_diagnostics": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/author-standards/data/pair_diagnostics.csv",
+   "sha256": "3ce2a9e8e5395fd996dbf7c7ed95549b1c90c4950c0e7cbd0d82ea911ece87ca"
+  },
+  "author_index": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/author-standards/scripts/author_index.py",
+   "sha256": "93df6f43313b1cf1005a24496f488c6e5c3e220f178ed45cac5e53711f996d1e"
+  },
+  "bridge_emission_policy": {
+   "path": "database/taxonomy/policies/mapping_policy.yml",
+   "sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb"
+  },
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "comparator": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/v3/scripts/authors_v3.py",
+   "sha256": "10cebf1f49c365ad4e1df2ed0a51dc9f3e3a79d903e2b21757de2dbbe390af5c"
+  },
+  "decision_rules": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/decision-package-e/scripts/build_package.py",
+   "sha256": "8045880b8cd268e51241481581bea37957f69a88cf9942073d8252ee1c4be46c"
+  },
+  "ipni_author_snapshot": {
+   "licence": "CC BY",
+   "note": "canonical de-duplicated IPNI author records; not in the repository",
+   "retrieved": "2026-10-22",
+   "sha256": "c71b11e3208a352b4c455a3be6335e5c2554bb866dd34ca228319732c386a010"
+  },
+  "relationship_rules": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/v3/scripts/relate_v3.py",
+   "sha256": "7d3d5492922b6a24501f98ed0c83a2de9a05f207da2d30326b4500adaa202b49"
+  },
+  "release": {
+   "content_release_id": "tax-2026.10.07-01",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.10.07-01.sqlite3.gz",
+   "gz_sha256": "bff40f0d5d70ec2be47fe415dfd4cfc623a7841553f8a7d928ed801117ca21c5",
+   "sqlite_sha256": "e349e8b1d7cdbafa688621a71f9be278ac6e381853ff7fe2763d8b856b7724f9"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "nortaxa": {
+    "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release_id": "nortaxa:1.284:2026-07-17"
+   }
+  }
+ },
+ "population": "pass-3 unresolved pairs, decision group E-E1-default-class-error",
+ "review_status": "needs_review"
+}

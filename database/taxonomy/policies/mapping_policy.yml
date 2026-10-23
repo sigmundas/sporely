@@ -75,5 +75,19 @@
     "rejected_is_retained": true,
     "rejected_suppresses_same_proposal": true,
     "changes_require_new_review": true
+  },
+  "r1_candidate_amendments": {
+    "status": "Adopted on branch feature/taxonomy-reconciliation-r1 for the R1 candidate build only (owner instruction 2026-10-23). Not a release approval: a release built under these clauses needs a separate owner decision. Source: docs/audits/2026-10-20-taxonomy-reconciliation/policy-amendment-proposal.md (revision 5) on branch audit/taxonomy-reconciliation, clauses P1, P4, P5, P7 and P10. P2, P3, P6, P8, P9 and the future-release compiler rule are not adopted.",
+    "batch_manifest_acceptance": {
+      "clauses": ["P1", "P4", "P5", "P7"],
+      "rule": "Besides per-association human review, an association is eligible when it is a member of an owner-approved, pinned manifest recorded in concept_supersessions.yml approved_manifests. The approval names the manifest's file_sha256, covers only the enumerated members and pins, never a later source release, and does not claim that a published cross-reference exists: it records that the owner accepts the manifest rule's combined evidence (name, rank, authorship, status, classification, uniqueness, no contradictory evidence) as identity for exactly those members. A rule's output is never eligible without that decision. An automatic class (cross_source_automatic_exact_*) stays rejected as an automatic class; a member of an approved manifest is applied as a reviewed concept supersession, so its anchor bridge carries evidence class reviewed_supersession.",
+      "approval_scope": "An approval carrying approval_scope 'candidate_build_only' authorises building and testing a candidate release from its members. It does not authorise installing, promoting or publishing that release."
+    },
+    "inherited_usage_under_supersession": {
+      "clause": "P10",
+      "rule": "When an approved supersession record carries inherited_usages 'names_only', only the retired concept's own anchor usage (the accepted usage the record names) becomes reviewed_supersession. Every other usage allocated to the retired concept moves to the current concept as a name: it keeps its own evidence class (normally intra_source_synonym, which is rejected for emission), its taxonomic and nomenclatural status and its identifier, and it is marked inherited_via_supersession with its superseded_from id. It is never emitted as an authoritative bridge unless its own evidence class is eligible. Every record created from a batch manifest under these amendments must carry inherited_usages 'names_only'; a manifest approval carrying inherited_usages 'names_only' refuses records without it.",
+      "preservation": "Mandatory. The SQLite builder writes the provenance into the note of the usage's scientific-name and external-id rows as 'alias_reason|inherited_via_supersession|superseded_from=<id>|evidence_class=<class>|taxonomic_status=<status>|nomenclatural_status=<status>', and the cloud export carries note verbatim. Where the same scientific name already exists on the current concept, the existing row is kept and the provenance remains on the usage's external-id row.",
+      "existing_records": "The supersession records shipped before R1 (no inherited_usages field) keep their earlier behaviour until a separate decision."
+    }
   }
 }

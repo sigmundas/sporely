@@ -50,10 +50,10 @@
     "review_ledger": "database/taxonomy/policies/vernacular_associations.json",
     "scope_policy": "database/taxonomy/policies/global-macrofungi-scope.yml",
     "expected_pinned_projection": {
-      "automatic": 1619,
+      "automatic": 816,
       "reviewed": 18,
-      "total": 1637,
-      "affected_concepts": 767
+      "total": 834,
+      "affected_concepts": 409
     }
   }
 }

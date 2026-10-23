@@ -289,5 +289,6 @@ def test_preflight_fails_on_a_collision(tmp_path):
 def test_committed_recipe_preflight_resolves_every_superseded_reference():
     report = br.check_superseded_references(br.load_recipe(br.DEFAULT_RECIPE))
     counts = {key: len(entries) for key, entries in report.items()}
-    assert counts == {"artportalen_overlay": 1, "inaturalist_refresh": 20}
+    # 20 refresh entries on Stage-2 retirees, plus 10 on taxonomy R1 retirees.
+    assert counts == {"artportalen_overlay": 1, "inaturalist_refresh": 30}
     assert report["artportalen_overlay"][0]["superseded_from_sporely_taxon_id"] == 624588

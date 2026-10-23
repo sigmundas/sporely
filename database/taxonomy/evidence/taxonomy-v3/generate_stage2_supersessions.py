@@ -396,7 +396,11 @@ def render() -> str:
     out["approved_manifests"] = approvals
     out["supersessions"] = kept + generated
     bound = verify_supersession_manifest_approvals(out, repo_root=_REPO)
-    if len(bound) != sum(m["member_count"] for *_, m in approved):
+    # Count only this generator's manifests: other approvals (taxonomy R1)
+    # are kept verbatim and verified above, but are not Stage-2 members.
+    stage2 = {sha for _, _, sha in APPROVED_MANIFESTS}
+    if sum(1 for sha in bound.values() if sha in stage2) \
+            != sum(m["member_count"] for *_, m in approved):
         raise GenerationError("not every manifest member has one record")
     return _dump(out) + "\n"
 

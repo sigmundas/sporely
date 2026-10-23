@@ -400,13 +400,32 @@ def verify_frozen(frozen_dir: Path) -> dict:
     return frozen
 
 
+def _require_release_decision(frozen_dir: Path, decision_path: Path | None) -> None:
+    """A candidate_build_only artifact is promoted only with its release decision."""
+    from database.taxonomy.scripts.release_decision import ReleaseDecisionError, require_release_decision
+    manifest = _read_json(frozen_dir / "manifest.json")
+    with tempfile.TemporaryDirectory() as scratch:
+        sqlite_path = Path(scratch) / "artifact.sqlite3"
+        with gzip.open(frozen_dir / manifest["gz_artifact"], "rb") as source, sqlite_path.open("wb") as target:
+            shutil.copyfileobj(source, target, 1 << 20)
+        meta = read_artifact_meta(sqlite_path)
+    try:
+        require_release_decision(meta_value=meta.get("release_approval"),
+                                 content_release_id=manifest["content_release_id"],
+                                 sqlite_sha256=manifest["sqlite_sha256"], decision_path=decision_path)
+    except ReleaseDecisionError as exc:
+        raise PromotionError(str(exc)) from exc
+
+
 def promote(*, frozen_dir: Path, bundle_dir: Path = DEFAULT_BUNDLE_DIR,
             registry_manifest_path: Path = DEFAULT_REGISTRY_MANIFEST,
             compatibility_path: Path | None = DEFAULT_COMPATIBILITY,
-            expected_freeze_sha256: str) -> dict:
+            expected_freeze_sha256: str,
+            release_decision_path: Path | None = None) -> dict:
     """Publish only frozen bytes; never compile, generate evidence or compress."""
     _require(_sha256_file(frozen_dir / "freeze.json") == expected_freeze_sha256, "freeze fingerprint mismatch")
     frozen = verify_frozen(frozen_dir)
+    _require_release_decision(frozen_dir, release_decision_path)
     previous_path = bundle_dir / "manifest.json"
     previous = _read_json(previous_path)
     manifest = _read_json(frozen_dir / "manifest.json")
@@ -457,10 +476,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bundle-dir", type=Path, default=DEFAULT_BUNDLE_DIR)
     parser.add_argument("--registry-manifest", type=Path, default=DEFAULT_REGISTRY_MANIFEST)
     parser.add_argument("--compatibility", type=Path, default=DEFAULT_COMPATIBILITY)
+    parser.add_argument("--release-decision", type=Path, default=None,
+                        help="owner release decision for a candidate_build_only artifact")
     args = parser.parse_args(argv)
     try:
         manifest = promote(frozen_dir=args.frozen_dir, expected_freeze_sha256=args.expect_freeze_sha256,
-            bundle_dir=args.bundle_dir, registry_manifest_path=args.registry_manifest, compatibility_path=args.compatibility)
+            bundle_dir=args.bundle_dir, registry_manifest_path=args.registry_manifest, compatibility_path=args.compatibility,
+            release_decision_path=args.release_decision)
     except (PromotionError, OSError, ValueError, KeyError) as exc:
         print(f"refused: {exc}", file=sys.stderr); return 1
     print(_dump_json(manifest), end="")

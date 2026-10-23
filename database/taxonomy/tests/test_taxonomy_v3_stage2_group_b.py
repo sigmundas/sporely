@@ -286,10 +286,17 @@ def test_shipped_ledger_is_current_and_supersedes_only_approved_pairs():
     text = (_POLICIES / "concept_supersessions.yml").read_text(encoding="utf-8")
     assert generator.render() == text
     ledger = json.loads(text)
-    assert {a["file_sha256"] for a in ledger["approved_manifests"]} \
+    assert {a["file_sha256"] for a in ledger["approved_manifests"]
+            if not a["manifest_id"].startswith("taxonomy-r1-")} \
         == set(_APPROVED.values())
     bound = verify_supersession_manifest_approvals(ledger)
-    assert len(bound) == 179 + 336 + 836
+    # Only Stage-2 records; taxonomy R1 records (prefix taxonomy-r1-) are
+    # checked by test_r1_ledger.py.
+    ledger = {**ledger, "supersessions": [
+        s for s in ledger["supersessions"]
+        if not s["supersession_id"].startswith("taxonomy-r1-")]}
+    assert sum(1 for sha in bound.values() if sha in set(_APPROVED.values())) \
+        == 179 + 336 + 836
 
     approved = {}
     for path, _, _ in generator.APPROVED_MANIFESTS:

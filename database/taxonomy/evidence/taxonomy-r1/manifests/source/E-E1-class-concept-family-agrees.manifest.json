@@ -1,0 +1,375 @@
+{
+ "approval_mode": "batch_by_file_sha256",
+ "columns": [
+  "nortaxa_taxon_id",
+  "nortaxa_sporely_taxon_id",
+  "col_usage_id",
+  "col_sporely_taxon_id",
+  "one_to_one",
+  "canonical_scientific_name",
+  "rank",
+  "nortaxa_authorship",
+  "col_authorship",
+  "accepted_author_cmp",
+  "alias_strict_accepted_cmp",
+  "group",
+  "subclass",
+  "reasons",
+  "nortaxa_source_row",
+  "col_source_row",
+  "placement",
+  "audit_flags"
+ ],
+ "evidence_class": "decision_package_e:E-E1-class-concept-family-agrees",
+ "format": "sporely-taxonomy-reconciliation-candidate-manifest-v1",
+ "member_count": 12,
+ "members": [
+  [
+   "145002",
+   622443,
+   "QKVR",
+   168496,
+   true,
+   "Candelaria pacifica",
+   "species",
+   "M.Westb. & Arup",
+   "M. Westb. & Arup",
+   "identical",
+   "identical",
+   "E1",
+   "class_concept_family_agrees",
+   "class Lecanoromycetes (order Lecanorales) vs Candelariomycetes; family Candelariaceae / Candelariaceae",
+   "nortaxa:taxon.txt#145002",
+   "col:NameUsage.tsv#QKVR (sourceID 2073)",
+   [
+    "class",
+    "ord"
+   ],
+   [
+    "redlist_rows_on_retired:1"
+   ]
+  ],
+  [
+   "145003",
+   622444,
+   "QKWB",
+   168505,
+   true,
+   "Candelariella borealis",
+   "species",
+   "M.Westb.",
+   "M. Westb.",
+   "identical",
+   "identical",
+   "E1",
+   "class_concept_family_agrees",
+   "class Lecanoromycetes (order Lecanorales) vs Candelariomycetes; family Candelariaceae / Candelariaceae",
+   "nortaxa:taxon.txt#145003",
+   "col:NameUsage.tsv#QKWB (sourceID 2073)",
+   [
+    "class",
+    "ord"
+   ],
+   [
+    "redlist_rows_on_retired:1"
+   ]
+  ],
+  [
+   "145004",
+   622445,
+   "5X9T3",
+   81241,
+   true,
+   "Candelariella commutata",
+   "species",
+   "Otte & M.Westb.",
+   "Otte & M. Westb.",
+   "identical",
+   "identical",
+   "E1",
+   "class_concept_family_agrees",
+   "class Lecanoromycetes (order Lecanorales) vs Candelariomycetes; family Candelariaceae / Candelariaceae",
+   "nortaxa:taxon.txt#145004",
+   "col:NameUsage.tsv#5X9T3 (sourceID 2073)",
+   [
+    "class",
+    "ord"
+   ],
+   [
+    "redlist_rows_on_retired:1"
+   ]
+  ],
+  [
+   "215859",
+   623770,
+   "6KKX9",
+   100008,
+   true,
+   "Glutinoglossum glutinosum",
+   "species",
+   "(Pers. : Fr.) Hustad, A.N. Mill., Dentinger & P.F. Cannon",
+   "(Pers.) Hustad, A.N. Mill., Dentinger & P.F. Cannon",
+   "compatible:sanctioning_omitted",
+   "compatible:sanctioning_omitted",
+   "E1",
+   "class_concept_family_agrees",
+   "class Leotiomycetes (order Helotiales) vs Geoglossomycetes; family Geoglossaceae / Geoglossaceae",
+   "nortaxa:taxon.txt#215859",
+   "col:NameUsage.tsv#6KKX9 (sourceID 2073)",
+   [
+    "class",
+    "ord"
+   ],
+   [
+    "redlist_rows_on_retired:1"
+   ]
+  ],
+  [
+   "67464",
+   628195,
+   "6KBJX",
+   99743,
+   true,
+   "Geoglossum difforme",
+   "species",
+   "Fr. : Fr.",
+   "Fr.",
+   "compatible:sanctioning_omitted",
+   "compatible:sanctioning_omitted",
+   "E1",
+   "class_concept_family_agrees",
+   "class Leotiomycetes (order Helotiales) vs Geoglossomycetes; family Geoglossaceae / Geoglossaceae",
+   "nortaxa:taxon.txt#67464",
+   "col:NameUsage.tsv#6KBJX (sourceID 2073)",
+   [
+    "class",
+    "ord"
+   ],
+   [
+    "redlist_rows_on_retired:1"
+   ]
+  ],
+  [
+   "68799",
+   628762,
+   "M5LHD",
+   159915,
+   true,
+   "Candelariella rhodax",
+   "species",
+   "Poelt et Vezda",
+   "Poelt & Vezda",
+   "identical",
+   "identical",
+   "E1",
+   "class_concept_family_agrees",
+   "class Lecanoromycetes (order Lecanorales) vs Candelariomycetes; family Candelariaceae / Candelariaceae",
+   "nortaxa:taxon.txt#68799",
+   "col:NameUsage.tsv#M5LHD (sourceID 2030)",
+   [
+    "class",
+    "ord"
+   ],
+   []
+  ],
+  [
+   "68800",
+   628763,
+   "QKX9",
+   168520,
+   true,
+   "Candelariella rosulans",
+   "species",
+   "(Müll.Arg.) Zahlbr.",
+   "(Müll. Arg.) Zahlbr.",
+   "identical",
+   "identical",
+   "E1",
+   "class_concept_family_agrees",
+   "class Lecanoromycetes (order Lecanorales) vs Candelariomycetes; family Candelariaceae / Candelariaceae",
+   "nortaxa:taxon.txt#68800",
+   "col:NameUsage.tsv#QKX9 (sourceID 2073)",
+   [
+    "class",
+    "ord"
+   ],
+   []
+  ],
+  [
+   "76935",
+   632001,
+   "R3678",
+   169944,
+   true,
+   "Mycowinteria alpina",
+   "species",
+   "L. Holm & K. Holm",
+   "L.Holm & K.Holm",
+   "identical",
+   "identical",
+   "E1",
+   "class_concept_family_agrees",
+   "class Dothideomycetes (order Dothideomycetes) vs Lecanoromycetes; family Protothelenellaceae / Protothelenellaceae",
+   "nortaxa:taxon.txt#76935",
+   "col:NameUsage.tsv#R3678 (sourceID 2041)",
+   [
+    "class",
+    "ord"
+   ],
+   []
+  ],
+  [
+   "80847",
+   633663,
+   "9ZF5X",
+   136657,
+   true,
+   "Requienella seminuda",
+   "species",
+   "(Pers.:Fr.) Boise",
+   "(Pers.) Boise",
+   "compatible:sanctioning_omitted",
+   "compatible:sanctioning_omitted",
+   "E1",
+   "class_concept_family_agrees",
+   "class Sordariomycetes (order Xylariales) vs Eurotiomycetes; family Requienellaceae / Requienellaceae",
+   "nortaxa:taxon.txt#80847",
+   "col:NameUsage.tsv#9ZF5X (sourceID 2073)",
+   [
+    "class",
+    "ord"
+   ],
+   []
+  ],
+  [
+   "80852",
+   633667,
+   "6827Z",
+   90469,
+   true,
+   "Architrypethelium uberinum",
+   "species",
+   "(Fee) Aptroot",
+   "(Fée) Aptroot",
+   "identical",
+   "identical",
+   "E1",
+   "class_concept_family_agrees",
+   "class Eurotiomycetes (order Pyrenulales) vs Dothideomycetes; family Trypetheliaceae / Trypetheliaceae",
+   "nortaxa:taxon.txt#80852",
+   "col:NameUsage.tsv#6827Z (sourceID 2073)",
+   [
+    "class",
+    "ord"
+   ],
+   []
+  ],
+  [
+   "80858",
+   633671,
+   "5VVTH",
+   79844,
+   true,
+   "Astrothelium fallax",
+   "species",
+   "Müll.Arg.",
+   "Müll. Arg.",
+   "identical",
+   "identical",
+   "E1",
+   "class_concept_family_agrees",
+   "class Eurotiomycetes (order Pyrenulales) vs Dothideomycetes; family Trypetheliaceae / Trypetheliaceae",
+   "nortaxa:taxon.txt#80858",
+   "col:NameUsage.tsv#5VVTH (sourceID 2073)",
+   [
+    "class",
+    "ord"
+   ],
+   []
+  ],
+  [
+   "80899",
+   633700,
+   "6VTRP",
+   109980,
+   true,
+   "Polymeridium albidum",
+   "species",
+   "(Müll.Arg.) R.C. Harris",
+   "(Müll. Arg.) R.C. Harris",
+   "identical",
+   "identical",
+   "E1",
+   "class_concept_family_agrees",
+   "class Eurotiomycetes (order Pyrenulales) vs Dothideomycetes; family Trypetheliaceae / Trypetheliaceae",
+   "nortaxa:taxon.txt#80899",
+   "col:NameUsage.tsv#6VTRP (sourceID 2073)",
+   [
+    "class",
+    "ord"
+   ],
+   []
+  ]
+ ],
+ "members_sha256": "ca599cb4ace5aed633b4a14695d1e72649ed77953e604b06406abe52c7ef20a4",
+ "note": "Candidate only. Approves nothing. IPNI author identity is supporting evidence only. Generated by docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/decision-package-e/scripts/build_package.py.",
+ "pins": {
+  "author_diagnose": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/author-standards/scripts/diagnose.py",
+   "sha256": "bac309c86bbb20e0c46b4b55f46062350b34bfc135dbf03f54d59c761b87f038"
+  },
+  "author_diagnostics": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/author-standards/data/pair_diagnostics.csv",
+   "sha256": "3ce2a9e8e5395fd996dbf7c7ed95549b1c90c4950c0e7cbd0d82ea911ece87ca"
+  },
+  "author_index": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/author-standards/scripts/author_index.py",
+   "sha256": "93df6f43313b1cf1005a24496f488c6e5c3e220f178ed45cac5e53711f996d1e"
+  },
+  "bridge_emission_policy": {
+   "path": "database/taxonomy/policies/mapping_policy.yml",
+   "sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb"
+  },
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "comparator": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/v3/scripts/authors_v3.py",
+   "sha256": "10cebf1f49c365ad4e1df2ed0a51dc9f3e3a79d903e2b21757de2dbbe390af5c"
+  },
+  "decision_rules": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/decision-package-e/scripts/build_package.py",
+   "sha256": "8045880b8cd268e51241481581bea37957f69a88cf9942073d8252ee1c4be46c"
+  },
+  "ipni_author_snapshot": {
+   "licence": "CC BY",
+   "note": "canonical de-duplicated IPNI author records; not in the repository",
+   "retrieved": "2026-10-22",
+   "sha256": "c71b11e3208a352b4c455a3be6335e5c2554bb866dd34ca228319732c386a010"
+  },
+  "relationship_rules": {
+   "path": "docs/audits/2026-10-20-taxonomy-reconciliation/relationship-pass/v3/scripts/relate_v3.py",
+   "sha256": "7d3d5492922b6a24501f98ed0c83a2de9a05f207da2d30326b4500adaa202b49"
+  },
+  "release": {
+   "content_release_id": "tax-2026.10.07-01",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.10.07-01.sqlite3.gz",
+   "gz_sha256": "bff40f0d5d70ec2be47fe415dfd4cfc623a7841553f8a7d928ed801117ca21c5",
+   "sqlite_sha256": "e349e8b1d7cdbafa688621a71f9be278ac6e381853ff7fe2763d8b856b7724f9"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "nortaxa": {
+    "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release_id": "nortaxa:1.284:2026-07-17"
+   }
+  }
+ },
+ "population": "pass-3 unresolved pairs, decision group E-E1-class-concept-family-agrees",
+ "review_status": "needs_review"
+}
