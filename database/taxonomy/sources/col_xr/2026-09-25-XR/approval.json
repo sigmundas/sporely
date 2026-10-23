@@ -1,0 +1,60 @@
+{
+  "approval_schema_version": 1,
+  "approval_source": "owner instruction 2026-10-23 (coordinator relay): acquire COL26.9 XR (ChecklistBank dataset 316441) for a disposable refresh candidate",
+  "approval_status": "approved",
+  "approved_at": "2026-10-23T00:00:00Z",
+  "approved_by": "owner (Sigmund Ås)",
+  "approved_canonical_endpoint": "https://api.checklistbank.org/dataset/316441/export.zip?extended=true&format=ColDP",
+  "approved_http_method": "GET",
+  "approved_maximum_bytes": 1610612736,
+  "approved_redirect_hosts": [
+    "api.checklistbank.org",
+    "download.checklistbank.org"
+  ],
+  "authorization_scope": "one full transfer attempt",
+  "compiler_consumption": {
+    "archive_preservation": "preserve complete immutable bytes",
+    "compiler_audit_fields": [
+      "NameUsage.code",
+      "NameUsage.extinct",
+      "NameUsage.origin",
+      "NameUsage.referenceID",
+      "NameUsage.sectorID",
+      "NameUsage.sourceID"
+    ],
+    "compiler_ignored_entities": [
+      "Distribution",
+      "Media",
+      "SpeciesInteraction",
+      "Treatment",
+      "TypeMaterial",
+      "VernacularName"
+    ],
+    "compiler_required_fields": [
+      "NameUsage.ID",
+      "NameUsage.acceptedNameUsageID",
+      "NameUsage.authorship",
+      "NameUsage.parentID",
+      "NameUsage.rank",
+      "NameUsage.scientificName",
+      "NameUsage.status"
+    ]
+  },
+  "compiler_consumption_is_not_an_export_filter": true,
+  "custom_export_jobs_prohibited": true,
+  "declared_content_length": 1236222035,
+  "download_authorized": true,
+  "large_metadata_authorized": true,
+  "minimum_free_disk_bytes": 4294967296,
+  "proposal_sha256": "8820f7a71552db91f8f9f64754eb6408bd09a7f8c243c6e4b19922393603dc13",
+  "release_identity": {
+    "archive_format": "ColDP",
+    "dataset_key": 316441,
+    "doi": "10.48580/dgz9s",
+    "issued_date": "2026-09-25",
+    "release_label": "2026-09-25 XR",
+    "release_type": "Extended Release"
+  },
+  "request_sha256": "1708aed0d524fff411e7c929f1e1053253c3738dd1e6ab58718f7cd733840e82",
+  "scope": "disposable refresh candidate; acquisition only. Not a release approval; authorizes no promotion, publication or production write."
+}

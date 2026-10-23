@@ -1,0 +1,820 @@
+{
+  "accepted_count": 5237496,
+  "applied_correction_count": 0,
+  "applied_corrections": [],
+  "audit_fields_present": {
+    "code": true,
+    "extinct": true,
+    "origin": false,
+    "reference_id": true,
+    "sector_id": false,
+    "source_id": true
+  },
+  "blank_row_count": 0,
+  "completion_status": "complete",
+  "crc_verified_by_zip_stream": true,
+  "delimiter": "literal physical tab",
+  "duplicate_primary_id_count": 0,
+  "encoding": "strict UTF-8",
+  "filename": "NameUsage.tsv",
+  "final_eof_reached": true,
+  "former_strict_csv_rejection_count": 196,
+  "former_strict_csv_rejection_samples": [
+    {
+      "context": ".org:taxname:518369,wikidata:Q2379252\\t\\t1126\\t7ZHYR\\t\\tsynonym\\tDiplectanum stetoxus\\t\"Nagibina, 1976\" of Zhang et al. (2001)\\tspecies\\t\\t\\t\\tDiplectanum\\t\\tstetoxus\\t\\t\\tNagib",
+      "line": 24995,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "b2f1666bce04ec76b22f4289514c28b96905e7780d1e3cda61e978c9d6aa12ab",
+      "reason": "'\t' expected after '\"'",
+      "row_bytes": 555
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://www.marinespecies.org/aphia.php?p=taxdetails&id=1165163\\t\\t\"Spelling: Name used by MonoDB, GyroDB and Harris et al. (2004) on pgae 13:\\t\\t\\tfa",
+      "line": 77388,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "e15ac234c75b4a6f7bb2c344577c48ef9eec504b4b052a16be27ddb08ce06a4c",
+      "reason": "unexpected end of data",
+      "row_bytes": 382
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://www.marinespecies.org/aphia.php?p=taxdetails&id=718066\\t\\t\"Taxonomic remark: Listed as a synonym of Heteraxinoides xanthophilis (Hargis, 1",
+      "line": 89781,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "a347ac662e38c4642ed29366884403ce3ad5957e0d3775b3ed59e23553cc9265",
+      "reason": "unexpected end of data",
+      "row_bytes": 490
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://www.marinespecies.org/aphia.php?p=taxdetails&id=147440\\t\\t\"Synonymy: Semper 1868 cited in Pearson 1913. See species remark.|Remark: non H.",
+      "line": 95887,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "b9945e650e19a18a851dc23a6079b8c9d1825dd39379555c1bb097107fb6fd7e",
+      "reason": "unexpected end of data",
+      "row_bytes": 808
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://www.marinespecies.org/aphia.php?p=taxdetails&id=124649\\t\\t\"Synonymy: Madsen & Hansen (1994) are using the genus name Cucumaria for this sp",
+      "line": 211970,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "30feb1d1dc65657196db188a9e6b1d675af6947937583fea55c27e05e59800da",
+      "reason": "unexpected end of data",
+      "row_bytes": 676
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://www.millibase.org/aphia.php?p=taxdetails&id=956465\\t\\t\"Synonymy: Note on uncertain synonymy of Spirostreptus regis and S. andersoni in",
+      "line": 316474,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "0aeb2d30e5e0e5168bce9efb378a8f835a5bb012b7b3344793013fbea03fb190",
+      "reason": "unexpected end of data",
+      "row_bytes": 574
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://www.marinespecies.org/aphia.php?p=taxdetails&id=210907\\t\\t\"synonymy: Subgenus (Mertensiothuria) Deichmann, 1958|Remark: Type species of th",
+      "line": 323364,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "c4bd3da82d6796d7fbf299eeb534a258b1eebe783d5bb2e9a24a3b4777834636",
+      "reason": "unexpected end of data",
+      "row_bytes": 643
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://www.marinespecies.org/aphia.php?p=taxdetails&id=210905\\t\\t\"Remark: In most of the literature before 1995 S. herrmanni is cited as S. varie",
+      "line": 323372,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "a58fdf408c64e8ed2b0b61dd4ea4ca77b468b7547f9bcd5dec60a79daa6e7403",
+      "reason": "unexpected end of data",
+      "row_bytes": 882
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://www.marinespecies.org/aphia.php?p=taxdetails&id=210763\\t\\t\"Synonymy: Treated as a synonym of Bohadschia graeffei (Semper, 1868) |synonymy:",
+      "line": 501364,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "3560cc4deab8ba3ae6c4068b136eee15f43d4eb0f52df7c9cd94db59e7288512",
+      "reason": "unexpected end of data",
+      "row_bytes": 987
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://www.marinespecies.org/aphia.php?p=taxdetails&id=1063023\\t\\t\"Synonymy: Synonymy according to Gusev (1985). Not the senior synonym. Gusev als",
+      "line": 514398,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "f1d7eb23209ef19f19ea01710230098f19e817d0daf29dea6e29648bc071e58d",
+      "reason": "unexpected end of data",
+      "row_bytes": 402
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://www.marinespecies.org/aphia.php?p=taxdetails&id=119573\\t\\t\"Taxonomy: Harris et al. (2004) say: Originally described as G. gussevi Najdenov",
+      "line": 552405,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "757f4f33f38236e9b93c59cfc69f98f1dc988ad26a4bb73d6b751f737a722c69",
+      "reason": "unexpected end of data",
+      "row_bytes": 592
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://www.marinespecies.org/aphia.php?p=taxdetails&id=210816\\t\\t\"synonymy: In Subgenus (Metriatyla) Rowe, 1969.|Remark: Subgenus: (Theelothuria)",
+      "line": 558361,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "0b574fdde9972e0b078a09d19e275327ab3febf9fc5e3c9ca0bae19a77c63de7",
+      "reason": "unexpected end of data",
+      "row_bytes": 510
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://www.marinespecies.org/aphia.php?p=taxdetails&id=210892\\t\\t\"synonymy: In Subgenus: (Lessonothuria) Deichmann, 1958. Decision following exam",
+      "line": 558362,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "8b3a1e0d4ac3b637f32e283edd2c2a30f6667fe225525cb4121c70a8598bec3b",
+      "reason": "unexpected end of data",
+      "row_bytes": 739
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://www.marinespecies.org/aphia.php?p=taxdetails&id=210836\\t\\t\"Remark: In Subgenus (Holothuria\\t\\t\\tfalse\\n",
+      "line": 558375,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "488e97e9bae8604e18e4bde85a2b0feaf51bb0d5a44b37f0e3201b603de6f2c8",
+      "reason": "unexpected end of data",
+      "row_bytes": 447
+    },
+    {
+      "context": "opsis\\t\\tnodosa\\t\\t\\tA.F\\xe9russac\\t\\t\\t\\t1822\\t\\t\\t\\t\\t\\t\\tf507fea0-675f-4b9c-88a2-7eca04ee7aaf\\t\\t\"M\\xe9lanopsides fossiles\", pl. 1 (1822), fig. 13\\t\\t\\t\\t\\tzoological\\testablished\\t\\t\\t\\tf5",
+      "line": 581854,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "29cbfc8f213c751e76126f54b271e1325071beb2dc3450a47f82cc638e66dc33",
+      "reason": "'\t' expected after '\"'",
+      "row_bytes": 493
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://www.marinespecies.org/aphia.php?p=taxdetails&id=210977\\t\\t\"Synonymy: Needs confirmation. Clark says: '\\u2026 there are none in the MCZ which ",
+      "line": 669933,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "3a5119237e179f691170455f882e377ef9e5a8c22060df125ee4d92117097ea4",
+      "reason": "unexpected end of data",
+      "row_bytes": 740
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://www.marinespecies.org/aphia.php?p=taxdetails&id=992869\\t\\t\"Spelling: Name malformed. Should be arcuatum.\\t\\t\\tfalse\\n",
+      "line": 672629,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "4d9633fd6c2d44fae13c52ef2ce3e7a5a88fce95e294589375c5cac12e7ef4fc",
+      "reason": "unexpected end of data",
+      "row_bytes": 397
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://nemys.ugent.be/aphia.php?p=taxdetails&id=584547\\t\\t\"Original Combination: Unclear combination origin\\t\\t\\tfalse\\n",
+      "line": 830846,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "a0e2a284e6ab57882562cd395dbdda816d6ebbd9d58c78975128786d89064b25",
+      "reason": "unexpected end of data",
+      "row_bytes": 360
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://nemys.ugent.be/aphia.php?p=taxdetails&id=231254\\t\\t\"Contributed data: Basionym: Originally described as *Enoplus coronatus* Eberth,",
+      "line": 831436,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "a80839c19f6adb85cf5bbfcd7ba48f396a29d24974dcd54447a68e9d4a92f8fb",
+      "reason": "unexpected end of data",
+      "row_bytes": 537
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://nemys.ugent.be/aphia.php?p=taxdetails&id=583635\\t\\t\"Taxonomy: Penzancia agilis acc. Andrassy 2005 (Free-livng nematodes of Hungary ",
+      "line": 832250,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "ea63176c4fa5dba203888013dc697f124993d0dc058b20ecccabc502506cf52a",
+      "reason": "unexpected end of data",
+      "row_bytes": 537
+    }
+  ],
+  "fungi_root_rows": 1,
+  "header_profile": "checklistbank-col-xr-2026-07-17",
+  "identifier_shape_counts": {
+    "ascii_token": 2168381,
+    "decimal": 26453,
+    "uppercase_alphanumeric": 6284760
+  },
+  "malformed_row_count": 5,
+  "malformed_row_samples": [
+    {
+      "line": 367823,
+      "reason": "unapproved BOM occurrence in NameUsage"
+    },
+    {
+      "line": 2090652,
+      "reason": "unapproved BOM occurrence in NameUsage"
+    },
+    {
+      "line": 5632468,
+      "reason": "unapproved BOM occurrence in NameUsage"
+    },
+    {
+      "line": 7754462,
+      "reason": "unapproved BOM occurrence in NameUsage"
+    },
+    {
+      "line": 8449776,
+      "reason": "unapproved BOM occurrence in NameUsage"
+    }
+  ],
+  "missing_required_value_counts": {
+    "authorship": 2333236,
+    "id": 0,
+    "parent_id": 5,
+    "rank": 0,
+    "scientific_name": 0,
+    "status": 0
+  },
+  "normalized_header": [
+    "ID",
+    "alternativeID",
+    "nameAlternativeID",
+    "sourceID",
+    "parentID",
+    "basionymID",
+    "status",
+    "scientificName",
+    "authorship",
+    "rank",
+    "notho",
+    "originalSpelling",
+    "uninomial",
+    "genericName",
+    "infragenericEpithet",
+    "specificEpithet",
+    "infraspecificEpithet",
+    "cultivarEpithet",
+    "combinationAuthorship",
+    "combinationAuthorshipID",
+    "combinationExAuthorship",
+    "combinationExAuthorshipID",
+    "combinationAuthorshipYear",
+    "basionymAuthorship",
+    "basionymAuthorshipID",
+    "basionymExAuthorship",
+    "basionymExAuthorshipID",
+    "basionymAuthorshipYear",
+    "namePhrase",
+    "nameReferenceID",
+    "namePublishedInYear",
+    "namePublishedInPage",
+    "namePublishedInPageLink",
+    "gender",
+    "genderAgreement",
+    "etymology",
+    "code",
+    "nameStatus",
+    "accordingToID",
+    "accordingToPage",
+    "accordingToPageLink",
+    "referenceID",
+    "scrutinizer",
+    "scrutinizerID",
+    "scrutinizerDate",
+    "extinct",
+    "temporalRangeStart",
+    "temporalRangeEnd",
+    "environment",
+    "species",
+    "section",
+    "subgenus",
+    "genus",
+    "subtribe",
+    "tribe",
+    "subfamily",
+    "family",
+    "superfamily",
+    "suborder",
+    "order",
+    "subclass",
+    "class",
+    "subphylum",
+    "phylum",
+    "kingdom",
+    "ordinal",
+    "branchLength",
+    "link",
+    "nameRemarks",
+    "remarks",
+    "modified",
+    "modifiedBy",
+    "clb:merged"
+  ],
+  "original_header": [
+    "col:ID",
+    "col:alternativeID",
+    "col:nameAlternativeID",
+    "col:sourceID",
+    "col:parentID",
+    "col:basionymID",
+    "col:status",
+    "col:scientificName",
+    "col:authorship",
+    "col:rank",
+    "col:notho",
+    "col:originalSpelling",
+    "col:uninomial",
+    "col:genericName",
+    "col:infragenericEpithet",
+    "col:specificEpithet",
+    "col:infraspecificEpithet",
+    "col:cultivarEpithet",
+    "col:combinationAuthorship",
+    "col:combinationAuthorshipID",
+    "col:combinationExAuthorship",
+    "col:combinationExAuthorshipID",
+    "col:combinationAuthorshipYear",
+    "col:basionymAuthorship",
+    "col:basionymAuthorshipID",
+    "col:basionymExAuthorship",
+    "col:basionymExAuthorshipID",
+    "col:basionymAuthorshipYear",
+    "col:namePhrase",
+    "col:nameReferenceID",
+    "col:namePublishedInYear",
+    "col:namePublishedInPage",
+    "col:namePublishedInPageLink",
+    "col:gender",
+    "col:genderAgreement",
+    "col:etymology",
+    "col:code",
+    "col:nameStatus",
+    "col:accordingToID",
+    "col:accordingToPage",
+    "col:accordingToPageLink",
+    "col:referenceID",
+    "col:scrutinizer",
+    "col:scrutinizerID",
+    "col:scrutinizerDate",
+    "col:extinct",
+    "col:temporalRangeStart",
+    "col:temporalRangeEnd",
+    "col:environment",
+    "col:species",
+    "col:section",
+    "col:subgenus",
+    "col:genus",
+    "col:subtribe",
+    "col:tribe",
+    "col:subfamily",
+    "col:family",
+    "col:superfamily",
+    "col:suborder",
+    "col:order",
+    "col:subclass",
+    "col:class",
+    "col:subphylum",
+    "col:phylum",
+    "col:kingdom",
+    "col:ordinal",
+    "col:branchLength",
+    "col:link",
+    "col:nameRemarks",
+    "col:remarks",
+    "col:modified",
+    "col:modifiedBy",
+    "clb:merged"
+  ],
+  "original_to_normalized": [
+    [
+      "col:ID",
+      "ID"
+    ],
+    [
+      "col:alternativeID",
+      "alternativeID"
+    ],
+    [
+      "col:nameAlternativeID",
+      "nameAlternativeID"
+    ],
+    [
+      "col:sourceID",
+      "sourceID"
+    ],
+    [
+      "col:parentID",
+      "parentID"
+    ],
+    [
+      "col:basionymID",
+      "basionymID"
+    ],
+    [
+      "col:status",
+      "status"
+    ],
+    [
+      "col:scientificName",
+      "scientificName"
+    ],
+    [
+      "col:authorship",
+      "authorship"
+    ],
+    [
+      "col:rank",
+      "rank"
+    ],
+    [
+      "col:notho",
+      "notho"
+    ],
+    [
+      "col:originalSpelling",
+      "originalSpelling"
+    ],
+    [
+      "col:uninomial",
+      "uninomial"
+    ],
+    [
+      "col:genericName",
+      "genericName"
+    ],
+    [
+      "col:infragenericEpithet",
+      "infragenericEpithet"
+    ],
+    [
+      "col:specificEpithet",
+      "specificEpithet"
+    ],
+    [
+      "col:infraspecificEpithet",
+      "infraspecificEpithet"
+    ],
+    [
+      "col:cultivarEpithet",
+      "cultivarEpithet"
+    ],
+    [
+      "col:combinationAuthorship",
+      "combinationAuthorship"
+    ],
+    [
+      "col:combinationAuthorshipID",
+      "combinationAuthorshipID"
+    ],
+    [
+      "col:combinationExAuthorship",
+      "combinationExAuthorship"
+    ],
+    [
+      "col:combinationExAuthorshipID",
+      "combinationExAuthorshipID"
+    ],
+    [
+      "col:combinationAuthorshipYear",
+      "combinationAuthorshipYear"
+    ],
+    [
+      "col:basionymAuthorship",
+      "basionymAuthorship"
+    ],
+    [
+      "col:basionymAuthorshipID",
+      "basionymAuthorshipID"
+    ],
+    [
+      "col:basionymExAuthorship",
+      "basionymExAuthorship"
+    ],
+    [
+      "col:basionymExAuthorshipID",
+      "basionymExAuthorshipID"
+    ],
+    [
+      "col:basionymAuthorshipYear",
+      "basionymAuthorshipYear"
+    ],
+    [
+      "col:namePhrase",
+      "namePhrase"
+    ],
+    [
+      "col:nameReferenceID",
+      "nameReferenceID"
+    ],
+    [
+      "col:namePublishedInYear",
+      "namePublishedInYear"
+    ],
+    [
+      "col:namePublishedInPage",
+      "namePublishedInPage"
+    ],
+    [
+      "col:namePublishedInPageLink",
+      "namePublishedInPageLink"
+    ],
+    [
+      "col:gender",
+      "gender"
+    ],
+    [
+      "col:genderAgreement",
+      "genderAgreement"
+    ],
+    [
+      "col:etymology",
+      "etymology"
+    ],
+    [
+      "col:code",
+      "code"
+    ],
+    [
+      "col:nameStatus",
+      "nameStatus"
+    ],
+    [
+      "col:accordingToID",
+      "accordingToID"
+    ],
+    [
+      "col:accordingToPage",
+      "accordingToPage"
+    ],
+    [
+      "col:accordingToPageLink",
+      "accordingToPageLink"
+    ],
+    [
+      "col:referenceID",
+      "referenceID"
+    ],
+    [
+      "col:scrutinizer",
+      "scrutinizer"
+    ],
+    [
+      "col:scrutinizerID",
+      "scrutinizerID"
+    ],
+    [
+      "col:scrutinizerDate",
+      "scrutinizerDate"
+    ],
+    [
+      "col:extinct",
+      "extinct"
+    ],
+    [
+      "col:temporalRangeStart",
+      "temporalRangeStart"
+    ],
+    [
+      "col:temporalRangeEnd",
+      "temporalRangeEnd"
+    ],
+    [
+      "col:environment",
+      "environment"
+    ],
+    [
+      "col:species",
+      "species"
+    ],
+    [
+      "col:section",
+      "section"
+    ],
+    [
+      "col:subgenus",
+      "subgenus"
+    ],
+    [
+      "col:genus",
+      "genus"
+    ],
+    [
+      "col:subtribe",
+      "subtribe"
+    ],
+    [
+      "col:tribe",
+      "tribe"
+    ],
+    [
+      "col:subfamily",
+      "subfamily"
+    ],
+    [
+      "col:family",
+      "family"
+    ],
+    [
+      "col:superfamily",
+      "superfamily"
+    ],
+    [
+      "col:suborder",
+      "suborder"
+    ],
+    [
+      "col:order",
+      "order"
+    ],
+    [
+      "col:subclass",
+      "subclass"
+    ],
+    [
+      "col:class",
+      "class"
+    ],
+    [
+      "col:subphylum",
+      "subphylum"
+    ],
+    [
+      "col:phylum",
+      "phylum"
+    ],
+    [
+      "col:kingdom",
+      "kingdom"
+    ],
+    [
+      "col:ordinal",
+      "ordinal"
+    ],
+    [
+      "col:branchLength",
+      "branchLength"
+    ],
+    [
+      "col:link",
+      "link"
+    ],
+    [
+      "col:nameRemarks",
+      "nameRemarks"
+    ],
+    [
+      "col:remarks",
+      "remarks"
+    ],
+    [
+      "col:modified",
+      "modified"
+    ],
+    [
+      "col:modifiedBy",
+      "modifiedBy"
+    ],
+    [
+      "clb:merged",
+      "clb:merged"
+    ]
+  ],
+  "quotes_structural": false,
+  "rank_distribution": {
+    "aberration": 532,
+    "class": 756,
+    "domain": 3,
+    "epifamily": 13,
+    "family": 30532,
+    "form": 75951,
+    "forma specialis": 61,
+    "genus": 459914,
+    "gigaclass": 2,
+    "infraclass": 28,
+    "infrafamily": 1,
+    "infrageneric name": 28,
+    "infrakingdom": 4,
+    "infraorder": 230,
+    "infraphylum": 12,
+    "infraspecific name": 2845,
+    "infrasubspecific name": 109,
+    "infratribe": 99,
+    "kingdom": 25,
+    "lusus": 317,
+    "megaclass": 1,
+    "morph": 1,
+    "mutatio": 75,
+    "nanorder": 10,
+    "natio": 119,
+    "order": 3017,
+    "other": 1096,
+    "parvorder": 43,
+    "parvphylum": 2,
+    "phylum": 197,
+    "proles": 1374,
+    "realm": 10,
+    "section botany": 272,
+    "section zoology": 26,
+    "series zoology": 8,
+    "species": 4899357,
+    "species aggregate": 229,
+    "subclass": 226,
+    "subfamily": 12270,
+    "subform": 878,
+    "subgenus": 44925,
+    "subkingdom": 6,
+    "suborder": 1036,
+    "subphylum": 65,
+    "subsection botany": 17,
+    "subsection zoology": 6,
+    "subspecies": 369939,
+    "subterclass": 13,
+    "subtribe": 3669,
+    "subvariety": 4011,
+    "superclass": 18,
+    "superfamily": 1891,
+    "supergenus": 14,
+    "superorder": 174,
+    "supertribe": 32,
+    "tribe": 11148,
+    "unranked": 2168589,
+    "variety": 383368
+  },
+  "removed_semantic_bom_code_points": 0,
+  "representative_nonempty_rows": 100,
+  "required_column_mapping": {
+    "authorship": 8,
+    "id": 0,
+    "parent_id": 4,
+    "rank": 9,
+    "scientific_name": 7,
+    "status": 6
+  },
+  "row_count": 8479594,
+  "scan_schema_version": 1,
+  "self_parent_reference_count": 0,
+  "semantic_probes": {
+    "Candolleomyces candolleanus": {
+      "raw": {
+        "accepted_id": "9YLPB",
+        "authorship": "(Fr.) D. Wächt. & A. Melzer",
+        "id": "9Z2GC",
+        "parent_id": "9YLPB",
+        "rank": "species",
+        "scientific_name": "Candolleomyces candolleanus",
+        "status": "accepted"
+      },
+      "semantic": {
+        "accepted_id": "9YLPB",
+        "authorship": "(Fr.) D. Wächt. & A. Melzer",
+        "id": "9Z2GC",
+        "parent_id": "9YLPB",
+        "rank": "species",
+        "scientific_name": "Candolleomyces candolleanus",
+        "status": "accepted"
+      }
+    },
+    "Psathyrella candolleana": {
+      "raw": {
+        "accepted_id": "9Z2GC",
+        "authorship": "(Fr.) Maire",
+        "id": "4NDVN",
+        "parent_id": "9Z2GC",
+        "rank": "species",
+        "scientific_name": "Psathyrella candolleana",
+        "status": "synonym"
+      },
+      "semantic": {
+        "accepted_id": "9Z2GC",
+        "authorship": "(Fr.) Maire",
+        "id": "4NDVN",
+        "parent_id": "9Z2GC",
+        "rank": "species",
+        "scientific_name": "Psathyrella candolleana",
+        "status": "synonym"
+      }
+    },
+    "fungi_root": {
+      "raw": {
+        "accepted_id": "CS5HF",
+        "authorship": "",
+        "id": "F",
+        "parent_id": "CS5HF",
+        "rank": "kingdom",
+        "scientific_name": "Fungi",
+        "status": "accepted"
+      },
+      "semantic": {
+        "accepted_id": "CS5HF",
+        "authorship": "",
+        "id": "F",
+        "parent_id": "CS5HF",
+        "rank": "kingdom",
+        "scientific_name": "Fungi",
+        "status": "accepted"
+      }
+    }
+  },
+  "sha256": "b9cea53ea2ee74c5f12fcc098d876406fef768fc05f3ea6087131af4fc8d8cf2",
+  "status_distribution": {
+    "accepted": 5072325,
+    "ambiguous synonym": 140450,
+    "misapplied": 6480,
+    "provisionally accepted": 165171,
+    "synonym": 3095168
+  },
+  "synonym_or_related_count": 3242098,
+  "terminal_validation_findings": [
+    "NameUsage contains 5 genuine malformed rows",
+    "observed 11 unapproved BOM occurrences"
+  ],
+  "unapproved_bom_occurrence_count": 11,
+  "uncompressed_bytes_read": 3113420424,
+  "unknown_columns": [
+    "clb:merged"
+  ]
+}

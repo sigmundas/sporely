@@ -1,0 +1,100 @@
+{
+  "approval_file": "approval.json",
+  "disk_preflight": {
+    "approved_maximum_bytes": 1610612736,
+    "available_disk_bytes": 136798662656,
+    "expected_bytes": 1236222035
+  },
+  "download": {
+    "attempt_evidence": {
+      "bytes_written": 1236222035,
+      "cleanup_error": null,
+      "expected_bytes": 1236222035,
+      "failed_at": null,
+      "failure_message": null,
+      "failure_phase": null,
+      "failure_type": null,
+      "partial_file_removed": false,
+      "response_opened": true,
+      "started_at": "2026-10-23T19:08:36.135195Z",
+      "transport_open_attempted": true
+    },
+    "bytes": 1236222035,
+    "canonical_endpoint": "https://api.checklistbank.org/dataset/316441/export.zip?extended=true&format=ColDP",
+    "completed_at": "2026-10-23T19:09:02.100432Z",
+    "content_length": 1236222035,
+    "content_type": "application/zip",
+    "final_host": "download.checklistbank.org",
+    "read_timeout_seconds": 180,
+    "redirect_chain": [
+      "https://download.checklistbank.org/job/d6/d651dcc8-4ec8-40b1-94a8-6c2489be898e.zip"
+    ],
+    "resolved_source_url": "https://download.checklistbank.org/job/d6/d651dcc8-4ec8-40b1-94a8-6c2489be898e.zip",
+    "sha256": "5a14356387bd2beec286625fb1754b27121e80badea04662f87d1ee657c51eb1",
+    "started_at": "2026-10-23T19:08:36.135195Z",
+    "transfer_attempts": 1,
+    "user_agent": "Sporely-Taxonomy-Acquisition/1 (approved COL XR 2026-07-17)"
+  },
+  "errors": [
+    "AcquisitionError: NameUsage contains 5 genuine malformed rows; observed 11 unapproved BOM occurrences"
+  ],
+  "execution": {
+    "planned_at": "2026-10-23T19:08:36.134388Z",
+    "transfer_attempt_limit": 1
+  },
+  "failed_at": "2026-10-23T19:14:11.018379Z",
+  "filesystem_preflight": {
+    "actual_available_disk_bytes": 136798654464,
+    "actual_device": 16777232,
+    "atomic_replace_layout": true,
+    "created_directories": [
+      "/private/tmp/claude-501/-Users-sigmundas-Documents-Code-sporely-sporely-py/14061c68-f564-40d9-a8a0-526e7acfabd0/scratchpad/refresh/archives/database/taxonomy/sources/col_xr/2026-09-25-XR",
+      "/private/tmp/claude-501/-Users-sigmundas-Documents-Code-sporely-sporely-py/14061c68-f564-40d9-a8a0-526e7acfabd0/scratchpad/refresh/archives/database/taxonomy/sources/col_xr/2026-09-25-XR/.staging"
+    ],
+    "final_nearest_existing_ancestor": "/private/tmp/claude-501/-Users-sigmundas-Documents-Code-sporely-sporely-py/14061c68-f564-40d9-a8a0-526e7acfabd0/scratchpad/refresh/archives/database/taxonomy/sources/col_xr",
+    "planned_device": 16777232,
+    "staged_nearest_existing_ancestor": "/private/tmp/claude-501/-Users-sigmundas-Documents-Code-sporely-sporely-py/14061c68-f564-40d9-a8a0-526e7acfabd0/scratchpad/refresh/archives/database/taxonomy/sources/col_xr"
+  },
+  "lifecycle_outcome": "quarantined",
+  "manifest_schema_version": 1,
+  "network_preflight": {
+    "accept_ranges": "bytes",
+    "canonical_entry_endpoint": "https://api.checklistbank.org/dataset/316441/export.zip?extended=true&format=ColDP",
+    "content_disposition": null,
+    "content_length": 1236222035,
+    "content_type": "application/zip",
+    "etag": "\"49af4053-65d2e877f61ee\"",
+    "final_official_host": "download.checklistbank.org",
+    "last_modified": "Tue, 06 Oct 2026 16:31:23 GMT",
+    "redirect_chain": [
+      "https://download.checklistbank.org/job/d6/d651dcc8-4ec8-40b1-94a8-6c2489be898e.zip"
+    ],
+    "status": 200
+  },
+  "proposal_sha256": "8820f7a71552db91f8f9f64754eb6408bd09a7f8c243c6e4b19922393603dc13",
+  "quarantine": {
+    "active_archive_exposed": false,
+    "byte_count": 1236222035,
+    "classification": "structural_rejection",
+    "failed_validator": "validate_archive",
+    "original_transfer_attempt": 1,
+    "policy_rule": "structural_validation",
+    "quarantine_path": ".quarantine/archive.zip",
+    "quarantine_reason": "NameUsage contains 5 genuine malformed rows; observed 11 unapproved BOM occurrences",
+    "sha256": "5a14356387bd2beec286625fb1754b27121e80badea04662f87d1ee657c51eb1",
+    "state": "quarantined",
+    "validation_timestamp": "2026-10-23T19:14:11.017372Z"
+  },
+  "release": {
+    "archive_format": "ColDP",
+    "dataset_key": 316441,
+    "doi": "10.48580/dgz9s",
+    "issued_date": "2026-09-25",
+    "release_label": "2026-09-25 XR",
+    "release_type": "Extended Release"
+  },
+  "request_definition_sha256": "1708aed0d524fff411e7c929f1e1053253c3738dd1e6ab58718f7cd733840e82",
+  "source_code": "col_xr",
+  "state": "quarantined",
+  "validation": null
+}

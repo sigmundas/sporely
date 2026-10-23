@@ -1,0 +1,13 @@
+{
+  "active_archive_exposed": false,
+  "byte_count": 1236222035,
+  "classification": "structural_rejection",
+  "failed_validator": "validate_archive",
+  "original_transfer_attempt": 1,
+  "policy_rule": "structural_validation",
+  "quarantine_path": ".quarantine/archive.zip",
+  "quarantine_reason": "NameUsage contains 5 genuine malformed rows; observed 11 unapproved BOM occurrences",
+  "sha256": "5a14356387bd2beec286625fb1754b27121e80badea04662f87d1ee657c51eb1",
+  "state": "quarantined",
+  "validation_timestamp": "2026-10-23T19:14:11.017372Z"
+}
