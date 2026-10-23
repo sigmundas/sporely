@@ -95,6 +95,15 @@ Source: former `PLAN.md`; unmatched-image work also appears in `docs/hardware-sy
 - Decide normalization rules for exact vernacular matching.
 - Add an on-demand Artsdatabanken red-list resolver and caching policy.
 - Verify AI Photo ID uses a local iNaturalist ID before name matching and that desktop/web apply compatible lookup rules.
+- Local taxonomy review workbench for the quarterly refresh (owner idea, 2026-10-23; not approved for implementation). Workflow:
+  1. Run `prepare_refresh.py`.
+  2. Open a simple local HTML page built from `change-report.json`. It lists taxonomic changes and unresolved identity relationships grouped by taxonomic decision, not compiler error: one accepted-name change can cover several synonym IDs.
+  3. Pick a case, run an external Claude/Codex research agent on it, and import its result. The agent compares old and new NorTaxa/COL/Dyntaxa records and says which treatment each source follows and since when. It also finds relevant publications, with reference, DOI/URL, year and evidence, and marks literature evidence separately from inference, plus any unresolved disagreement.
+  4. The owner chooses: accept the new relationship, retain the existing one, or hold it. The agent never approves anything.
+  5. Decisions go into versioned files that the existing compiler and approval mechanisms read, extending `policies/source_continuity_holds.json` and the reviewed mapping/supersession records.
+  6. A later refresh recognises reviewed cases and reopens one only when its underlying evidence changes.
+
+  No web service, new database or autonomous taxonomy authority; direct agent integration can come later. First real cases: the 16 NorTaxa 1.292 identity conflicts (renames, lumps, species-to-"coll.") held in the disposable R2 build.
 
 Source: former `PLAN.md` and the legacy-database lookup audit `docs/taxonomy-lookup-status.md` (removed 2026-09-26; see Git history).
 
