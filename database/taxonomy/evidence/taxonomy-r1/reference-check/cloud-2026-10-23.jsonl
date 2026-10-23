@@ -1,0 +1,38 @@
+{"kind" : "meta", "active_release" : "tax-2026.10.07-01", "observations" : 782}
+{"kind" : "check", "source" : "observations.resolved_sporely_taxon_id", "class" : "live_dependency", "grp" : "held", "rows" : 35, "ids" : 16}
+{"kind" : "check", "source" : "observation_reference_uses(via observation)", "class" : "live_dependency", "grp" : "held", "rows" : 3, "ids" : 1}
+{"kind" : "check", "source" : "taxonomy_v3.resolution_link.resolved_sporely_taxon_id", "class" : "live_dependency", "grp" : "held", "rows" : 35, "ids" : 16}
+{"kind" : "check", "source" : "taxonomy_v3.identification_snapshot(original nortaxa tuple, held)", "class" : "historical_evidence", "grp" : "held", "rows" : 33, "ids" : 16}
+{"kind" : "per_id", "source" : "observations.resolved_sporely_taxon_id", "grp" : "held", "id" : 625921, "n" : 1}
+{"kind" : "per_id", "source" : "observations.resolved_sporely_taxon_id", "grp" : "held", "id" : 625587, "n" : 2}
+{"kind" : "per_id", "source" : "observations.resolved_sporely_taxon_id", "grp" : "held", "id" : 625555, "n" : 1}
+{"kind" : "per_id", "source" : "observations.resolved_sporely_taxon_id", "grp" : "held", "id" : 625379, "n" : 1}
+{"kind" : "per_id", "source" : "observations.resolved_sporely_taxon_id", "grp" : "held", "id" : 625766, "n" : 3}
+{"kind" : "per_id", "source" : "observations.resolved_sporely_taxon_id", "grp" : "held", "id" : 625270, "n" : 1}
+{"kind" : "per_id", "source" : "observations.resolved_sporely_taxon_id", "grp" : "held", "id" : 625725, "n" : 1}
+{"kind" : "per_id", "source" : "observations.resolved_sporely_taxon_id", "grp" : "held", "id" : 624659, "n" : 13}
+{"kind" : "per_id", "source" : "observations.resolved_sporely_taxon_id", "grp" : "held", "id" : 625737, "n" : 2}
+{"kind" : "per_id", "source" : "observations.resolved_sporely_taxon_id", "grp" : "held", "id" : 626615, "n" : 1}
+{"kind" : "per_id", "source" : "observations.resolved_sporely_taxon_id", "grp" : "held", "id" : 626153, "n" : 1}
+{"kind" : "per_id", "source" : "observations.resolved_sporely_taxon_id", "grp" : "held", "id" : 626069, "n" : 1}
+{"kind" : "per_id", "source" : "observations.resolved_sporely_taxon_id", "grp" : "held", "id" : 623575, "n" : 1}
+{"kind" : "per_id", "source" : "observations.resolved_sporely_taxon_id", "grp" : "held", "id" : 625888, "n" : 1}
+{"kind" : "per_id", "source" : "observations.resolved_sporely_taxon_id", "grp" : "held", "id" : 625207, "n" : 2}
+{"kind" : "per_id", "source" : "observations.resolved_sporely_taxon_id", "grp" : "held", "id" : 625355, "n" : 3}
+{"kind" : "per_id", "source" : "observation_reference_uses(via observation)", "grp" : "held", "id" : 624659, "n" : 3}
+{"kind" : "per_id", "source" : "taxonomy_v3.resolution_link.resolved_sporely_taxon_id", "grp" : "held", "id" : 625921, "n" : 1}
+{"kind" : "per_id", "source" : "taxonomy_v3.resolution_link.resolved_sporely_taxon_id", "grp" : "held", "id" : 625587, "n" : 2}
+{"kind" : "per_id", "source" : "taxonomy_v3.resolution_link.resolved_sporely_taxon_id", "grp" : "held", "id" : 625555, "n" : 1}
+{"kind" : "per_id", "source" : "taxonomy_v3.resolution_link.resolved_sporely_taxon_id", "grp" : "held", "id" : 625379, "n" : 1}
+{"kind" : "per_id", "source" : "taxonomy_v3.resolution_link.resolved_sporely_taxon_id", "grp" : "held", "id" : 625766, "n" : 3}
+{"kind" : "per_id", "source" : "taxonomy_v3.resolution_link.resolved_sporely_taxon_id", "grp" : "held", "id" : 625270, "n" : 1}
+{"kind" : "per_id", "source" : "taxonomy_v3.resolution_link.resolved_sporely_taxon_id", "grp" : "held", "id" : 625725, "n" : 1}
+{"kind" : "per_id", "source" : "taxonomy_v3.resolution_link.resolved_sporely_taxon_id", "grp" : "held", "id" : 624659, "n" : 13}
+{"kind" : "per_id", "source" : "taxonomy_v3.resolution_link.resolved_sporely_taxon_id", "grp" : "held", "id" : 625737, "n" : 2}
+{"kind" : "per_id", "source" : "taxonomy_v3.resolution_link.resolved_sporely_taxon_id", "grp" : "held", "id" : 626615, "n" : 1}
+{"kind" : "per_id", "source" : "taxonomy_v3.resolution_link.resolved_sporely_taxon_id", "grp" : "held", "id" : 626153, "n" : 1}
+{"kind" : "per_id", "source" : "taxonomy_v3.resolution_link.resolved_sporely_taxon_id", "grp" : "held", "id" : 626069, "n" : 1}
+{"kind" : "per_id", "source" : "taxonomy_v3.resolution_link.resolved_sporely_taxon_id", "grp" : "held", "id" : 623575, "n" : 1}
+{"kind" : "per_id", "source" : "taxonomy_v3.resolution_link.resolved_sporely_taxon_id", "grp" : "held", "id" : 625888, "n" : 1}
+{"kind" : "per_id", "source" : "taxonomy_v3.resolution_link.resolved_sporely_taxon_id", "grp" : "held", "id" : 625207, "n" : 2}
+{"kind" : "per_id", "source" : "taxonomy_v3.resolution_link.resolved_sporely_taxon_id", "grp" : "held", "id" : 625355, "n" : 3}

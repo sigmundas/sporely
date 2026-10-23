@@ -184,13 +184,34 @@
   "content_release_id": "tax-2026.10.23-01",
   "state": "candidate",
   "publication": "none",
-  "sqlite_sha256": "dc0f53dfd5b1ec0cf45e0652bab17db3a949e21ab2ccbe90a1d9ce696bb1beb7",
-  "gz_sha256": "f2c0b09e731d3d0265a1ac6ef18185afa2a4971294fb6bd825ce6d3d700eeb27",
-  "freeze_json_sha256": "2a4a91e0480595b0fa818918c3b6c3ba9127e3e1216d25f691117bb812a241b1",
+  "sqlite_sha256": "18915dd7979c7fb38954c1997d5d295e1198f7c4f3755f6bb5cb61ff5191170a",
+  "gz_sha256": "94a33bfb84017eb640e515ecc7f584df4d9463f07c46271c7817ddabcb4374a6",
+  "freeze_json_sha256": "4ca50835693d227ae976236f5e86b89886ac933c61f703f5472b7efe90048efa",
   "deterministic_two_builds": true,
   "new_allocations": 0,
   "built_from": "feature/taxonomy-reconciliation-r1",
   "installed_baseline": "tax-2026.10.07-01 (sqlite e349e8b1...)",
-  "note": "Candidate only: not installed, promoted or published. Reference counts come from read-only copies of the owner's desktop databases and an aggregate cloud snapshot of 2026-10-20."
+  "note": "Candidate only: not installed, promoted or published. Reference counts come from read-only copies of the owner's desktop databases and an aggregate cloud snapshot of 2026-10-20.",
+  "release_approval_meta": "pending:candidate_build_only",
+  "rebuilt_at_review_fixes": "Only taxonomy_meta differs from the 766d183 build (dc0f53df...): compiler_manifest_sha256 and the new release_approval key; every data table is identical."
+ },
+ "export_populations": {
+  "full_cloud_export": {
+   "inherited_names": 1686,
+   "r1_anchor_bridges": 1160
+  },
+  "macrofungi_cloud_scope": {
+   "inherited_names": 910,
+   "r1_anchor_bridges": 539
+  },
+  "desktop_sqlite": {
+   "inherited_name_rows": 1686,
+   "inherited_external_id_rows": 1691,
+   "r1_anchor_bridges": 1160
+  }
+ },
+ "fresh_reference_check_2026-10-23": {
+  "desktop": "fresh SQLite-backup copies of mushrooms.db/reference_values.db: 0 references to the 2,513 retired ids (R1 1,160 + earlier 1,353); 7 observations on 5 of the 18 held (live) ids. reference-check/desktop-2026-10-23.json",
+  "cloud": "read-only (BEGIN READ ONLY ... ROLLBACK) against production, active release tax-2026.10.07-01, 782 observations: 0 rows on any R1 or earlier retired id across selected/resolved/identity/reference uses/resolution_link/reference and curation tables; held ids: 35 resolved observations and 35 resolution_link rows on 16 ids, 3 observation_reference_uses on 1 id, 0 selected. reference-check/cloud-2026-10-23.jsonl"
  }
 }
