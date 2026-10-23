@@ -367,6 +367,18 @@ def _resolve_parent_sporely_id(
     return source_usage_index.get(key)
 
 
+def inherited_usage_note(usage: dict) -> str:
+    """The ``note`` of a P10 inherited usage: ``|``-separated, fixed order."""
+    return "|".join((
+        usage.get("alias_reason") or "",
+        str(usage["inheritance"]),
+        f"superseded_from={usage.get('superseded_from_sporely_taxon_id')}",
+        f"evidence_class={usage.get('bridge_evidence_class') or ''}",
+        f"taxonomic_status={usage.get('taxonomic_status') or ''}",
+        f"nomenclatural_status={usage.get('nomenclatural_status') or ''}",
+    ))
+
+
 def _release_supersessions(manifest: dict, ledger_path: Path) -> dict[int, Supersession]:
     """The supersessions this release applied, keyed by retired concept.
 
@@ -619,6 +631,14 @@ def _build_into(
             sci_name = u.get("scientific_name") or ""
             authorship = u.get("authorship") or ""
             note = (u.get("alias_reason") or "") or None
+            if u.get("inheritance"):
+                # P10: a usage re-keyed as a name under a names_only
+                # supersession. Its provenance travels in the note (the cloud
+                # export carries it verbatim), so the release itself shows it
+                # was inherited, from which concept, under which evidence
+                # class and with which statuses. It never becomes a bridge
+                # unless its own class is eligible.
+                note = inherited_usage_note(u)
             is_preferred = 1 if u["identity_binding"] == "anchor" else 0
             if sci_name:
                 scientific_name_rows.append((

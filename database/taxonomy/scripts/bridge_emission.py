@@ -331,6 +331,9 @@ def verify_supersession_manifest_approvals(
     if not isinstance(approvals, list):
         raise BridgeEmissionError("approved_manifests must be a list")
     members_by_sha: dict[str, set[tuple[str, int, str, int]]] = {}
+    # Approvals that require P10 (mapping_policy.inherited_usage_under_supersession):
+    # every record citing them must re-key inherited usages as names only.
+    names_only_sha: set[str] = set()
     for index, approval in enumerate(approvals):
         if not isinstance(approval, dict):
             raise BridgeEmissionError(
@@ -380,6 +383,12 @@ def verify_supersession_manifest_approvals(
         if not all(row["one_to_one"] is True for row in rows):
             raise BridgeEmissionError(
                 f"approved manifest {path} holds a pair that is not one-to-one")
+        inherited = str(approval.get("inherited_usages") or "")
+        if inherited not in ("", "names_only"):
+            raise BridgeEmissionError(
+                f"approved_manifests[{index}] has inherited_usages {inherited!r}")
+        if inherited == "names_only":
+            names_only_sha.add(expected)
         members_by_sha[expected] = {
             (str(row["nortaxa_taxon_id"]), int(row["nortaxa_sporely_taxon_id"]),
              str(row["col_usage_id"]), int(row["col_sporely_taxon_id"]))
@@ -432,6 +441,12 @@ def verify_supersession_manifest_approvals(
                 f"(sporely_taxon_id {key[1]}) -> COL {key[2]} "
                 f"(sporely_taxon_id {key[3]}) is not a member of approved "
                 f"manifest {file_sha256}")
+        if file_sha256 in names_only_sha \
+                and entry.get("inherited_usages") != "names_only":
+            raise BridgeEmissionError(
+                f"supersession {supersession_id!r}: its approval requires "
+                f"inherited_usages 'names_only' (P10); only the member's own "
+                f"accepted usage may become a reviewed bridge")
         if (file_sha256, key) in seen_members:
             raise BridgeEmissionError(
                 f"supersession {supersession_id!r}: manifest member {key!r} "

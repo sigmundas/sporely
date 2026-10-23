@@ -383,6 +383,17 @@ class ConceptSupersession:
     current_source_usage: tuple[str, str, str]
     relationship: str
     review_status: str
+    # ``names_only`` (policy P10, mapping_policy.inherited_usage_under_supersession):
+    # only the superseded concept's own anchor usage becomes a reviewed
+    # supersession bridge; every other usage moves as a name and keeps its
+    # own evidence class. Empty keeps the earlier behaviour for old records.
+    inherited_usages: str = ""
+
+
+#: The values a ledger record may give ``inherited_usages``.
+INHERITED_USAGES_VALUES = ("", "names_only")
+#: Marker carried by a usage re-keyed as a name under a ``names_only`` record.
+INHERITED_VIA_SUPERSESSION = "inherited_via_supersession"
 
 
 def _load_concept_supersessions(path: Path | None) -> list[ConceptSupersession]:
@@ -443,12 +454,20 @@ def _load_concept_supersessions(path: Path | None) -> list[ConceptSupersession]:
                 f"an allocated concept, so flipping review_status alone must "
                 f"not activate it."
             )
+        inherited_usages = str(entry.get("inherited_usages") or "")
+        if inherited_usages not in INHERITED_USAGES_VALUES:
+            raise CompilerError(
+                f"{path}: supersession {supersession_id!r} has "
+                f"inherited_usages {inherited_usages!r}; expected one of "
+                f"{[v for v in INHERITED_USAGES_VALUES if v]} or absent"
+            )
         out.append(ConceptSupersession(
             supersession_id=supersession_id,
             superseded_sporely_taxon_id=superseded,
             current_source_usage=current_usage,
             relationship=str(entry.get("relationship", "")),
             review_status=str(entry.get("review_status", "")),
+            inherited_usages=inherited_usages,
         ))
     out.sort(key=lambda s: s.superseded_sporely_taxon_id)
     return out
@@ -979,6 +998,7 @@ def compile_release(
     # current, per `mapping_policy.continuity_rules.merge`. The registry above
     # is already flushed and untouched by anything below.
     superseded_to_current: dict[int, int] = {}
+    names_only_superseded: set[int] = set()
     for supersession in concept_supersessions:
         if supersession.review_status != "approved":
             continue
@@ -1010,6 +1030,8 @@ def compile_release(
                 f"concept it supersedes (sporely_taxon_id={current_id})"
             )
         superseded_to_current[superseded_id] = current_id
+        if supersession.inherited_usages == "names_only":
+            names_only_superseded.add(superseded_id)
     # Refuse chains rather than silently collapsing them: A superseded by B
     # while B is superseded by C is a two-step judgement no rule can make.
     for superseded_id, current_id in sorted(superseded_to_current.items()):
@@ -1083,13 +1105,33 @@ def compile_release(
         emitted_sporely_id = allocation.sporely_taxon_id
         emitted_binding = allocation.kind
         superseded_from: int | None = None
+        inheritance: str = ""
         if allocation.sporely_taxon_id in superseded_to_current:
             superseded_from = allocation.sporely_taxon_id
             emitted_sporely_id = superseded_to_current[superseded_from]
             emitted_binding = "alias"
-            bridge_evidence_class = EVIDENCE_CLASS_REVIEWED_SUPERSESSION
+            if superseded_from in names_only_superseded \
+                    and allocation.kind != "anchor":
+                # P10: a usage the approval does not name (a synonym, or an
+                # alias another rule bound to the retired concept) moves as a
+                # name. It keeps the evidence class that admitted it, so it is
+                # bridged only if that class is itself eligible, and it is
+                # marked so the release can tell it was inherited.
+                inheritance = INHERITED_VIA_SUPERSESSION
+            else:
+                bridge_evidence_class = EVIDENCE_CLASS_REVIEWED_SUPERSESSION
             if not alias_reason:
                 alias_reason = "reviewed_supersession"
+        inheritance_fields: dict = {}
+        if inheritance:
+            # Only P10 rows carry these keys, so a release compiled from a
+            # ledger without names_only records is byte-identical to before.
+            inheritance_fields = {
+                "inheritance": inheritance,
+                "nomenclatural_status": str(
+                    (record.raw.get("nomenclatural_status") if record else "")
+                    or ""),
+            }
         source_usages.append({
             "sporely_taxon_id": emitted_sporely_id,
             "source_code": allocation.source,
@@ -1126,6 +1168,7 @@ def compile_release(
                 (record.scientific_name if record else "")
                 if alias_reason == "synonym_of_accepted" else ""
             ),
+            **inheritance_fields,
         })
         if allocation.kind != "anchor" or record is None:
             continue
