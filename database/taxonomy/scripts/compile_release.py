@@ -965,6 +965,31 @@ def compile_release(
             raise CompilerError(str(exc)) from exc
         manual_bindings[source_usage] = target_id
 
+    # ----- COL id continuity (category 1, refresh receipts only) ------------
+    # A documented one-to-one COL id replacement joins the existing Sporely id
+    # as an append-only alias, and that alias supplies the concept's canonical
+    # row while the old anchor usage is absent. Nothing is allocated or merged.
+    continuity_canonical: dict[int, tuple[str, str, str]] = {}
+    col_continuity_applied: list[dict] = []
+    for entry in (continuity_receipt or {}).get("col_id_continuity") or []:
+        old_key = (BACKBONE_SOURCE, "col_usage_id", entry["old_col_id"])
+        new_key = (BACKBONE_SOURCE, "col_usage_id", entry["new_col_id"])
+        old_alloc = registry.lookup(*old_key)
+        new_alloc = registry.lookup(*new_key)
+        already = (new_alloc is not None and old_alloc is not None and new_alloc.kind == "alias"
+                   and new_alloc.sporely_taxon_id == old_alloc.sporely_taxon_id)
+        if (old_alloc is None or old_alloc.kind != "anchor" or old_key in usage_index
+                or new_key not in usage_index or (new_alloc is not None and not already)
+                or old_alloc.sporely_taxon_id in continuity_canonical):
+            raise CompilerError(f"COL id continuity {entry['old_col_id']}->{entry['new_col_id']} "
+                                "is not a clean one-to-one replacement in this release")
+        if not already:
+            registry.bind_alias(existing_sporely_taxon_id=old_alloc.sporely_taxon_id, source=new_key[0],
+                                namespace=new_key[1], identifier=new_key[2], allocated_in_release=release_id,
+                                first_seen_source_release=_release_string(usage_index[new_key].source_release))
+        continuity_canonical[old_alloc.sporely_taxon_id] = new_key
+        col_continuity_applied.append({**entry, "sporely_taxon_id": old_alloc.sporely_taxon_id})
+
     # ----- Phase 2a: allocate backbone anchors ------------------------------
     backbone_records = sorted(
         (r for r in all_records if r.source_code == BACKBONE_SOURCE),
@@ -1045,6 +1070,7 @@ def compile_release(
     # Registry conflicts are collected over phases 2c and 2e and reported
     # together, so a refresh sees every identity conflict at once.
     alias_conflicts: list[dict] = []
+    vernaculars_dropped_concept_not_live: list[dict] = []
     held_conflicts = set(((continuity_receipt or {}).get("held_alias_conflicts") or {}))
     held_conflicts_applied: list[dict] = []
     for proposal in sorted(cross_source_proposals,
@@ -1160,8 +1186,16 @@ def compile_release(
     # is already flushed and untouched by anything below.
     superseded_to_current: dict[int, int] = {}
     names_only_superseded: set[int] = set()
+    held_records = {rid for rid, r in ((continuity_receipt or {}).get("records") or {}).items()
+                    if r.get("status") == "held"}
+    supersessions_held_target_absent: list[str] = []
     for supersession in concept_supersessions:
         if supersession.review_status != "approved":
+            continue
+        if supersession.supersession_id in held_records \
+                and tuple(supersession.current_source_usage) not in usage_index:
+            # Held, and its current usage is gone: nothing current to select.
+            supersessions_held_target_absent.append(supersession.supersession_id)
             continue
         if supersession.relationship not in ("exact", "synonym"):
             raise CompilerError(
@@ -1331,7 +1365,9 @@ def compile_release(
             ),
             **inheritance_fields,
         })
-        if allocation.kind != "anchor" or record is None:
+        canonical_binding = allocation.kind == "anchor" or (
+            continuity_canonical.get(allocation.sporely_taxon_id) == binding_source_usage)
+        if not canonical_binding or record is None:
             continue
         # A superseded concept publishes no canonical taxon row. This is what
         # keeps the fix additive: the taxon both sources describe keeps
@@ -1528,6 +1564,13 @@ def compile_release(
                     rules = scope_module.resolve_rules(scope_policy, {t.col_id: t for t in scoped_taxa.values()})
                     states = scope_module.evaluate(scoped_taxa, rules, scope_policy.get("source_characteristic_exclusions", []))
                     eligible_targets = {tid for tid, state in states.items() if state["state"] == "include"}
+                # A binding can outlive its concept (the concept's anchor usage
+                # left the source): its vernaculars have no live target.
+                live_ids = {t["sporely_taxon_id"] for t in compiled_taxa}
+                dropped_not_live = [v for v in compiled_vernaculars if v["sporely_taxon_id"] not in live_ids]
+                if dropped_not_live:
+                    vernaculars_dropped_concept_not_live.extend(dropped_not_live)
+                    compiled_vernaculars = [v for v in compiled_vernaculars if v["sporely_taxon_id"] in live_ids]
                 compiled_vernaculars, vernacular_evidence, review_validations = vernacular_projection.project(
                     records=[r for rows in per_source_records.values() for r in rows],
                     taxa=compiled_taxa, bindings=source_usages,
@@ -1725,6 +1768,10 @@ def compile_release(
                 vernaculars_dropped=vern_dropped_unreviewed,
             ),
         )
+        if supersessions_held_target_absent:
+            withheld_ids = {s.supersession_id: s.superseded_sporely_taxon_id for s in concept_supersessions}
+            diagnostics["counts"]["concept_supersessions_withheld_by_hold"] = sorted(
+                withheld_ids[sid] for sid in supersessions_held_target_absent)
         if continuity_receipt is not None:
             # Only with a receipt, so ordinary builds stay byte-identical.
             diagnostics["source_continuity"] = {
@@ -1735,6 +1782,10 @@ def compile_release(
                                        if r.get("status") == "held"),
                 "withheld_source_usages": sorted(continuity_withheld, key=lambda r: r["usage"]),
                 "withheld_vernacular_rows": continuity_vernaculars_withheld,
+                "col_id_continuity_applied": col_continuity_applied,
+                "supersessions_held_target_absent": sorted(supersessions_held_target_absent),
+                "vernacular_rows_dropped_concept_not_live": len(vernaculars_dropped_concept_not_live),
+                "vernacular_concepts_dropped_not_live": sorted({v["sporely_taxon_id"] for v in vernaculars_dropped_concept_not_live}),
                 "held_alias_conflicts_not_rebound": sorted(held_conflicts_applied, key=lambda c: c["usage"]),
                 "held_alias_conflicts_not_seen": sorted(held_conflicts - {c["usage"] for c in held_conflicts_applied}),
                 "approved_mappings_not_applicable": sorted(

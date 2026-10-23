@@ -76,6 +76,31 @@ def load_holds(path: Path | None) -> dict[str, dict]:
             raise HoldError(f"hold names both a record and a usage: {hold}")
         holds[target] = hold
     return holds
+
+
+def load_continuity_policy(path: Path | None) -> tuple[set[str], dict[str, dict]]:
+    """Named continuity rules and identifier-specific accepted changes from the holds file."""
+    if path is None:
+        return set(), {}
+    doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    rules = set(doc.get("named_rules") or [])
+    if rules - NAMED_RULES:
+        raise HoldError(f"unknown continuity rules {sorted(rules - NAMED_RULES)}")
+    exceptions = {}
+    for entry in doc.get("accepted_changes") or []:
+        for key in ("identifier", "field", "from", "to", "reason", "decided_by", "decided_at"):
+            if key not in entry:
+                raise HoldError(f"accepted change lacks {key}: {entry}")
+        exceptions[entry["identifier"]] = entry
+    return rules, exceptions
+
+
+def load_id_continuity(path: Path | None) -> dict[tuple[str, str, str], dict]:
+    """Category-1 COL id continuity (documented one-to-one replacements)."""
+    if path is None:
+        return {}
+    doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    return {("col_xr", "col_usage_id", e["old_col_id"]): e for e in doc.get("continuity") or []}
 COMPARED_FIELDS = ("scientific_name", "rank", "taxonomic_status", "accepted", "parent", "kingdom")
 
 
@@ -119,6 +144,34 @@ def load_index(source_dirs: Iterable[Path], wanted: set[tuple[str, str, str]]) -
             if key in wanted:
                 index.setdefault(key, []).append(Snapshot.of(record))
     return index
+
+
+INFRASPECIFIC_MARKERS = {"var.", "f.", "subsp.", "ssp.", "subvar.", "subf."}
+NAMED_RULES = {"icn_autonym_authorship_omitted"}
+
+
+def is_autonym(name: str) -> bool:
+    """ICN Art. 26.1: the final infraspecific epithet repeats the species epithet."""
+    tokens = name.split()
+    return (len(tokens) >= 4 and tokens[-2] in INFRASPECIFIC_MARKERS and tokens[-1] == tokens[1])
+
+
+def accepted_change(previous: Snapshot, current: Snapshot, reasons: list[str], identifier: str,
+                    rules: set[str], exceptions: dict[str, dict]) -> str | None:
+    """The named rule or listed owner exception that carries this one change, or None.
+
+    Only a single changed field is ever carried this way; anything else stays flagged.
+    """
+    if reasons == ["authorship_changed"] and "icn_autonym_authorship_omitted" in rules \
+            and not current.authorship and is_autonym(current.scientific_name):
+        return "icn_autonym_authorship_omitted"
+    exception = exceptions.get(identifier)
+    if exception and len(reasons) == 1:
+        field = exception["field"]
+        if reasons == [f"{field}_changed"] and getattr(previous, field) == exception["from"] \
+                and getattr(current, field) == exception["to"]:
+            return exception["reason"]
+    return None
 
 
 def compare_identifier(previous: list[Snapshot], current: list[Snapshot]) -> list[str]:
@@ -177,7 +230,9 @@ def registry_anchors(registry_jsonl: Path) -> dict[int, tuple[str, str, str]]:
 
 def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_dirs: dict[str, Path],
                   previous_pins: dict, current_pins: dict, manual_mappings: dict, supersessions: dict,
-                  anchors: dict[int, tuple], holds: dict[str, dict] | None = None) -> dict:
+                  anchors: dict[int, tuple], holds: dict[str, dict] | None = None,
+                  rules: set[str] | None = None, exceptions: dict[str, dict] | None = None,
+                  id_continuity: dict[tuple[str, str, str], dict] | None = None) -> dict:
     records = reviewed_records(manual_mappings, supersessions, anchors)
     holds = holds or {}
     usage_holds = {k: v for k, v in holds.items() if v.get("source_usage")}
@@ -186,10 +241,26 @@ def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_di
     if unknown:
         raise HoldError(f"holds name records that are not approved reviewed records: {unknown}")
     wanted = {identifier for record in records for identifier in record["identifiers"]}
+    id_continuity = id_continuity or {}
+    continued = {identifier: ("col_xr", "col_usage_id", id_continuity[identifier]["new_col_id"])
+                 for identifier in wanted if identifier in id_continuity}
     old = load_index(previous_dirs.values(), wanted)
-    new = load_index(current_dirs.values(), wanted)
-    per_identifier = {identifier: compare_identifier(old.get(identifier, []), new.get(identifier, []))
-                      for identifier in sorted(wanted)}
+    new = load_index(current_dirs.values(), wanted | set(continued.values()))
+    per_identifier, notes = {}, {}
+    for identifier in sorted(wanted):
+        current = new.get(continued.get(identifier, identifier), [])
+        if identifier in continued and new.get(identifier):
+            current = []  # both present: not a replacement
+        reasons = compare_identifier(old.get(identifier, []), current)
+        if identifier in continued and not reasons:
+            notes[identifier] = f"col_id_continuity:{continued[identifier][2]}"
+        accepted = (accepted_change(old[identifier][0], current[0], reasons, "/".join(identifier),
+                                    rules or set(), exceptions or {})
+                    if reasons and len(old.get(identifier, [])) == 1 and len(current) == 1 else None)
+        if accepted:
+            notes[identifier] = accepted
+            reasons = []
+        per_identifier[identifier] = reasons
     out_records = {}
     for record in sorted(records, key=lambda r: r["record_id"]):
         reasons = sorted({f"{'/'.join(i)}:{reason}" for i in record["identifiers"]
@@ -198,6 +269,9 @@ def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_di
             "kind": record["kind"], "approval_sha256": record["approval_sha256"],
             "identifiers": ["/".join(i) for i in record["identifiers"]],
             "status": "flagged" if reasons else "carried", "reasons": reasons}
+        record_notes = sorted(f"{'/'.join(i)}:{notes[tuple(i)]}" for i in record["identifiers"] if tuple(i) in notes)
+        if record_notes:
+            out_records[record["record_id"]]["carried_by"] = record_notes
         hold = holds.get(record["record_id"])
         if hold is not None:
             if not reasons:
@@ -221,6 +295,8 @@ def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_di
         # Source usages whose registry binding the compile must not change
         # (owner holds); every other alias conflict still stops the compile.
         "held_alias_conflicts": {usage: hold for usage, hold in sorted(usage_holds.items())},
+        # Category-1 COL id continuity: the new usage joins the existing Sporely id.
+        "col_id_continuity": [id_continuity[k] for k in sorted(id_continuity)],
         "records": out_records,
     }
 

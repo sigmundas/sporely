@@ -590,6 +590,8 @@ def build(options: Options, run: Runner | None = None, python: str = sys.executa
             sqlite_argv += ["--publishing-overlay", recipe.artportalen_overlay["path"]]
         if recipe.inaturalist_refresh:
             sqlite_argv += ["--inaturalist-refresh", recipe.inaturalist_refresh["path"]]
+        if recipe.continuity_receipt:
+            sqlite_argv += ["--hold-unresolved-publishing-entries"]
         stdout = run(f"sqlite{name}", sqlite_argv)
         sqlite_out[name] = json.loads(stdout)
 

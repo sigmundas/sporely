@@ -344,3 +344,83 @@ def test_usage_holds_are_listed_in_receipt(tmp_path):
                                 "holds": [{"record_id": "m-3", "source_usage": usage, **HOLD}]}))
     with pytest.raises(carry_forward.HoldError, match="both"):
         carry_forward.load_holds(path)
+
+
+# ----- named rule, listed exceptions -----------------------------------------
+
+def test_autonym_rule_and_listed_exception_are_narrow():
+    snap = lambda name, auth, parent="": carry_forward.Snapshot(name, auth, "variety", "accepted", "", parent, "Fungi")
+    rules = {"icn_autonym_authorship_omitted"}
+    old, new = snap("Laccaria laccata var. laccata", "(Scop.) Cooke"), snap("Laccaria laccata var. laccata", "")
+    assert carry_forward.accepted_change(old, new, ["authorship_changed"], "x", rules, {}) \
+        == "icn_autonym_authorship_omitted"
+    other = snap("Laccaria laccata var. pallida", "")
+    assert carry_forward.accepted_change(snap("Laccaria laccata var. pallida", "Fr."), other,
+                                         ["authorship_changed"], "x", rules, {}) is None
+    assert carry_forward.accepted_change(old, new, ["authorship_changed"], "x", set(), {}) is None
+    exc = {"x": {"field": "authorship", "from": "Vĕzda", "to": "Vězda", "reason": "ipni"}}
+    assert carry_forward.accepted_change(snap("A b", "Vĕzda"), snap("A b", "Vězda"), ["authorship_changed"],
+                                         "x", set(), exc) == "ipni"
+    assert carry_forward.accepted_change(snap("A b", "Vězda"), snap("A b", "Vûzda"), ["authorship_changed"],
+                                         "x", set(), exc) is None
+    assert carry_forward.accepted_change(snap("A b", "Vĕzda"), snap("A b", "Vězda"),
+                                         ["authorship_changed", "parent_changed"], "x", set(), exc) is None
+
+
+# ----- compiler: held registry alias conflicts -------------------------------
+
+def test_compiler_keeps_held_alias_conflicts_and_stops_on_unlisted(tmp_path):
+    from test_compile_release import _POLICY_PATH, _col_source, _write_manual_mappings, _write_normalized_source
+    from compile_release import compile_release, _release_string
+
+    def nortaxa(version, rows):
+        return _write_normalized_source(tmp_path / f"nt-{version}" / "nortaxa", source_code="nortaxa",
+                                        source_release={"version": version, "issued_date": "2026-01-01"},
+                                        identifier_namespace_prefix="NBIC:", rows=rows)
+    base = [{"core_row_id": "r", "taxon_id": "root", "scientific_name": "Fungi", "rank": "kingdom"},
+            {"core_row_id": "a", "taxon_id": "A", "parent": "root", "parent_resolution": "resolved",
+             "scientific_name": "Alpha one"}]
+    col = _col_source(tmp_path / "src")
+    mappings = _write_manual_mappings(tmp_path / "m.json", [])
+    registry = tmp_path / "registry.jsonl"
+    common = dict(manual_mappings_path=mappings, mapping_policy_path=_POLICY_PATH, registry_path=registry)
+    first = nortaxa("1", base + [
+        {"core_row_id": "b", "taxon_id": "B", "parent": "root", "parent_resolution": "resolved",
+         "scientific_name": "Beta two"},
+        {"core_row_id": "c", "taxon_id": "C", "parent": "root", "parent_resolution": "resolved",
+         "scientific_name": "Gamma three"}])
+    compile_release(normalized_source_dirs=[col, first], output_dir=tmp_path / "r1",
+                    release_id="tax-2026.01.01-01", **common)
+    # B and C become synonyms of A: each would move to A's Sporely id.
+    second = nortaxa("2", base + [
+        {"core_row_id": "b", "taxon_id": "B", "accepted": "A", "status": "synonym", "scientific_name": "Beta two"},
+        {"core_row_id": "c", "taxon_id": "C", "accepted": "A", "status": "synonym", "scientific_name": "Gamma three"}])
+
+    def receipt(held):
+        pins = {}
+        for d in (col, second):
+            rep = json.loads((d / "report.json").read_text())
+            pins[rep["profile_source_code"]] = {
+                "source_release_id": f"{rep['profile_source_code']}:{_release_string(rep['profile_source_release'])}",
+                "sha256": rep["archive_sha256"]}
+        path = tmp_path / f"receipt-{len(held)}.json"
+        path.write_text(json.dumps({"format": "sporely-source-continuity-receipt-v1", "current_pins": pins,
+                                    "records": {}, "held_alias_conflicts": {u: {} for u in held}}))
+        return path
+    snapshot = registry.read_bytes()
+    with pytest.raises(CompilerError, match="2 registry alias conflict"):
+        compile_release(normalized_source_dirs=[col, second], output_dir=tmp_path / "x0",
+                        release_id="tax-2026.01.02-01", **common)
+    registry.write_bytes(snapshot)
+    with pytest.raises(CompilerError, match="1 registry alias conflict.*nortaxa_taxon_id/C"):
+        compile_release(normalized_source_dirs=[col, second], output_dir=tmp_path / "x1",
+                        release_id="tax-2026.01.02-01",
+                        continuity_receipt_path=receipt(["nortaxa/nortaxa_taxon_id/B"]), **common)
+    registry.write_bytes(snapshot)
+    compile_release(normalized_source_dirs=[col, second], output_dir=tmp_path / "x2", release_id="tax-2026.01.02-01",
+                    continuity_receipt_path=receipt(["nortaxa/nortaxa_taxon_id/B", "nortaxa/nortaxa_taxon_id/C"]),
+                    **common)
+    diag = json.loads((tmp_path / "x2" / "diagnostics.json").read_text())["source_continuity"]
+    assert [c["usage"] for c in diag["held_alias_conflicts_not_rebound"]] == [
+        "nortaxa/nortaxa_taxon_id/B", "nortaxa/nortaxa_taxon_id/C"]
+    assert registry.read_bytes().startswith(snapshot)  # append-only; B and C keep their ids

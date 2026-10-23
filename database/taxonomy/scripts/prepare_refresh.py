@@ -197,7 +197,7 @@ def sqlite_metrics(path: Path) -> dict:
             "vernacular_concepts": {lang: q("SELECT count(DISTINCT taxon_id) FROM vernacular_min "
                                             "WHERE language_code = ?", lang)[0][0] for lang in VERNACULAR_LANGUAGES},
             "redlist_rows_resolved": q("SELECT count(*) FROM taxon_redlist_min WHERE taxon_id IS NOT NULL")[0][0],
-            "supersession_rows": q("SELECT count(*) FROM taxon_supersession_min")[0][0],
+            "supersession_rows": len(_supersession_ids(path)),
         }
 
 
@@ -436,7 +436,9 @@ def prepare(args: argparse.Namespace) -> dict:
             manual_mappings=json.loads((REPO_ROOT / recipe["policies"]["manual_mappings"]).read_text()),
             supersessions=json.loads((REPO_ROOT / recipe["policies"]["concept_supersessions"]).read_text()),
             anchors=carry_forward.registry_anchors(registry_path),
-            holds=carry_forward.load_holds(args.holds))
+            holds=carry_forward.load_holds(args.holds),
+            **dict(zip(("rules", "exceptions"), carry_forward.load_continuity_policy(args.holds))),
+            id_continuity=carry_forward.load_id_continuity(args.col_id_continuity))
         receipt_path = work / "continuity-receipt.json"
         receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
         flagged = {rid: r for rid, r in receipt["records"].items() if r["status"] == "flagged"}
@@ -453,6 +455,9 @@ def prepare(args: argparse.Namespace) -> dict:
             "flagged_blocking": carry_forward_blockers(receipt),
             "flagged_examples": dict(list(sorted(flagged.items()))[:25]),
             "held_by_owner_decision": held,
+            "carried_by_rule_or_exception": {rid: r["carried_by"] for rid, r in receipt["records"].items()
+                                             if r.get("carried_by")},
+            "col_id_continuity": receipt.get("col_id_continuity"),
             "col_churn_candidates_report_only": col_churn_candidates(
                 receipt, previous_dirs["col_xr"], current_dirs["col_xr"]),
         }
@@ -598,6 +603,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="tree holding <release_dir>/archive.zip for every recipe source and the workbook")
     parser.add_argument("--holds", type=Path, default=None,
                         help="owner-decided continuity holds (named records quarantined, not applied)")
+    parser.add_argument("--col-id-continuity", type=Path, default=None,
+                        help="documented one-to-one COL id replacements (category 1) to keep on their Sporely ids")
     parser.add_argument("--fetch", action="store_true",
                         help="run an approved acquisition when a new source archive is missing")
     parser.add_argument("--compare-sqlite", nargs=2, action="append", metavar=("LABEL", "PATH"),

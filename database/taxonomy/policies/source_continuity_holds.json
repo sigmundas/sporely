@@ -161,6 +161,980 @@
       "decided_at": "2026-10-23",
       "decision": "Hold for the disposable R2 candidate: no automatic reassignment of source ids, no Sporely concept merges, no change to historical identities, pending verification of publications and COL treatment.",
       "observed_change": "Lecanora thulensis var. feracissima: synonym binding would move from sporely_taxon_id=629133, cannot rebind to 51346"
+    },
+    {
+      "record_id": "taxonomy-r1-nortaxa-65778-superseded-by-col-MKC2J",
+      "reason": "col_authorship_suspected_corruption",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the R2 candidate; resolve through review.",
+      "observed_change": "COL26.9 authorship 'Vûzda' for Bactrospora jenikii (was 'Vězda')"
+    },
+    {
+      "record_id": "taxonomy-r1-nortaxa-128420-superseded-by-col-VB26W",
+      "reason": "col_id_renumbered_unaccepted",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the R2 candidate; resolve through review.",
+      "observed_change": "COL VB26W vanished; report-only candidate SQ4YJ (not documented in the 316441 id report)"
+    },
+    {
+      "record_id": "taxonomy-v3-2-nortaxa-55589-superseded-by-col-VJN4J",
+      "reason": "col_id_renumbered_unaccepted",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the R2 candidate; resolve through review.",
+      "observed_change": "COL VJN4J vanished; report-only candidate 6J7QH"
+    },
+    {
+      "record_id": "taxonomy-v3-2-nortaxa-65201-superseded-by-col-936C",
+      "reason": "col_id_renumbered_unaccepted",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the R2 candidate; resolve through review.",
+      "observed_change": "COL 936C vanished; report-only candidate 936B"
+    },
+    {
+      "record_id": "taxonomy-v3-2-nortaxa-69348-superseded-by-col-VPN5",
+      "reason": "col_id_renumbered_unaccepted",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the R2 candidate; resolve through review.",
+      "observed_change": "COL VPN5 vanished; report-only candidate VPN4"
+    },
+    {
+      "record_id": "taxonomy-v3-2-nortaxa-77316-superseded-by-col-VKWB7",
+      "reason": "col_id_renumbered_unaccepted",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the R2 candidate; resolve through review.",
+      "observed_change": "COL VKWB7 vanished; report-only candidate NZ597"
+    },
+    {
+      "record_id": "taxonomy-v3-4p-dyntaxa-228658-to-col-VPLR",
+      "reason": "col_id_renumbered_unaccepted",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the R2 candidate; resolve through review.",
+      "observed_change": "COL VPLR vanished; report-only candidate VPLQ (Cladonia squamosa)"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/123816",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Vibrissea filisporia f. filisporia: automatic exact match would move sporely_taxon_id=621227, cannot rebind to 607421"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/128474",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Xylocoremium: automatic exact match would move sporely_taxon_id=621414, cannot rebind to 785628"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/129598",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Cheilymenia granulata var. granulata: automatic exact match would move sporely_taxon_id=621598, cannot rebind to 162617"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/129616",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Pleospora penicillus var. penicillus: automatic exact match would move sporely_taxon_id=621603, cannot rebind to 170839"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/131574",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Cortinarius bovinoideus: automatic exact match would move sporely_taxon_id=621656, cannot rebind to 785791"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/132229",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Cortinarius balteatocumatilis var. pallidus: automatic exact match would move sporely_taxon_id=621715, cannot rebind to 785792"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/133525",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Pycnothyrium junci: automatic exact match would move sporely_taxon_id=621758, cannot rebind to 636992"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/144094",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Inocybe boreolilacina: automatic exact match would move sporely_taxon_id=622255, cannot rebind to 785796"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/145252",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Fumago: automatic exact match would move sporely_taxon_id=622589, cannot rebind to 51352"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/171012",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Caripia: automatic exact match would move sporely_taxon_id=622862, cannot rebind to 636505"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/171144",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Deflexula: automatic exact match would move sporely_taxon_id=622875, cannot rebind to 636596"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/171674",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Melanopus rhizophilus: automatic exact match would move sporely_taxon_id=622951, cannot rebind to 636842"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/173611",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Saccoblastia: automatic exact match would move sporely_taxon_id=623221, cannot rebind to 785665"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/203634",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Hydnophlebia: automatic exact match would move sporely_taxon_id=623539, cannot rebind to 68255"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/214743",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Ascocoryne inflata: automatic exact match would move sporely_taxon_id=623714, cannot rebind to 158857"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/216388",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Parmelia cyloselis: automatic exact match would move sporely_taxon_id=623781, cannot rebind to 785803"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/220321",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Siphula thamnolioides: automatic exact match would move sporely_taxon_id=623840, cannot rebind to 785820"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/222742",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Verrucaria tessellata: automatic exact match would move sporely_taxon_id=623861, cannot rebind to 785712"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/225897",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Geoscypha: automatic exact match would move sporely_taxon_id=624001, cannot rebind to 132422"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/226331",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Peltigera neorufescens-3: automatic exact match would move sporely_taxon_id=624021, cannot rebind to 785808"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/228156",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Cortinarius flexipes var. brachyspermus: automatic exact match would move sporely_taxon_id=624137, cannot rebind to 785793"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/298350",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Entoloma phlebodermum: automatic exact match would move sporely_taxon_id=96118, cannot rebind to 635913"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/299603",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Triscelophorus: automatic exact match would move sporely_taxon_id=624454, cannot rebind to 130290"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/300026",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Postia calvenda: automatic exact match would move sporely_taxon_id=624482, cannot rebind to 785789"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/300027",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Postia rufescens: automatic exact match would move sporely_taxon_id=624483, cannot rebind to 785790"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/300229",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Minutisphaeraceae: automatic exact match would move sporely_taxon_id=624503, cannot rebind to 150370"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/52158",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Amanita phalloides var. phalloides: automatic exact match would move sporely_taxon_id=624593, cannot rebind to 158736"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/52162",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Amanita rubescens f. rubescens: automatic exact match would move sporely_taxon_id=624597, cannot rebind to 158768"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/52175",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Amanita vaginata f. vaginata: automatic exact match would move sporely_taxon_id=624604, cannot rebind to 157936"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/52228",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Bolbitius reticulatus f. reticulatus: automatic exact match would move sporely_taxon_id=624621, cannot rebind to 160100"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/52419",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Clavulinopsis fusiformis var. fusiformis: automatic exact match would move sporely_taxon_id=624702, cannot rebind to 161966"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/52435",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Mucronella calva var. calva: automatic exact match would move sporely_taxon_id=624709, cannot rebind to 169280"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/52957",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Cortinarius splendens subsp. splendens: automatic exact match would move sporely_taxon_id=624994, cannot rebind to 151444"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/52993",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Cortinarius traganus f. traganus: automatic exact match would move sporely_taxon_id=625014, cannot rebind to 162439"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/53043",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Descomyces albus: automatic exact match would move sporely_taxon_id=625040, cannot rebind to 635896"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/53375",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Clitopilus scyphoides f. scyphoides: automatic exact match would move sporely_taxon_id=625145, cannot rebind to 162689"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/53496",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Entoloma cyanulum var. cyanulum: automatic exact match would move sporely_taxon_id=625221, cannot rebind to 163604"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/53606",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Entoloma pachydermum: automatic exact match would move sporely_taxon_id=95817, cannot rebind to 635912"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/53806",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Mycena haematopus var. haematopus: automatic exact match would move sporely_taxon_id=625319, cannot rebind to 169636"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/53913",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Laccaria laccata var. laccata: automatic exact match would move sporely_taxon_id=625356, cannot rebind to 166241"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/53968",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Hygrocybe conica var. conica: automatic exact match would move sporely_taxon_id=625373, cannot rebind to 166673"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/54021",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Hygrocybe spadicea var. spadicea: automatic exact match would move sporely_taxon_id=625384, cannot rebind to 166694"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/54059",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Hygrophorus lucorum var. lucorum: automatic exact match would move sporely_taxon_id=625401, cannot rebind to 166717"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/54380",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Lyophyllum decastes var. decastes: automatic exact match would move sporely_taxon_id=625474, cannot rebind to 167061"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/54427",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Macrocystidia cucumis var. cucumis: automatic exact match would move sporely_taxon_id=625493, cannot rebind to 167698"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/54617",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Gymnopus: automatic exact match would move sporely_taxon_id=625589, cannot rebind to 59958"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/54812",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Pluteus umbrosus var. umbrosus: automatic exact match would move sporely_taxon_id=625672, cannot rebind to 171263"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/55146",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Cystoderma carcharias var. carcharias: automatic exact match would move sporely_taxon_id=625825, cannot rebind to 163349"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/55160",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Cystodermella granulosa var. granulosa: automatic exact match would move sporely_taxon_id=625832, cannot rebind to 163359"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/55400",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Clitocybe metachroa var. metachroa: automatic exact match would move sporely_taxon_id=625920, cannot rebind to 162663"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/55404",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Clitocybe nebularis var. nebularis: automatic exact match would move sporely_taxon_id=625923, cannot rebind to 162664"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/55406",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Clitocybe odora var. odora: automatic exact match would move sporely_taxon_id=625925, cannot rebind to 162670"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/55848",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Exidia glandulosa f. glandulosa: automatic exact match would move sporely_taxon_id=626108, cannot rebind to 165152"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/55896",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Heterochaetella: automatic exact match would move sporely_taxon_id=626128, cannot rebind to 636659"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/56074",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Suillus cavipes f. cavipes: automatic exact match would move sporely_taxon_id=626188, cannot rebind to 606120"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/56081",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Suillus grevillei var. grevillei: automatic exact match would move sporely_taxon_id=626195, cannot rebind to 606121"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/56179",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Tapinella panuoides f. panuoides: automatic exact match would move sporely_taxon_id=626235, cannot rebind to 605965"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/56483",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Ramaria ammophila: automatic exact match would move sporely_taxon_id=626337, cannot rebind to 603885"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/56611",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Phellinus igniarius var. igniarius: automatic exact match would move sporely_taxon_id=626381, cannot rebind to 171906"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/56754",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Xylodon: automatic exact match would move sporely_taxon_id=626433, cannot rebind to 87313"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/57112",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Byssomerulius: automatic exact match would move sporely_taxon_id=626582, cannot rebind to 84754"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/57249",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Lopharia: automatic exact match would move sporely_taxon_id=626648, cannot rebind to 77940"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/58101",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Tomentellina: automatic exact match would move sporely_taxon_id=626947, cannot rebind to 785575"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/60324",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Alnicola: automatic exact match would move sporely_taxon_id=627049, cannot rebind to 604615"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/60402",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Galerina pumila var. pumila: automatic exact match would move sporely_taxon_id=627063, cannot rebind to 164467"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/65597",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Arthonia opegraphella: automatic exact match would move sporely_taxon_id=627367, cannot rebind to 785813"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/65918",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Lecanactis flavisedella: automatic exact match would move sporely_taxon_id=627479, cannot rebind to 785814"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/66324",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Capronia pilosella var. pilosella: automatic exact match would move sporely_taxon_id=627632, cannot rebind to 160228"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/66441",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Diaporthe hippophaâs: automatic exact match would move sporely_taxon_id=627680, cannot rebind to 785822"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/68687",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Calicium adspersum subsp. adspersum: automatic exact match would move sporely_taxon_id=628703, cannot rebind to 151456"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/69056",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Cladonia calycantha: automatic exact match would move sporely_taxon_id=628853, cannot rebind to 636549"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/69272",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Cladonia rigida var. rigida: automatic exact match would move sporely_taxon_id=161510, cannot rebind to 636264"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/69294",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Cladonia squamosa: automatic exact match would move sporely_taxon_id=613500, cannot rebind to 785761"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/69649",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Aspicilia perpendicularis: automatic exact match would move sporely_taxon_id=629089, cannot rebind to 785799"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/69962",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Lecanora falklandica: automatic exact match would move sporely_taxon_id=629201, cannot rebind to 785800"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/70051",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Lecanora jenisejensis: automatic exact match would move sporely_taxon_id=629225, cannot rebind to 785801"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/70074",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Lecanora leptacinella: automatic exact match would move sporely_taxon_id=166112, cannot rebind to 636703"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/70830",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Lecidea pseudoconfluens: automatic exact match would move sporely_taxon_id=629556, cannot rebind to 785802"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/70893",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Lecidea subfumosa: automatic exact match would move sporely_taxon_id=611706, cannot rebind to 636709"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/72323",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Parmeliopsis protocetrarica: automatic exact match would move sporely_taxon_id=630216, cannot rebind to 636882"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/73161",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Xanthoparmelia moctezumensis: automatic exact match would move sporely_taxon_id=630458, cannot rebind to 608231"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/73655",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Heterodermia solenaria: automatic exact match would move sporely_taxon_id=630680, cannot rebind to 785804"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/73795",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Physconia canariensis: automatic exact match would move sporely_taxon_id=630747, cannot rebind to 785805"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/74137",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Farnoldia micropsis: automatic exact match would move sporely_taxon_id=630918, cannot rebind to 164345"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/74586",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Bacidia venusta: automatic exact match would move sporely_taxon_id=631094, cannot rebind to 785806"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/74823",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Phyllopsora microsperma: automatic exact match would move sporely_taxon_id=631195, cannot rebind to 785807"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/75222",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Rhizocarpon intersitum: automatic exact match would move sporely_taxon_id=631323, cannot rebind to 636377"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/76401",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Echinoplaca subsimilis: automatic exact match would move sporely_taxon_id=631741, cannot rebind to 785819"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/77053",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Microglaena larvicenis: automatic exact match would move sporely_taxon_id=632060, cannot rebind to 785821"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/77182",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Umbilicaria pallens: automatic exact match would move sporely_taxon_id=607468, cannot rebind to 785629"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/77318",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Gyalidea testacea: automatic exact match would move sporely_taxon_id=632185, cannot rebind to 636650"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/77945",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Patellaria inclusa: automatic exact match would move sporely_taxon_id=632511, cannot rebind to 636895"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/78301",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Pseudocyphellaria lechleri: automatic exact match would move sporely_taxon_id=612991, cannot rebind to 637008"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/78923",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Porina rhapidosperma: automatic exact match would move sporely_taxon_id=632907, cannot rebind to 785809"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/79639",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Arthopyrenia lyncea: automatic exact match would move sporely_taxon_id=633156, cannot rebind to 785815"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/79646",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Arthopyrenia pantherina: automatic exact match would move sporely_taxon_id=633161, cannot rebind to 785816"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/79807",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Delitschia chaetomioides: automatic exact match would move sporely_taxon_id=633241, cannot rebind to 162999"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/79941",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Leptosphaeria tiliae: automatic exact match would move sporely_taxon_id=633290, cannot rebind to 785817"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/80130",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Leptorhaphis quercus: automatic exact match would move sporely_taxon_id=633379, cannot rebind to 636774"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/81617",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Caloplaca noeisii: automatic exact match would move sporely_taxon_id=634031, cannot rebind to 785810"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/81900",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Stigmatomma: automatic exact match would move sporely_taxon_id=609481, cannot rebind to 636451"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/82114",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Parmentaria oligocarpa: automatic exact match would move sporely_taxon_id=634227, cannot rebind to 785811"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/82117",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Parmentaria pluricarpa: automatic exact match would move sporely_taxon_id=634228, cannot rebind to 785812"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/82301",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Thelidium: automatic exact match would move sporely_taxon_id=634296, cannot rebind to 130013"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/82579",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Verrucaria subtilis: automatic exact match would move sporely_taxon_id=634427, cannot rebind to 785708"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/82871",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Hypocopra divergens: automatic exact match would move sporely_taxon_id=634565, cannot rebind to 165527"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/83250",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Exoascus: automatic exact match would move sporely_taxon_id=634752, cannot rebind to 636672"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/84167",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Wuestneia monadelpha: automatic exact match would move sporely_taxon_id=634773, cannot rebind to 785823"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/98508",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Verrucaria sparsiuscula: automatic exact match would move sporely_taxon_id=634886, cannot rebind to 785600"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/98619",
+      "reason": "col_269_new_automatic_exact_match_pending_review",
+      "decided_by": "agent, applying owner instruction C of 2026-10-23 ('use explicit holds for everything unresolved')",
+      "decided_at": "2026-10-23",
+      "decision": "Keep the existing NorTaxa-anchored Sporely id; do not merge it into the COL concept the automatic rule now proposes. Needs owner review.",
+      "observed_change": "Eutypa lata var. lata: automatic exact match would move sporely_taxon_id=634887, cannot rebind to 165034"
+    }
+  ],
+  "named_rules": [
+    "icn_autonym_authorship_omitted"
+  ],
+  "named_rules_note": "icn_autonym_authorship_omitted: an autonym (final infraspecific epithet repeats the species epithet, ICN Art. 26.1) whose source authorship is now empty, with every other compared field unchanged, is carried. No other authorship change is tolerated.",
+  "accepted_changes": [
+    {
+      "identifier": "col_xr/col_usage_id/PWTHV",
+      "field": "authorship",
+      "from": "Vĕzda",
+      "to": "Vězda",
+      "reason": "author_spelling_correction_ipni_standard_form",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "scope": "R2 candidate preparation only; not a publication approval"
+    },
+    {
+      "identifier": "col_xr/col_usage_id/74HB4",
+      "field": "parent",
+      "from": "col_usage_id:9H883",
+      "to": "col_usage_id:9JLLX",
+      "reason": "odontia_homonym_genus_id_swap_same_family_H65",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "scope": "R2 candidate preparation only; not a publication approval",
+      "note": "Odontia fibrosa: parent moves between the two Odontia genus usages; in COL26.9 9JLLX is the one under family H65 (as 9H883 was before)."
+    },
+    {
+      "identifier": "col_xr/col_usage_id/74HMN",
+      "field": "parent",
+      "from": "col_usage_id:9H883",
+      "to": "col_usage_id:9JLLX",
+      "reason": "odontia_homonym_genus_id_swap_same_family_H65",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "scope": "R2 candidate preparation only; not a publication approval",
+      "note": "Odontia calcicola: as 74HB4."
     }
   ]
 }
