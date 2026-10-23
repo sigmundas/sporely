@@ -374,6 +374,73 @@ def reviewed_only_mapping_inapplicable(
     return None
 
 
+CONTINUITY_RECEIPT_FORMAT = "sporely-source-continuity-receipt-v1"
+
+
+def _pin_map(pins: object) -> dict[str, tuple[str, str]]:
+    return {str(src): (str((pin or {}).get("source_release_id") or ""), str((pin or {}).get("sha256") or ""))
+            for src, pin in (pins or {}).items()} if isinstance(pins, dict) else {}
+
+
+def load_continuity_receipt(path: Path | None, compiled: dict[str, tuple[str, str]]) -> dict | None:
+    """The refresh's source-continuity receipt (``carry_forward.py``), or None.
+
+    Its current pins must be exactly the compiled inputs, or the receipt
+    describes another build and is refused.
+    """
+    if path is None:
+        return None
+    try:
+        receipt = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CompilerError(f"continuity receipt unreadable: {exc}") from exc
+    if receipt.get("format") != CONTINUITY_RECEIPT_FORMAT:
+        raise CompilerError("continuity receipt has an unknown format")
+    current = _pin_map(receipt.get("current_pins"))
+    if current != {code: tuple(pin) for code, pin in compiled.items()}:
+        raise CompilerError("continuity receipt current_pins are not the compiled source inputs")
+    return receipt
+
+
+def continuity_inapplicable(mapping: "ManualMapping", receipt: dict) -> str | None:
+    """None when the receipt carries this approved record unchanged from the
+    source releases it was reviewed against to the compiled ones.
+
+    It does not widen the approval: the record must be in the receipt as
+    ``carried``, under the same approval hash, and every reviewed pin must be
+    either the receipt's previous pin for that source or already the
+    compiled one; the record's ``source_release_range`` must be the reviewed
+    (previous) release of its own source.
+    """
+    record = (receipt.get("records") or {}).get(mapping.mapping_id)
+    if record is None:
+        return "continuity_record_absent"
+    if record.get("status") != "carried":
+        return "flagged_by_continuity_receipt"
+    if record.get("approval_sha256", "") != mapping.approved_manifest_file_sha256:
+        return "continuity_approval_hash_differs"
+    previous, current = _pin_map(receipt.get("previous_pins")), _pin_map(receipt.get("current_pins"))
+    for src, rid, sha in mapping.reviewed_source_pins:
+        if (rid, sha) not in (previous.get(src), current.get(src)):
+            return f"continuity_previous_{src}_differs_from_reviewed_pin"
+    source = mapping.source_usage[0]
+    reviewed = {src: rid for src, rid, _ in mapping.reviewed_source_pins}.get(source, "")
+    version = reviewed.split(":")[1] if reviewed.count(":") == 2 else ""
+    if not version or mapping.source_release_range != (version, version):
+        return "continuity_release_range_is_not_the_reviewed_release"
+    return None
+
+
+def continuity_blockers(receipt: dict | None) -> list[str]:
+    """Flagged NorTaxa mappings and supersessions: these bind or retire ids
+    without a pin check, so a flagged one stops the compile for review."""
+    if not receipt:
+        return []
+    return sorted(rid for rid, record in (receipt.get("records") or {}).items()
+                  if record.get("status") == "flagged"
+                  and record.get("kind") in ("nortaxa_mapping", "supersession"))
+
+
 @dataclass(frozen=True)
 class ConceptSupersession:
     """A reviewed selection of a current concept for an allocated one."""
@@ -628,6 +695,7 @@ def compile_release(
     previous_vernacular_evidence_path: Path | None = None,
     enable_vernacular_enrichment: bool = True,
     vernacular_scope_policy_path: Path | None = None,
+    continuity_receipt_path: Path | None = None,
 ) -> dict:
     """Compile a deterministic candidate release into ``output_dir``.
 
@@ -757,14 +825,31 @@ def compile_release(
                report.archive_sha256)
         for code, report in source_reports.items()
     }
+    continuity_receipt = load_continuity_receipt(continuity_receipt_path, compiled_source_pins)
+    blockers = continuity_blockers(continuity_receipt)
+    if blockers:
+        raise CompilerError(
+            f"continuity receipt flags {len(blockers)} NorTaxa mapping(s)/supersession(s) whose "
+            f"source records changed; review them before compiling: {blockers[:20]}")
     reviewed_only_inapplicable: dict[str, dict[str, int]] = {}
+    reviewed_only_inapplicable_records: list[dict] = []
+    continuity_applied: dict[str, int] = {}
     approved_exact = []
     for m in manual_mappings:
         if m.relationship != "exact" or m.review_status != "approved":
             continue
         if m.source_usage[0] in REVIEWED_IDENTITY_ONLY_SOURCES:
             reason = reviewed_only_mapping_inapplicable(m, compiled_source_pins)
+            if reason is not None and continuity_receipt is not None:
+                continuity_reason = continuity_inapplicable(m, continuity_receipt)
+                if continuity_reason is None:
+                    continuity_applied[m.source_usage[0]] = continuity_applied.get(m.source_usage[0], 0) + 1
+                    reason = None
+                else:
+                    reason = continuity_reason
             if reason is not None:
+                reviewed_only_inapplicable_records.append(
+                    {"mapping_id": m.mapping_id, "source": m.source_usage[0], "reason": reason})
                 counts = reviewed_only_inapplicable.setdefault(
                     m.source_usage[0], {})
                 counts[reason] = counts.get(reason, 0) + 1
@@ -1573,6 +1658,15 @@ def compile_release(
                 vernaculars_dropped=vern_dropped_unreviewed,
             ),
         )
+        if continuity_receipt is not None:
+            # Only with a receipt, so ordinary builds stay byte-identical.
+            diagnostics["source_continuity"] = {
+                "receipt_release_id": continuity_receipt.get("release_id"),
+                "receipt_carried_sha256": continuity_receipt.get("carried_sha256"),
+                "approved_mappings_applied_by_continuity": dict(sorted(continuity_applied.items())),
+                "approved_mappings_not_applicable": sorted(
+                    reviewed_only_inapplicable_records, key=lambda r: r["mapping_id"]),
+            }
         diagnostics_out.write_text(
             json.dumps(diagnostics, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
@@ -2654,6 +2748,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--source-release-manifest", action="append", default=[],
                         metavar="SOURCE_CODE=PATH",
                         help="bind a source_release manifest, repeatable")
+    parser.add_argument("--continuity-receipt", type=Path, default=None,
+                        help="source-continuity receipt from carry_forward.py (refresh builds)")
     parser.add_argument("--legacy-enrichment-input", type=Path, default=None,
                         help="JSONL export of pre-Stage-3A compatibility "
                              "enrichment (Artportalen IDs + non-Nordic "
@@ -2696,6 +2792,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             previous_vernacular_evidence_path=args.previous_vernacular_evidence,
             enable_vernacular_enrichment=not args.no_vernacular_enrichment,
             vernacular_scope_policy_path=args.vernacular_scope_policy,
+            continuity_receipt_path=args.continuity_receipt,
         )
     except CompilerError as exc:
         print(f"error: {exc}", file=sys.stderr)

@@ -135,6 +135,11 @@ class Recipe:
     artportalen_overlay: dict | None = None
     inaturalist_refresh: dict | None = None
     vernacular_enrichment: dict | None = None
+    # Refresh builds only: carry_forward.py receipt, passed to the compiler
+    # and archived in the freeze. {"path": ..., "sha256": ...}
+    continuity_receipt: dict | None = None
+    # Extra named evidence files archived in the freeze (refresh reports).
+    extra_evidence: tuple[tuple[str, str], ...] = ()
 
 
 def load_recipe(path: Path) -> Recipe:
@@ -184,7 +189,8 @@ def load_recipe(path: Path) -> Recipe:
         _require(bool(legacy.get("bundled_db")), "recipe legacy_enrichment.bundled_db is required")
     pinned: dict[str, dict | None] = {}
     for key, raw_entry in (("artportalen_overlay", (raw.get("publishing_overlays") or {}).get("artportalen")),
-                           ("inaturalist_refresh", raw.get("inaturalist_refresh"))):
+                           ("inaturalist_refresh", raw.get("inaturalist_refresh")),
+                           ("continuity_receipt", raw.get("continuity_receipt"))):
         if raw_entry is None:
             pinned[key] = None
             continue
@@ -199,7 +205,10 @@ def load_recipe(path: Path) -> Recipe:
                   policies=dict(policies), registry=raw["registry"],
                   artportalen_overlay=pinned["artportalen_overlay"],
                   inaturalist_refresh=pinned["inaturalist_refresh"],
-                  vernacular_enrichment=vernacular)
+                  vernacular_enrichment=vernacular,
+                  continuity_receipt=pinned["continuity_receipt"],
+                  extra_evidence=tuple(sorted((str(k), str(v)) for k, v in
+                                              (raw.get("extra_evidence") or {}).items())))
 
 
 def manifest_archive_sha256(manifest: dict) -> str:
@@ -400,7 +409,8 @@ def preflight(options: Options, recipe: Recipe) -> dict:
     for key, rel in recipe.policies.items():
         _require((REPO_ROOT / rel).is_file(), f"missing policy {key}: {rel}")
     for key, pinned in (("artportalen_overlay", recipe.artportalen_overlay),
-                        ("inaturalist_refresh", recipe.inaturalist_refresh)):
+                        ("inaturalist_refresh", recipe.inaturalist_refresh),
+                        ("continuity_receipt", recipe.continuity_receipt)):
         if pinned is not None:
             inputs[f"{key}_sha256"] = verify_pinned(key, pinned)
     inputs["superseded_references"] = check_superseded_references(recipe)
@@ -568,6 +578,8 @@ def build(options: Options, run: Runner | None = None, python: str = sys.executa
                      "--vernacular-scope-policy", recipe.vernacular_enrichment["scope_policy"]]
             if recipe.vernacular_enrichment.get("previous_evidence"):
                 argv += ["--previous-vernacular-evidence", recipe.vernacular_enrichment["previous_evidence"]]
+        if recipe.continuity_receipt:
+            argv += ["--continuity-receipt", recipe.continuity_receipt["path"]]
         run(f"compile{name}", argv)
         sqlite_argv = [_script("build_sqlite_candidate.py"),
                        "--release-dir", rel(b / f"release{name}"),
@@ -667,6 +679,10 @@ def build(options: Options, run: Runner | None = None, python: str = sys.executa
             freeze_argv += ["--evidence-input", "col-vernacular-rejections.jsonl=" + rel(col_rejections)]
         for name, path in recipe.policies.items():
             freeze_argv += ["--evidence-input", name + ".json=" + str(path)]
+        if recipe.continuity_receipt:
+            freeze_argv += ["--evidence-input", "continuity-receipt.json=" + recipe.continuity_receipt["path"]]
+        for name, path in recipe.extra_evidence:
+            freeze_argv += ["--evidence-input", name + "=" + path]
         if recipe.vernacular_enrichment:
             for name in ("review_ledger", "scope_policy"):
                 freeze_argv += ["--evidence-input", name + ".json=" + recipe.vernacular_enrichment[name]]
