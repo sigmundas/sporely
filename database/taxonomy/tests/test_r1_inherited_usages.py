@@ -248,3 +248,27 @@ def test_candidate_only_release_is_marked_and_not_exported_for_import(tmp_path: 
     conn.close()
     with pytest.raises(ExportError, match="candidate_build_only"):
         _export_and_scope(tmp_path, release)
+
+
+def test_redlist_lookup_follows_a_retired_id(tmp_path: Path) -> None:
+    from database.taxon_lookup import TaxonLookupService
+    from database.vernacular_db import VernacularDB
+
+    release, own_id, host_id = _release(tmp_path, "names_only")
+    _db(tmp_path, release).close()
+    db_path = tmp_path / "candidate.sqlite3"
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "INSERT INTO taxon_redlist_min (taxon_id, source_system, source_release, assessment_id, "
+        "assessment_area, assessed_name_source, assessed_name_namespace, assessed_name_id, "
+        "scientific_name_snapshot, category_raw, category_code) VALUES "
+        "(?, 'artsdatabanken_redlist', '2021', '1', 'Norge', 'nortaxa', 'nortaxa_name_id', '1', "
+        "'Conocybe rugosa', 'VU', 'VU')", (host_id,))
+    conn.commit()
+    conn.close()
+    lookup = TaxonLookupService(vernacular_db=VernacularDB(db_path, language_code="nb"),
+                                language_code="nb", include_reference_data=False)
+    retired, current = lookup.get_redlist_lookup(own_id), lookup.get_redlist_lookup(host_id)
+    assert (retired.status, retired.assessment.category_code) == ("unique", "VU")
+    assert retired.assessment == current.assessment
+    assert lookup.get_redlist_lookup_with_overlay(own_id).status == "unique"

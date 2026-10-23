@@ -990,6 +990,8 @@ class TaxonLookupService:
             taxon_id_int = int(sporely_taxon_id)
         except (TypeError, ValueError):
             return RedlistLookupResult(status="none")
+        # A retired id reads its survivor's assessments (same resolver as display).
+        taxon_id_int = self.current_taxon_id(taxon_id_int) or taxon_id_int
         assessments = self._fetch_redlist_rows(
             taxon_id_int, str(area), str(source_release)
         )
@@ -1073,6 +1075,7 @@ class TaxonLookupService:
             primary_id_int = int(sporely_taxon_id)
         except (TypeError, ValueError):
             return primary
+        primary_id_int = self.current_taxon_id(primary_id_int) or primary_id_int
         rows = self._fetch_local_rows(
             "SELECT canonical_scientific_name FROM taxon_min "
             "WHERE taxon_id = ? LIMIT 1",
