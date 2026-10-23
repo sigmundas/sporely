@@ -1,0 +1,18 @@
+{
+  "approval_schema_version": 1,
+  "approval_status": "approved",
+  "approved_at": "2026-10-23",
+  "approved_by": "owner (Sigmund Ås)",
+  "approval_basis": "Owner instruction of 2026-10-23 for the quarterly taxonomy refresh: acquire COL XR 2026-10-16, NorTaxa 1.292 and current Dyntaxa for a disposable refresh candidate, under each source's existing safeguards.",
+  "scope": "disposable refresh candidate; acquisition only. This is not a release approval and authorizes no promotion, publication or production write.",
+  "source_code": "dyntaxa",
+  "version": "2026-10-23",
+  "gbif_dataset_key": "de8934f4-a136-481c-a87a-b0b202b80a31",
+  "approved_canonical_endpoint": "https://api.artdatabanken.se/taxonservice/v1/DarwinCore/Download?subscription-key=<redacted; from SPORELY_DYNTAXA_SUBSCRIPTION_KEY>",
+  "credential_handling": "The subscription key SLU registered with GBIF is read from the environment at fetch time and is never written to any record or log.",
+  "approved_maximum_bytes": 67108864,
+  "download_authorized": true,
+  "permitted_get_attempts": 1,
+  "redirects_authorized": false,
+  "retries_authorized": false
+}

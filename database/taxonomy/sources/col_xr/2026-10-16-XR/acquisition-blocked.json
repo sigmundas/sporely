@@ -1,0 +1,10 @@
+{
+  "source_code": "col_xr",
+  "release": {"dataset_key": 316691, "release_label": "2026-10-16 XR", "alias": "COL26.10 XR", "issued_date": "2026-10-16", "doi": "10.48580/dgzlf", "archive_format": "ColDP"},
+  "checked_at": "2026-10-23",
+  "state": "not_acquired",
+  "reason": "No public prebuilt export exists yet. HEAD https://api.checklistbank.org/dataset/316691/export.zip?extended=true&format=ColDP returned HTTP 404, and GET https://api.checklistbank.org/export?datasetKey=316691 lists 0 export jobs (dataset 315834 redirects to a prebuilt job on download.checklistbank.org). The approved COL route is a public prebuilt full release with export_job_submission_required=false and custom export jobs prohibited, so this release cannot be fetched under its safeguards until ChecklistBank publishes the prebuilt export.",
+  "requests_made": ["GET dataset metadata (200)", "HEAD export.zip (404)", "GET export job list (200, total 0)"],
+  "approval_spent": false,
+  "next_step": "When HEAD returns 302 to download.checklistbank.org with a Content-Length, write a proposal (dataset_key 316691, canonical_entry_endpoint for 316691) and an approval with declared_content_length and large_metadata_authorized, then run: acquire_col_xr.py acquire --proposal ... --approval ... --release-dir <root>/database/taxonomy/sources/col_xr/2026-10-16-XR --root <root> --execute"
+}

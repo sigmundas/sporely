@@ -7,6 +7,7 @@ No real-download CLI is exposed by this module.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from dataclasses import dataclass
 from datetime import datetime
@@ -39,12 +40,31 @@ def sha256_value(value: Any) -> str:
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
-def _exact_public_endpoint(endpoint: str) -> None:
+def archive_path_for(dataset_key: int) -> str:
+    """The prebuilt public export path of one ChecklistBank release dataset."""
+    if isinstance(dataset_key, bool) or not isinstance(dataset_key, int) or dataset_key <= 0:
+        raise AcquisitionError("COL XR dataset key must be a positive integer")
+    return f"/dataset/{dataset_key}/export.zip"
+
+
+def _exact_public_endpoint(endpoint: str, dataset_key: int | None = None) -> None:
+    """The exact public prebuilt-export GET endpoint.
+
+    ``dataset_key`` comes from the reviewed proposal; without one (a HEAD
+    response being normalized) any ``/dataset/<positive int>/export.zip``
+    path is accepted and the caller has already bound the request URL to
+    the approved endpoint.
+    """
     parsed = urlparse(endpoint)
+    if dataset_key is None:
+        match = re.fullmatch(r"/dataset/([1-9][0-9]*)/export\.zip", parsed.path or "")
+        expected_path = parsed.path if match else PUBLIC_ARCHIVE_PATH
+    else:
+        expected_path = archive_path_for(dataset_key)
     if (
         parsed.scheme != "https"
         or parsed.hostname != PUBLIC_ARCHIVE_HOST
-        or parsed.path != PUBLIC_ARCHIVE_PATH
+        or parsed.path != expected_path
         or parsed.username
         or parsed.password
         or dict(parse_qsl(parsed.query, keep_blank_values=True)) != PUBLIC_ARCHIVE_QUERY
@@ -90,9 +110,10 @@ def validate_proposal(proposal: dict[str, Any]) -> None:
         raise AcquisitionError("public full-release delivery must use GET, not custom POST export")
     if delivery.get("delivery_mode") != "public prebuilt full release":
         raise AcquisitionError("proposal is not a public prebuilt full release")
-    _exact_public_endpoint(str(delivery.get("canonical_entry_endpoint", "")))
+    dataset_key = proposal.get("dataset_key")
+    _exact_public_endpoint(str(delivery.get("canonical_entry_endpoint", "")), dataset_key)
     expected = {
-        "dataset_key": 315834,
+        "dataset_key": dataset_key,
         "extended": True,
         "format": "ColDP",
         "authentication_required": False,

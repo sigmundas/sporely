@@ -808,7 +808,15 @@ def _scan_nameusage(
     }
 
 
-def _evaluate_nameusage(report: dict[str, Any]) -> None:
+def is_pinned_release(approved: dict[str, Any]) -> bool:
+    """True for the 2026-07-17 XR approval, whose bytes, metadata and one
+    source correction are fingerprint-pinned. Any other approved release
+    takes its identity from its own approval and gets no corrections: a BOM
+    or malformed row in it is a terminal finding (quarantine), not a fix."""
+    return approved.get("release_identity") == PINNED_COL_XR_RELEASE
+
+
+def _evaluate_nameusage(report: dict[str, Any], *, pinned: bool = True) -> None:
     findings: list[str] = []
     if report["completion_status"] != "complete" or not report["final_eof_reached"]:
         findings.append("NameUsage scan did not reach final EOF")
@@ -820,15 +828,18 @@ def _evaluate_nameusage(report: dict[str, Any]) -> None:
         findings.append(
             f"NameUsage contains {report['duplicate_primary_id_count']} duplicate primary IDs"
         )
-    if report["sha256"] != MEMBER_SHA256:
-        findings.append("NameUsage member SHA-256 differs from the correction fingerprint")
-    if report["applied_correction_count"] != 1:
-        findings.append(
-            f"expected exactly one source correction, observed "
-            f"{report['applied_correction_count']}"
-        )
-    if report["removed_semantic_bom_code_points"] != 2:
-        findings.append("expected exactly two removed semantic BOM code points")
+    if pinned:
+        if report["sha256"] != MEMBER_SHA256:
+            findings.append("NameUsage member SHA-256 differs from the correction fingerprint")
+        if report["applied_correction_count"] != 1:
+            findings.append(
+                f"expected exactly one source correction, observed "
+                f"{report['applied_correction_count']}"
+            )
+        if report["removed_semantic_bom_code_points"] != 2:
+            findings.append("expected exactly two removed semantic BOM code points")
+    elif report["applied_correction_count"]:
+        findings.append("an unpinned COL XR release admits no source corrections")
     if report["unapproved_bom_occurrence_count"] != 0:
         findings.append(
             f"observed {report['unapproved_bom_occurrence_count']} unapproved BOM occurrences"
@@ -873,7 +884,12 @@ def _metadata_limit(approved: dict[str, Any], member: zipfile.ZipInfo) -> tuple[
     identity_matches = all(
         approved.get(key) == value for key, value in PINNED_COL_XR_IDENTITY.items()
     ) and approved.get("release_identity") == PINNED_COL_XR_RELEASE
-    if not identity_matches:
+    # A later release may carry the same large root metadata; its approval
+    # must say so explicitly (the bytes are not hash-pinned in that case).
+    if not identity_matches and not (
+        not is_pinned_release(approved) and approved.get("large_metadata_authorized") is True
+        and approved.get("release_identity")
+    ):
         raise AcquisitionError(
             "large metadata override requires the exact pinned COL XR request identity"
         )
@@ -964,14 +980,20 @@ def _sample_source_members(
 
 def validate_archive(path: Path, approved: dict[str, Any]) -> dict[str, Any]:
     archive_sha256 = sha256_file(path)
-    if archive_sha256 != ARCHIVE_SHA256:
-        raise AcquisitionError("archive SHA-256 differs from the pinned correction fingerprint")
+    pinned = is_pinned_release(approved)
     release_directory = path.parent.parent if path.parent.name == ".quarantine" else path.parent
-    correction_artifact = load_json(release_directory / "source-corrections.json")
-    corrections = correction_artifact.get("corrections")
-    if not isinstance(corrections, list) or len(corrections) != 1:
-        raise AcquisitionError("expected exactly one approved source correction")
-    correction_policy = corrections[0]
+    if pinned:
+        if archive_sha256 != ARCHIVE_SHA256:
+            raise AcquisitionError("archive SHA-256 differs from the pinned correction fingerprint")
+        correction_artifact = load_json(release_directory / "source-corrections.json")
+        corrections = correction_artifact.get("corrections")
+        if not isinstance(corrections, list) or len(corrections) != 1:
+            raise AcquisitionError("expected exactly one approved source correction")
+        correction_policy = corrections[0]
+        release_identity = PINNED_COL_XR_RELEASE
+    else:
+        correction_policy = None
+        release_identity = approved["release_identity"]
     with path.open("rb") as raw:
         if raw.read(4) != b"PK\x03\x04":
             raise AcquisitionError("archive lacks ZIP local-file magic")
@@ -990,17 +1012,17 @@ def validate_archive(path: Path, approved: dict[str, Any]) -> dict[str, Any]:
                     expected_bytes=metadata_member.file_size,
                     capture_source_ids=True,
                 )
-            if large_metadata and metadata["sha256"] != PINNED_METADATA_SHA256:
+            if pinned and large_metadata and metadata["sha256"] != PINNED_METADATA_SHA256:
                 raise AcquisitionError(
                     "large metadata bytes differ from the inspected pinned COL XR metadata"
                 )
             root = metadata["root_scalars"]
             expected_metadata = {
-                "key": str(PINNED_COL_XR_RELEASE["dataset_key"]),
-                "doi": PINNED_COL_XR_RELEASE["doi"],
+                "key": str(release_identity["dataset_key"]),
+                "doi": release_identity["doi"],
                 "title": "Catalogue of Life",
-                "issued": PINNED_COL_XR_RELEASE["issued_date"],
-                "version": PINNED_COL_XR_RELEASE["release_label"],
+                "issued": release_identity["issued_date"],
+                "version": release_identity["release_label"],
             }
             mismatches = {
                 key: {"expected": value, "observed": root.get(key)}
@@ -1036,7 +1058,7 @@ def validate_archive(path: Path, approved: dict[str, Any]) -> dict[str, Any]:
                             member.filename,
                             correction_policy=correction_policy,
                             archive_sha256=archive_sha256,
-                            member_sha256=MEMBER_SHA256,
+                            member_sha256=MEMBER_SHA256 if pinned else "",
                         )
                         evidence_path = (
                             release_directory / "nameusage-scan.json"
@@ -1045,7 +1067,7 @@ def validate_archive(path: Path, approved: dict[str, Any]) -> dict[str, Any]:
                         )
                         write_json_atomic(evidence_path, nameusage_report)
                         try:
-                            _evaluate_nameusage(nameusage_report)
+                            _evaluate_nameusage(nameusage_report, pinned=pinned)
                         except AcquisitionError:
                             write_json_atomic(evidence_path, nameusage_report)
                             raise
@@ -1616,6 +1638,7 @@ def acquire(
     proposal_path: Path,
     approval_path: Path,
     release_dir: Path,
+    repository_root: Path | None = None,
 ) -> dict[str, Any]:
     proposal = load_json(proposal_path)
     approved = load_json(approval_path)
@@ -1625,7 +1648,7 @@ def acquire(
     staged = release_dir / ".staging" / "archive.part"
     final = release_dir / "archive.zip"
     filesystem_plan = plan_filesystem_layout(
-        repository_root=Path(__file__).resolve().parents[3],
+        repository_root=repository_root or Path(__file__).resolve().parents[3],
         source_root=release_dir.parent,
         staged_archive=staged,
         final_archive=final,
@@ -1763,8 +1786,29 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     status_parser = sub.add_parser("retry-status")
     status_parser.add_argument("release_dir", type=Path)
+    acquire_parser = sub.add_parser(
+        "acquire",
+        help="one approved transfer of a COL XR release; the approval names the dataset key",
+    )
+    acquire_parser.add_argument("--proposal", type=Path, required=True)
+    acquire_parser.add_argument("--approval", type=Path, required=True)
+    acquire_parser.add_argument("--release-dir", type=Path, required=True,
+                                help="new directory sources/col_xr/<version>/ under --root")
+    acquire_parser.add_argument("--root", type=Path, default=None,
+                                help="tree the release dir lives under (default: this checkout); "
+                                     "a scratch mirror keeps the archive out of the repository")
+    acquire_parser.add_argument("--execute", action="store_true")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[3]
+    if args.command == "acquire":
+        if not args.execute:
+            print("Refusing to run without --execute (one HEAD and one GET per invocation).")
+            return 2
+        result = acquire(args.proposal, args.approval, args.release_dir.absolute(),
+                         repository_root=(args.root or root).absolute())
+        print(json.dumps({"state": result["manifest"]["state"],
+                          "download": result["manifest"]["download"]}, sort_keys=True, indent=2))
+        return 0
     if args.command == "retry-status":
         result = failed_release_retry_status(
             args.release_dir,

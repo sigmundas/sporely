@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""Simple manual NorTaxa 1.284 archive acquisition.
+"""Simple manual NorTaxa archive acquisition.
 
 Manual invocation of this script with ``--execute`` is the acquisition
-authorization. Each invocation may open at most one HTTP GET to the pinned
-public endpoint. There is no automatic retry, no redirect following, no
+authorization. For 1.284 that is the whole authorization (historical record).
+Any other ``--version`` additionally requires a committed approval record,
+``sources/nortaxa/<version>/acquisition-approval.json``, bound to that
+version's source-selection proposal and request hashes and to the exact
+endpoint (see ``require_version_approval``). Each invocation may open at most
+one HTTP GET to the pinned public endpoint, and an approval permits one
+recorded attempt. There is no automatic retry, no redirect following, no
 Range/resume, no authentication, and no automatic recovery.
 
 A hard crash may leave a stale ``.part`` file in ``.staging/``; the next
@@ -39,7 +44,9 @@ MAXIMUM_BYTES = 67_108_864
 CANONICAL_ENDPOINT = "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284"
 ALLOWED_HOST = "ipt.artsdatabanken.no"
 VERSION = "1.284"
-USER_AGENT = "Sporely-Taxonomy-Acquisition/2 (NorTaxa 1.284)"
+USER_AGENT = "Sporely-Taxonomy-Acquisition/2 (NorTaxa {version})"
+APPROVAL_FILENAME = "acquisition-approval.json"
+VERSION_PROPOSAL_FILENAME = "source-selection.proposal.json"
 CHUNK_BYTES = 1024 * 1024
 TIMEOUT_SECONDS = 180
 EVIDENCE_HEADERS = (
@@ -68,10 +75,11 @@ class Transport(Protocol):
 @dataclass(frozen=True)
 class ReleasePaths:
     taxonomy_root: Path
+    version: str = VERSION
 
     @property
     def release(self) -> Path:
-        return self.taxonomy_root / "sources" / "nortaxa" / VERSION
+        return self.taxonomy_root / "sources" / "nortaxa" / self.version
 
     @property
     def request(self) -> Path:
@@ -79,7 +87,13 @@ class ReleasePaths:
 
     @property
     def source_proposal(self) -> Path:
-        return self.taxonomy_root / "nortaxa-source-selection.proposal.json"
+        if self.version == VERSION:
+            return self.taxonomy_root / "nortaxa-source-selection.proposal.json"
+        return self.release / VERSION_PROPOSAL_FILENAME
+
+    @property
+    def approval(self) -> Path:
+        return self.release / APPROVAL_FILENAME
 
     @property
     def manifest(self) -> Path:
@@ -106,19 +120,21 @@ class _NoRedirect(HTTPRedirectHandler):
 class ProductionHTTPTransport:
     """One-call urllib adapter. Redirects and ambient proxies are disabled."""
 
-    def __init__(self) -> None:
+    def __init__(self, endpoint: str = CANONICAL_ENDPOINT, version: str = VERSION) -> None:
         self._used = False
+        self._endpoint = endpoint
+        self._version = version
 
     def open(self, endpoint: str) -> TransportResponse:
         if self._used:
             raise AcquisitionError("production transport permits exactly one GET")
         self._used = True
-        if endpoint != CANONICAL_ENDPOINT:
+        if endpoint != self._endpoint:
             raise AcquisitionError("production transport endpoint mismatch")
         headers = {
             "Accept": "application/zip, application/octet-stream",
             "Accept-Encoding": "identity",
-            "User-Agent": USER_AGENT,
+            "User-Agent": USER_AGENT.format(version=self._version),
         }
         request = Request(endpoint, method="GET", headers=headers)
         opener = build_opener(ProxyHandler({}), _NoRedirect())
@@ -170,10 +186,12 @@ def _bounded_headers(headers: Mapping[str, str]) -> tuple[dict[str, dict[str, An
     return evidence, headers.get("content-length")
 
 
-def _validate_response(response: TransportResponse) -> tuple[dict[str, Any], str | None]:
+def _validate_response(
+    response: TransportResponse, endpoint: str = CANONICAL_ENDPOINT,
+) -> tuple[dict[str, Any], str | None]:
     if response.status != 200:
         raise AcquisitionError(f"archive GET requires HTTP 200, observed {response.status}")
-    if response.final_url != CANONICAL_ENDPOINT:
+    if response.final_url != endpoint:
         raise AcquisitionError("archive GET final URL differs from the canonical endpoint")
     parsed = urlparse(response.final_url)
     if (
@@ -204,7 +222,7 @@ def _release_lock(path: Path):
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            raise LockContentionError("NorTaxa 1.284 acquisition lock is already held") from exc
+            raise LockContentionError("NorTaxa acquisition lock is already held") from exc
         yield
     finally:
         with contextlib.suppress(OSError):
@@ -261,10 +279,11 @@ def _record_success(
     response_evidence: dict[str, Any],
     stream_policy: dict[str, Any],
     validation_summary: dict[str, Any],
+    endpoint: str = CANONICAL_ENDPOINT,
 ) -> dict[str, Any]:
     manifest["state"] = "validated"
     manifest["download"] = {
-        "endpoint": CANONICAL_ENDPOINT,
+        "endpoint": endpoint,
         "retrieved_at": completed,
         "observed_bytes": observed,
         "archive_sha256": archive_sha,
@@ -276,7 +295,7 @@ def _record_success(
     return _append_attempt(manifest, {
         "started_at": started,
         "completed_at": completed,
-        "endpoint": CANONICAL_ENDPOINT,
+        "endpoint": endpoint,
         "outcome": "succeeded",
         "phase": "validated_and_promoted",
         "observed_bytes": observed,
@@ -294,11 +313,12 @@ def _record_failure(
     error: BaseException,
     observed: int | None = None,
     archive_sha: str | None = None,
+    endpoint: str = CANONICAL_ENDPOINT,
 ) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "started_at": started,
         "completed_at": completed,
-        "endpoint": CANONICAL_ENDPOINT,
+        "endpoint": endpoint,
         "outcome": "failed",
         "phase": phase,
         "error": {"type": type(error).__name__, "message": str(error)[:512]},
@@ -332,6 +352,54 @@ def _refuse_stale_staging(staging: Path) -> None:
         )
 
 
+REQUIRED_APPROVAL_FLAGS = {
+    "approval_status": "approved",
+    "download_authorized": True,
+    "permitted_get_attempts": 1,
+    "redirects_authorized": False,
+    "retries_authorized": False,
+    "authentication_authorized": False,
+    "range_requests_authorized": False,
+}
+
+
+def require_version_approval(paths: ReleasePaths, request: Any) -> dict[str, Any]:
+    """The committed approval record a non-1.284 acquisition requires.
+
+    It must name this version, the exact proposal and request hashes, the
+    exact archive endpoint and a ceiling no larger than ``MAXIMUM_BYTES``,
+    and permit one GET with no redirects or retries. An approval is spent by
+    any earlier recorded attempt in the manifest, successful or not.
+    """
+    if not paths.approval.is_file():
+        raise AcquisitionError(f"missing acquisition approval {paths.approval}")
+    try:
+        approval = json.loads(paths.approval.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise AcquisitionError(f"invalid acquisition approval: {exc}") from exc
+    expected = {
+        **REQUIRED_APPROVAL_FLAGS,
+        "source_code": "nortaxa",
+        "version": request.version,
+        "source_selection_proposal_sha256": request.source_selection_proposal_sha256,
+        "request_sha256": request.request_sha256,
+        "approved_canonical_endpoint": request.archive_endpoint,
+    }
+    for key, value in expected.items():
+        if approval.get(key) != value:
+            raise AcquisitionError(f"acquisition approval {key} must be {value!r}")
+    maximum = approval.get("approved_maximum_bytes")
+    if isinstance(maximum, bool) or not isinstance(maximum, int) or not 0 < maximum <= MAXIMUM_BYTES:
+        raise AcquisitionError("acquisition approval maximum bytes is invalid")
+    for key in ("approved_by", "approved_at", "scope"):
+        if not str(approval.get(key, "")).strip():
+            raise AcquisitionError(f"acquisition approval {key} is required")
+    manifest = json.loads(paths.manifest.read_text(encoding="utf-8"))
+    if manifest.get("execution_attempts"):
+        raise AcquisitionError("this approval is spent: the manifest already records an attempt")
+    return approval
+
+
 def acquire(
     paths: ReleasePaths,
     *,
@@ -346,6 +414,14 @@ def acquire(
     """
     _require_real_directory(paths.release)
     request = load_request(paths.request, paths.source_proposal)
+    if request.version != paths.version:
+        raise AcquisitionError(f"request version {request.version!r} is not {paths.version!r}")
+    endpoint = request.archive_endpoint
+    if paths.version == VERSION:
+        if endpoint != CANONICAL_ENDPOINT:
+            raise AcquisitionError("NorTaxa 1.284 request endpoint differs from its pin")
+    else:
+        require_version_approval(paths, request)
     if paths.archive.exists() or paths.archive.is_symlink():
         raise AcquisitionError(f"final archive already exists: {paths.archive}")
 
@@ -365,19 +441,19 @@ def acquire(
                 f"insufficient free space: {available} < ceiling {MAXIMUM_BYTES}"
             )
 
-        temp_file = paths.staging / f"nortaxa-{VERSION}-{uuid.uuid4().hex}.part"
+        temp_file = paths.staging / f"nortaxa-{paths.version}-{uuid.uuid4().hex}.part"
         response: TransportResponse | None = None
         received = 0
         archive_sha: str | None = None
         response_evidence: dict[str, Any] | None = None
         length_header: str | None = None
-        chosen_transport = transport or ProductionHTTPTransport()
+        chosen_transport = transport or ProductionHTTPTransport(endpoint, paths.version)
 
         # Streaming phase.
         try:
             with temp_file.open("xb") as output:
-                response = chosen_transport.open(CANONICAL_ENDPOINT)
-                response_evidence, length_header = _validate_response(response)
+                response = chosen_transport.open(endpoint)
+                response_evidence, length_header = _validate_response(response, endpoint)
                 digest = hashlib.sha256()
                 reached_eof = False
                 while True:
@@ -411,7 +487,7 @@ def acquire(
                 m, started=started, completed=completed, phase="streaming",
                 error=exc,
                 observed=received if received else None,
-                archive_sha=None,
+                archive_sha=None, endpoint=endpoint,
             ))
             _clean_temp(temp_file, paths.staging)
             raise
@@ -427,7 +503,7 @@ def acquire(
             completed = _iso(clock())
             _atomic_update_manifest(paths.manifest, lambda m: _record_failure(
                 m, started=started, completed=completed, phase="structural_validation",
-                error=exc, observed=received, archive_sha=archive_sha,
+                error=exc, observed=received, archive_sha=archive_sha, endpoint=endpoint,
             ))
             _clean_temp(temp_file, paths.staging)
             raise
@@ -436,7 +512,7 @@ def acquire(
             completed = _iso(clock())
             _atomic_update_manifest(paths.manifest, lambda m: _record_failure(
                 m, started=started, completed=completed, phase="structural_validation",
-                error=error, observed=received, archive_sha=archive_sha,
+                error=error, observed=received, archive_sha=archive_sha, endpoint=endpoint,
             ))
             _clean_temp(temp_file, paths.staging)
             raise error
@@ -456,7 +532,7 @@ def acquire(
             completed = _iso(clock())
             _atomic_update_manifest(paths.manifest, lambda m: _record_failure(
                 m, started=started, completed=completed, phase="promotion",
-                error=error, observed=received, archive_sha=archive_sha,
+                error=error, observed=received, archive_sha=archive_sha, endpoint=endpoint,
             ))
             _clean_temp(temp_file, paths.staging)
             raise error from exc
@@ -471,7 +547,7 @@ def acquire(
             observed=received, archive_sha=archive_sha,
             response_evidence=response_evidence,
             stream_policy=stream_policy,
-            validation_summary=validation_summary,
+            validation_summary=validation_summary, endpoint=endpoint,
         ))
         return json.loads(paths.manifest.read_text(encoding="utf-8"))
 
@@ -482,6 +558,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--execute", action="store_true",
         help="Explicitly authorize one live GET to the pinned NorTaxa endpoint.",
     )
+    parser.add_argument("--version", default=VERSION,
+                        help="NorTaxa IPT version; anything but 1.284 needs a committed approval record")
+    parser.add_argument("--taxonomy-root", type=Path, default=None,
+                        help="taxonomy tree holding sources/nortaxa/<version>/ (default: this checkout); "
+                             "use a scratch mirror to keep the archive out of the repository")
     return parser
 
 
@@ -495,8 +576,8 @@ def main(argv: Iterable[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    taxonomy = Path(__file__).resolve().parents[1]
-    paths = ReleasePaths(taxonomy_root=taxonomy)
+    taxonomy = args.taxonomy_root.resolve() if args.taxonomy_root else Path(__file__).resolve().parents[1]
+    paths = ReleasePaths(taxonomy_root=taxonomy, version=args.version)
     try:
         result = acquire(paths)
     except AcquisitionError as exc:
