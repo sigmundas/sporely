@@ -33,7 +33,7 @@ from PySide6.QtGui import (
 )
 from PIL import Image, ImageOps, features
 from PySide6.QtCore import QUrl
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as dataclass_replace
 from pathlib import Path
 import io
 import sqlite3
@@ -139,6 +139,9 @@ from utils.taxon_identity import (
 )
 from utils.artsobservasjoner_taxon import (
     ArtsobservasjonerTaxonIdError,
+    DESTINATION_CONFIRMED_SOURCE,
+    DESTINATION_OVERRIDE_REASON,
+    confirm_destination_taxon_id,
     log_artsobservasjoner_taxon_diagnostic,
     select_artsobservasjoner_taxon_id,
 )
@@ -11026,11 +11029,8 @@ class ObservationsTab(QWidget):
         # target attempts must not remove it before later targets run.
         return upload_paths, (temp_dir if owns_bundle else None), warnings
 
-    def _lookup_artsobservasjoner_taxon_id(self, scientific_name: str | None) -> int | None:
-        scientific_name = self._normalize_taxon_text(scientific_name)
-        if not scientific_name:
-            return None
-
+    def _artsobs_picker_search(self, scientific_name: str) -> list | None:
+        """GET Artsobservasjoner's PickerSearch; ``None`` when unparseable."""
         try:
             from database.fetch_artportalen_taxon_ids import parse_picker_results
         except Exception:
@@ -11063,7 +11063,13 @@ class ObservationsTab(QWidget):
 
         if parse_picker_results is None:
             return None
-        results = parse_picker_results(response.text)
+        return parse_picker_results(response.text)
+
+    def _lookup_artsobservasjoner_taxon_id(self, scientific_name: str | None) -> int | None:
+        scientific_name = self._normalize_taxon_text(scientific_name)
+        if not scientific_name:
+            return None
+        results = ObservationsTab._artsobs_picker_search(self, scientific_name)
         if not results:
             return None
 
@@ -11113,11 +11119,61 @@ class ObservationsTab(QWidget):
         resolved_taxon = self._resolve_artsobs_taxon_id(obs)
         resolved_taxon_id = resolved_taxon[0] if resolved_taxon else None
         resolved_taxon_source = resolved_taxon[1] if resolved_taxon else "taxonomy_db.artsdatabanken"
-        return select_artsobservasjoner_taxon_id(
+        local_taxon_id = None
+        if resolved_taxon_id and str(resolved_taxon_source).startswith("taxonomy_db."):
+            # Destination confirmation: Artsobservasjoner may keep a renamed
+            # species' original id while NorTaxa gives the accepted name a new
+            # one.  An exact species-rank match replaces the locally derived
+            # id as the resolved candidate (explicit stored ids keep their
+            # precedence/ambiguity semantics).  Publishing only; nothing is
+            # written back to the observation.
+            confirmed_id = self._confirm_artsobs_destination_taxon_id(obs, resolved_taxon_source)
+            if confirmed_id and confirmed_id != resolved_taxon_id:
+                local_taxon_id = resolved_taxon_id
+                local_source = resolved_taxon_source
+                resolved_taxon_id = confirmed_id
+                resolved_taxon_source = DESTINATION_CONFIRMED_SOURCE
+        resolution = select_artsobservasjoner_taxon_id(
             obs,
             resolved_taxonomy_taxon_id=resolved_taxon_id,
             resolved_taxonomy_source=resolved_taxon_source,
         )
+        if local_taxon_id and resolution.source_field == DESTINATION_CONFIRMED_SOURCE:
+            resolution = dataclass_replace(
+                resolution,
+                local_taxon_id=local_taxon_id,
+                local_source_field=local_source,
+                override_reason=DESTINATION_OVERRIDE_REASON,
+            )
+        return resolution
+
+    def _artsobs_accepted_scientific_name(self, obs: dict, resolved_source: str) -> str | None:
+        """Name the existing resolution used: the observation's genus/species
+        pair, or the accepted pair when that path resolved the local id."""
+        taxon_pair = self._extract_artsobs_taxon_pair(obs)
+        if not taxon_pair:
+            return None
+        if resolved_source == "taxonomy_db.artsdatabanken:accepted_pair":
+            taxon_pair = self._resolve_accepted_taxon_pair(*taxon_pair) or taxon_pair
+        return f"{taxon_pair[0]} {taxon_pair[1]}".strip()
+
+    def _confirm_artsobs_destination_taxon_id(self, obs: dict, resolved_source: str) -> int | None:
+        """Artsobservasjoner's id for the exact accepted species name, else None.
+
+        Any failure (network, non-200, parse) means "unconfirmed": the
+        existing locally resolved id is kept.
+        """
+        try:
+            name = self._normalize_taxon_text(
+                self._artsobs_accepted_scientific_name(obs, resolved_source)
+            )
+            if not name:
+                return None
+            results = ObservationsTab._artsobs_picker_search(self, name)
+            return confirm_destination_taxon_id(results or [], name, self._normalize_taxon_text)
+        except Exception as exc:
+            print(f"[artsobs] destination taxon confirmation unavailable: {exc}")
+            return None
 
     def _resolve_artportalen_taxon_id(self, obs: dict) -> int | None:
         taxon_pair = self._extract_artsobs_taxon_pair(obs)

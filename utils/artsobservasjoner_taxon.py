@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Callable, Iterable, Mapping
+import html
 import logging
+import re
 
 
 logger = logging.getLogger(__name__)
@@ -13,6 +15,11 @@ logger = logging.getLogger(__name__)
 class ArtsobservasjonerTaxonResolution:
     taxon_id: int
     source_field: str
+    # Publishing-id discrepancy diagnostics: set only when Artsobservasjoner's
+    # own species search confirmed a different id than the local NorTaxa one.
+    local_taxon_id: int | None = None
+    local_source_field: str | None = None
+    override_reason: str | None = None
 
 
 class ArtsobservasjonerTaxonIdError(RuntimeError):
@@ -152,6 +159,59 @@ def select_artsobservasjoner_taxon_id(
     return candidates[0]
 
 
+DESTINATION_CONFIRMED_SOURCE = "artsobservasjoner.picker_search:destination_confirmed"
+DESTINATION_OVERRIDE_REASON = (
+    "Artsobservasjoner species search returned a different taxon id for the "
+    "exact accepted name than the locally derived NorTaxa id"
+)
+_SPECIES_TOKEN_RE = re.compile(r"^[^\W\d_][^\W\d_-]*(?:-[^\W\d_]+)*$")
+_NON_SPECIES_MARKERS = {"agg", "agg.", "coll", "coll.", "s.lat.", "s.l.", "sensu", "subsp.", "ssp.", "var.", "f.", "sect.", "subg.", "cf.", "aff.", "sp.", "spp."}
+
+
+def normalize_picker_name(text: Any, normalize: Callable[[Any], str] | None = None) -> str:
+    """Normalise a picker scientific name (HTML-escaped, may contain <i>)."""
+    normalized = html.unescape(str(text or "")).strip()
+    normalized = re.sub(r"<[^>]+>", " ", normalized)
+    if normalize is not None:
+        normalized = normalize(normalized)
+    return " ".join(normalized.split()).casefold()
+
+
+def _is_binomial(normalized_name: str) -> bool:
+    parts = normalized_name.split()
+    if len(parts) != 2:
+        return False
+    if any(part in _NON_SPECIES_MARKERS for part in parts):
+        return False
+    return all(_SPECIES_TOKEN_RE.match(part) for part in parts)
+
+
+def confirm_destination_taxon_id(
+    results: Iterable[Any],
+    accepted_name: str | None,
+    normalize: Callable[[Any], str] | None = None,
+) -> int | None:
+    """Return Artsobservasjoner's id only for one exact species-rank match.
+
+    ``results`` are picker results (``taxon_id``, ``scientific_name``).  The
+    match is the exact normalised full name; no epithet-only or approximate
+    matching.  Genus, aggregate and infraspecific names never confirm a
+    species.  Two or more exact matches with different ids are ambiguous.
+    """
+    target = normalize_picker_name(accepted_name, normalize)
+    if not _is_binomial(target):
+        return None
+    ids: set[int] = set()
+    for result in results or ():
+        name = normalize_picker_name(getattr(result, "scientific_name", None), normalize)
+        if name != target:
+            continue
+        taxon_id = _positive_int(getattr(result, "taxon_id", None))
+        if taxon_id:
+            ids.add(taxon_id)
+    return next(iter(ids)) if len(ids) == 1 else None
+
+
 def log_artsobservasjoner_taxon_diagnostic(
     observation: Mapping[str, Any] | None,
     resolution: ArtsobservasjonerTaxonResolution,
@@ -161,7 +221,8 @@ def log_artsobservasjoner_taxon_diagnostic(
         "Artsobservasjoner publish taxon diagnostic: "
         "local_observation_id=%r genus=%r species=%r common_name=%r "
         "ai_selected_service=%r ai_selected_scientific_name=%r ai_selected_taxon_id=%r "
-        "artsdata_id=%r artportalen_id=%r final_taxon_id=%r source_field=%r",
+        "artsdata_id=%r artportalen_id=%r final_taxon_id=%r source_field=%r "
+        "local_taxon_id=%r local_source_field=%r override_reason=%r",
         obs.get("id"),
         obs.get("genus"),
         obs.get("species"),
@@ -173,4 +234,7 @@ def log_artsobservasjoner_taxon_diagnostic(
         obs.get("artportalen_id"),
         resolution.taxon_id,
         resolution.source_field,
+        resolution.local_taxon_id,
+        resolution.local_source_field,
+        resolution.override_reason,
     )
