@@ -1,12 +1,13 @@
-"""R1: P10 inherited usages, end to end.
+"""R1: P10 inherited usages and the retired-id map, end to end.
 
 Policy P10 (``mapping_policy.yml`` ``inherited_usage_under_supersession``):
 under a ``names_only`` supersession only the retired concept's own anchor
 usage becomes a ``reviewed_supersession`` bridge. Every other usage (here a
 NorTaxa synonym with a blocked nomenclatural status) moves to the survivor
 as a name, keeps its own evidence class and statuses, and is marked
-``inherited_via_supersession``. Build test H16 of the audit's build-test
-proposal, through the compiler, the SQLite builder and the cloud export.
+``inherited_via_supersession``. Build tests H16 and H2 of the audit's
+build-test proposal: compiler, SQLite builder and cloud export, plus the
+additive ``taxon_supersession_min`` map and the desktop lookups that read it.
 """
 from __future__ import annotations
 
@@ -146,6 +147,12 @@ def test_names_only_bridges_the_anchor_and_keeps_the_synonym_as_a_name(tmp_path:
     assert (name["taxon_id"], name["is_preferred_name"], name["note"]) == (host_id, 0, expected_note)
     ext = conn.execute("SELECT * FROM taxon_external_id_min WHERE external_id = 77001").fetchone()
     assert (ext["taxon_id"], ext["id_role"], ext["note"]) == (host_id, "synonym", expected_note)
+    # H2: the retired id resolves to a live survivor through the additive map.
+    row = conn.execute("SELECT * FROM taxon_supersession_min").fetchone()
+    assert (row["retired_taxon_id"], row["current_taxon_id"], row["supersession_id"],
+            row["content_release_id"]) == (own_id, host_id, "r1-supersede-52369",
+                                           "tax-2026.10.23-02")
+    assert conn.execute("SELECT COUNT(*) FROM taxon_min WHERE taxon_id=?", (own_id,)).fetchone()[0] == 0
     assert conn.execute("SELECT value FROM taxonomy_meta WHERE key='taxonomy_schema_version'"
                         ).fetchone()[0] == "2"
 
@@ -208,3 +215,19 @@ def test_names_only_approval_refuses_a_record_without_it(tmp_path: Path) -> None
     record["inherited_usages"] = "names_only"
     assert verify_supersession_manifest_approvals(document) == {"s": sha}
 
+
+def test_desktop_lookups_resolve_a_retired_id(tmp_path: Path) -> None:
+    from database.taxon_lookup import TaxonLookupService
+    from database.vernacular_db import VernacularDB
+
+    release, own_id, host_id = _release(tmp_path, "names_only")
+    _db(tmp_path, release).close()
+    vdb = VernacularDB(tmp_path / "candidate.sqlite3", language_code="nb")
+    assert vdb.current_taxon_ids([own_id, host_id, 999999]) == {own_id: host_id}
+    names = vdb.display_scientific_names([own_id])
+    assert names[own_id] == vdb.display_scientific_names([host_id])[host_id]
+    lookup = TaxonLookupService(vernacular_db=vdb, language_code="nb",
+                                include_reference_data=False)
+    assert lookup.current_taxon_id(own_id) == host_id
+    assert lookup.current_taxon_id(host_id) == host_id
+    assert lookup.current_taxon_id(999999) is None

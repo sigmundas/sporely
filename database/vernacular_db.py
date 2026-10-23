@@ -97,6 +97,36 @@ class VernacularDB:
                     display = str(national_name or "").strip() or canonical_text
                     if display:
                         out[int(taxon_id)] = (canonical_text, display)
+        # A retired id (superseded concept) has no taxon_min row; show the
+        # concept that replaced it. Display only: the stored id is untouched.
+        retired = self.current_taxon_ids([t for t in ids if t not in out])
+        if retired:
+            current = self.display_scientific_names(set(retired.values()))
+            for retired_id, current_id in retired.items():
+                if current_id in current:
+                    out[retired_id] = current[current_id]
+        return out
+
+    def current_taxon_ids(self, taxon_ids) -> dict[int, int]:
+        """``retired id -> current id`` for ids a reviewed supersession retired.
+
+        Reads the release's additive ``taxon_supersession_min`` map. Ids that
+        are live, unknown, or a release without the table give no entry.
+        """
+        ids = sorted({int(t) for t in taxon_ids if t is not None})
+        if not ids or "taxon_supersession_min" not in self._table_names():
+            return {}
+        out: dict[int, int] = {}
+        with self._connect() as conn:
+            for start in range(0, len(ids), 500):
+                chunk = ids[start:start + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                for retired_id, current_id in conn.execute(
+                    "SELECT retired_taxon_id, current_taxon_id FROM taxon_supersession_min "
+                    f"WHERE retired_taxon_id IN ({placeholders})",
+                    chunk,
+                ):
+                    out[int(retired_id)] = int(current_id)
         return out
 
     def _connect(self) -> sqlite3.Connection:

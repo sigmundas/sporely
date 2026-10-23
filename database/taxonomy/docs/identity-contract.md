@@ -110,6 +110,20 @@ mappings remain stored so the same proposal is not repeatedly raised.
 Confidence is a decimal from zero through one describing evidence strength. It
 never changes a non-exact relationship into identity.
 
+### Retired ids (concept supersessions)
+
+A reviewed supersession (`policies/concept_supersessions.yml`) retires an
+allocated concept onto a current one; the registry keeps both allocations.
+The retired id has no `taxon_min` row. Since R1 the release also carries the
+additive table `taxon_supersession_min(retired_taxon_id, current_taxon_id,
+supersession_id, content_release_id)`, one row per retired id, whose current
+id is always live (the builder refuses otherwise; chains are refused by the
+compiler). `taxonomy_schema_version` stays 2. Desktop display reads it
+(`VernacularDB.display_scientific_names`, `TaxonLookupService.current_taxon_id`);
+it never rewrites a stored id. Sync-side membership checks
+(`installed_taxon_concept`) are unchanged: a retired id still reads as absent
+from the release there, and remapping stored ids is a separate, reviewed step.
+
 ### Same-source identity of NorTaxa-only concepts
 
 A concept anchored by a NorTaxa usage carries that usage's `taxonID` in
