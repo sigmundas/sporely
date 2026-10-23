@@ -168,7 +168,15 @@ def _make_v2_db(path: Path) -> Path:
             (161825, 'Clavaria', 'argillacea', 'Clavaria argillacea var. argillacea', 'variety', 99001),
             (166409, 'Verrucaria', 'tristis', 'Lithocia tristis', 'species', NULL),
             (634435, 'Verrucaria', 'tristis', 'Verrucaria tristis', 'species', 82592),
-            (70000, 'Two', 'ids', 'Two ids', 'species', NULL);
+            (70000, 'Two', 'ids', 'Two ids', 'species', NULL),
+            (161886, 'Cortinarius', 'aerinus', 'Cortinarius aerinus', 'species', NULL),
+            (624786, 'Cortinarius', 'aerinus', 'Cortinarius aerinus nom. dub.', 'species', 52523),
+            (634850, 'Morchella', 'conica', 'Morchella conica nom. dub.', 'species', 95926),
+            (626344, 'Ramaria', 'flavoides coll.', 'Ramaria flavoides coll.', 'species', 56508),
+            (624063, 'Ramaria', 'flavoides coll. 1', 'Ramaria flavoides coll. 1', 'species', 226900),
+            (96276, 'Entoloma', 'sericellum', 'Entoloma sericellum', 'species', NULL),
+            (625268, 'Entoloma', 'sericellum', 'Entoloma sericellum', 'species', 53666),
+            (90001, 'Paxillus', 'cuprinus jargeat', 'Paxillus cuprinus', 'species', 298850);
         INSERT INTO taxon_external_id_min VALUES
             (36762, 'artsdatabanken', 135683, 'accepted', 0, 'reviewed_supersession'),
             (621785, 'artsdatabanken', 133944, 'accepted', 1, NULL),
@@ -176,7 +184,9 @@ def _make_v2_db(path: Path) -> Path:
             (161825, 'artsdatabanken', 99001, 'accepted', 1, NULL),
             (166409, 'artsdatabanken', 135403, 'accepted', 0, 'reviewed_supersession'),
             (70000, 'artsdatabanken', 1, 'accepted', 0, NULL),
-            (70000, 'artsdatabanken', 2, 'accepted', 0, NULL);
+            (70000, 'artsdatabanken', 2, 'accepted', 0, NULL),
+            (96276, 'artsdatabanken', 298970, 'accepted', 0, NULL),
+            (625268, 'artsdatabanken', 53666, 'accepted', 1, NULL);
         INSERT INTO taxon_external_id_text_min VALUES
             (36762, 'nortaxa', 'nortaxa_taxon_id', '135683', 'accepted', 0, 'authoritative_bridge:reviewed_supersession');
         INSERT INTO scientific_name_min VALUES
@@ -195,6 +205,11 @@ def _make_v2_db(path: Path) -> Path:
     ("Lithocia", "tristis", 135403),        # survivor's genus column says Verrucaria
     ("Verrucaria", "tristis", 82592),
     ("Two", "ids", None),                   # ambiguous: refuse
+    ("Cortinarius", "aerinus", 52523),      # canonical carries "nom. dub."
+    ("Morchella", "conica", 95926),
+    ("Ramaria", "flavoides coll.", 56508),  # "coll. 1" is another taxon, not a qualifier
+    ("Entoloma", "sericellum", 53666),      # NorTaxa's own id outranks a legacy ADB id
+    ("Paxillus", "cuprinus Jargeat", 298850),  # epithet column holds authorship
 ])
 def test_v2_name_lookup_is_rank_and_canonical_name_aware(tmp_path, use_db, genus, species, expected):
     use_db(_make_v2_db(tmp_path / "v2.sqlite3"))
@@ -241,3 +256,5 @@ def test_release_regressions(use_db):
     assert ObservationDB.resolve_adb_taxon_id("Myxothyrium", "leptideum") == 135683
     assert ObservationDB.resolve_adb_taxon_id("Clavaria", "argillacea") == 52390
     assert ObservationDB.resolve_adb_taxon_id("Lithocia", "tristis") == 135403
+    assert ObservationDB.resolve_adb_taxon_id("Cortinarius", "aerinus") == 52523
+    assert ObservationDB.resolve_adb_taxon_id("Morchella", "conica") == 95926

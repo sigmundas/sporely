@@ -1018,16 +1018,34 @@ def _lookup_adb_taxon_id_from_db(genus: str, species: str) -> int | None:
             # Taxonomy-v2 release: match the species concept by its canonical
             # binomial (the genus column can lag a recombination) and read the
             # NorTaxa ids of exactly that concept. A subgenus or variety that
-            # shares genus/epithet text never answers a binomial.
+            # shares genus/epithet text never answers a binomial. A species
+            # whose canonical name is the binomial plus a trailing qualifier
+            # (NorTaxa's "nom. dub.") is the same species name and matches too.
+            binomial = f"{genus} {species}"
             concept_ids = [int(r[0]) for r in conn.execute(
-                "SELECT taxon_id FROM taxon_min WHERE canonical_scientific_name = ? "
-                "COLLATE NOCASE AND lower(taxon_rank) = 'species'",
-                (f"{genus} {species}",),
+                "SELECT taxon_id FROM taxon_min WHERE canonical_scientific_name IN "
+                f"({','.join('?' * (1 + len(_SPECIES_NAME_QUALIFIERS)))}) "
+                "AND lower(taxon_rank) = 'species'",
+                (binomial, *(f"{binomial} {q}" for q in _SPECIES_NAME_QUALIFIERS)),
             )]
             if not concept_ids:
+                # Names whose canonical form differs from the genus/epithet
+                # columns (e.g. authorship kept in the epithet column) still
+                # match by those columns, at species rank only.
+                concept_ids = [int(r[0]) for r in conn.execute(
+                    "SELECT taxon_id FROM taxon_min WHERE genus = ? COLLATE NOCASE "
+                    "AND specific_epithet = ? COLLATE NOCASE AND lower(taxon_rank) = 'species'",
+                    (genus, species))]
+            if not concept_ids:
                 return None
-            return _single_positive_int(
-                [(value,) for value in _adb_ids_for_concepts(conn, concept_ids, columns, tables)])
+            # NorTaxa's own concept ids first (as before), then legacy
+            # Artsdatabanken ids; several distinct ids at a tier refuse.
+            for tier in ("nortaxa", "artsdatabanken"):
+                resolved = _single_positive_int(
+                    [(v,) for v in _adb_ids_for_concepts(conn, concept_ids, columns, tables, tier=tier)])
+                if resolved:
+                    return resolved
+            return None
 
         if "norwegian_taxon_id" in columns:
             rows = conn.execute(
@@ -1081,18 +1099,25 @@ def _lookup_adb_taxon_id_from_db(genus: str, species: str) -> int | None:
         conn.close()
 
 
-def _adb_ids_for_concepts(conn, concept_ids, columns: set[str], tables: set[str]) -> set[int]:
-    """Accepted NorTaxa (Artsdatabanken) ids carried by the given concepts."""
+def _adb_ids_for_concepts(conn, concept_ids, columns: set[str], tables: set[str],
+                          tier: str | None = None) -> set[int]:
+    """Accepted NorTaxa (Artsdatabanken) ids carried by the given concepts.
+
+    ``tier="nortaxa"`` reads only NorTaxa's own concept ids
+    (``norwegian_taxon_id`` and reviewed NorTaxa bridges);
+    ``tier="artsdatabanken"`` only the accepted Artsdatabanken external ids;
+    ``None`` reads both.
+    """
     ids: set[int] = set()
     placeholders = ",".join("?" for _ in concept_ids)
     queries = []
-    if "norwegian_taxon_id" in columns:
+    if "norwegian_taxon_id" in columns and tier in (None, "nortaxa"):
         queries.append(f"SELECT norwegian_taxon_id FROM taxon_min WHERE taxon_id IN ({placeholders})")
-    if "taxon_external_id_min" in tables:
+    if "taxon_external_id_min" in tables and tier in (None, "artsdatabanken"):
         queries.append(
             "SELECT external_id FROM taxon_external_id_min WHERE source_system = 'artsdatabanken' "
             f"AND id_role = 'accepted' AND taxon_id IN ({placeholders})")
-    if "taxon_external_id_text_min" in tables:
+    if "taxon_external_id_text_min" in tables and tier in (None, "nortaxa"):
         queries.append(
             "SELECT external_id FROM taxon_external_id_text_min WHERE source_system = 'nortaxa' "
             "AND namespace = 'nortaxa_taxon_id' AND id_role = 'accepted' "
@@ -1107,6 +1132,10 @@ def _adb_ids_for_concepts(conn, concept_ids, columns: set[str], tables: set[str]
                 ids.add(number)
     return ids
 
+
+#: Trailing qualifiers a species' canonical name may carry and still be that
+#: binomial (NorTaxa publishes doubtful names as "<binomial> nom. dub.").
+_SPECIES_NAME_QUALIFIERS = ("nom. dub.",)
 
 #: Ranks an Artsobservasjoner taxon id may be taken from for an observation.
 _ADB_CONCEPT_RANKS = {"species", "subspecies", "variety", "form"}
