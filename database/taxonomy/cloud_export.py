@@ -1292,8 +1292,15 @@ def run_export(
     replace: bool = False,
     verify_only: bool = False,
     generated_at: Optional[str] = None,
+    release_decision: Optional[Path] = None,
+    candidate_validation_only: bool = False,
 ) -> ExportResult:
-    """Produce a deterministic cloud-taxonomy export directory."""
+    """Produce a deterministic cloud-taxonomy export directory.
+
+    A ``candidate_build_only`` artifact (``taxonomy_meta.release_approval``)
+    is exported only with ``release_decision`` bound to it, or explicitly for
+    local validation (``candidate_validation_only``); never by default.
+    """
     # Reject symlink / traversal on the caller-supplied output path BEFORE
     # any `.resolve()` step — resolve() follows symlinks and normalizes '..',
     # which would erase exactly the tokens we need to catch.
@@ -1307,6 +1314,19 @@ def run_export(
     with tempfile.TemporaryDirectory(prefix="sporely_cloud_export_verify_") as scratch:
         scratch_path = Path(scratch)
         src = verify_source(artifact_gz, manifest, scratch_path)
+        if not candidate_validation_only:
+            from database.taxonomy.scripts.release_decision import (
+                ReleaseDecisionError, require_release_decision)
+            with _open_ro(src.decompressed_sqlite_path) as meta_conn:
+                approval = meta_conn.execute(
+                    "SELECT value FROM taxonomy_meta WHERE key = 'release_approval'").fetchone()
+            try:
+                require_release_decision(
+                    meta_value=approval[0] if approval else None,
+                    content_release_id=src.content_release_id,
+                    sqlite_sha256=src.sqlite_sha256, decision_path=release_decision)
+            except ReleaseDecisionError as exc:
+                raise ExportError(str(exc)) from exc
 
         release_id = src.content_release_id
         gen_at = generated_at or _iso_utc()

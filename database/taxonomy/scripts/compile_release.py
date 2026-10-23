@@ -473,6 +473,18 @@ def _load_concept_supersessions(path: Path | None) -> list[ConceptSupersession]:
     return out
 
 
+def _release_approval_field(path: Path | None) -> dict:
+    """``{"release_approval": {...}}`` when the ledger holds pending records."""
+    if path is None:
+        return {}
+    from release_decision import PENDING_CANDIDATE_ONLY, pending_supersession_count
+    pending = pending_supersession_count(json.loads(path.read_text(encoding="utf-8")))
+    if not pending:
+        return {}
+    return {"release_approval": {"status": PENDING_CANDIDATE_ONLY,
+                                 "pending_supersession_records": pending}}
+
+
 def _load_manual_mappings(path: Path) -> list[ManualMapping]:
     if not path.exists():
         raise CompilerError(f"manual-mappings file not found: {path}")
@@ -1604,6 +1616,9 @@ def compile_release(
                 _sha256_file(concept_supersessions_path)
                 if concept_supersessions_path is not None else ""
             ),
+            # Records approved for a candidate build only bind that scope
+            # into the release; promotion then needs a release decision.
+            **_release_approval_field(concept_supersessions_path),
             "mapping_policy_sha256": _sha256_file(mapping_policy_path),
             "vernacular_enrichment": {
                 "enabled": enable_vernacular_enrichment,

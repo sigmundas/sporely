@@ -253,3 +253,40 @@ def test_pinned_projection_count_mismatch_blocks_freeze(build,tmp_path):
     with pytest.raises(promote.PromotionError,match='counts disagree'):
         promote.freeze(**build,output_dir=tmp_path/'frozen',validation_receipt_path=receipt)
     assert not (tmp_path/'frozen').exists()
+
+
+def _mark_candidate_only(build):
+    conn = sqlite3.connect(build["sqlite_path"])
+    conn.execute("INSERT INTO taxonomy_meta VALUES ('release_approval', 'pending:candidate_build_only')")
+    conn.commit()
+    conn.close()
+
+
+def test_candidate_build_only_artifact_is_refused_without_a_release_decision(build, tmp_path):
+    _mark_candidate_only(build)
+    frozen = _freeze(build, tmp_path / "frozen")
+    before = {p.name: p.read_bytes() for p in build["bundle_dir"].iterdir()}
+    with pytest.raises(promote.PromotionError, match="candidate_build_only"):
+        promote.promote(**frozen)
+    # A decision for another artifact does not authorise this one.
+    wrong = tmp_path / "wrong.json"
+    wrong.write_text(json.dumps({
+        "format": "sporely-taxonomy-release-decision-v1", "decision": "release_approved",
+        "content_release_id": RELEASE, "sqlite_sha256": "0" * 64, "approved_by": "o",
+        "approved_at": "2026-10-23", "decision_reference": "test"}), encoding="utf-8")
+    with pytest.raises(promote.PromotionError, match="different artifact"):
+        promote.promote(**frozen, release_decision_path=wrong)
+    assert {p.name: p.read_bytes() for p in build["bundle_dir"].iterdir()} == before
+
+
+def test_candidate_build_only_artifact_promotes_with_its_release_decision(build, tmp_path):
+    _mark_candidate_only(build)
+    frozen = _freeze(build, tmp_path / "frozen")
+    decision = tmp_path / "decision.json"
+    decision.write_text(json.dumps({
+        "format": "sporely-taxonomy-release-decision-v1", "decision": "release_approved",
+        "content_release_id": RELEASE, "sqlite_sha256": _sha(build["sqlite_path"]),
+        "approved_by": "owner", "approved_at": "2026-10-23", "decision_reference": "test"}),
+        encoding="utf-8")
+    manifest = promote.promote(**frozen, release_decision_path=decision)
+    assert (build["bundle_dir"] / manifest["gz_artifact"]).is_file()

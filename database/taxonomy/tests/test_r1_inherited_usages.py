@@ -77,7 +77,8 @@ def _nortaxa_with_synonym(root: Path) -> Path:
     return source_dir
 
 
-def _release(tmp_path: Path, inherited_usages: str | None) -> tuple[Path, int, int]:
+def _release(tmp_path: Path, inherited_usages: str | None,
+             **extra) -> tuple[Path, int, int]:
     root = tmp_path / "sources"
     sources = [_col_source(root), _nortaxa_with_synonym(root)]
 
@@ -106,6 +107,7 @@ def _release(tmp_path: Path, inherited_usages: str | None) -> tuple[Path, int, i
     }
     if inherited_usages is not None:
         record["inherited_usages"] = inherited_usages
+    record.update(extra)
     ledger = _write_supersessions(tmp_path / "supersessions.yml", [record])
     return compile_("release2", "tax-2026.10.23-02", ledger), own_id, host_id
 
@@ -231,3 +233,18 @@ def test_desktop_lookups_resolve_a_retired_id(tmp_path: Path) -> None:
     assert lookup.current_taxon_id(own_id) == host_id
     assert lookup.current_taxon_id(host_id) == host_id
     assert lookup.current_taxon_id(999999) is None
+
+
+def test_candidate_only_release_is_marked_and_not_exported_for_import(tmp_path: Path) -> None:
+    from database.taxonomy.cloud_export import ExportError
+
+    release, _own, _host = _release(tmp_path, "names_only", release_approval="pending",
+                                    approval_scope="candidate_build_only")
+    manifest = json.loads((release / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["release_approval"]["status"] == "pending:candidate_build_only"
+    conn = _db(tmp_path, release)
+    assert conn.execute("SELECT value FROM taxonomy_meta WHERE key='release_approval'"
+                        ).fetchone()[0] == "pending:candidate_build_only"
+    conn.close()
+    with pytest.raises(ExportError, match="candidate_build_only"):
+        _export_and_scope(tmp_path, release)

@@ -1032,6 +1032,9 @@ def _build_into(
             # the standard that admitted them.
             ("bridge_emission_policy_sha256", bridge_policy.policy_sha256),
         ]
+        release_approval = (manifest.get("release_approval") or {}).get("status")
+        if release_approval:
+            meta.append(("release_approval", str(release_approval)))
         if overlay_sha256:
             meta.append(("publishing_overlay[artportalen].sha256", overlay_sha256))
         if inaturalist_refresh_sha256:
