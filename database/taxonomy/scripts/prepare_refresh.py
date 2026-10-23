@@ -1,0 +1,415 @@
+#!/usr/bin/env python3
+"""Quarterly taxonomy refresh: prepare one candidate and its change report.
+
+One command, no publication. From a previous build (the identity baseline,
+normally the last released or candidate build directory of
+``build_release.py``) and new source releases:
+
+1. Acquisition gate: every new source release must have a committed
+   acquisition record with an approval file and a manifest pin. With
+   ``--fetch``, a missing archive is fetched by that source's own acquisition
+   tool (one approved GET; nothing is bypassed); without it nothing is
+   downloaded.
+2. Normalizes the new sources and writes source diffs against the
+   previous build's normalized output.
+3. ``carry_forward.py``: one source-continuity receipt for this release.
+4. ``build_release.build`` on a refresh recipe (previous recipe, new source
+   dirs, the receipt). If the compile allocated new ids, the post-compile
+   registry is re-sharded into the build directory (never into the
+   repository) and the build runs once more on it, so its two independent
+   compiles prove determinism and the set can freeze.
+5. Cloud export (``--candidate-validation-only``) and macrofungi scope from
+   the frozen SQLite, so they bind its hash.
+6. ``change-report.{json,md}``.
+
+It stops cleanly, with the report, on any condition a reviewer must see:
+a flagged NorTaxa mapping or supersession (compiler refuses), a failed build
+or freeze (for example pinned vernacular counts; the measured counts are
+reported), a concept that stops being live without a supersession. Flagged
+Dyntaxa approvals stay unapplied and are listed. Pending release decisions do
+not stop preparation; they block publication, which stays the separate
+release-decision -> promote -> export/import flow.
+"""
+from __future__ import annotations
+
+import argparse
+import gzip
+import json
+import shutil
+import sqlite3
+import subprocess
+import sys
+from pathlib import Path
+
+SCRIPTS = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPTS))
+
+import build_release  # noqa: E402
+import carry_forward  # noqa: E402
+from compile_release import _canonical_name_for_compare, _iter_taxa, _release_string  # noqa: E402
+from identity_registry import shard_registry  # noqa: E402
+
+REPO_ROOT = build_release.REPO_ROOT
+TAXONOMY = REPO_ROOT / "database" / "taxonomy"
+APPROVAL_FILES = ("acquisition-approval.json", "approval.json", "acquisition-attempt-1-approval.json")
+FETCHERS = {"nortaxa": "acquire_nortaxa.py", "dyntaxa": "acquire_dyntaxa.py"}
+
+
+class RefreshStop(Exception):
+    """A condition the reviewer must see; the report is still written."""
+
+
+# ----- acquisition gate ------------------------------------------------------
+
+def acquisition_gate(source: dict, archive_root: Path, fetch: bool, python: str) -> dict:
+    release_dir = REPO_ROOT / source["release_dir"]
+    approval = next((release_dir / name for name in APPROVAL_FILES if (release_dir / name).is_file()), None)
+    if approval is None:
+        raise RefreshStop(f"{source['code']}: no acquisition approval in {source['release_dir']}")
+    manifest = release_dir / "manifest.json"
+    archive = archive_root / source["release_dir"] / "archive.zip"
+    fetched = False
+    if not archive.is_file():
+        if not fetch or source["code"] not in FETCHERS:
+            raise RefreshStop(f"{source['code']}: archive missing at {archive}"
+                              + ("" if fetch else " (offline; pass --fetch to run its approved acquisition)"))
+        mirror = archive_root / "database" / "taxonomy"
+        mirror_release = archive_root / source["release_dir"]
+        mirror_release.mkdir(parents=True, exist_ok=True)
+        for record in release_dir.glob("*.json"):
+            if record.name != "manifest.json" or source["code"] == "nortaxa":
+                shutil.copy2(record, mirror_release / record.name)
+        version = Path(source["release_dir"]).name
+        result = subprocess.run([python, str(SCRIPTS / FETCHERS[source["code"]]), "--execute",
+                                 "--version", version, "--taxonomy-root", str(mirror)],
+                                cwd=REPO_ROOT, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RefreshStop(f"{source['code']}: acquisition failed: {result.stderr.strip()[-500:]}")
+        shutil.copy2(mirror_release / "manifest.json", manifest)
+        fetched = True
+    if not manifest.is_file():
+        raise RefreshStop(f"{source['code']}: missing acquisition manifest")
+    pinned = build_release.manifest_archive_sha256(json.loads(manifest.read_text()))
+    actual = build_release.sha256_file(archive)
+    if actual != pinned:
+        raise RefreshStop(f"{source['code']}: archive {actual} is not the manifest pin {pinned}")
+    return {"approval": str(approval.relative_to(REPO_ROOT)), "archive_sha256": actual, "fetched": fetched}
+
+
+# ----- diffs -----------------------------------------------------------------
+
+def _snapshot_all(directory: Path) -> dict[tuple[str, str], carry_forward.Snapshot]:
+    out = {}
+    for record in _iter_taxa(directory):
+        out[(record.taxon_id_namespace, record.taxon_id_value)] = carry_forward.Snapshot.of(record)
+    return out
+
+
+def source_diff(previous: Path, current: Path) -> dict:
+    old, new = _snapshot_all(previous), _snapshot_all(current)
+    changed: dict[str, int] = {}
+    for key in old.keys() & new.keys():
+        a, b = old[key], new[key]
+        for name in ("scientific_name", "rank", "taxonomic_status", "accepted", "parent"):
+            if getattr(a, name) != getattr(b, name):
+                changed[name] = changed.get(name, 0) + 1
+        if a.authorship != b.authorship:
+            kind = ("authorship_typography" if carry_forward.typography_key(a.authorship)
+                    == carry_forward.typography_key(b.authorship) else "authorship")
+            changed[kind] = changed.get(kind, 0) + 1
+    return {"previous": len(old), "current": len(new), "added": len(new.keys() - old.keys()),
+            "removed": len(old.keys() - new.keys()), "changed": dict(sorted(changed.items()))}
+
+
+def col_churn_candidates(receipt: dict, previous: Path, current: Path) -> list[dict]:
+    """Report-only: for reviewed COL ids now missing, current COL usages with the
+    same canonical name and rank that did not exist before. Never applied."""
+    missing = sorted({i.split("/", 2)[2] for r in receipt["records"].values() for i in r["identifiers"]
+                      if i.startswith("col_xr/") and any(x.startswith(i + ":missing") for x in r["reasons"])})
+    if not missing:
+        return []
+    old, new = _snapshot_all(previous), _snapshot_all(current)
+    by_name: dict[tuple[str, str], list[str]] = {}
+    for (namespace, value), snap in new.items():
+        if (namespace, value) not in old:
+            by_name.setdefault((_canonical_name_for_compare(snap.scientific_name), snap.rank), []).append(value)
+    out = []
+    for value in missing:
+        snap = old.get(("col_usage_id", value))
+        key = (_canonical_name_for_compare(snap.scientific_name), snap.rank) if snap else None
+        out.append({"col_usage_id": value, "name": snap.scientific_name if snap else None,
+                    "same_name_rank_new_ids": sorted(by_name.get(key, [])) if key else []})
+    return out
+
+
+# ----- SQLite comparison -----------------------------------------------------
+
+def _open_sqlite(path: Path, scratch: Path) -> Path:
+    if path.suffix == ".gz":
+        target = scratch / (path.stem + ".cmp")
+        if not target.exists():
+            with gzip.open(path, "rb") as src, target.open("wb") as dst:
+                shutil.copyfileobj(src, dst, 1 << 20)
+        return target
+    return path
+
+
+def live_concepts(path: Path) -> tuple[set[int], dict[int, int], dict[str, str]]:
+    with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as conn:
+        live = {row[0] for row in conn.execute("SELECT taxon_id FROM taxon_min")}
+        try:
+            retired = dict(conn.execute("SELECT retired_taxon_id, current_taxon_id FROM taxon_supersession_min"))
+        except sqlite3.OperationalError:
+            retired = {}
+        meta = dict(conn.execute("SELECT key, value FROM taxonomy_meta"))
+    return live, retired, meta
+
+
+def identity_comparison(previous_sqlite: Path, candidate_sqlite: Path) -> dict:
+    old_live, old_retired, _ = live_concepts(previous_sqlite)
+    new_live, new_retired, _ = live_concepts(candidate_sqlite)
+    stopped = old_live - new_live
+    explained = {i for i in stopped if i in new_retired and new_retired[i] in new_live}
+    return {"previous_live": len(old_live), "candidate_live": len(new_live),
+            "new_live": len(new_live - old_live), "stopped_being_live": len(stopped),
+            "stopped_by_supersession": len(explained),
+            "stopped_unexplained": sorted(stopped - explained),
+            "newly_retired": len(set(new_retired) - set(old_retired))}
+
+
+# ----- report ----------------------------------------------------------------
+
+def write_report(build_dir: Path, report: dict) -> None:
+    (build_dir / "change-report.json").write_text(
+        json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    lines = [f"# Taxonomy refresh {report['release_id']}", "",
+             f"Outcome: **{report['outcome']}**" + (f" — {report['stop_reason']}" if report.get("stop_reason") else ""), ""]
+    for section in ("acquisition", "source_diffs", "continuity", "build", "identity", "coverage", "publication"):
+        if section in report:
+            lines += [f"## {section}", "", "```json",
+                      json.dumps(report[section], indent=1, sort_keys=True, ensure_ascii=False)[:6000], "```", ""]
+    (build_dir / "change-report.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def _source_entry(spec: str) -> dict:
+    code, release_dir = spec.split("=", 1)
+    release_dir = release_dir.rstrip("/")
+    manifest = json.loads((REPO_ROOT / release_dir / "manifest.json").read_text()) \
+        if (REPO_ROOT / release_dir / "manifest.json").is_file() else {}
+    version = Path(release_dir).name
+    if code == "col_xr":
+        release = manifest.get("release") or {}
+        return {"code": code, "normalizer": "col_xr", "release_dir": release_dir, "version": version,
+                "issued_date": release.get("issued_date")}
+    return {"code": code, "normalizer": "national_source", "release_dir": release_dir,
+            "profile": f"database/taxonomy/national_sources/{code}/{version}/source.json"}
+
+
+def prepare(args: argparse.Namespace) -> dict:
+    build_dir: Path = args.build_dir.resolve()
+    if build_dir.exists():
+        raise SystemExit(f"build dir {build_dir} already exists")
+    build_dir.mkdir(parents=True)
+    work = build_dir / "refresh"
+    work.mkdir()
+    previous_build = args.previous_build.resolve()
+    previous_report = json.loads((previous_build / "build-report.json").read_text())
+    previous_sqlite = previous_build / f"{previous_report['release_id']}-A.sqlite3"
+    recipe = json.loads(args.previous_recipe.read_text())
+    report: dict = {"release_id": args.release_id, "outcome": "stopped",
+                    "previous_build": {"release_id": previous_report["release_id"],
+                                       "sqlite_sha256": previous_report["sqlite"]["sha256"]}}
+    try:
+        # 1. acquisition gate and refresh recipe
+        overrides = {entry["code"]: entry for entry in map(_source_entry, args.source)}
+        report["acquisition"] = {}
+        for code, entry in overrides.items():
+            report["acquisition"][code] = acquisition_gate(entry, args.archive_root.resolve(), args.fetch, args.python)
+        recipe["sources"] = [overrides.get(s["code"], s) for s in recipe["sources"]]
+        unchanged = [s["code"] for s in recipe["sources"] if s["code"] not in overrides]
+        report["acquisition"]["unchanged_sources"] = unchanged
+
+        # 2. normalize new sources; diffs against the previous build's normalized output
+        norm = work / "norm"
+        current_dirs, previous_dirs = {}, {}
+        for source in recipe["sources"]:
+            previous_dirs[source["code"]] = previous_build / "norm" / source["code"]
+            if source["code"] not in overrides:
+                current_dirs[source["code"]] = previous_dirs[source["code"]]
+                continue
+            archive = str(args.archive_root.resolve() / source["release_dir"] / "archive.zip")
+            out = norm / source["code"]
+            if source["normalizer"] == "col_xr":
+                argv = [str(SCRIPTS / "normalize_col_xr.py"), "--archive", archive, "--output", str(out),
+                        "--source-release-version", source["version"],
+                        "--source-release-issued-date", source["issued_date"]]
+            else:
+                argv = [str(SCRIPTS / "national_source.py"), "normalize", "--profile", source["profile"],
+                        "--archive", archive, "--output", str(out)]
+            result = subprocess.run([args.python, *argv], cwd=REPO_ROOT, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RefreshStop(f"normalize {source['code']} failed: {result.stderr[-800:]}")
+            current_dirs[source["code"]] = out
+        report["source_diffs"] = {code: source_diff(previous_dirs[code], current_dirs[code])
+                                  for code in overrides}
+
+        # 3. continuity receipt
+        _, _, previous_meta = live_concepts(previous_sqlite)
+        previous_pins = {code: {"source_release_id": previous_meta[f"source_release[{code}].id"],
+                                "sha256": previous_meta[f"source_release[{code}].archive_sha256"]}
+                         for code in current_dirs}
+        current_pins = {}
+        for code, directory in current_dirs.items():
+            normalized = json.loads((directory / "report.json").read_text())
+            current_pins[code] = {"source_release_id": f"{code}:{_release_string(normalized['profile_source_release'])}",
+                                  "sha256": normalized["archive_sha256"]}
+        registry_path = work / "registry-base.jsonl"
+        build_release.assemble_registry(REPO_ROOT / recipe["registry"], registry_path)
+        receipt = carry_forward.build_receipt(
+            release_id=args.release_id, previous_dirs=previous_dirs, current_dirs=current_dirs,
+            previous_pins=previous_pins, current_pins=current_pins,
+            manual_mappings=json.loads((REPO_ROOT / recipe["policies"]["manual_mappings"]).read_text()),
+            supersessions=json.loads((REPO_ROOT / recipe["policies"]["concept_supersessions"]).read_text()),
+            anchors=carry_forward.registry_anchors(registry_path))
+        receipt_path = work / "continuity-receipt.json"
+        receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
+        flagged = {rid: r for rid, r in receipt["records"].items() if r["status"] == "flagged"}
+        reason_counts: dict[str, int] = {}
+        for record in flagged.values():
+            for reason in record["reasons"]:
+                tail = reason.rsplit(":", 1)[1]
+                key = f"{record['kind']}:{reason.split('/', 1)[0]}:{tail}"
+                reason_counts[key] = reason_counts.get(key, 0) + 1
+        report["continuity"] = {
+            "receipt": str(receipt_path), "previous_pins": previous_pins, "current_pins": current_pins,
+            "summary": receipt["summary"], "flag_reasons": dict(sorted(reason_counts.items())),
+            "flagged_blocking": carry_forward_blockers(receipt),
+            "flagged_examples": dict(list(sorted(flagged.items()))[:25]),
+            "col_churn_candidates_report_only": col_churn_candidates(
+                receipt, previous_dirs["col_xr"], current_dirs["col_xr"]),
+        }
+        recipe["continuity_receipt"] = {"path": str(receipt_path), "sha256": build_release.sha256_file(receipt_path)}
+        if report["continuity"]["flagged_blocking"]:
+            raise RefreshStop(f"{len(report['continuity']['flagged_blocking'])} NorTaxa mappings/supersessions "
+                              "are flagged by the continuity receipt; review before building")
+
+        # 4. build (bootstrap when ids are allocated, then the deterministic final build)
+        def run_build(name: str, recipe_doc: dict) -> dict:
+            recipe_path = work / f"recipe-{name}.json"
+            recipe_path.write_text(json.dumps(recipe_doc, indent=2, sort_keys=True) + "\n")
+            options = build_release.Options(release_id=args.release_id, build_dir=build_dir / name,
+                                            recipe_path=recipe_path, archive_root=args.archive_root.resolve())
+            try:
+                return build_release.build(options, python=args.python)
+            except build_release.BuildError as exc:
+                raise RefreshStop(f"build {name} failed: {str(exc)[-1500:]}") from exc
+        build_report = run_build("build-1", recipe)
+        report["build"] = {"build-1": _build_summary(build_report)}
+        if build_report["registry"]["new_allocations"]:
+            registry_dir = work / "registry"
+            shard_registry(build_dir / "build-1" / "registry-A.jsonl", registry_dir)
+            recipe["registry"] = str(registry_dir)
+            build_report = run_build("build-2", recipe)
+            report["build"]["build-2"] = _build_summary(build_report)
+        final = build_dir / ("build-2" if "build-2" in report["build"] else "build-1")
+        report["build"]["final"] = final.name
+        diagnostics = json.loads((final / "releaseA" / "diagnostics.json").read_text())
+        report["build"]["source_continuity"] = {
+            k: (v if k != "approved_mappings_not_applicable" else _count(v, "reason"))
+            for k, v in (diagnostics.get("source_continuity") or {}).items()}
+        report["build"]["reviewed_identity_only"] = diagnostics.get("counts", {}).get("reviewed_identity_only_sources")
+        candidate = final / f"{args.release_id}-A.sqlite3"
+        report["identity"] = {"vs_previous": identity_comparison(previous_sqlite, candidate)}
+        for label, path in (args.compare_sqlite or []):
+            report["identity"][f"vs_{label}"] = identity_comparison(_open_sqlite(Path(path), work), candidate)
+        report["coverage"] = {"candidate": build_report["coverage"]["candidate"],
+                              "delta_vs_bundled": build_report["coverage"].get("delta"),
+                              "bundled_release_id": build_report["coverage"].get("baseline_release_id")}
+        if not build_report["determinism"]["identical"]:
+            raise RefreshStop(f"builds differ: {build_report['determinism']['mismatches']}")
+        if "frozen" not in build_report:
+            raise RefreshStop("the build did not freeze (registry changed or no bundle baseline)")
+        report["build"]["freeze_sha256"] = build_report["frozen"]["freeze_sha256"]
+
+        # 5. cloud export + scope, from the frozen bytes
+        frozen = final / "frozen"
+        gz = frozen / f"{args.release_id}.sqlite3.gz"
+        cloud, scope = work / "cloud_export", work / "scope"
+        for label, argv in (
+                ("cloud_export", [str(SCRIPTS / "export_cloud_taxonomy.py"), "--artifact", str(gz),
+                                  "--manifest", str(frozen / "manifest.json"), "--output", str(cloud),
+                                  "--policies", str(TAXONOMY / "policies"), "--candidate-validation-only"]),
+                ("macrofungi_scope", [str(TAXONOMY / "macrofungi_scope.py"), "--policy",
+                                      str(TAXONOMY / "policies" / "global-macrofungi-scope.yml"),
+                                      "--source-gz", str(gz), "--w1-dir", str(cloud), "--output-dir", str(scope),
+                                      "--desktop", str(scope / f"desktop-{args.release_id}.sqlite3"),
+                                      "--evidence", str(work / "scope-evidence.json"),
+                                      "--release-id", args.release_id, "--starting-revision", args.revision])):
+            result = subprocess.run([args.python, *argv], cwd=REPO_ROOT, capture_output=True, text=True)
+            report.setdefault("publication", {})[label] = {"exit": result.returncode,
+                                                          "tail": (result.stderr or result.stdout)[-600:]}
+            if result.returncode != 0:
+                raise RefreshStop(f"{label} failed")
+        unexplained = report["identity"]["vs_previous"]["stopped_unexplained"]
+        meta = live_concepts(candidate)[2]
+        report["publication"].update({
+            "release_approval_meta": {k: v for k, v in meta.items() if "approval" in k or k in ("state", "publication")},
+            "blockers": ([f"{len(unexplained)} concepts stop being live without a supersession"] if unexplained else [])
+                        + ([f"{sum(1 for r in receipt['records'].values() if r['status'] == 'flagged')} "
+                            "reviewed records flagged (Dyntaxa ones unapplied)"] if flagged else [])
+                        + ["release decision required for the exact frozen artifact (candidate_build_only "
+                           "approvals pending) before promote/export/import"],
+        })
+        report["outcome"] = "prepared"
+    except RefreshStop as stop:
+        report["stop_reason"] = str(stop)
+    write_report(build_dir, report)
+    return report
+
+
+def carry_forward_blockers(receipt: dict) -> list[str]:
+    from compile_release import continuity_blockers
+    return continuity_blockers(receipt)
+
+
+def _count(rows: list[dict], key: str) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for row in rows:
+        out[row[key]] = out.get(row[key], 0) + 1
+    return dict(sorted(out.items()))
+
+
+def _build_summary(report: dict) -> dict:
+    return {"sqlite_sha256": report["sqlite"]["sha256"], "deterministic": report["determinism"]["identical"],
+            "registry": report["registry"], "frozen": report.get("frozen"),
+            "bridge_emission": report["sqlite"].get("authoritative_bridge_emission")}
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--release-id", required=True, help="tax-YYYY.MM.DD-NN")
+    parser.add_argument("--build-dir", type=Path, required=True, help="new scratch directory")
+    parser.add_argument("--previous-build", type=Path, required=True,
+                        help="build_release.py directory of the identity baseline (norm/, A sqlite, report)")
+    parser.add_argument("--previous-recipe", type=Path, default=TAXONOMY / "release-recipe.json")
+    parser.add_argument("--source", action="append", default=[], metavar="CODE=RELEASE_DIR",
+                        help="new source release dir (repository-relative); repeatable")
+    parser.add_argument("--archive-root", type=Path, required=True,
+                        help="tree holding <release_dir>/archive.zip for every recipe source and the workbook")
+    parser.add_argument("--fetch", action="store_true",
+                        help="run an approved acquisition when a new source archive is missing")
+    parser.add_argument("--compare-sqlite", nargs=2, action="append", metavar=("LABEL", "PATH"),
+                        help="extra release to compare live concepts with (.sqlite3 or .gz)")
+    parser.add_argument("--revision", default="refresh", help="starting revision recorded by macrofungi_scope")
+    parser.add_argument("--python", default=sys.executable)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    report = prepare(build_parser().parse_args(argv))
+    print(f"{report['outcome']}: {report.get('stop_reason', '')}".rstrip(": "))
+    return 0 if report["outcome"] == "prepared" else 3
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

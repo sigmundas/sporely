@@ -106,6 +106,53 @@ Rules for a release candidate:
 - **Tests.** `pytest -q database/taxonomy/tests tests/test_taxonomy_v2_bundle.py
   tests/test_live_provider_identity_resolution.py`.
 
+## Quarterly refresh
+
+`scripts/prepare_refresh.py` prepares one refresh candidate and a change
+report; it never publishes. Inputs: the previous build directory (identity
+baseline: its `norm/`, A SQLite and report), the new source release dirs
+(`--source CODE=database/taxonomy/sources/<code>/<version>`), and an
+`--archive-root` holding every archive. Each new source release needs a
+committed acquisition record with an approval file; `--fetch` runs that
+source's own acquisition tool for a missing archive (one approved GET:
+`acquire_nortaxa.py --version`, `acquire_dyntaxa.py` with the SLU key from
+`SPORELY_DYNTAXA_SUBSCRIPTION_KEY`, never written; COL via
+`acquire_col_xr.py acquire`, whose release identity comes from its approval).
+
+```bash
+.venv/bin/python database/taxonomy/scripts/prepare_refresh.py \
+    --release-id tax-YYYY.MM.DD-NN --build-dir /scratch/build \
+    --previous-build /scratch/previous-build --archive-root /scratch/archives \
+    --source nortaxa=database/taxonomy/sources/nortaxa/<v> \
+    --source dyntaxa=database/taxonomy/sources/dyntaxa/<date>
+```
+
+**Source continuity.** An approval covers the source records it was
+reviewed against and is never extended to other records or reinterpreted.
+`carry_forward.py` writes one receipt per prepared release: for every
+approved manual mapping and supersession, each referenced source identifier
+(full namespace) is compared between the reviewed and the current
+normalized source. It is *carried* only if it occurs once and its name,
+rank, status, accepted-usage and parent references and kingdom are equal and
+its authorship is equal up to typography (whitespace, punctuation spacing).
+Anything else is *flagged* with reasons. The compiler
+(`--continuity-receipt`) applies an approved Dyntaxa mapping across a new
+source release only when the receipt carries it under the same approval
+hash; a flagged one stays unapplied and is listed in
+`diagnostics.json` `source_continuity`. A flagged NorTaxa mapping or
+supersession stops the compile for review. Rejections and candidate-only
+scopes are untouched. A COL usage that disappears is flagged; same
+name/rank new COL usages are listed as report-only candidates.
+
+The run re-shards a registry that gained ids into the build directory (never
+the repository), rebuilds once so the two independent compiles prove
+determinism, freezes (archiving the receipt), exports the cloud copy with
+`--candidate-validation-only` and scopes it, and writes
+`change-report.{json,md}`. It stops with the report on a flag, a failed
+build or freeze, or concepts that stop being live without a supersession.
+Publication remains the separate release-decision → promote → export/import
+flow below.
+
 ## Publishing to the cloud
 
 The cloud copy is built from the committed bundle, not from the build
