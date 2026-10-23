@@ -1021,7 +1021,9 @@ def _lookup_adb_taxon_id_from_db(genus: str, species: str) -> int | None:
             # shares genus/epithet text never answers a binomial. A species
             # whose canonical name is the binomial plus a trailing qualifier
             # (NorTaxa's "nom. dub.") is the same species name and matches too.
-            binomial = f"{genus} {species}"
+            # Canonical names are "Genus epithet"; normalise the genus case so
+            # the indexed exact match is case-insensitive in effect.
+            binomial = f"{genus[:1].upper()}{genus[1:].lower()} {species}"
             concept_ids = [int(r[0]) for r in conn.execute(
                 "SELECT taxon_id FROM taxon_min WHERE canonical_scientific_name IN "
                 f"({','.join('?' * (1 + len(_SPECIES_NAME_QUALIFIERS)))}) "
@@ -1032,10 +1034,14 @@ def _lookup_adb_taxon_id_from_db(genus: str, species: str) -> int | None:
                 # Names whose canonical form differs from the genus/epithet
                 # columns (e.g. authorship kept in the epithet column) still
                 # match by those columns, at species rank only.
+                # The concept's own names must include the queried binomial,
+                # so an unrelated concept sharing column text never answers.
                 concept_ids = [int(r[0]) for r in conn.execute(
-                    "SELECT taxon_id FROM taxon_min WHERE genus = ? COLLATE NOCASE "
-                    "AND specific_epithet = ? COLLATE NOCASE AND lower(taxon_rank) = 'species'",
-                    (genus, species))]
+                    "SELECT t.taxon_id FROM taxon_min t WHERE t.genus = ? COLLATE NOCASE "
+                    "AND t.specific_epithet = ? COLLATE NOCASE AND lower(t.taxon_rank) = 'species' "
+                    "AND EXISTS (SELECT 1 FROM scientific_name_min n WHERE n.taxon_id = t.taxon_id "
+                    "AND n.scientific_name = ? COLLATE NOCASE)",
+                    (genus, species, f"{genus} {species}"))] if "scientific_name_min" in tables else []
             if not concept_ids:
                 return None
             # NorTaxa's own concept ids first (as before), then legacy

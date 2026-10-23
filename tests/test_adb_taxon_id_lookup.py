@@ -176,7 +176,8 @@ def _make_v2_db(path: Path) -> Path:
             (624063, 'Ramaria', 'flavoides coll. 1', 'Ramaria flavoides coll. 1', 'species', 226900),
             (96276, 'Entoloma', 'sericellum', 'Entoloma sericellum', 'species', NULL),
             (625268, 'Entoloma', 'sericellum', 'Entoloma sericellum', 'species', 53666),
-            (90001, 'Paxillus', 'cuprinus jargeat', 'Paxillus cuprinus', 'species', 298850);
+            (90001, 'Paxillus', 'cuprinus jargeat', 'Paxillus cuprinus', 'species', 298850),
+            (76217, 'Cyanoderma', 'graminum', 'Acrospermum graminum', 'species', 76217);
         INSERT INTO taxon_external_id_min VALUES
             (36762, 'artsdatabanken', 135683, 'accepted', 0, 'reviewed_supersession'),
             (621785, 'artsdatabanken', 133944, 'accepted', 1, NULL),
@@ -190,7 +191,8 @@ def _make_v2_db(path: Path) -> Path:
         INSERT INTO taxon_external_id_text_min VALUES
             (36762, 'nortaxa', 'nortaxa_taxon_id', '135683', 'accepted', 0, 'authoritative_bridge:reviewed_supersession');
         INSERT INTO scientific_name_min VALUES
-            (166409, 'sci', 'Lithocia tristis'), (166409, 'sci', 'Verrucaria tristis');
+            (166409, 'sci', 'Lithocia tristis'), (166409, 'sci', 'Verrucaria tristis'),
+            (90001, 'sci', 'Paxillus cuprinus Jargeat'), (76217, 'sci', 'Acrospermum graminum');
         INSERT INTO taxon_supersession_min VALUES
             (621852, 36762, 'r1', 'tax-test'), (621803, 166409, 'r1', 'tax-test');
     """)
@@ -210,6 +212,8 @@ def _make_v2_db(path: Path) -> Path:
     ("Ramaria", "flavoides coll.", 56508),  # "coll. 1" is another taxon, not a qualifier
     ("Entoloma", "sericellum", 53666),      # NorTaxa's own id outranks a legacy ADB id
     ("Paxillus", "cuprinus Jargeat", 298850),  # epithet column holds authorship
+    ("LITHOCIA", "tristis", 135403),        # genus case does not matter
+    ("Cyanoderma", "graminum", None),       # column text alone, no such name on the concept
 ])
 def test_v2_name_lookup_is_rank_and_canonical_name_aware(tmp_path, use_db, genus, species, expected):
     use_db(_make_v2_db(tmp_path / "v2.sqlite3"))
@@ -256,5 +260,7 @@ def test_release_regressions(use_db):
     assert ObservationDB.resolve_adb_taxon_id("Myxothyrium", "leptideum") == 135683
     assert ObservationDB.resolve_adb_taxon_id("Clavaria", "argillacea") == 52390
     assert ObservationDB.resolve_adb_taxon_id("Lithocia", "tristis") == 135403
+    assert ObservationDB.resolve_adb_taxon_id("LITHOCIA", "tristis") == 135403
+    assert ObservationDB.resolve_adb_taxon_id("Cyanoderma", "graminum") is None
     assert ObservationDB.resolve_adb_taxon_id("Cortinarius", "aerinus") == 52523
     assert ObservationDB.resolve_adb_taxon_id("Morchella", "conica") == 95926
