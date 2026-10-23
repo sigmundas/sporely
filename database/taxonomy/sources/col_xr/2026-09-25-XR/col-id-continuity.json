@@ -1,0 +1,38 @@
+{
+  "format": "sporely-col-id-continuity-v1",
+  "id_report": {
+    "url": "https://download.checklistbank.org/releases/3/633/id-reports.gz",
+    "sha256": "0528739c93dd77d73e2421b19cf7ab256924013af39324bfefb6b81a1243c7a0",
+    "covers": "COL XR 316115 (2026-08) -> 316441 (2026-09-25) only",
+    "retrieved_at": "2026-10-23",
+    "bytes": 3138596,
+    "provenance": "owner instruction 2026-10-23: evidence for R2 candidate continuity; public read-only GET (ChecklistBank cookie challenge followed)",
+    "local_copy": "scratch archives; not in git"
+  },
+  "previous_col": "col_xr:2026-07-17-XR:2026-07-17",
+  "current_col": "col_xr:2026-09-25-XR:2026-09-25",
+  "vanished": 2588,
+  "counts": {
+    "1_documented_one_to_one": 2,
+    "2_undocumented_unique_candidate": 82,
+    "3_removed_or_unresolved": 2496,
+    "4_conflicting_replacement": 8
+  },
+  "rule": "Only documented one-to-one superseded.tsv rows whose replacement record has the same name, authorship, rank, status class, accepted name and parent name, is unique, and is not already a registry allocation.",
+  "continuity": [
+    {
+      "old_col_id": "3ZX22",
+      "new_col_id": "QNMSR",
+      "sporely_taxon_id": 31149,
+      "name": "Meruliopsis taxicola (Pers.) Bondartsev",
+      "evidence": "id-reports superseded.tsv row 3ZX22\tQNMSR"
+    },
+    {
+      "old_col_id": "S7WBX",
+      "new_col_id": "S7WBW",
+      "sporely_taxon_id": 172409,
+      "name": "Platystomum obtectum (Peck) Lindau",
+      "evidence": "id-reports superseded.tsv row S7WBX\tS7WBW"
+    }
+  ]
+}
