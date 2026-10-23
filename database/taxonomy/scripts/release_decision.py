@@ -54,14 +54,19 @@ def require_release_decision(*, meta_value: str | None, content_release_id: str,
         decision = json.loads(Path(decision_path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise ReleaseDecisionError(f"cannot read release decision {decision_path}: {exc}") from exc
-    if decision.get("format") != DECISION_FORMAT or decision.get("decision") != "release_approved":
-        raise ReleaseDecisionError("release decision is not a release_approved decision")
-    if decision.get("content_release_id") != content_release_id \
-            or decision.get("sqlite_sha256") != sqlite_sha256:
-        raise ReleaseDecisionError(
-            "release decision names a different artifact "
-            f"({decision.get('content_release_id')}, {decision.get('sqlite_sha256')})")
-    absent = [f for f in _REQUIRED if not str(decision.get(f) or "").strip()]
-    if absent:
-        raise ReleaseDecisionError(f"release decision carries no {', '.join(absent)}")
+    if not isinstance(decision, dict):
+        raise ReleaseDecisionError("release decision must be a JSON object")
+    expected = {"format": DECISION_FORMAT, "decision": "release_approved",
+                "content_release_id": content_release_id, "sqlite_sha256": sqlite_sha256}
+    for field in (*expected, *_REQUIRED):
+        value = decision.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise ReleaseDecisionError(
+                f"release decision field {field!r} must be a non-empty string, "
+                f"got {type(value).__name__}")
+    for field, want in expected.items():
+        if decision[field] != want:
+            raise ReleaseDecisionError(
+                f"release decision {field} is {decision[field]!r}, expected {want!r}"
+                + (" (it names a different artifact)" if field in ("content_release_id", "sqlite_sha256") else ""))
     return decision
