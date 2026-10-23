@@ -1,0 +1,5 @@
+﻿group,subclass,scientific_name,nortaxa_taxon_id,nortaxa_sporely_taxon_id,col_usage_id,col_sporely_taxon_id,one_to_one_source,one_to_one_after_corrections,manifest_exclusion,reasons
+E0,pairing_corrected_no_remaining_conflict,Alectoria asiatica,71450,629836,L8R6K,157957,False,True,one_to_one_only_after_documented_pairing_correction(listed_not_forced),replaces mispaired COL ['V7T37'] (V7T37:provisional)
+E0,pairing_corrected_no_remaining_conflict,Henningsomyces puber,54854,625692,3KV7Z,14834,False,True,one_to_one_only_after_documented_pairing_correction(listed_not_forced),replaces mispaired COL ['PLPT2'] (PLPT2:provisional)
+E0,pairing_corrected_no_remaining_conflict,Myriococcum praecox,135887,621891,458TC,36502,False,True,one_to_one_only_after_documented_pairing_correction(listed_not_forced),replaces mispaired COL ['R75JC'] (R75JC:placeholder)
+E0,pairing_corrected_no_remaining_conflict,Uromyces trifolii,122977,621127,TVWMN,607698,False,True,one_to_one_only_after_documented_pairing_correction(listed_not_forced),replaces mispaired COL ['VL9BN'] (VL9BN:provisional)

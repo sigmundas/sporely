@@ -1,0 +1,77 @@
+{
+ "note": "R1 hold-outs for live references: a V147 pair whose retiring NorTaxa concept is stored by a desktop observation (copy of mushrooms.db) or resolved by a cloud observation (aggregate snapshot 2026-10-20, read-only). R1 changes no stored observation row, so these are held, not forced; retiring them needs a reviewed desktop/cloud remap. Aggregate counts only.",
+ "holds": {
+  "52330": {
+   "input": "V147",
+   "reason": "Panaeolina foenisecii -> COL 4C943: live reference to the retiring id (3 desktop observation(s) store sporely_taxon_id 624659; 13 cloud observation(s) resolve to 624659 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  "53467": {
+   "input": "V147",
+   "reason": "Entoloma cetratum -> COL 6FD79: live reference to the retiring id (1 desktop observation(s) store sporely_taxon_id 625207; 2 cloud observation(s) resolve to 625207 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  "53671": {
+   "input": "V147",
+   "reason": "Entoloma serrulatum -> COL 6FDNK: live reference to the retiring id (1 cloud observation(s) resolve to 625270 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  "53912": {
+   "input": "V147",
+   "reason": "Laccaria laccata -> COL 6NQ5K: live reference to the retiring id (3 cloud observation(s) resolve to 625355 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  "53994": {
+   "input": "V147",
+   "reason": "Hygrocybe miniata -> COL 3NBB7: live reference to the retiring id (1 cloud observation(s) resolve to 625379 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  "54560": {
+   "input": "V147",
+   "reason": "Infundibulicybe gibba -> COL 3PP8H: live reference to the retiring id (1 cloud observation(s) resolve to 625555 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  "54614": {
+   "input": "V147",
+   "reason": "Tricholomopsis rutilans -> COL 7CRGX: live reference to the retiring id (2 cloud observation(s) resolve to 625587 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  "54896": {
+   "input": "V147",
+   "reason": "Coprinellus micaceus -> COL Y557: live reference to the retiring id (1 cloud observation(s) resolve to 625725 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  "54914": {
+   "input": "V147",
+   "reason": "Coprinopsis atramentaria -> COL Y56N: live reference to the retiring id (1 desktop observation(s) store sporely_taxon_id 625737; 2 cloud observation(s) resolve to 625737 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  "54984": {
+   "input": "V147",
+   "reason": "Parasola plicatilis -> COL 4DCG6: live reference to the retiring id (3 cloud observation(s) resolve to 625766 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  "55233": {
+   "input": "V147",
+   "reason": "Hypholoma fasciculare -> COL 3NSGX: live reference to the retiring id (1 desktop observation(s) store sporely_taxon_id 625865); retiring it needs a reviewed desktop/cloud remap"
+  },
+  "55279": {
+   "input": "V147",
+   "reason": "Pholiota spumosa -> COL 4GMBF: live reference to the retiring id (1 cloud observation(s) resolve to 625888 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  "55402": {
+   "input": "V147",
+   "reason": "Clitocybe nebularis -> COL W8RZ: live reference to the retiring id (1 cloud observation(s) resolve to 625921 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  "55738": {
+   "input": "V147",
+   "reason": "Xeromphalina campanella -> COL 5CD34: live reference to the retiring id (1 cloud observation(s) resolve to 626069 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  "55979": {
+   "input": "V147",
+   "reason": "Chalciporus piperatus -> COL TFVH: live reference to the retiring id (1 cloud observation(s) resolve to 626153 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  "57186": {
+   "input": "V147",
+   "reason": "Cerrena unicolor -> COL 69MXD: live reference to the retiring id (1 cloud observation(s) resolve to 626615 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  },
+  "186418": {
+   "input": "V147",
+   "reason": "Paralepista flaccida -> COL 4CYHL: live reference to the retiring id (1 desktop observation(s) store sporely_taxon_id 623312); retiring it needs a reviewed desktop/cloud remap"
+  },
+  "204334": {
+   "input": "V147",
+   "reason": "Imleria badia -> COL 3PJ2R: live reference to the retiring id (1 cloud observation(s) resolve to 623575 (snapshot 2026-10-20)); retiring it needs a reviewed desktop/cloud remap"
+  }
+ }
+}
