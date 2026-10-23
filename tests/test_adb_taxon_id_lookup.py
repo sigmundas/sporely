@@ -144,3 +144,100 @@ def test_stored_artsobservasjoner_id_still_wins_when_lookup_is_empty():
     )
     assert resolution.taxon_id == 4242
     assert resolution.source_field == "artsobservasjoner_taxon_id"
+
+
+# --- taxonomy-v2 releases: concept- and rank-aware lookup (R1 regressions) ---
+
+def _make_v2_db(path: Path) -> Path:
+    """The three R1 regressions in miniature, with the real ids."""
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        CREATE TABLE taxon_min (taxon_id INTEGER PRIMARY KEY, genus TEXT, specific_epithet TEXT,
+            canonical_scientific_name TEXT, taxon_rank TEXT, norwegian_taxon_id INTEGER);
+        CREATE TABLE taxon_external_id_min (taxon_id INTEGER, source_system TEXT, external_id INTEGER,
+            id_role TEXT, is_preferred INTEGER, note TEXT);
+        CREATE TABLE taxon_external_id_text_min (taxon_id INTEGER, source_system TEXT, namespace TEXT,
+            external_id TEXT, id_role TEXT, is_preferred INTEGER, note TEXT);
+        CREATE TABLE scientific_name_min (taxon_id INTEGER, language_code TEXT, scientific_name TEXT);
+        CREATE TABLE taxon_supersession_min (retired_taxon_id INTEGER PRIMARY KEY,
+            current_taxon_id INTEGER, supersession_id TEXT, content_release_id TEXT);
+        INSERT INTO taxon_min VALUES
+            (36762, 'Myxothyrium', 'leptideum', 'Myxothyrium leptideum', 'species', NULL),
+            (621785, 'Myxothyrium', 'leptideum', 'leptideum', 'subgenus', 133944),
+            (82511, 'Clavaria', 'argillacea', 'Clavaria argillacea', 'species', NULL),
+            (161825, 'Clavaria', 'argillacea', 'Clavaria argillacea var. argillacea', 'variety', 99001),
+            (166409, 'Verrucaria', 'tristis', 'Lithocia tristis', 'species', NULL),
+            (634435, 'Verrucaria', 'tristis', 'Verrucaria tristis', 'species', 82592),
+            (70000, 'Two', 'ids', 'Two ids', 'species', NULL);
+        INSERT INTO taxon_external_id_min VALUES
+            (36762, 'artsdatabanken', 135683, 'accepted', 0, 'reviewed_supersession'),
+            (621785, 'artsdatabanken', 133944, 'accepted', 1, NULL),
+            (82511, 'artsdatabanken', 52390, 'accepted', 0, 'reviewed_supersession'),
+            (161825, 'artsdatabanken', 99001, 'accepted', 1, NULL),
+            (166409, 'artsdatabanken', 135403, 'accepted', 0, 'reviewed_supersession'),
+            (70000, 'artsdatabanken', 1, 'accepted', 0, NULL),
+            (70000, 'artsdatabanken', 2, 'accepted', 0, NULL);
+        INSERT INTO taxon_external_id_text_min VALUES
+            (36762, 'nortaxa', 'nortaxa_taxon_id', '135683', 'accepted', 0, 'authoritative_bridge:reviewed_supersession');
+        INSERT INTO scientific_name_min VALUES
+            (166409, 'sci', 'Lithocia tristis'), (166409, 'sci', 'Verrucaria tristis');
+        INSERT INTO taxon_supersession_min VALUES
+            (621852, 36762, 'r1', 'tax-test'), (621803, 166409, 'r1', 'tax-test');
+    """)
+    conn.commit()
+    conn.close()
+    return path
+
+
+@pytest.mark.parametrize("genus,species,expected", [
+    ("Myxothyrium", "leptideum", 135683),   # never the subgenus' 133944
+    ("Clavaria", "argillacea", 52390),      # the variety does not make it ambiguous
+    ("Lithocia", "tristis", 135403),        # survivor's genus column says Verrucaria
+    ("Verrucaria", "tristis", 82592),
+    ("Two", "ids", None),                   # ambiguous: refuse
+])
+def test_v2_name_lookup_is_rank_and_canonical_name_aware(tmp_path, use_db, genus, species, expected):
+    use_db(_make_v2_db(tmp_path / "v2.sqlite3"))
+    assert ObservationDB.resolve_adb_taxon_id(genus, species) == expected
+
+
+@pytest.mark.parametrize("sporely_id,genus,species,expected", [
+    (36762, "Myxothyrium", "leptideum", ("found", 135683)),
+    (621852, "Myxothyrium", "leptideum", ("found", 135683)),   # retired id follows the map
+    (82511, "Clavaria", "argillacea", ("found", 52390)),
+    (166409, "Lithocia", "tristis", ("found", 135403)),
+    (621803, "Lithocia", "tristis", ("found", 135403)),
+    (621785, "Myxothyrium", "leptideum", ("unresolved", None)),  # subgenus: wrong rank
+    (70000, "Two", "ids", ("unresolved", None)),                 # two accepted ids
+    (82511, "Amanita", "muscaria", ("unknown", None)),           # id does not name this taxon
+    (999999, "Clavaria", "argillacea", ("unknown", None)),
+    (None, "Clavaria", "argillacea", ("unknown", None)),
+])
+def test_concept_lookup(tmp_path, use_db, sporely_id, genus, species, expected):
+    use_db(_make_v2_db(tmp_path / "v2.sqlite3"))
+    assert ObservationDB.resolve_adb_taxon_id_for_concept(sporely_id, genus, species) == expected
+
+
+def test_publishing_uses_the_concept_and_sends_unresolved_concepts_to_the_picker(tmp_path, use_db):
+    from ui.observations_tab import ObservationsTab
+
+    use_db(_make_v2_db(tmp_path / "v2.sqlite3"))
+    calls: list[str] = []
+    stub = _tab_stub(calls, 777)
+    assert ObservationsTab._resolve_artsobs_taxon_id(
+        stub, {"genus": "Lithocia", "species": "tristis", "sporely_taxon_id": 621803}
+    ) == (135403, "taxonomy_db.artsdatabanken:concept")
+    assert ObservationsTab._resolve_artsobs_taxon_id(
+        stub, {"genus": "Two", "species": "ids", "sporely_taxon_id": 70000}
+    ) == (777, "artsobservasjoner.picker_search")
+    assert calls == ["Two ids"]
+
+
+@pytest.mark.skipif(not __import__("os").environ.get("SPORELY_TAXONOMY_PROBE_DB"),
+                    reason="set SPORELY_TAXONOMY_PROBE_DB to a release SQLite")
+def test_release_regressions(use_db):
+    import os
+    use_db(Path(os.environ["SPORELY_TAXONOMY_PROBE_DB"]))
+    assert ObservationDB.resolve_adb_taxon_id("Myxothyrium", "leptideum") == 135683
+    assert ObservationDB.resolve_adb_taxon_id("Clavaria", "argillacea") == 52390
+    assert ObservationDB.resolve_adb_taxon_id("Lithocia", "tristis") == 135403

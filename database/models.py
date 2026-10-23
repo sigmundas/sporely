@@ -1014,6 +1014,21 @@ def _lookup_adb_taxon_id_from_db(genus: str, species: str) -> int | None:
         cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         tables = {str(row[0] or "") for row in cur.fetchall()}
 
+        if {"canonical_scientific_name", "taxon_rank"} <= columns:
+            # Taxonomy-v2 release: match the species concept by its canonical
+            # binomial (the genus column can lag a recombination) and read the
+            # NorTaxa ids of exactly that concept. A subgenus or variety that
+            # shares genus/epithet text never answers a binomial.
+            concept_ids = [int(r[0]) for r in conn.execute(
+                "SELECT taxon_id FROM taxon_min WHERE canonical_scientific_name = ? "
+                "COLLATE NOCASE AND lower(taxon_rank) = 'species'",
+                (f"{genus} {species}",),
+            )]
+            if not concept_ids:
+                return None
+            return _single_positive_int(
+                [(value,) for value in _adb_ids_for_concepts(conn, concept_ids, columns, tables)])
+
         if "norwegian_taxon_id" in columns:
             rows = conn.execute(
                 """
@@ -1062,6 +1077,100 @@ def _lookup_adb_taxon_id_from_db(genus: str, species: str) -> int | None:
         return None
     except _Ambiguous:
         return None
+    finally:
+        conn.close()
+
+
+def _adb_ids_for_concepts(conn, concept_ids, columns: set[str], tables: set[str]) -> set[int]:
+    """Accepted NorTaxa (Artsdatabanken) ids carried by the given concepts."""
+    ids: set[int] = set()
+    placeholders = ",".join("?" for _ in concept_ids)
+    queries = []
+    if "norwegian_taxon_id" in columns:
+        queries.append(f"SELECT norwegian_taxon_id FROM taxon_min WHERE taxon_id IN ({placeholders})")
+    if "taxon_external_id_min" in tables:
+        queries.append(
+            "SELECT external_id FROM taxon_external_id_min WHERE source_system = 'artsdatabanken' "
+            f"AND id_role = 'accepted' AND taxon_id IN ({placeholders})")
+    if "taxon_external_id_text_min" in tables:
+        queries.append(
+            "SELECT external_id FROM taxon_external_id_text_min WHERE source_system = 'nortaxa' "
+            "AND namespace = 'nortaxa_taxon_id' AND id_role = 'accepted' "
+            f"AND taxon_id IN ({placeholders})")
+    for query in queries:
+        for (value,) in conn.execute(query, list(concept_ids)):
+            try:
+                number = int(value)
+            except (TypeError, ValueError):
+                continue
+            if number > 0:
+                ids.add(number)
+    return ids
+
+
+#: Ranks an Artsobservasjoner taxon id may be taken from for an observation.
+_ADB_CONCEPT_RANKS = {"species", "subspecies", "variety", "form"}
+
+
+def _lookup_adb_taxon_id_for_concept(
+    sporely_taxon_id, genus: str | None, species: str | None,
+) -> tuple[str, int | None]:
+    """Artsdatabanken id for an observation's Sporely concept.
+
+    Returns ``(status, id)``: ``("found", id)`` for exactly one accepted
+    NorTaxa id on the concept; ``("unresolved", None)`` when the concept is
+    known but has no, or more than one, accepted NorTaxa id, or a rank an
+    observation cannot be published at; ``("unknown", None)`` when there is no
+    usable concept (no id, not in the installed release, or the concept's
+    names do not include the observation's genus/epithet), so the caller keeps
+    its name-based path. A retired id follows ``taxon_supersession_min``.
+    """
+    try:
+        concept = int(sporely_taxon_id)
+    except (TypeError, ValueError):
+        return "unknown", None
+    key = _normalize_taxon_key(genus, species)
+    if concept <= 0 or not key:
+        return "unknown", None
+    try:
+        from utils.vernacular_utils import resolve_vernacular_db_path
+        db_path = resolve_vernacular_db_path()
+        if not db_path or not db_path.exists():
+            return "unknown", None
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except Exception:
+        return "unknown", None
+    try:
+        columns = {(r[1] or "").lower() for r in conn.execute("PRAGMA table_info(taxon_min)")}
+        tables = {str(r[0] or "") for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if not {"canonical_scientific_name", "taxon_rank"} <= columns:
+            return "unknown", None
+        row = conn.execute("SELECT taxon_rank FROM taxon_min WHERE taxon_id = ?", (concept,)).fetchone()
+        if row is None and "taxon_supersession_min" in tables:
+            mapped = conn.execute(
+                "SELECT current_taxon_id FROM taxon_supersession_min WHERE retired_taxon_id = ?",
+                (concept,)).fetchone()
+            if mapped:
+                concept = int(mapped[0])
+                row = conn.execute("SELECT taxon_rank FROM taxon_min WHERE taxon_id = ?", (concept,)).fetchone()
+        if row is None:
+            return "unknown", None
+        binomial = f"{key[0]} {key[1]}".casefold()
+        names = {str(r[0] or "").casefold() for r in conn.execute(
+            "SELECT canonical_scientific_name FROM taxon_min WHERE taxon_id = ?", (concept,))}
+        if "scientific_name_min" in tables:
+            names |= {str(r[0] or "").casefold() for r in conn.execute(
+                "SELECT scientific_name FROM scientific_name_min WHERE taxon_id = ?", (concept,))}
+        if str(row[0] or "").lower() not in _ADB_CONCEPT_RANKS:
+            return "unresolved", None
+        if not any(name == binomial or name.startswith(binomial + " ") for name in names):
+            return "unknown", None
+        ids = _adb_ids_for_concepts(conn, [concept], columns, tables)
+        if len(ids) != 1:
+            return "unresolved", None
+        return "found", next(iter(ids))
+    except sqlite3.Error:
+        return "unknown", None
     finally:
         conn.close()
 
@@ -1294,6 +1403,12 @@ class ObservationDB:
     @staticmethod
     def resolve_adb_taxon_id(genus: str | None, species: str | None) -> int | None:
         return _resolve_adb_taxon_id(genus, species)
+
+    @staticmethod
+    def resolve_adb_taxon_id_for_concept(
+        sporely_taxon_id, genus: str | None, species: str | None,
+    ) -> tuple[str, int | None]:
+        return _lookup_adb_taxon_id_for_concept(sporely_taxon_id, genus, species)
 
     @staticmethod
     def resolve_external_taxon_id(genus: str | None, species: str | None, source_system: str) -> int | None:

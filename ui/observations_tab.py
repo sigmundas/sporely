@@ -11083,6 +11083,17 @@ class ObservationsTab(QWidget):
         if not taxon_pair:
             return None
         genus, species = taxon_pair
+        # The observation's own Sporely concept decides first: its accepted
+        # NorTaxa id, or (known concept without a unique one) the picker.
+        status, concept_adb_id = ObservationDB.resolve_adb_taxon_id_for_concept(
+            obs.get("sporely_taxon_id"), genus, species)
+        if status == "found" and concept_adb_id:
+            return concept_adb_id, "taxonomy_db.artsdatabanken:concept"
+        if status == "unresolved":
+            lookup_taxon_id = self._lookup_artsobservasjoner_taxon_id(f"{genus} {species}".strip())
+            if lookup_taxon_id:
+                return lookup_taxon_id, "artsobservasjoner.picker_search"
+            return None
         adb_taxon_id = ObservationDB.resolve_adb_taxon_id(genus, species)
         if not adb_taxon_id:
             accepted_pair = self._resolve_accepted_taxon_pair(genus, species)
