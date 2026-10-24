@@ -421,6 +421,18 @@ def _release_supersessions(manifest: dict, ledger_path: Path) -> dict[int, Super
             for retired, current in applied.items()}
 
 
+def _name_record_follow_published_ids(release_dir: Path) -> dict[str, str]:
+    """Historical COL key -> published COL id for applied name-record follows."""
+    path = release_dir / "diagnostics.json"
+    if not path.exists():
+        return {}
+    applied = (json.loads(path.read_text(encoding="utf-8")).get("source_continuity") or {}) \
+        .get("name_record_follow_applied") or {}
+    if any(applied.get(target) != key for key, target in applied.items()):
+        raise BuildError(f"name-record follows are not closed exchanges: {applied}")
+    return dict(applied)
+
+
 def build_candidate(
     *,
     release_dir: Path,
@@ -576,6 +588,11 @@ def _build_into(
     try:
         # --- Pass 1: build source_usage → sporely_taxon_id index -----------
         source_usage_index = _iter_source_usage_source_index(source_usages_path)
+        # An applied name-record follow publishes each Sporely id under the
+        # current COL usage that carries its original name record; its
+        # historical key stays in the registry only, so a lookup by a COL id
+        # never returns the concept whose name that id no longer carries.
+        published_col_id = _name_record_follow_published_ids(release_dir)
 
         # --- Pass 2: insert canonical taxa in sporely_taxon_id order --------
         taxa_rows: list[tuple] = []
@@ -614,7 +631,8 @@ def _build_into(
                 None,   # preferred_scientific_name_sv
                 release_id,
                 canonical_source_usage["source"],
-                canonical_source_usage["identifier"],
+                (published_col_id.get(canonical_source_usage["identifier"], canonical_source_usage["identifier"])
+                 if canonical_source_usage["source"] == "col_xr" else canonical_source_usage["identifier"]),
             ))
         # Insert in ascending sporely_taxon_id order for determinism.
         taxa_rows.sort(key=lambda r: r[0])
@@ -651,6 +669,8 @@ def _build_into(
             source_code = u["source_code"]
             ns = u["source_usage"]["namespace"]
             identifier = u["source_usage"]["identifier"]
+            if source_code == "col_xr" and ns == "col_usage_id":
+                identifier = published_col_id.get(identifier, identifier)
             sci_name = u.get("scientific_name") or ""
             authorship = u.get("authorship") or ""
             note = (u.get("alias_reason") or "") or None

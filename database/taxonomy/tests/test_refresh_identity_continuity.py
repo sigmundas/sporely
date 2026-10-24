@@ -493,3 +493,35 @@ def test_supersession_reviewed_in_the_current_release_carries_its_vanished_retir
     assert current["carried_by"] == ["col_xr/col_usage_id/A:retired_usage_vanished_reviewed_in_current_release"]
     stale = status("1")  # reviewed earlier: the vanished usage is a change since review
     assert stale["status"] == "flagged" and stale["reasons"] == ["col_xr/col_usage_id/A:missing"]
+
+
+def test_lookup_by_current_col_id_of_a_followed_swap_returns_the_concept_now_carrying_that_name(tmp_path):
+    from build_sqlite_candidate import build_candidate
+    import sqlite3
+    rows1 = [_sp("A", "Kaskaskia macrospore", "G.C. Zhao"), _sp("B", "Kaskaskia macrospora", "G.C. Zhao")]
+    rows2 = [_sp("A", "Kaskaskia macrospora", "G.C. Zhao"), _sp("B", "Kaskaskia macrospore", "G.C. Zhao")]
+    before, _, _, receipt, _ = _two_releases(tmp_path, rows1, rows2, {"A": ["indexfungorum:800412"], "B": ["indexfungorum:840860"]},
+                                             {"A": ["indexfungorum:840860"], "B": ["indexfungorum:800412"]})
+    a, b = before[("col_xr", "col_usage_id", "A")], before[("col_xr", "col_usage_id", "B")]
+    receipt["name_record_follow"] = carry_forward.name_record_follow(
+        receipt["col_continuity_candidates"]["name_record_transfers"],
+        [{"sporely_taxon_id": e["sporely_taxon_id"], "col_id": e["col_id"], "follows_col_id": e["follows_col_id"]}
+         for e in receipt["name_record_follow"]])
+    path = tmp_path / "receipt-approved.json"
+    path.write_text(json.dumps(receipt))
+    compile_release(normalized_source_dirs=[tmp_path / "v2" / "col_xr"], output_dir=tmp_path / "r3",
+                    release_id="tax-2026.01.02-01", continuity_receipt_path=path,
+                    manual_mappings_path=_write_manual_mappings(tmp_path / "m.json", []),
+                    mapping_policy_path=_POLICY_PATH, registry_path=tmp_path / "registry.jsonl")
+    db = tmp_path / "c.sqlite3"
+    build_candidate(release_dir=tmp_path / "r3", registry_path=tmp_path / "registry.jsonl", output_db=db)
+    c = sqlite3.connect(db)
+    lookup = lambda col: c.execute("SELECT taxon_id, external_name FROM taxon_external_id_text_min "
+                                   "WHERE source_system='col_xr' AND namespace='col_usage_id' AND external_id=?",
+                                   (col,)).fetchall()
+    # In the current COL release A carries "macrospora" (IF 840860), now B's concept.
+    assert lookup("A") == [(b, "Kaskaskia macrospora")]
+    assert lookup("B") == [(a, "Kaskaskia macrospore")]
+    assert dict(c.execute("SELECT taxon_id, canonical_external_id FROM taxon_min WHERE taxon_id IN (?,?)", (a, b))) \
+        == {a: "B", b: "A"}
+    assert _ids(tmp_path / "registry.jsonl") == before  # registry unchanged
