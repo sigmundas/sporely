@@ -404,3 +404,8 @@ def test_names_of_a_live_duplicate_alias_do_not_fail_the_compile(tmp_path):
                     continuity_receipt_path=path, **common)
     diag = json.loads((tmp_path / "r2" / "diagnostics.json").read_text())["source_continuity"]
     assert diag["live_duplicate_vernaculars_dropped"] == 1
+    # Second compile on the grown registry (as build_release's second build does).
+    compile_release(normalized_source_dirs=[new], output_dir=tmp_path / "r3", release_id="tax-2026.01.02-01",
+                    continuity_receipt_path=path, **common)
+    diag = json.loads((tmp_path / "r3" / "diagnostics.json").read_text())["source_continuity"]
+    assert diag["live_duplicate_vernaculars_dropped"] == 1

@@ -1718,9 +1718,14 @@ def compile_release(
                         f"vernacular row references core_row_id {key!r} "
                         f"that does not resolve to any known source taxon"
                     )
-                if key[0] == "col_xr" and key[2] in live_duplicate_aliases:
-                    # A COL usage reusing a live concept's identity as an alias
-                    # does not carry its own names onto that concept.
+                bound_col = registry.lookup(BACKBONE_SOURCE, "col_usage_id", key[2]) if key[0] == "col_xr" else None
+                canonical_here = canonical_vernacular_targets.get(sporely_id)
+                if key[0] == "col_xr" and (key[2] in live_duplicate_aliases or (
+                        bound_col is not None and bound_col.kind == "alias" and canonical_here is not None
+                        and canonical_here["canonical_source_usage"] != {
+                            "source": "col_xr", "namespace": key[1], "identifier": key[2]})):
+                    # A COL usage that is an alias of a live concept (reusing its
+                    # identity) does not carry its own names onto that concept.
                     live_duplicate_vernaculars_dropped += 1
                     continue
                 if key[0] == "col_xr":
