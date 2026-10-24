@@ -386,3 +386,21 @@ def test_normalizer_reads_index_fungorum_and_alternative_record_ids():
     assert _name_record_ids("http://www.indexfungorum.org/Names/NamesRecord.asp?RecordID=800412",
                             "wikidata:Q107588245", "") == ["indexfungorum:800412", "wikidata:Q107588245"]
     assert _name_record_ids("", "", "") == []
+
+
+def test_names_of_a_live_duplicate_alias_do_not_fail_the_compile(tmp_path):
+    reg = tmp_path / "registry.jsonl"
+    common = dict(manual_mappings_path=_write_manual_mappings(tmp_path / "m.json", []),
+                  mapping_policy_path=_POLICY_PATH, registry_path=reg)
+    old = _col(tmp_path / "v1", "1", [_sp("A", "Entoloma sericeum", "Quél.")])
+    compile_release(normalized_source_dirs=[old], output_dir=tmp_path / "r1", release_id="tax-2026.01.01-01", **common)
+    new = _col(tmp_path / "v2", "2", [_sp("A", "Entoloma sericeum", "Quél."), _sp("C", "Entoloma sericeum", "Quél.")])
+    cores = {json.loads(l)["taxon_id"]["value"]: json.loads(l)["core_row_id"] for l in (new / "taxa.jsonl").read_text().splitlines()}
+    (new / "vernacular.jsonl").write_text(json.dumps({
+        "source_code": "col_xr", "source_release": {"version": "2", "issued_date": "2026-01-01"},
+        "core_row_id": cores["C"], "language": "en", "is_preferred": True, "vernacular_name": "silky pinkgill"}) + "\n")
+    path, _ = _receipt(tmp_path, {"col_xr": old}, {"col_xr": new}, {"mappings": []}, {"supersessions": []}, reg)
+    compile_release(normalized_source_dirs=[new], output_dir=tmp_path / "r2", release_id="tax-2026.01.02-01",
+                    continuity_receipt_path=path, **common)
+    diag = json.loads((tmp_path / "r2" / "diagnostics.json").read_text())["source_continuity"]
+    assert diag["live_duplicate_vernaculars_dropped"] == 1

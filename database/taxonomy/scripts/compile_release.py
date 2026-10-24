@@ -947,6 +947,8 @@ def compile_release(
     # anything else is withheld for review. Identity is never inferred from
     # name and rank alone.
     live_duplicate_bound: list[dict] = []
+    live_duplicate_aliases: set[str] = set()
+    live_duplicate_vernaculars_dropped = 0
     live_duplicate_withheld: dict[str, dict] = {}
     if continuity_receipt is not None:
         approved_new_keys = {(BACKBONE_SOURCE, "col_usage_id", e["new_col_id"])
@@ -979,6 +981,7 @@ def compile_release(
                 registry.bind_alias(existing_sporely_taxon_id=exact[0], source=key[0], namespace=key[1],
                                     identifier=key[2], allocated_in_release=release_id,
                                     first_seen_source_release=_release_string(record.source_release))
+                live_duplicate_aliases.add(key[2])
                 live_duplicate_bound.append({"usage": "/".join(key), "sporely_taxon_id": exact[0],
                                              "scientific_name": record.scientific_name})
                 continue
@@ -1715,6 +1718,11 @@ def compile_release(
                         f"vernacular row references core_row_id {key!r} "
                         f"that does not resolve to any known source taxon"
                     )
+                if key[0] == "col_xr" and key[2] in live_duplicate_aliases:
+                    # A COL usage reusing a live concept's identity as an alias
+                    # does not carry its own names onto that concept.
+                    live_duplicate_vernaculars_dropped += 1
+                    continue
                 if key[0] == "col_xr":
                     canonical = canonical_vernacular_targets.get(sporely_id)
                     if canonical is None or canonical["canonical_source_usage"] != {
@@ -1975,6 +1983,7 @@ def compile_release(
                 "col_id_continuity_applied": col_continuity_applied,
                 "col_continuity_review_withheld": dict(sorted(col_review_withheld.items())),
                 "live_duplicate_bound": live_duplicate_bound,
+                "live_duplicate_vernaculars_dropped": live_duplicate_vernaculars_dropped,
                 "live_duplicate_withheld": dict(sorted(live_duplicate_withheld.items())),
                 "nortaxa_fallback_canonical": nortaxa_fallback,
                 "species_history_carried": sorted("/".join(k) for k in species_history),
