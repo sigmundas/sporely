@@ -228,6 +228,63 @@ def registry_anchors(registry_jsonl: Path) -> dict[int, tuple[str, str, str]]:
     return anchors
 
 
+# Aggregate markers: a usage whose name gains one now names an aggregate
+# (species group), a different concept from the species the Sporely id meant.
+AGGREGATE_MARKER = re.compile(r"(?:^|\s)(?:coll\.|agg\.|aggr\.|s\.\s?lat\.|s\.\s?l\.|sensu lato|group|grp\.)(?:\s|$)",
+                              re.IGNORECASE)
+
+
+def is_aggregate_name(name: str) -> bool:
+    return bool(AGGREGATE_MARKER.search(name or ""))
+
+
+def anchor_meaning_changes(old: dict, new: dict, anchors: dict[int, tuple]) -> tuple[dict, list[dict]]:
+    """Registry anchors whose own source record changed meaning in place.
+
+    * species -> aggregate (a name gaining coll./agg./s.lat./group): the
+      Sporely id must not take the aggregate meaning. Non-backbone usages are
+      held (the compile withholds them, so the id keeps its history and stops
+      being live instead of being renamed); a backbone usage cannot be
+      withheld and is flagged for review.
+    * name swaps: two anchored usages exchange their names (report only).
+    """
+    records: dict[str, dict] = {}
+    by_old_name: dict[tuple[str, str], tuple] = {}
+    for taxon, usage in anchors.items():
+        before, after = old.get(usage, []), new.get(usage, [])
+        if len(before) == 1:
+            by_old_name[(usage[0], before[0].scientific_name)] = (taxon, usage)
+        if len(before) != 1 or len(after) != 1:
+            continue
+        a, b = before[0], after[0]
+        if not is_aggregate_name(a.scientific_name) and is_aggregate_name(b.scientific_name):
+            key = "/".join(usage)
+            records[f"aggregate-meaning-change:{key}"] = {
+                "kind": "aggregate_meaning_change", "approval_sha256": "", "identifiers": [key],
+                "sporely_taxon_id": taxon,
+                "status": "flagged" if usage[0] == "col_xr" else "held",
+                "reasons": [f"{key}:scientific_name_changed:{a.scientific_name} -> {b.scientific_name}"]
+                           + ([f"{key}:taxonomic_status_changed:{a.taxonomic_status} -> {b.taxonomic_status}"]
+                              if a.taxonomic_status != b.taxonomic_status else []),
+                "hold": {"reason": "species_to_aggregate_meaning_change", "decided_by": "continuity rule",
+                         "decision": "An existing Sporely id never takes an aggregate meaning in place; the "
+                                     "aggregate is not applied to it (withheld until reviewed)."}}
+    swaps = []
+    for taxon, usage in sorted(anchors.items()):
+        before, after = old.get(usage, []), new.get(usage, [])
+        if len(before) != 1 or len(after) != 1 or before[0].scientific_name == after[0].scientific_name:
+            continue
+        other = by_old_name.get((usage[0], after[0].scientific_name))
+        if other and other[0] > taxon:
+            o_after = new.get(other[1], [])
+            if len(o_after) == 1 and o_after[0].scientific_name == before[0].scientific_name:
+                swaps.append({"sporely_taxon_ids": [taxon, other[0]],
+                              "usages": ["/".join(usage), "/".join(other[1])],
+                              "names_before": [before[0].scientific_name, after[0].scientific_name],
+                              "same_authorship": before[0].authorship == after[0].authorship})
+    return records, swaps
+
+
 def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_dirs: dict[str, Path],
                   previous_pins: dict, current_pins: dict, manual_mappings: dict, supersessions: dict,
                   anchors: dict[int, tuple], holds: dict[str, dict] | None = None,
@@ -244,8 +301,10 @@ def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_di
     id_continuity = id_continuity or {}
     continued = {identifier: ("col_xr", "col_usage_id", id_continuity[identifier]["new_col_id"])
                  for identifier in wanted if identifier in id_continuity}
-    old = load_index(previous_dirs.values(), wanted)
-    new = load_index(current_dirs.values(), wanted | set(continued.values()))
+    anchor_usages = set(anchors.values())
+    old = load_index(previous_dirs.values(), wanted | anchor_usages)
+    new = load_index(current_dirs.values(), wanted | set(continued.values()) | anchor_usages)
+    meaning_records, name_swaps = anchor_meaning_changes(old, new, anchors)
     per_identifier, notes = {}, {}
     for identifier in sorted(wanted):
         current = new.get(continued.get(identifier, identifier), [])
@@ -277,6 +336,11 @@ def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_di
             if not reasons:
                 raise HoldError(f"hold on {record['record_id']} is stale: the record is carried")
             out_records[record["record_id"]].update(status="held", hold=hold)
+    for rid, record in meaning_records.items():
+        # A hold on a reviewed record already withholds the same usage.
+        if not any(r["status"] == "held" and set(record["identifiers"]) & set(r["identifiers"])
+                   for r in out_records.values()):
+            out_records[rid] = record
     carried = sorted(rid for rid, r in out_records.items() if r["status"] == "carried")
     summary: dict[str, dict[str, int]] = {}
     for record in out_records.values():
@@ -298,6 +362,8 @@ def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_di
         # Category-1 COL id continuity: the new usage joins the existing Sporely id.
         "col_id_continuity": [id_continuity[k] for k in sorted(id_continuity)],
         "records": out_records,
+        # Report only: anchored usages that exchanged names (orthographic variants).
+        "name_swaps": name_swaps,
     }
 
 
