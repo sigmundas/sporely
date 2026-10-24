@@ -1,0 +1,21 @@
+{
+  "release_id": "tax-2026.10.23-02",
+  "scope": "Expected pinned vernacular projection for this disposable R2 candidate only (owner instruction 2026-10-24: an explained count change needs no further approval).",
+  "previous_expected": {"automatic": 816, "reviewed": 18, "total": 834, "affected_concepts": 409},
+  "expected_pinned_projection": {"automatic": 813, "reviewed": 18, "total": 831, "affected_concepts": 410},
+  "diff_basis": "projection_status=added rows of vernacular_evidence.jsonl, R1 build (tax-2026.10.23-01) vs this candidate",
+  "left": [
+    {"source": "nortaxa 53077 Inocybe", "rows": ["nb trevlesopper", "nn trevlesopper"], "target": 69871, "cause": "multiple_canonical_targets_in_full_release (COL26.9 genus homonym)"},
+    {"source": "nortaxa 53377 Entoloma", "rows": ["nb rødskivesopper", "nb rødsporesopper", "nn raudskivesoppar", "nn raudsporesoppar"], "target": 40656, "cause": "multiple_canonical_targets_in_full_release"},
+    {"source": "nortaxa 56774 Clathrus", "rows": ["nb gittersopper", "nn gittersopper"], "target": 19940, "cause": "higher_classification_disagreement, multiple_canonical_targets_in_full_release"},
+    {"source": "nortaxa 79158 Peziza", "rows": ["nb begersopper", "nb storbegersopper", "nn begersoppar", "nn storbegersoppar"], "target": 101771, "cause": "multiple_canonical_targets_in_full_release"}
+  ],
+  "entered": [
+    {"source": "nortaxa 299552 Cortinarius lithophilus", "rows": ["nb asurslørsopp"], "target": 785781, "cause": "new COL26.9 usage gives an exact canonical target (was no_exact_canonical_target)"},
+    {"source": "nortaxa 52028 Lepiota", "rows": ["nb parasollsopper", "nn parasollsopper"], "target": 77252, "cause": "single canonical target in COL26.9 (was multiple)"},
+    {"source": "nortaxa 56273 Hydnum", "rows": ["nb matpiggsopper", "nn matpiggsopper"], "target": 68299, "cause": "single canonical target (was multiple)"},
+    {"source": "nortaxa 57966 Hydnellum", "rows": ["nb brunpigger", "nn brunpigger"], "target": 68239, "cause": "single canonical target (was multiple)"},
+    {"source": "nortaxa 57990 Sarcodon", "rows": ["nb storpigger", "nn storpiggar"], "target": 86996, "cause": "single canonical target (was multiple)"}
+  ],
+  "arithmetic": "automatic 816 - 12 + 9 = 813; reviewed unchanged 18; total 831; concepts 409 - 4 + 5 = 410"
+}

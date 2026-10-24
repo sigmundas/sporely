@@ -13,12 +13,12 @@
   "current_col": "col_xr:2026-09-25-XR:2026-09-25",
   "vanished": 2588,
   "counts": {
-    "1_documented_one_to_one": 2,
-    "2_undocumented_unique_candidate": 82,
+    "1_documented_one_to_one": 5,
+    "2_undocumented_unique_candidate": 79,
     "3_removed_or_unresolved": 2496,
     "4_conflicting_replacement": 8
   },
-  "rule": "Only documented one-to-one superseded.tsv rows whose replacement record has the same name, authorship, rank, status class, accepted name and parent name, is unique, and is not already a registry allocation.",
+  "rule": "Only documented one-to-one superseded.tsv rows whose replacement record has the same name, authorship, rank, status class, accepted name and parent name, is unique, and is not already a registry allocation. Jul->Aug hops: 316165 unstable.txt groups with exactly one old and one new usage of identical label and status/rank (316165 has no superseded.tsv); Aug->Sep hops: 316441 superseded.tsv.",
   "continuity": [
     {
       "old_col_id": "3ZX22",
@@ -33,6 +33,40 @@
       "sporely_taxon_id": 172409,
       "name": "Platystomum obtectum (Peck) Lindau",
       "evidence": "id-reports superseded.tsv row S7WBX\tS7WBW"
+    },
+    {
+      "old_col_id": "VJHG4",
+      "new_col_id": "QQCBY",
+      "sporely_taxon_id": 612827,
+      "name": "Ionaspis granvina Hav. ex P.M.Jørg.",
+      "evidence": "316165 id-reports unstable.txt: VJHG4 -> QQCBY (Ionaspis granvina Hav. ex P.M.Jørg.)"
+    },
+    {
+      "old_col_id": "VJLQP",
+      "new_col_id": "L96FT",
+      "sporely_taxon_id": 612861,
+      "name": "Anema nummularium (Dufour ex Durieu & Mont.) Nyl. ex Forssell",
+      "evidence": "316165 id-reports unstable.txt: VJLQP -> L96FT (Anema nummularium (Dufour ex Durieu & Mont.) Nyl. ex Forssell)"
+    },
+    {
+      "old_col_id": "VKWM4",
+      "new_col_id": "SGC57",
+      "sporely_taxon_id": 612991,
+      "name": "Pseudocyphellaria lechleri (Müll.Arg.) Du Rietz",
+      "evidence": "316165 id-reports unstable.txt: VKWM4 -> SGC57 (Pseudocyphellaria lechleri (Müll.Arg.) Du Rietz)"
     }
-  ]
+  ],
+  "id_report_aug": {
+    "url": "https://download.checklistbank.org/releases/3/622/id-reports.gz",
+    "dataset": "316165 COL26.8 XR (attempt 622)",
+    "sha256": "2245768adebab254d83cb4459ad46371a8a92773faa32bb0b0480c38fe11819d",
+    "bytes": 2146753,
+    "members": "unstable.txt, deleted.tsv, created.tsv, resurrected.tsv (no superseded.tsv)",
+    "hits_on_vanished": {
+      "deleted": 641,
+      "unstable": 74
+    },
+    "retrieved_at": "2026-10-24",
+    "provenance": "owner authorisation 2026-10-24: read-only acquisition for analysis, not a release approval; one GET (ChecklistBank cookie challenge followed); local copy in scratch, not git"
+  }
 }

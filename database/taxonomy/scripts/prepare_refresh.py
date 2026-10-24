@@ -462,6 +462,13 @@ def prepare(args: argparse.Namespace) -> dict:
                 receipt, previous_dirs["col_xr"], current_dirs["col_xr"]),
         }
         recipe["continuity_receipt"] = {"path": str(receipt_path), "sha256": build_release.sha256_file(receipt_path)}
+        if args.vernacular_expectation:
+            # An explained, evidenced change of the pinned projection for this candidate.
+            expectation = json.loads(args.vernacular_expectation.read_text())
+            recipe["vernacular_enrichment"]["expected_pinned_projection"] = expectation["expected_pinned_projection"]
+            recipe.setdefault("extra_evidence", {})["vernacular-projection-expectation.json"] = str(
+                args.vernacular_expectation.resolve())
+            report["vernacular_expectation"] = expectation
         if report["continuity"]["flagged_blocking"]:
             raise RefreshStop(f"{len(report['continuity']['flagged_blocking'])} NorTaxa mappings/supersessions "
                               "are flagged by the continuity receipt; review before building")
@@ -605,6 +612,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="owner-decided continuity holds (named records quarantined, not applied)")
     parser.add_argument("--col-id-continuity", type=Path, default=None,
                         help="documented one-to-one COL id replacements (category 1) to keep on their Sporely ids")
+    parser.add_argument("--vernacular-expectation", type=Path, default=None,
+                        help="evidence file with this candidate's explained expected_pinned_projection")
     parser.add_argument("--fetch", action="store_true",
                         help="run an approved acquisition when a new source archive is missing")
     parser.add_argument("--compare-sqlite", nargs=2, action="append", metavar=("LABEL", "PATH"),
