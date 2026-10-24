@@ -675,15 +675,6 @@
    "evidence": "Owner decision 2026-10-24 (Sigmund Ås, on tax-2026.10.23-08): approved for the validation-only R2 candidate; release approval pending; consequential continuity match (-08 decision report item 3); same name, rank, family, iNat 1473940; authorship differs only in spacing and year; unique; new usage not allocated",
    "approval_scope": "candidate_build_only",
    "release_approval": "pending"
-  },
-  {
-   "old_col_id": "TPKPX",
-   "new_col_id": "VRRW2",
-   "sporely_taxon_id": 607370,
-   "name": "Xylaria tabacina",
-   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, on tax-2026.10.23-08): approved for the validation-only R2 candidate; release approval pending; consequential continuity match (-08 decision report item 3); same name, rank, family, iNat 1066592, Wikidata Q108482457; combination author differs ((J. Kickx f.) Fr., 1851 -> (J. Kickx f.) Berk.); unique; new usage not allocated",
-   "approval_scope": "candidate_build_only",
-   "release_approval": "pending"
   }
  ],
  "id_report_aug": {
@@ -1181,8 +1172,7 @@
     "5ZNM9",
     "6P5PG",
     "NHMZK",
-    "QDDTJ",
-    "TPKPX"
+    "QDDTJ"
    ]
   },
   "held_after_reconciliation": {
@@ -1192,6 +1182,12 @@
   "not_approved": {
    "609873": "Cytospora auerswaldii: retired, no supersession row",
    "170695": "Phoma (FinBIF RK58F): retired, no supersession row"
+  }
+ },
+ "owner_decisions_2026_10_24_on_09": {
+  "source": "Owner decision 2026-10-24 on tax-2026.10.23-09 (Sigmund Ås, in chat); candidate only",
+  "owner_hold": {
+   "TPKPX->VRRW2": "Xylaria tabacina 607370: continuity approval reverted; authorship (J. Kickx f.) Fr., 1851 vs (J. Kickx f.) Berk. needs separate nomenclatural review"
   }
  }
 }
