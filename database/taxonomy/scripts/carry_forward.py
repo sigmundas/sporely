@@ -44,7 +44,7 @@ from typing import Iterable
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from compile_release import _iter_taxa  # noqa: E402
+from compile_release import _iter_taxa, is_aggregate_name  # noqa: E402
 
 RECEIPT_FORMAT = "sporely-source-continuity-receipt-v1"
 HOLDS_FORMAT = "sporely-source-continuity-holds-v1"
@@ -93,6 +93,13 @@ def load_continuity_policy(path: Path | None) -> tuple[set[str], dict[str, dict]
                 raise HoldError(f"accepted change lacks {key}: {entry}")
         exceptions[entry["identifier"]] = entry
     return rules, exceptions
+
+
+def load_nortaxa_fallback(path: Path | None) -> list[dict]:
+    """Owner-approved NorTaxa fallbacks for vanished COL anchors (same file)."""
+    if path is None:
+        return []
+    return list(json.loads(Path(path).read_text(encoding="utf-8")).get("nortaxa_fallback") or [])
 
 
 def load_id_continuity(path: Path | None) -> dict[tuple[str, str, str], dict]:
@@ -228,47 +235,50 @@ def registry_anchors(registry_jsonl: Path) -> dict[int, tuple[str, str, str]]:
     return anchors
 
 
-# Aggregate markers: a usage whose name gains one now names an aggregate
-# (species group), a different concept from the species the Sporely id meant.
-AGGREGATE_MARKER = re.compile(r"(?:^|\s)(?:coll\.|agg\.|aggr\.|s\.\s?lat\.|s\.\s?l\.|sensu lato|group|grp\.)(?:\s|$)",
-                              re.IGNORECASE)
-
-
-def is_aggregate_name(name: str) -> bool:
-    return bool(AGGREGATE_MARKER.search(name or ""))
-
-
-def anchor_meaning_changes(old: dict, new: dict, anchors: dict[int, tuple]) -> tuple[dict, list[dict]]:
-    """Registry anchors whose own source record changed meaning in place.
+def anchor_meaning_changes(old: dict, new: dict, anchors: dict[int, tuple],
+                           reviewed_usages: Iterable[tuple] = ()) -> tuple[dict, list[dict]]:
+    """Bound usages whose own source record changed meaning in place.
 
     * species -> aggregate (a name gaining coll./agg./s.lat./group): the
-      Sporely id must not take the aggregate meaning. Non-backbone usages are
-      held (the compile withholds them, so the id keeps its history and stops
-      being live instead of being renamed); a backbone usage cannot be
-      withheld and is flagged for review.
+      Sporely id must never take the aggregate meaning. For a registry anchor
+      or a reviewed usage of a non-backbone source the record is
+      ``species_history``: the compile keeps the binding on the species by
+      using the previous (reviewed) source record and its vernaculars, so the
+      historical binding is never reused for the aggregate. A backbone usage
+      is flagged for review.
     * name swaps: two anchored usages exchange their names (report only).
     """
     records: dict[str, dict] = {}
     by_old_name: dict[tuple[str, str], tuple] = {}
+    bound = {usage: taxon for taxon, usage in anchors.items()}
+    for usage in reviewed_usages:
+        bound.setdefault(tuple(usage), None)
     for taxon, usage in anchors.items():
-        before, after = old.get(usage, []), new.get(usage, [])
+        before = old.get(usage, [])
         if len(before) == 1:
             by_old_name[(usage[0], before[0].scientific_name)] = (taxon, usage)
+    for usage, taxon in sorted(bound.items(), key=lambda kv: kv[0]):
+        before, after = old.get(usage, []), new.get(usage, [])
         if len(before) != 1 or len(after) != 1:
             continue
         a, b = before[0], after[0]
         if not is_aggregate_name(a.scientific_name) and is_aggregate_name(b.scientific_name):
             key = "/".join(usage)
+            backbone = usage[0] == "col_xr"
             records[f"aggregate-meaning-change:{key}"] = {
                 "kind": "aggregate_meaning_change", "approval_sha256": "", "identifiers": [key],
                 "sporely_taxon_id": taxon,
-                "status": "flagged" if usage[0] == "col_xr" else "held",
+                "status": "flagged" if backbone else "species_history",
                 "reasons": [f"{key}:scientific_name_changed:{a.scientific_name} -> {b.scientific_name}"]
                            + ([f"{key}:taxonomic_status_changed:{a.taxonomic_status} -> {b.taxonomic_status}"]
                               if a.taxonomic_status != b.taxonomic_status else []),
-                "hold": {"reason": "species_to_aggregate_meaning_change", "decided_by": "continuity rule",
-                         "decision": "An existing Sporely id never takes an aggregate meaning in place; the "
-                                     "aggregate is not applied to it (withheld until reviewed)."}}
+                "resolution": ({"reason": "species_to_aggregate_meaning_change", "decided_by": "continuity rule",
+                                "decision": "A backbone usage cannot keep its history; review."} if backbone else
+                               {"reason": "species_to_aggregate_meaning_change", "decided_by": "continuity rule",
+                                "decision": "The Sporely id keeps its species meaning: the compile uses the previous "
+                                            "reviewed source record and its vernaculars for this usage. The "
+                                            "aggregate is not bound to it; it is a concept only under its own "
+                                            "source id."})}
     swaps = []
     for taxon, usage in sorted(anchors.items()):
         before, after = old.get(usage, []), new.get(usage, [])
@@ -285,11 +295,84 @@ def anchor_meaning_changes(old: dict, new: dict, anchors: dict[int, tuple]) -> t
     return records, swaps
 
 
+def load_previous_rows(previous_dirs: dict[str, Path], usages: set[tuple]) -> dict[tuple, tuple[dict, list[dict]]]:
+    """Raw previous normalized taxa row and its vernacular rows for a few usages."""
+    out: dict[tuple, tuple[dict, list[dict]]] = {}
+    for source in {u[0] for u in usages}:
+        directory = previous_dirs.get(source)
+        if directory is None:
+            continue
+        cores: dict[tuple[str, str], tuple] = {}
+        with (directory / "taxa.jsonl").open(encoding="utf-8") as handle:
+            for line in handle:
+                row = json.loads(line)
+                key = (row["source_code"], row["taxon_id"]["namespace"], row["taxon_id"]["value"])
+                if key in usages:
+                    out[key] = (row, [])
+                    cores[(row["core_row_id"]["namespace"], row["core_row_id"]["value"])] = key
+        vernacular = directory / "vernacular.jsonl"
+        if cores and vernacular.is_file():
+            with vernacular.open(encoding="utf-8") as handle:
+                for line in handle:
+                    row = json.loads(line)
+                    key = cores.get((row["core_row_id"]["namespace"], row["core_row_id"]["value"]))
+                    if key is not None:
+                        out[key][1].append(row)
+    return out
+
+
+def continuity_key(record) -> tuple[str, str, str, str]:
+    """Name, rank, normalized authorship and family: the identity a renumbered
+    COL usage must share with its vanished predecessor."""
+    return (record.scientific_name, record.rank.casefold(), typography_key(record.authorship),
+            (record.classification or {}).get("family", ""))
+
+
+def col_continuity_candidates(previous_dir: Path, current_dir: Path, anchors: dict[int, tuple]) -> dict:
+    """Vanished COL registry anchors and the new, unanchored COL usages that
+    match them on name, rank, normalized authorship and family. Report and
+    review input only: the compile never allocates a new id for a matched new
+    usage unless an approved continuity binds it to the old id."""
+    col_anchor = {usage[2]: taxon for taxon, usage in anchors.items() if usage[0] == "col_xr"}
+    excluded_path = current_dir / "excluded_by_policy.jsonl"
+    excluded = ({json.loads(line)["col_usage_id"] for line in excluded_path.open(encoding="utf-8")}
+                if excluded_path.is_file() else set())
+    current: dict[tuple, list[str]] = {}
+    present: set[str] = set()
+    for record in _iter_taxa(current_dir):
+        present.add(record.taxon_id_value)
+        if record.taxon_id_value not in col_anchor:
+            current.setdefault(continuity_key(record), []).append(record.taxon_id_value)
+    vanished: dict[str, dict] = {}
+    by_key: dict[tuple, list[str]] = {}
+    for record in _iter_taxa(previous_dir):
+        value = record.taxon_id_value
+        if value in col_anchor and value not in present and value not in excluded:
+            key = continuity_key(record)
+            vanished[value] = {"sporely_taxon_id": col_anchor[value], "scientific_name": record.scientific_name,
+                               "authorship": record.authorship, "rank": record.rank,
+                               "family": key[3]}
+            by_key.setdefault(key, []).append(value)
+    pairs, ambiguous = [], []
+    for key, olds in sorted(by_key.items()):
+        news = sorted(current.get(key, []))
+        if not news:
+            continue
+        entry = {"old_col_ids": sorted(olds), "new_col_ids": news, "scientific_name": key[0], "rank": key[1]}
+        (pairs if len(olds) == 1 and len(news) == 1 else ambiguous).append(entry)
+    return {"vanished_anchors": vanished,
+            "pairs": [{"old_col_id": e["old_col_ids"][0], "new_col_id": e["new_col_ids"][0],
+                       "sporely_taxon_id": col_anchor[e["old_col_ids"][0]], "scientific_name": e["scientific_name"],
+                       "rank": e["rank"]} for e in pairs],
+            "ambiguous": ambiguous}
+
+
 def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_dirs: dict[str, Path],
                   previous_pins: dict, current_pins: dict, manual_mappings: dict, supersessions: dict,
                   anchors: dict[int, tuple], holds: dict[str, dict] | None = None,
                   rules: set[str] | None = None, exceptions: dict[str, dict] | None = None,
-                  id_continuity: dict[tuple[str, str, str], dict] | None = None) -> dict:
+                  id_continuity: dict[tuple[str, str, str], dict] | None = None,
+                  nortaxa_fallback: list[dict] | None = None) -> dict:
     records = reviewed_records(manual_mappings, supersessions, anchors)
     holds = holds or {}
     usage_holds = {k: v for k, v in holds.items() if v.get("source_usage")}
@@ -304,7 +387,15 @@ def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_di
     anchor_usages = set(anchors.values())
     old = load_index(previous_dirs.values(), wanted | anchor_usages)
     new = load_index(current_dirs.values(), wanted | set(continued.values()) | anchor_usages)
-    meaning_records, name_swaps = anchor_meaning_changes(old, new, anchors)
+    meaning_records, name_swaps = anchor_meaning_changes(
+        old, new, anchors, (i for i in wanted if i[0] != "col_xr"))
+    history = {tuple(r["identifiers"][0].split("/", 2)) for r in meaning_records.values()
+               if r["status"] == "species_history"}
+    previous_rows = load_previous_rows(previous_dirs, history)
+    for record in meaning_records.values():
+        usage = tuple(record["identifiers"][0].split("/", 2))
+        if usage in history:
+            record["previous_record"], record["previous_vernaculars"] = previous_rows.get(usage, (None, []))
     per_identifier, notes = {}, {}
     for identifier in sorted(wanted):
         current = new.get(continued.get(identifier, identifier), [])
@@ -313,6 +404,10 @@ def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_di
         reasons = compare_identifier(old.get(identifier, []), current)
         if identifier in continued and not reasons:
             notes[identifier] = f"col_id_continuity:{continued[identifier][2]}"
+        if identifier in history:
+            # Species history is kept: the compile uses the previous reviewed record.
+            notes[identifier] = "species_history_carried"
+            reasons = []
         accepted = (accepted_change(old[identifier][0], current[0], reasons, "/".join(identifier),
                                     rules or set(), exceptions or {})
                     if reasons and len(old.get(identifier, [])) == 1 and len(current) == 1 else None)
@@ -345,7 +440,7 @@ def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_di
     summary: dict[str, dict[str, int]] = {}
     for record in out_records.values():
         bucket = summary.setdefault(record["kind"], {"carried": 0, "flagged": 0, "held": 0})
-        bucket[record["status"]] += 1
+        bucket[record["status"]] = bucket.get(record["status"], 0) + 1
     return {
         "format": RECEIPT_FORMAT,
         "release_id": release_id,
@@ -362,8 +457,17 @@ def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_di
         # Category-1 COL id continuity: the new usage joins the existing Sporely id.
         "col_id_continuity": [id_continuity[k] for k in sorted(id_continuity)],
         "records": out_records,
+        # Owner-approved: vanished COL anchors whose id is kept from its bound,
+        # valid NorTaxa record (the compile re-checks every condition).
+        "nortaxa_fallback_approved": list(nortaxa_fallback or []),
         # Report only: anchored usages that exchanged names (orthographic variants).
         "name_swaps": name_swaps,
+        # Vanished COL anchors and same-identity new usages (review input; the
+        # compile withholds unapproved matched new usages instead of allocating).
+        "col_continuity_candidates": (
+            col_continuity_candidates(previous_dirs["col_xr"], current_dirs["col_xr"], anchors)
+            if "col_xr" in previous_dirs and "col_xr" in current_dirs
+            and previous_dirs["col_xr"] != current_dirs["col_xr"] else None),
     }
 
 

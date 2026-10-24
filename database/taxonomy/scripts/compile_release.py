@@ -221,39 +221,53 @@ def _iter_taxa(source_dir: Path) -> Iterator[NormalizedTaxonRecord]:
                     f"{taxa_path}:{line_number}: malformed JSON: {exc}"
                 ) from exc
             try:
-                core_row = payload["core_row_id"]
-                taxon_id = payload["taxon_id"]
-                yield NormalizedTaxonRecord(
-                    source_code=str(payload["source_code"]),
-                    source_release=dict(payload["source_release"]),
-                    core_row_id_value=str(core_row["value"]),
-                    core_row_id_namespace=str(core_row["namespace"]),
-                    taxon_id_value=str(taxon_id["value"]),
-                    taxon_id_namespace=str(taxon_id["namespace"]),
-                    accepted_name_usage_id=(
-                        dict(payload["accepted_name_usage_id"])
-                        if payload.get("accepted_name_usage_id") else None
-                    ),
-                    parent_name_usage_id=(
-                        dict(payload["parent_name_usage_id"])
-                        if payload.get("parent_name_usage_id") else None
-                    ),
-                    parent_reference_resolution=str(
-                        payload.get("parent_reference_resolution", "absent")
-                    ),
-                    scientific_name=str(payload.get("scientific_name", "")),
-                    authorship=str(payload.get("authorship", "")),
-                    rank=str(payload.get("rank", "")),
-                    taxonomic_status=str(payload.get("taxonomic_status", "")),
-                    external_ids=dict(payload.get("external_ids", {})),
-                    classification=dict(payload.get("classification", {})),
-                    inclusion_reason=str(payload.get("col_inclusion_reason", "")),
-                    raw=payload,
-                )
+                yield _record_from_payload(payload)
             except (KeyError, TypeError) as exc:
                 raise CompilerError(
                     f"{taxa_path}:{line_number}: missing required field: {exc}"
                 ) from exc
+
+
+def is_aggregate_name(name: str) -> bool:
+    """coll./agg./s.lat./s.l./group marker (same rule as carry_forward)."""
+    return bool(_AGGREGATE_MARKER.search(name or ""))
+
+
+_AGGREGATE_MARKER = re.compile(r"(?:^|\s)(?:coll\.|agg\.|aggr\.|s\.\s?lat\.|s\.\s?l\.|sensu lato|group|grp\.)(?:\s|$)",
+                               re.IGNORECASE)
+
+
+def _record_from_payload(payload: dict) -> "NormalizedTaxonRecord":
+    """One normalized taxa.jsonl row as a record (KeyError/TypeError on bad input)."""
+    core_row = payload["core_row_id"]
+    taxon_id = payload["taxon_id"]
+    return NormalizedTaxonRecord(
+        source_code=str(payload["source_code"]),
+        source_release=dict(payload["source_release"]),
+        core_row_id_value=str(core_row["value"]),
+        core_row_id_namespace=str(core_row["namespace"]),
+        taxon_id_value=str(taxon_id["value"]),
+        taxon_id_namespace=str(taxon_id["namespace"]),
+        accepted_name_usage_id=(
+            dict(payload["accepted_name_usage_id"])
+            if payload.get("accepted_name_usage_id") else None
+        ),
+        parent_name_usage_id=(
+            dict(payload["parent_name_usage_id"])
+            if payload.get("parent_name_usage_id") else None
+        ),
+        parent_reference_resolution=str(
+            payload.get("parent_reference_resolution", "absent")
+        ),
+        scientific_name=str(payload.get("scientific_name", "")),
+        authorship=str(payload.get("authorship", "")),
+        rank=str(payload.get("rank", "")),
+        taxonomic_status=str(payload.get("taxonomic_status", "")),
+        external_ids=dict(payload.get("external_ids", {})),
+        classification=dict(payload.get("classification", {})),
+        inclusion_reason=str(payload.get("col_inclusion_reason", "")),
+        raw=payload,
+    )
 
 
 def _iter_legacy_enrichment(path: Path) -> Iterator[dict]:
@@ -766,6 +780,43 @@ def compile_release(
     }
     continuity_receipt = load_continuity_receipt(continuity_receipt_path, compiled_source_pins)
     held_usages = continuity_held_usages(continuity_receipt)
+    # Species history: a bound non-backbone usage whose source record now
+    # names an aggregate keeps the previous reviewed (species) record and its
+    # vernaculars, so the historical binding is never reused for the aggregate.
+    species_history: dict[tuple[str, str, str], NormalizedTaxonRecord] = {}
+    species_history_vernaculars: dict[str, list[dict]] = {}
+    species_history_cores: set[tuple[str, str, str]] = set()
+    for record_id, entry in sorted(((continuity_receipt or {}).get("records") or {}).items()):
+        if entry.get("status") != "species_history" or not entry.get("previous_record"):
+            continue
+        previous = _record_from_payload(entry["previous_record"])
+        key = (previous.source_code, previous.taxon_id_namespace, previous.taxon_id_value)
+        if "/".join(key) not in entry.get("identifiers", []):
+            raise CompilerError(f"{record_id}: previous record is not the named usage")
+        species_history[key] = previous
+        species_history_cores.add((previous.source_code, previous.core_row_id_namespace, previous.core_row_id_value))
+        species_history_vernaculars.setdefault(previous.source_code, []).extend(entry.get("previous_vernaculars") or [])
+    for source_code, records in per_source_records.items():
+        if any(k[0] == source_code for k in species_history):
+            per_source_records[source_code] = [
+                species_history.get((r.source_code, r.taxon_id_namespace, r.taxon_id_value), r) for r in records]
+    # COL continuity review: a new COL usage that matches a vanished registry
+    # anchor (name, rank, normalized authorship, family) is never allocated a
+    # duplicate id. An approved continuity binds it to the old id; any other
+    # matched or ambiguous new usage is withheld for review.
+    candidates = (continuity_receipt or {}).get("col_continuity_candidates") or {}
+    approved_new = {e["new_col_id"] for e in (continuity_receipt or {}).get("col_id_continuity") or []}
+    col_review_withheld: dict[str, str] = {}
+    for pair in candidates.get("pairs") or []:
+        if pair["new_col_id"] not in approved_new:
+            col_review_withheld[pair["new_col_id"]] = f"matches vanished {pair['old_col_id']} (unapproved)"
+    for group in candidates.get("ambiguous") or []:
+        for new_id in group["new_col_ids"]:
+            if new_id not in approved_new:
+                col_review_withheld[new_id] = "ambiguous match: " + ",".join(group["old_col_ids"])
+    if col_review_withheld:
+        per_source_records[BACKBONE_SOURCE] = [
+            r for r in per_source_records.get(BACKBONE_SOURCE, []) if r.taxon_id_value not in col_review_withheld]
     continuity_withheld: list[dict] = []
     withheld_core_rows: set[tuple[str, str, str]] = set()
     continuity_vernaculars_withheld = 0
@@ -1238,6 +1289,46 @@ def compile_release(
                 f"requires its own reviewed decision."
             )
 
+    # ----- NorTaxa fallback for vanished COL anchors -------------------------
+    # When a COL anchor disappears, an already-reviewed NorTaxa usage bound to
+    # the same Sporely id may supply the canonical record: only if it is
+    # valid, still bound to that id, of the same rank and not an aggregate.
+    nortaxa_fallback: list[dict] = []
+    vanished_anchor_info = candidates.get("vanished_anchors") or {}
+    if vanished_anchor_info:
+        bound_by_id: dict[int, list[tuple[str, str, str]]] = {}
+        for allocation in registry.all_entries():
+            if allocation.source == "nortaxa":
+                bound_by_id.setdefault(allocation.sporely_taxon_id, []).append(
+                    (allocation.source, allocation.namespace, allocation.identifier))
+        reviewed_bridges = set(manual_bindings) | set(approved_manual_bridge_usages) | set(auto_alias_applied)
+        # An owner-approved fallback names the exact usage it approves.
+        reviewed_bridges |= {("nortaxa", "nortaxa_taxon_id", str(e["nortaxa_taxon_id"]))
+                             for e in (continuity_receipt or {}).get("nortaxa_fallback_approved") or []}
+        for col_id, info in sorted(vanished_anchor_info.items()):
+            taxon = int(info["sporely_taxon_id"])
+            if taxon in continuity_canonical or taxon in superseded_to_current:
+                continue
+            anchor = registry.lookup(BACKBONE_SOURCE, "col_usage_id", col_id)
+            if anchor is None or anchor.sporely_taxon_id != taxon or anchor.kind != "anchor":
+                continue
+            options = []
+            for key in bound_by_id.get(taxon, []):
+                record = usage_index.get(key)
+                if (record is not None and key in reviewed_bridges
+                        and record.taxonomic_status.casefold() in ("valid", "accepted")
+                        and record.rank.casefold() == str(info["rank"]).casefold()
+                        and not is_aggregate_name(record.scientific_name)):
+                    options.append(key)
+            if len(options) != 1:
+                continue
+            bound = registry.lookup(*options[0])
+            if bound is None or bound.sporely_taxon_id != taxon:
+                raise CompilerError(f"NorTaxa fallback would rebind {options[0]} away from {taxon}")
+            continuity_canonical[taxon] = options[0]
+            nortaxa_fallback.append({"sporely_taxon_id": taxon, "vanished_col_id": col_id,
+                                     "nortaxa_usage": "/".join(options[0])})
+
     # ----- Build canonical taxa + source_usages listings --------------------
     # ONE canonical taxon record per sporely_taxon_id, sourced from the
     # registry anchor's normalized record. Separate source_usages.jsonl
@@ -1495,9 +1586,17 @@ def compile_release(
         vern_dropped_unknown = 0
         vern_dropped_unreviewed: dict[str, int] = {}
         vern_dropped_language: dict[str, int] = {}
+        def _vernacular_entries(source_dir: Path, source_code: str):
+            for entry in _iter_vernacular(source_dir):
+                if (str(entry["source_code"]), str(entry["core_row_id"]["namespace"]),
+                        str(entry["core_row_id"]["value"])) in species_history_cores:
+                    continue  # the aggregate's names stay off the species
+                yield entry
+            yield from species_history_vernaculars.get(source_code, [])
+
         for source_dir in normalized_source_dirs:
             report = _read_report(source_dir)
-            for entry in _iter_vernacular(source_dir):
+            for entry in _vernacular_entries(source_dir, str(report.source_code)):
                 key = (
                     str(entry["source_code"]),
                     str(entry["core_row_id"]["namespace"]),
@@ -1783,6 +1882,9 @@ def compile_release(
                 "withheld_source_usages": sorted(continuity_withheld, key=lambda r: r["usage"]),
                 "withheld_vernacular_rows": continuity_vernaculars_withheld,
                 "col_id_continuity_applied": col_continuity_applied,
+                "col_continuity_review_withheld": dict(sorted(col_review_withheld.items())),
+                "nortaxa_fallback_canonical": nortaxa_fallback,
+                "species_history_carried": sorted("/".join(k) for k in species_history),
                 "supersessions_held_target_absent": sorted(supersessions_held_target_absent),
                 "vernacular_rows_dropped_concept_not_live": len(vernaculars_dropped_concept_not_live),
                 "vernacular_concepts_dropped_not_live": sorted({v["sporely_taxon_id"] for v in vernaculars_dropped_concept_not_live}),

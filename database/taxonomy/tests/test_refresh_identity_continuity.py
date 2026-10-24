@@ -1,0 +1,232 @@
+"""Compiler-level refresh identity continuity (R2d): duplicate-id prevention for
+renumbered COL usages, NorTaxa fallback for vanished COL anchors, species ->
+aggregate source changes, red-list association and historical redirects."""
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
+TESTS = Path(__file__).resolve().parent
+for p in (SCRIPTS, TESTS):
+    if str(p) not in sys.path:
+        sys.path.insert(0, str(p))
+
+import carry_forward  # noqa: E402
+from compile_release import _build_redlist_resolution_index, _release_string, compile_release  # noqa: E402
+from identity_registry import IdentityRegistry  # noqa: E402
+from test_bridge_emission import _write_supersessions  # noqa: E402
+from test_compile_release import _POLICY_PATH, _write_manual_mappings, _write_normalized_source  # noqa: E402
+
+FAM = {"family": "Agaricaceae"}
+
+
+def _src(root: Path, code: str, version: str, rows: list[dict], vernacular: list[tuple[str, str]] = ()) -> Path:
+    prefix = {"col_xr": "COL:", "nortaxa": "NBIC:"}[code]
+    d = _write_normalized_source(root / code, source_code=code,
+                                 source_release={"version": version, "issued_date": "2026-01-01"},
+                                 identifier_namespace_prefix=prefix, rows=rows)
+    if code == "col_xr":  # the real COL namespace
+        for name in ("taxa.jsonl", "report.json"):
+            f = d / name
+            f.write_text(f.read_text().replace('"col_xr_taxon_id"', '"col_usage_id"'))
+    if vernacular:
+        cores = {}
+        for line in (d / "taxa.jsonl").read_text().splitlines():
+            r = json.loads(line)
+            cores[r["taxon_id"]["value"]] = r["core_row_id"]
+        (d / "vernacular.jsonl").write_text("".join(json.dumps({
+            "source_code": code, "source_release": {"version": version, "issued_date": "2026-01-01"},
+            "core_row_id": cores[tid], "language": "nb", "is_preferred": True, "vernacular_name": name}) + "\n"
+            for tid, name in vernacular))
+    return d
+
+
+def _col(root, version, extra):
+    return _src(root, "col_xr", version, [
+        {"core_row_id": "K", "taxon_id": "K", "scientific_name": "Fungi", "rank": "kingdom"},
+        {"core_row_id": "G", "taxon_id": "G", "parent": "K", "parent_resolution": "resolved",
+         "scientific_name": "Echinoderma", "rank": "genus"}] + extra)
+
+
+def _sp(tid, name, author="(Knudsen) Bon", status="accepted", **kw):
+    return {"core_row_id": tid, "taxon_id": tid, "parent": "G", "parent_resolution": "resolved",
+            "scientific_name": name, "authorship": author, "status": status, "classification": FAM, **kw}
+
+
+def _receipt(tmp_path, previous, current, mappings, supersessions, registry, continuity=()):
+    pins = {}
+    for d in current.values():
+        rep = json.loads((d / "report.json").read_text())
+        pins[rep["profile_source_code"]] = {
+            "source_release_id": f"{rep['profile_source_code']}:{_release_string(rep['profile_source_release'])}",
+            "sha256": rep["archive_sha256"]}
+    receipt = carry_forward.build_receipt(
+        release_id="tax-2026.01.02-01", previous_dirs=previous, current_dirs=current, previous_pins=pins,
+        current_pins=pins, manual_mappings=mappings, supersessions=supersessions,
+        anchors=carry_forward.registry_anchors(registry),
+        id_continuity={("col_xr", "col_usage_id", c["old_col_id"]): c for c in continuity})
+    path = tmp_path / "receipt.json"
+    path.write_text(json.dumps(receipt))
+    return path, receipt
+
+
+def _taxa(release: Path) -> dict[int, dict]:
+    return {r["sporely_taxon_id"]: r for r in map(json.loads, (release / "taxa.jsonl").read_text().splitlines())}
+
+
+def _ids(registry: Path) -> dict[tuple, int]:
+    reg = IdentityRegistry(registry)
+    reg.load()
+    return {e.key(): e.sporely_taxon_id for e in reg.all_entries()}
+
+
+def test_renumbered_col_usage_is_bound_by_approved_continuity_and_unapproved_match_is_not_allocated(tmp_path):
+    reg = tmp_path / "registry.jsonl"
+    common = dict(manual_mappings_path=_write_manual_mappings(tmp_path / "m.json", []),
+                  mapping_policy_path=_POLICY_PATH, registry_path=reg)
+    old = _col(tmp_path / "v1", "1", [_sp("A", "Echinoderma asperum"), _sp("B", "Echinoderma carinii")])
+    compile_release(normalized_source_dirs=[old], output_dir=tmp_path / "r1", release_id="tax-2026.01.01-01", **common)
+    before = _ids(reg)
+    a_id, b_id = before[("col_xr", "col_usage_id", "A")], before[("col_xr", "col_usage_id", "B")]
+    # A and B are renumbered to A2 and B2 with identical name, rank, authorship and family.
+    new = _col(tmp_path / "v2", "2", [_sp("A2", "Echinoderma asperum"), _sp("B2", "Echinoderma carinii")])
+    path, receipt = _receipt(tmp_path, {"col_xr": old}, {"col_xr": new}, {"mappings": []}, {"supersessions": []}, reg,
+                             continuity=[{"old_col_id": "A", "new_col_id": "A2", "sporely_taxon_id": a_id}])
+    pairs = {p["old_col_id"]: p["new_col_id"] for p in receipt["col_continuity_candidates"]["pairs"]}
+    assert pairs == {"A": "A2", "B": "B2"}
+    compile_release(normalized_source_dirs=[new], output_dir=tmp_path / "r2", release_id="tax-2026.01.02-01",
+                    continuity_receipt_path=path, **common)
+    after = _ids(reg)
+    taxa = _taxa(tmp_path / "r2")
+    assert after[("col_xr", "col_usage_id", "A2")] == a_id and a_id in taxa  # same id, no duplicate
+    assert ("col_xr", "col_usage_id", "B2") not in after  # unapproved match: no new id allocated
+    assert b_id not in taxa
+    assert all(after[k] == v for k, v in before.items())  # no existing source key rebound
+    diag = json.loads((tmp_path / "r2" / "diagnostics.json").read_text())["source_continuity"]
+    assert "B2" in diag["col_continuity_review_withheld"]
+
+
+def test_historical_redirect_to_a_renumbered_usage_still_resolves(tmp_path):
+    reg = tmp_path / "registry.jsonl"
+    maps = _write_manual_mappings(tmp_path / "m.json", [])
+    nt = _src(tmp_path / "v1", "nortaxa", "1", [
+        {"core_row_id": "R", "taxon_id": "R", "scientific_name": "Fungi", "rank": "kingdom"},
+        {"core_row_id": "N", "taxon_id": "N", "parent": "R", "parent_resolution": "resolved",
+         "scientific_name": "Lepiota aspera", "authorship": "(Pers.) Quél.", "status": "valid"}])
+    old = _col(tmp_path / "v1", "1", [_sp("A", "Echinoderma asperum")])
+    compile_release(normalized_source_dirs=[old, nt], output_dir=tmp_path / "r1", release_id="tax-2026.01.01-01",
+                    manual_mappings_path=maps, mapping_policy_path=_POLICY_PATH, registry_path=reg)
+    ids = _ids(reg)
+    retired = ids[("nortaxa", "nortaxa_taxon_id", "N")]
+    a_id = ids[("col_xr", "col_usage_id", "A")]
+    assert retired != a_id
+    sup = {"supersessions": [{"supersession_id": "s-N-A", "superseded_sporely_taxon_id": retired,
+                              "current_source_usage": {"source": "col_xr", "namespace": "col_usage_id",
+                                                       "identifier": "A"},
+                              "relationship": "exact", "review_status": "approved"}]}
+    new = _col(tmp_path / "v2", "2", [_sp("A2", "Echinoderma asperum")])
+    path, _ = _receipt(tmp_path, {"col_xr": old, "nortaxa": nt}, {"col_xr": new, "nortaxa": nt},
+                       {"mappings": []}, sup, reg,
+                       continuity=[{"old_col_id": "A", "new_col_id": "A2", "sporely_taxon_id": a_id}])
+    compile_release(normalized_source_dirs=[new, nt], output_dir=tmp_path / "r2", release_id="tax-2026.01.02-01",
+                    manual_mappings_path=maps, mapping_policy_path=_POLICY_PATH, registry_path=reg,
+                    concept_supersessions_path=_write_supersessions(tmp_path / "s.json", sup["supersessions"]),
+                    continuity_receipt_path=path)
+    usages = [json.loads(l) for l in (tmp_path / "r2" / "source_usages.jsonl").read_text().splitlines()]
+    assert a_id in _taxa(tmp_path / "r2")
+    moved = [u for u in usages if u.get("superseded_from_sporely_taxon_id") == retired]
+    assert moved and all(u["sporely_taxon_id"] == a_id for u in moved)
+
+
+def _nortaxa_case(tmp_path, nt_new_rows, nt_new_vern, *, keep_species: bool, approve_fallback: bool = False):
+    """R1: COL species S, NorTaxa N mapped to S (approved). R2: NorTaxa N changes;
+    COL S stays (keep_species) or vanishes (then N's mapping is no longer listed)."""
+    reg = tmp_path / "registry.jsonl"
+    mapping = [{"mapping_id": "map-N-S", "review_status": "approved",
+                "source_usage": {"source": "nortaxa", "namespace": "nortaxa_taxon_id", "identifier": "N"},
+                "target": {"source_usage": {"source": "col_xr", "namespace": "col_usage_id", "identifier": "S"}},
+                "relationship": "exact"}]
+    maps = _write_manual_mappings(tmp_path / "m.json", mapping)
+    root = {"core_row_id": "R", "taxon_id": "R", "scientific_name": "Fungi", "rank": "kingdom"}
+    nt1 = _src(tmp_path / "v1", "nortaxa", "1", [root, {
+        "core_row_id": "N", "taxon_id": "N", "parent": "R", "parent_resolution": "resolved",
+        "scientific_name": "Echinoderma jacobi", "authorship": "(Vellinga & Knudsen) Gminder", "status": "valid"}],
+        [("N", "langeparasollsopp")])
+    species = [_sp("S", "Echinoderma jacobi", "(Vellinga & Knudsen) Gminder")]
+    col1 = _col(tmp_path / "v1", "1", species)
+    compile_release(normalized_source_dirs=[col1, nt1], output_dir=tmp_path / "r1", release_id="tax-2026.01.01-01",
+                    manual_mappings_path=maps, mapping_policy_path=_POLICY_PATH, registry_path=reg)
+    s_id = _ids(reg)[("col_xr", "col_usage_id", "S")]
+    assert _ids(reg)[("nortaxa", "nortaxa_taxon_id", "N")] == s_id
+    nt2 = _src(tmp_path / "v2", "nortaxa", "2", [root] + nt_new_rows, nt_new_vern)
+    col2 = _col(tmp_path / "v2", "2", species if keep_species else [])
+    maps2 = maps if keep_species else _write_manual_mappings(tmp_path / "m2.json", [])
+    fallback = [{"sporely_taxon_id": s_id, "vanished_col_id": "S", "nortaxa_taxon_id": "N"}] if approve_fallback else []
+    pins = {}
+    for d in (col2, nt2):
+        rep = json.loads((d / "report.json").read_text())
+        pins[rep["profile_source_code"]] = {
+            "source_release_id": f"{rep['profile_source_code']}:{_release_string(rep['profile_source_release'])}",
+            "sha256": rep["archive_sha256"]}
+    receipt = carry_forward.build_receipt(
+        release_id="tax-2026.01.02-01", previous_dirs={"col_xr": col1, "nortaxa": nt1},
+        current_dirs={"col_xr": col2, "nortaxa": nt2}, previous_pins=pins, current_pins=pins,
+        manual_mappings=json.loads(maps2.read_text()), supersessions={"supersessions": []},
+        anchors=carry_forward.registry_anchors(reg), nortaxa_fallback=fallback)
+    path = tmp_path / "receipt.json"
+    path.write_text(json.dumps(receipt))
+    compile_release(normalized_source_dirs=[col2, nt2], output_dir=tmp_path / "r2", release_id="tax-2026.01.02-01",
+                    manual_mappings_path=maps2, mapping_policy_path=_POLICY_PATH, registry_path=reg,
+                    continuity_receipt_path=path)
+    return s_id, receipt
+
+
+VALID_N = [{"core_row_id": "N", "taxon_id": "N", "parent": "R", "parent_resolution": "resolved",
+            "scientific_name": "Echinoderma jacobi", "authorship": "(Vellinga & Knudsen) Gminder", "status": "valid"}]
+
+
+def test_vanished_col_anchor_without_approval_is_not_kept_alive(tmp_path):
+    s_id, _ = _nortaxa_case(tmp_path, VALID_N, [("N", "langeparasollsopp")], keep_species=False)
+    assert s_id not in _taxa(tmp_path / "r2")
+
+
+def test_vanished_col_anchor_keeps_its_id_from_the_reviewed_valid_nortaxa_record(tmp_path):
+    s_id, _ = _nortaxa_case(tmp_path, VALID_N, [("N", "langeparasollsopp")], keep_species=False,
+                            approve_fallback=True)
+    taxa = _taxa(tmp_path / "r2")
+    assert taxa[s_id]["canonical_source_usage"] == {"source": "nortaxa", "namespace": "nortaxa_taxon_id",
+                                                    "identifier": "N"}
+    diag = json.loads((tmp_path / "r2" / "diagnostics.json").read_text())["source_continuity"]
+    assert diag["nortaxa_fallback_canonical"][0]["sporely_taxon_id"] == s_id
+
+
+def test_species_to_aggregate_source_change_keeps_species_names_and_redlist_on_the_species(tmp_path):
+    s_id, receipt = _nortaxa_case(tmp_path, [{
+        "core_row_id": "N", "taxon_id": "N", "parent": "R", "parent_resolution": "resolved",
+        "scientific_name": "Echinoderma jacobi coll.", "authorship": "", "status": "valid"}],
+        [("N", "langeparasollsopp-gruppen")], keep_species=True)
+    record = receipt["records"]["aggregate-meaning-change:nortaxa/nortaxa_taxon_id/N"]
+    assert record["status"] == "species_history"
+    assert receipt["records"]["map-N-S"]["status"] == "carried"
+    taxa = _taxa(tmp_path / "r2")
+    # The species id stays the species (from the reviewed previous record), never the aggregate.
+    assert taxa[s_id]["scientific_name"] == "Echinoderma jacobi"
+    names = {(v["sporely_taxon_id"], v.get("vernacular_name") or v.get("name"))
+             for v in map(json.loads, (tmp_path / "r2" / "vernacular.jsonl").read_text().splitlines())}
+    assert (s_id, "langeparasollsopp") in names
+    assert not any(n == "langeparasollsopp-gruppen" for _, n in names)
+    usages = [json.loads(l) for l in (tmp_path / "r2" / "source_usages.jsonl").read_text().splitlines()]
+    unique, _ = _build_redlist_resolution_index(usages)
+    assert unique["N"] == (s_id, "Echinoderma jacobi")  # a red-list row on name-id N lands on the species
+
+
+def test_aggregate_nortaxa_record_never_supplies_a_fallback(tmp_path):
+    s_id, _ = _nortaxa_case(tmp_path, [{
+        "core_row_id": "N", "taxon_id": "N", "parent": "R", "parent_resolution": "resolved",
+        "scientific_name": "Echinoderma jacobi coll.", "authorship": "", "status": "valid"}],
+        [], keep_species=False, approve_fallback=True)
+    taxa = _taxa(tmp_path / "r2")
+    # Species history keeps N on the species; the id is live from it, never as "coll.".
+    assert all("coll." not in t["scientific_name"] for t in taxa.values())

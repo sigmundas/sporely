@@ -577,7 +577,8 @@ def prepare(args: argparse.Namespace) -> dict:
             anchors=carry_forward.registry_anchors(registry_path),
             holds=carry_forward.load_holds(args.holds),
             **dict(zip(("rules", "exceptions"), carry_forward.load_continuity_policy(args.holds))),
-            id_continuity=carry_forward.load_id_continuity(args.col_id_continuity))
+            id_continuity=carry_forward.load_id_continuity(args.col_id_continuity),
+            nortaxa_fallback=carry_forward.load_nortaxa_fallback(args.col_id_continuity))
         receipt_path = work / "continuity-receipt.json"
         receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
         flagged = {rid: r for rid, r in receipt["records"].items() if r["status"] == "flagged"}
