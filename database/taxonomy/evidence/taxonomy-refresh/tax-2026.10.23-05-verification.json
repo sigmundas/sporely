@@ -1,0 +1,500 @@
+{
+ "release_id": "tax-2026.10.23-05",
+ "sqlite": "fc16346f5dff8b033d9d2834b8aa465c425d671fa3dd081f9d153e5de1d35084",
+ "freeze": "fded67d9a0429f60011cf715a883db45cf0dd468d0e9ff6e8d2016bcfeba1fae",
+ "duplicates": {
+  "r1_keys": 1028,
+  "r05_keys": 1036,
+  "r05_new_keys_vs_r1": 74,
+  "r05_keys_with_new_id": 59,
+  "new_examples": [
+   [
+    "Juncorrhiza",
+    "genus",
+    [
+     71583,
+     624406,
+     636685
+    ]
+   ],
+   [
+    "Juncorrhiza oxycarpi",
+    "species",
+    [
+     103410,
+     636688
+    ]
+   ],
+   [
+    "Juncorrhiza aschersoniana",
+    "species",
+    [
+     103412,
+     636686
+    ]
+   ],
+   [
+    "Juncorrhiza tenuis",
+    "species",
+    [
+     103413,
+     636689
+    ]
+   ],
+   [
+    "Campanulospora",
+    "genus",
+    [
+     130612,
+     636236
+    ]
+   ],
+   [
+    "Coccospora",
+    "genus",
+    [
+     146360,
+     635006
+    ]
+   ],
+   [
+    "Xylocoremium",
+    "genus",
+    [
+     621414,
+     637096
+    ]
+   ],
+   [
+    "Cortinarius bovinoideus",
+    "species",
+    [
+     621656,
+     637243
+    ]
+   ],
+   [
+    "Cortinarius balteatocumatilis var. pallidus",
+    "variety",
+    [
+     621715,
+     637244
+    ]
+   ],
+   [
+    "Microsporea",
+    "class",
+    [
+     621718,
+     635764
+    ]
+   ],
+   [
+    "Paranucleospora",
+    "genus",
+    [
+     621726,
+     635903
+    ]
+   ],
+   [
+    "Pycnothyrium junci",
+    "species",
+    [
+     621758,
+     636938
+    ]
+   ],
+   [
+    "Inocybe boreolilacina",
+    "species",
+    [
+     622255,
+     637248
+    ]
+   ],
+   [
+    "Caripia",
+    "genus",
+    [
+     622862,
+     636469
+    ]
+   ],
+   [
+    "Deflexula",
+    "genus",
+    [
+     622875,
+     636557
+    ]
+   ],
+   [
+    "Melanopus rhizophilus",
+    "species",
+    [
+     622951,
+     636793
+    ]
+   ],
+   [
+    "Saccoblastia",
+    "genus",
+    [
+     623221,
+     637130
+    ]
+   ],
+   [
+    "Parmelia cyloselis",
+    "species",
+    [
+     623781,
+     637255
+    ]
+   ],
+   [
+    "Siphula thamnolioides",
+    "species",
+    [
+     623840,
+     637272
+    ]
+   ],
+   [
+    "Verrucaria tessellata",
+    "species",
+    [
+     623861,
+     637171
+    ]
+   ]
+  ]
+ },
+ "stopped_vs_r1": {
+  "total": 431370,
+  "policy": 430621,
+  "superseded_to_live": 1,
+  "unexplained": 748
+ },
+ "nb_concepts": {
+  "r1": 6690,
+  "r04": 6697,
+  "r05": 6699,
+  "recovered_vs_r04": [
+   6396,
+   6397,
+   6399,
+   612867,
+   613500,
+   613627
+  ],
+  "recovered_vs_r04_count": 12
+ },
+ "redlist_resolved": {
+  "r1": 7866,
+  "r04": 7855,
+  "r05": 7866,
+  "recovered_vs_r04": [
+   [
+    "Echinoderma hystrix",
+    6396
+   ],
+   [
+    "Echinoderma pseudoasperula",
+    6399
+   ],
+   [
+    "Acarospora macrospora",
+    131357
+   ],
+   [
+    "Echinoderma jacobi",
+    6397
+   ],
+   [
+    "Cladonia uncialis",
+    613627
+   ],
+   [
+    "Gyalidea scutellaris",
+    612983
+   ],
+   [
+    "Flammulaster carpophilus",
+    612867
+   ],
+   [
+    "Cladonia squamosa",
+    613500
+   ],
+   [
+    "Dermoloma cuneifolium",
+    2538
+   ],
+   [
+    "Cladonia uncialis",
+    613627
+   ],
+   [
+    "Cladonia squamosa",
+    613500
+   ]
+  ]
+ },
+ "focus": {
+  "6399": {
+   "live": true,
+   "name": "Echinoderma pseudoasperulum",
+   "nb": [
+    "dvergparasollsopp"
+   ],
+   "redlist": [
+    [
+     "Norge",
+     "VU",
+     "Echinoderma pseudoasperula"
+    ]
+   ],
+   "adb": [
+    52027,
+    58500,
+    58559,
+    300295
+   ]
+  },
+  "624546": {
+   "live": false,
+   "name": null,
+   "nb": [],
+   "redlist": [],
+   "adb": []
+  },
+  "637798": {
+   "live": false,
+   "name": null,
+   "nb": [],
+   "redlist": [],
+   "adb": []
+  },
+  "6397": {
+   "live": true,
+   "name": "Echinoderma jacobi",
+   "nb": [
+    "langeparasollsopp",
+    "langes parasollsopp"
+   ],
+   "redlist": [
+    [
+     "Norge",
+     "VU",
+     "Echinoderma jacobi"
+    ]
+   ],
+   "adb": [
+    52025,
+    52048,
+    58530,
+    58546,
+    58549
+   ]
+  },
+  "6396": {
+   "live": true,
+   "name": "Echinoderma hystrix",
+   "nb": [
+    "raspparasollsopp"
+   ],
+   "redlist": [
+    [
+     "Norge",
+     "VU",
+     "Echinoderma hystrix"
+    ]
+   ],
+   "adb": [
+    52024,
+    58542
+   ]
+  },
+  "2538": {
+   "live": true,
+   "name": "Dermoloma cuneifolium",
+   "nb": [
+    "grå grynmusserong",
+    "rosabrun grynmusserong",
+    "rosagrå grynmusserong"
+   ],
+   "redlist": [
+    [
+     "Norge",
+     "NT",
+     "Dermoloma cuneifolium"
+    ]
+   ],
+   "adb": [
+    55440,
+    61539,
+    61668,
+    61686
+   ]
+  },
+  "1083": {
+   "live": true,
+   "name": "Cystolepiota moelleri",
+   "nb": [],
+   "redlist": [],
+   "adb": [
+    52015,
+    58501,
+    58564,
+    300296
+   ]
+  }
+ },
+ "redirects": {
+  "r1_total": 2513,
+  "resolve_to_live": 2513,
+  "blocked": [],
+  "target_changed": []
+ },
+ "cloud": {
+  "obs_refs_on_ids_stopping_vs_r1": {},
+  "obs_refs_not_resolvable_in_r05": {}
+ },
+ "cloud_scope": {
+  "export_count_r05": 53241,
+  "method_r05_count": null,
+  "vs_active": {
+   "added": 417,
+   "removed": 93,
+   "renamed": 7,
+   "removed_examples": [
+    34119,
+    43083,
+    101774,
+    131593,
+    137789,
+    137982,
+    138107,
+    151370,
+    152289,
+    152290
+   ],
+   "renamed_examples": [
+    [
+     151334,
+     "Typhula phacorrhiza complanata",
+     "Typhula phacorrhiza subsp. complanata"
+    ],
+    [
+     160391,
+     "Boletellus lepidospora",
+     "Boletellus lepidosporus"
+    ],
+    [
+     161926,
+     "Cortinarius chrysolitus var. chrysolitus",
+     "Cortinarius chrysolitus nothovar. chrysolitus"
+    ],
+    [
+     604796,
+     "Sclerotium pustula epicaula",
+     "Sclerotium pustula subsp. epicaula"
+    ],
+    [
+     607346,
+     "Xylaria hippoglossa",
+     "Xylaria hypoglossa"
+    ],
+    [
+     616942,
+     "Conocybe ochraceodiscus",
+     "Conocybe ochraceodisca"
+    ],
+    [
+     616943,
+     "Conocybe ochraceodisca",
+     "Conocybe ochraceodiscus"
+    ]
+   ]
+  },
+  "vs_r1": {
+   "added": 417,
+   "removed": 94,
+   "renamed": 7,
+   "removed_examples": [
+    34119,
+    43083,
+    101774,
+    131593,
+    137789,
+    137982,
+    138107,
+    150361,
+    151370,
+    152289
+   ],
+   "renamed_examples": [
+    [
+     151334,
+     "Typhula phacorrhiza complanata",
+     "Typhula phacorrhiza subsp. complanata"
+    ],
+    [
+     160391,
+     "Boletellus lepidospora",
+     "Boletellus lepidosporus"
+    ],
+    [
+     161926,
+     "Cortinarius chrysolitus var. chrysolitus",
+     "Cortinarius chrysolitus nothovar. chrysolitus"
+    ],
+    [
+     604796,
+     "Sclerotium pustula epicaula",
+     "Sclerotium pustula subsp. epicaula"
+    ],
+    [
+     607346,
+     "Xylaria hippoglossa",
+     "Xylaria hypoglossa"
+    ],
+    [
+     616942,
+     "Conocybe ochraceodiscus",
+     "Conocybe ochraceodisca"
+    ],
+    [
+     616943,
+     "Conocybe ochraceodisca",
+     "Conocybe ochraceodiscus"
+    ]
+   ]
+  }
+ },
+ "identity_vs_r1": {
+  "candidate_live": 203836,
+  "new_live": 2824,
+  "newly_retired": 1,
+  "policy_excluded_but_live": [],
+  "previous_live": 632382,
+  "stopped_being_live": 431370,
+  "stopped_by_supersession": 1,
+  "stopped_excluded_by_policy": {
+   "excluded_by_policy:unite_sh_cluster": 430621
+  },
+  "stopped_held_by_continuity": {},
+  "stopped_unexplained": 748
+ },
+ "source_continuity": {
+  "col_continuity_review_withheld": 15,
+  "col_id_continuity_applied": 70,
+  "held_records": 1,
+  "nortaxa_fallback_canonical": 37,
+  "species_history_carried": 5
+ },
+ "registry_baseline": "R1 tax-2026.10.23-01 registry (assembled base sha equals R1 build registry-A.jsonl)",
+ "note": "Disposable validation-only candidate; owner decisions 2026-10-24 for candidate preparation only; release approval pending."
+}
