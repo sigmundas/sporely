@@ -439,3 +439,34 @@ def test_second_compile_on_the_grown_registry_reports_the_same_diagnostics(tmp_p
     assert [b["usage"] for b in diag["live_duplicate_bound"]] == ["col_xr/col_usage_id/C"]
     assert list(diag["live_duplicate_withheld"]) == ["D"]
     assert outs[0] == outs[1]  # diagnostics and the manifest (hence its hash) are identical
+
+
+def test_approved_name_record_follow_keeps_each_id_with_its_original_record(tmp_path):
+    rows1 = [_sp("A", "Kaskaskia macrospore", "G.C. Zhao"), _sp("B", "Kaskaskia macrospora", "G.C. Zhao")]
+    rows2 = [_sp("A", "Kaskaskia macrospora", "G.C. Zhao"), _sp("B", "Kaskaskia macrospore", "G.C. Zhao")]
+    recs1 = {"A": ["indexfungorum:800412"], "B": ["indexfungorum:840860"]}
+    recs2 = {"A": ["indexfungorum:840860"], "B": ["indexfungorum:800412"]}
+    before, after, taxa, receipt, _ = _two_releases(tmp_path, rows1, rows2, recs1, recs2)
+    a, b = before[("col_xr", "col_usage_id", "A")], before[("col_xr", "col_usage_id", "B")]
+    proposals = receipt["name_record_follow"]
+    assert [(e["sporely_taxon_id"], e["follows_col_id"], e["status"]) for e in proposals] == \
+        sorted([(a, "B", "proposed"), (b, "A", "proposed")])
+    assert a not in taxa and b not in taxa  # proposed only: still held
+    # One member approved is not enough.
+    half = carry_forward.name_record_follow(receipt["col_continuity_candidates"]["name_record_transfers"],
+                                            [{"sporely_taxon_id": a, "col_id": "A", "follows_col_id": "B"}])
+    assert {e["status"] for e in half} == {"proposed"}
+    approved = [{"sporely_taxon_id": e["sporely_taxon_id"], "col_id": e["col_id"], "follows_col_id": e["follows_col_id"]}
+                for e in proposals]
+    receipt["name_record_follow"] = carry_forward.name_record_follow(
+        receipt["col_continuity_candidates"]["name_record_transfers"], approved)
+    path = tmp_path / "receipt-approved.json"
+    path.write_text(json.dumps(receipt))
+    new = tmp_path / "v2" / "col_xr"
+    compile_release(normalized_source_dirs=[new], output_dir=tmp_path / "r3", release_id="tax-2026.01.02-01",
+                    continuity_receipt_path=path, manual_mappings_path=_write_manual_mappings(tmp_path / "m.json", []),
+                    mapping_policy_path=_POLICY_PATH, registry_path=tmp_path / "registry.jsonl")
+    taxa = _taxa(tmp_path / "r3")
+    assert taxa[a]["scientific_name"] == "Kaskaskia macrospore"  # its R1 name / IF 800412, now on COL B
+    assert taxa[b]["scientific_name"] == "Kaskaskia macrospora"
+    assert _ids(tmp_path / "registry.jsonl") == before  # no key rebound, nothing allocated

@@ -45,6 +45,7 @@ any consumer runtime store.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
 import json
 import os
@@ -827,7 +828,28 @@ def compile_release(
                 col_review_withheld[new_id] = "ambiguous match: " + ",".join(group["old_col_ids"])
     # Two anchored COL ids exchanged nomenclatural records: neither Sporely id
     # can follow a record safely, so the usage is held for review.
+    # An owner-approved name-record follow (both members of a closed exchange)
+    # gives each Sporely id, in this release only, the current record of the
+    # usage that now carries its original name record; no key is rebound.
+    follows = {e["col_id"]: e["follows_col_id"] for e in (continuity_receipt or {}).get("name_record_follow") or []
+               if e.get("status") == "approved"}
+    if follows:
+        if any(follows.get(target) != col_id for col_id, target in follows.items()):
+            raise CompilerError(f"name-record follows are not closed exchanges: {follows}")
+        backbone = per_source_records.get(BACKBONE_SOURCE, [])
+        by_value = {r.taxon_id_value: r for r in backbone if r.taxon_id_value in follows}
+        referencing = sorted(r.taxon_id_value for r in backbone if any(
+            str((ref or {}).get("value") or "") in follows and str((ref or {}).get("value")) != r.taxon_id_value
+            for ref in (r.accepted_name_usage_id, r.parent_name_usage_id)))
+        if set(by_value) != set(follows) or referencing:
+            raise CompilerError(f"name-record follow cannot apply: missing {sorted(set(follows) - set(by_value))}, "
+                                f"referenced by {referencing[:20]}")
+        per_source_records[BACKBONE_SOURCE] = [
+            dataclasses.replace(by_value[follows[r.taxon_id_value]], taxon_id_value=r.taxon_id_value)
+            if r.taxon_id_value in follows else r for r in backbone]
     for transfer in candidates.get("name_record_transfers") or []:
+        if transfer["col_id"] in follows:
+            continue
         col_review_withheld[transfer["col_id"]] = (
             f"name record transfer: {transfer['name_before']} -> {transfer['name_after']} "
             f"(old record now on {','.join(transfer['old_record_now_on'])})")
@@ -2005,6 +2027,7 @@ def compile_release(
                 "withheld_vernacular_rows": continuity_vernaculars_withheld,
                 "col_id_continuity_applied": col_continuity_applied,
                 "col_continuity_review_withheld": dict(sorted(col_review_withheld.items())),
+                **({"name_record_follow_applied": dict(sorted(follows.items()))} if follows else {}),
                 "live_duplicate_bound": live_duplicate_bound,
                 "live_duplicate_vernaculars_dropped": live_duplicate_vernaculars_dropped,
                 "live_duplicate_withheld": dict(sorted(live_duplicate_withheld.items())),

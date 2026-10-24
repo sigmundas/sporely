@@ -102,6 +102,42 @@ def load_nortaxa_fallback(path: Path | None) -> list[dict]:
     return list(json.loads(Path(path).read_text(encoding="utf-8")).get("nortaxa_fallback") or [])
 
 
+def load_name_record_follow(path: Path | None) -> list[dict]:
+    """Owner-approved name-record follows (same file, `name_record_follow`)."""
+    if path is None:
+        return []
+    return list(json.loads(Path(path).read_text(encoding="utf-8")).get("name_record_follow") or [])
+
+
+def name_record_follow(transfers: list[dict], approved: list[dict] | None = None) -> list[dict]:
+    """One proposal per Sporely id of a closed name-record exchange: the id
+    keeps its original name record (its R1 identity) by taking, in this
+    release, the current record of the COL usage that now carries it. No
+    registry key is rebound. A proposal applies only when the owner approved
+    every member of the exchange with the same usages."""
+    by_col = {t["col_id"]: t for t in transfers}
+    approved_keys = {(int(a["sporely_taxon_id"]), a["col_id"], a["follows_col_id"]) for a in approved or []}
+    out = []
+    for t in sorted(transfers, key=lambda t: t["sporely_taxon_id"]):
+        if len(t["old_record_now_on"]) != 1:
+            continue
+        other = by_col.get(t["old_record_now_on"][0])
+        if other is None or other["old_record_now_on"] != [t["col_id"]]:
+            continue  # not a closed exchange: stays held without a proposal
+        out.append({"sporely_taxon_id": t["sporely_taxon_id"], "col_id": t["col_id"],
+                    "follows_col_id": other["col_id"], "name_records": t["name_records_before"],
+                    "name_in_previous": t["name_before"], "name_if_applied": other["name_after"],
+                    "status": "proposed"})
+    pairs = {e["col_id"]: e for e in out}
+    for e in out:
+        mine = (e["sporely_taxon_id"], e["col_id"], e["follows_col_id"])
+        partner = pairs.get(e["follows_col_id"])
+        if mine in approved_keys and partner is not None and (
+                partner["sporely_taxon_id"], partner["col_id"], partner["follows_col_id"]) in approved_keys:
+            e["status"] = "approved"
+    return out
+
+
 def load_id_continuity(path: Path | None) -> dict[tuple[str, str, str], dict]:
     """Category-1 COL id continuity (documented one-to-one replacements)."""
     if path is None:
@@ -430,7 +466,8 @@ def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_di
                   anchors: dict[int, tuple], holds: dict[str, dict] | None = None,
                   rules: set[str] | None = None, exceptions: dict[str, dict] | None = None,
                   id_continuity: dict[tuple[str, str, str], dict] | None = None,
-                  nortaxa_fallback: list[dict] | None = None) -> dict:
+                  nortaxa_fallback: list[dict] | None = None,
+                  name_record_follow_approved: list[dict] | None = None) -> dict:
     records = reviewed_records(manual_mappings, supersessions, anchors)
     holds = holds or {}
     usage_holds = {k: v for k, v in holds.items() if v.get("source_usage")}
@@ -499,6 +536,9 @@ def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_di
     for record in out_records.values():
         bucket = summary.setdefault(record["kind"], {"carried": 0, "flagged": 0, "held": 0})
         bucket[record["status"]] = bucket.get(record["status"], 0) + 1
+    candidates = (col_continuity_candidates(previous_dirs["col_xr"], current_dirs["col_xr"], anchors)
+                  if "col_xr" in previous_dirs and "col_xr" in current_dirs
+                  and previous_dirs["col_xr"] != current_dirs["col_xr"] else None)
     return {
         "format": RECEIPT_FORMAT,
         "release_id": release_id,
@@ -522,10 +562,11 @@ def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_di
         "name_swaps": name_swaps,
         # Vanished COL anchors and same-identity new usages (review input; the
         # compile withholds unapproved matched new usages instead of allocating).
-        "col_continuity_candidates": (
-            col_continuity_candidates(previous_dirs["col_xr"], current_dirs["col_xr"], anchors)
-            if "col_xr" in previous_dirs and "col_xr" in current_dirs
-            and previous_dirs["col_xr"] != current_dirs["col_xr"] else None),
+        "col_continuity_candidates": candidates,
+        # Name-record exchanges: each Sporely id follows its original name record
+        # (proposed until the owner approves both members of the exchange).
+        "name_record_follow": name_record_follow((candidates or {}).get("name_record_transfers") or [],
+                                                 name_record_follow_approved),
     }
 
 
