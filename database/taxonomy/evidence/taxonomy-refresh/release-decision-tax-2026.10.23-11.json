@@ -6,7 +6,13 @@
   "freeze_sha256": "26e77446fb3b71720fa44cf54fe5237bb0bab5f240f2f762036da3e92877bc99",
   "approved_by": "Sigmund Ås",
   "approved_at": "2026-10-24",
-  "scope": {"release_preparation_and_local_rehearsal": "approved", "production_import": "NOT approved", "cloud_publication": "NOT approved", "deployment": "NOT approved", "desktop_promotion_or_install": "NOT approved"},
-  "decision_reference": "Owner instruction 2026-10-24 relayed by the coordinator: release preparation, read-only production checks, SQL inspection and a disposable local rehearsal are authorised; -11 may be built once for the swap-mapping fix and the remaining preparation items continued against it. The owner's preparation approval of -10 named -10's hashes; these are -11's.",
+  "scope": {
+    "release_preparation_and_local_rehearsal": "approved",
+    "production_import": "NOT approved",
+    "cloud_publication": "NOT approved",
+    "deployment": "NOT approved",
+    "desktop_promotion_or_install": "NOT approved"
+  },
+  "decision_reference": "Owner confirmed on 2026-10-24 (reply 'confirmed') that the release-preparation approval given for tax-2026.10.23-10 applies to tax-2026.10.23-11, SQLite 2a81f68435d0606633319be0845f9fa1de46ccd9c2442f391af742fad3899a97, freeze 26e77446fb3b71720fa44cf54fe5237bb0bab5f240f2f762036da3e92877bc99. Covers release preparation, read-only production checks, SQL inspection and a disposable local rehearsal.",
   "contract_note": "release_preparation_approved permits only export_cloud_taxonomy --local-rehearsal (export_use local_rehearsal, importable false). Importable exports and desktop promotion require release_approved."
 }
