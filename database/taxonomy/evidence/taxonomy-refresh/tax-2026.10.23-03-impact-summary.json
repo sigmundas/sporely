@@ -1,0 +1,319 @@
+{
+ "base_release": {
+  "sha256_base_2026_09_11": "7feebad85ed9563c08bc67a5ce227f44afa7fb324ebd15fa8ea9ebfc88a13311",
+  "used": "COL Base 2026-09-11 (ChecklistBank 316321, COL26.9), matched to XR 2026-09-25 (316441, COL26.9); loss tier (b) uses Base 2026-07-14 (315777), matched to the previous XR 2026-07-17"
+ },
+ "compared_with": "tax-2026.10.23-02",
+ "hashes": {
+  "freeze_sha256": "665c9969f59214b112b96341d61ceaf7dde473f18aa41555485d79d2ce5ff85b",
+  "sqlite_sha256": "6deee822274b0ecd8ea455e637001dd8cb2cdf479d066fd4da66466eaef173ae"
+ },
+ "impact_flags_by_category": {
+  "b_base_backed_loss": {
+   "macrofungi_scope": 10,
+   "national_bridge": 5,
+   "published_external_ids": 7,
+   "redlist": 5,
+   "supersession": 4
+  },
+  "c_xr_only_documented_continuity": {
+   "macrofungi_scope": 10,
+   "national_bridge": 1,
+   "published_external_ids": 3,
+   "supersession": 1
+  },
+  "d_xr_only_source_version_changed": {
+   "macrofungi_scope": 42,
+   "national_bridge": 1,
+   "published_external_ids": 43,
+   "redlist": 1,
+   "supersession": 1
+  },
+  "e_other_unresolved": {
+   "macrofungi_scope": 44,
+   "published_external_ids": 2
+  }
+ },
+ "metrics": {
+  "r1": {
+   "col_concepts": 620976,
+   "external_ids": {
+    "artportalen": 9000,
+    "artsdatabanken": 61583,
+    "inaturalist": 8032
+   },
+   "redlist_resolved": 7866,
+   "scientific_names": 664673,
+   "supersessions": 2513,
+   "taxa": 632382,
+   "text_external_ids": {
+    "col_xr/col_usage_id": 620976,
+    "dyntaxa/dyntaxa_taxon_id": 2361,
+    "nortaxa/nortaxa_taxon_id": 10676
+   },
+   "unite_sh_cluster_concepts": 430621,
+   "vernaculars": 95239
+  },
+  "r2_frozen": {
+   "col_concepts": 769761,
+   "external_ids": {
+    "artportalen": 8988,
+    "artsdatabanken": 61516,
+    "inaturalist": 8028
+   },
+   "redlist_resolved": 7855,
+   "scientific_names": 813410,
+   "supersessions": 2508,
+   "taxa": 781174,
+   "text_external_ids": {
+    "col_xr/col_usage_id": 769766,
+    "dyntaxa/dyntaxa_taxon_id": 2360,
+    "nortaxa/nortaxa_taxon_id": 10651
+   },
+   "unite_sh_cluster_concepts": 577359,
+   "vernaculars": 96741
+  },
+  "r2b": {
+   "col_concepts": 192402,
+   "external_ids": {
+    "artportalen": 8988,
+    "artsdatabanken": 61516,
+    "inaturalist": 8028
+   },
+   "redlist_resolved": 7855,
+   "scientific_names": 236051,
+   "supersessions": 2508,
+   "taxa": 203815,
+   "text_external_ids": {
+    "col_xr/col_usage_id": 192407,
+    "dyntaxa/dyntaxa_taxon_id": 2360,
+    "nortaxa/nortaxa_taxon_id": 10651
+   },
+   "unite_sh_cluster_concepts": 0,
+   "vernaculars": 96741
+  }
+ },
+ "note": "Disposable validation-only candidate. Categories are assigned in order a>b>c>d>e. Sporely impact uses R1 tax-2026.10.23-01 and the local observation/reference snapshot used for the R2 refcheck.",
+ "policy_exclusion": {
+  "col_churn": {
+   "current_release_total": 577359,
+   "not_in_registry": 148471,
+   "previous_usages": 428888,
+   "registry_anchors": 428888
+  },
+  "excluded_registry_ids_with_sporely_impact": 0,
+  "identity": {
+   "excluded_by_policy:unite_sh_cluster": 428888
+  }
+ },
+ "reclassification": {
+  "a_unite_cluster_excluded_by_policy": 1733,
+  "b_base_backed_loss": 38,
+  "c_xr_only_documented_continuity": 60,
+  "d_xr_only_source_version_changed": 607,
+  "e_other_unresolved": 150
+ },
+ "registry": {
+  "r1": {
+   "distinct_ids": 634895,
+   "max_sporely_taxon_id": 634895,
+   "next_id": 634896,
+   "rows": 692069
+  },
+  "r2_frozen": {
+   "distinct_ids": 786270,
+   "max_sporely_taxon_id": 786270,
+   "next_id": 786271,
+   "rows": 843491
+  },
+  "r2b": {
+   "distinct_ids": 637799,
+   "max_sporely_taxon_id": 637799,
+   "next_id": 637800,
+   "rows": 695020
+  }
+ },
+ "release_id": "tax-2026.10.23-03",
+ "vanished_total": 2588,
+ "verification": {
+  "agent_holds_still_unapproved": 110,
+  "canonical_binding_changed": [
+   31149,
+   172409,
+   612827,
+   612861,
+   612991
+  ],
+  "canonical_binding_changed_count": 5,
+  "holds_by_reason": {
+   "agent_proposed_validation_hold": 110,
+   "col_authorship_suspected_corruption": 1,
+   "col_id_renumbered_unaccepted": 6,
+   "nortaxa_1292_identity_change_pending_review": 16,
+   "nortaxa_species_to_coll_concept_change": 4
+  },
+  "name_or_rank_changed_count": 31,
+  "policy_excluded_ids_live": [],
+  "policy_excluded_registry_ids": 428888,
+  "r1_registry_bindings_changed": 0,
+  "receipt_held_by_kind": {
+   "dyntaxa_mapping": 1,
+   "nortaxa_mapping": 2,
+   "supersession": 8
+  },
+  "redirects": {
+   "621396": {
+    "impact": {
+     "macrofungi_scope": false,
+     "national_bridge": [],
+     "observation_or_reference": false,
+     "published_external_ids": [],
+     "real_impact": true,
+     "redlist": false,
+     "supersession": true
+    },
+    "ledger": [
+     {
+      "current_usage": "col_xr/col_usage_id/VB26W",
+      "release_approval": "pending",
+      "review_status": "approved",
+      "supersession_id": "taxonomy-r1-nortaxa-128420-superseded-by-col-VB26W",
+      "target_excluded_by_policy": false,
+      "target_live_in_r2b": false,
+      "target_sporely_id": 612184,
+      "target_usage_in_col269": false,
+      "vanished_category": "c_xr_only_documented_continuity"
+     }
+    ],
+    "live_in_r1": false,
+    "live_in_r2b": false,
+    "r1_supersession_to": 612184,
+    "r2b_supersession_to": null,
+    "referenced": false
+   },
+   "626009": {
+    "impact": {
+     "macrofungi_scope": false,
+     "national_bridge": [],
+     "observation_or_reference": false,
+     "published_external_ids": [],
+     "real_impact": true,
+     "redlist": false,
+     "supersession": true
+    },
+    "ledger": [
+     {
+      "current_usage": "col_xr/col_usage_id/VJN4J",
+      "release_approval": null,
+      "review_status": "approved",
+      "supersession_id": "taxonomy-v3-2-nortaxa-55589-superseded-by-col-VJN4J",
+      "target_excluded_by_policy": false,
+      "target_live_in_r2b": false,
+      "target_sporely_id": 612867,
+      "target_usage_in_col269": false,
+      "vanished_category": "b_base_backed_loss"
+     }
+    ],
+    "live_in_r1": false,
+    "live_in_r2b": false,
+    "r1_supersession_to": 612867,
+    "r2b_supersession_to": null,
+    "referenced": false
+   },
+   "627212": {
+    "impact": {
+     "macrofungi_scope": false,
+     "national_bridge": [],
+     "observation_or_reference": false,
+     "published_external_ids": [],
+     "real_impact": true,
+     "redlist": false,
+     "supersession": true
+    },
+    "ledger": [
+     {
+      "current_usage": "col_xr/col_usage_id/936C",
+      "release_approval": null,
+      "review_status": "approved",
+      "supersession_id": "taxonomy-v3-2-nortaxa-65201-superseded-by-col-936C",
+      "target_excluded_by_policy": false,
+      "target_live_in_r2b": false,
+      "target_sporely_id": 131357,
+      "target_usage_in_col269": false,
+      "vanished_category": "b_base_backed_loss"
+     }
+    ],
+    "live_in_r1": false,
+    "live_in_r2b": false,
+    "r1_supersession_to": 131357,
+    "r2b_supersession_to": null,
+    "referenced": false
+   },
+   "628943": {
+    "impact": {
+     "macrofungi_scope": false,
+     "national_bridge": [],
+     "observation_or_reference": false,
+     "published_external_ids": [],
+     "real_impact": true,
+     "redlist": false,
+     "supersession": true
+    },
+    "ledger": [
+     {
+      "current_usage": "col_xr/col_usage_id/VPN5",
+      "release_approval": null,
+      "review_status": "approved",
+      "supersession_id": "taxonomy-v3-2-nortaxa-69348-superseded-by-col-VPN5",
+      "target_excluded_by_policy": false,
+      "target_live_in_r2b": false,
+      "target_sporely_id": 613627,
+      "target_usage_in_col269": false,
+      "vanished_category": "b_base_backed_loss"
+     }
+    ],
+    "live_in_r1": false,
+    "live_in_r2b": false,
+    "r1_supersession_to": 613627,
+    "r2b_supersession_to": null,
+    "referenced": false
+   },
+   "632183": {
+    "impact": {
+     "macrofungi_scope": false,
+     "national_bridge": [],
+     "observation_or_reference": false,
+     "published_external_ids": [],
+     "real_impact": true,
+     "redlist": false,
+     "supersession": true
+    },
+    "ledger": [
+     {
+      "current_usage": "col_xr/col_usage_id/VKWB7",
+      "release_approval": null,
+      "review_status": "approved",
+      "supersession_id": "taxonomy-v3-2-nortaxa-77316-superseded-by-col-VKWB7",
+      "target_excluded_by_policy": false,
+      "target_live_in_r2b": false,
+      "target_sporely_id": 612983,
+      "target_usage_in_col269": false,
+      "vanished_category": "d_xr_only_source_version_changed"
+     }
+    ],
+    "live_in_r1": false,
+    "live_in_r2b": false,
+    "r1_supersession_to": 612983,
+    "r2b_supersession_to": null,
+    "referenced": false
+   }
+  },
+  "retired_reactivated": []
+ },
+ "with_real_impact": {
+  "b_base_backed_loss": 13,
+  "c_xr_only_documented_continuity": 13,
+  "d_xr_only_source_version_changed": 75,
+  "e_other_unresolved": 45
+ }
+}
