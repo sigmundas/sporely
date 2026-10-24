@@ -81,5 +81,12 @@
    "source_directory if the export directory basename changes"
   ],
   "expected_same": "COPY datasets (all jsonl bytes), insert mappings, validation, activation, locks, protected-state and selection checks"
+ },
+ "rehearsal_harness": {
+  "script": "sporely-web scripts/taxonomy-v2/local-rehearsal.sh (PR #47, a5633cf)",
+  "inputs": "releases/tax-2026.10.23-11/rehearsal/inputs (read-only schema dump 2026-10-24, 10.07 baseline taxonomy rows, checks file); SQL rehearsal/import-rehearsal.sql sha256 0335a26d8cd40a1fb11d199fc28452d623d9f7c857349a592efc787053786f85 (generated twice, identical)",
+  "logs": "releases/tax-2026.10.23-11/rehearsal/logs (summary.txt + per-scenario logs)",
+  "result": "exit 0, 9 assertions: setup; guard refuses a wrong marker row (post-state 10.07 active, no -11 rows); late-commit race A (writer validated against 10.07, committed 34119 Mycena alcalina while the import waited) -> import aborts on the post-activation selection check, clean post-state; race B (writer starts while the import holds its locks) -> writer waits, then validates against -11 and is rejected, no stale id stored, import succeeds; import+activation 53,166 taxa, validates, 10.07 retired; 7 nb names via search_taxa_v2; 6 COL ids via resolve_taxon_external_id_v2; replay refused, state unchanged; rollback to 10.07 with -11 retired and rows kept",
+  "migration_side_fix_advisable_later": "yes: set_observation_identification_v2 / set_observation_selected_taxon_v2 should take FOR SHARE on the active release row before validating, so serialisation does not depend on the importer's table lock; not implemented"
  }
 }
