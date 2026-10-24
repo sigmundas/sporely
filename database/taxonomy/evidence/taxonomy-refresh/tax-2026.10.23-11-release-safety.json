@@ -83,10 +83,22 @@
   "expected_same": "COPY datasets (all jsonl bytes), insert mappings, validation, activation, locks, protected-state and selection checks"
  },
  "rehearsal_harness": {
-  "script": "sporely-web scripts/taxonomy-v2/local-rehearsal.sh (PR #47, a5633cf)",
-  "inputs": "releases/tax-2026.10.23-11/rehearsal/inputs (read-only schema dump 2026-10-24, 10.07 baseline taxonomy rows, checks file); SQL rehearsal/import-rehearsal.sql sha256 0335a26d8cd40a1fb11d199fc28452d623d9f7c857349a592efc787053786f85 (generated twice, identical)",
-  "logs": "releases/tax-2026.10.23-11/rehearsal/logs (summary.txt + per-scenario logs)",
-  "result": "exit 0, 9 assertions: setup; guard refuses a wrong marker row (post-state 10.07 active, no -11 rows); late-commit race A (writer validated against 10.07, committed 34119 Mycena alcalina while the import waited) -> import aborts on the post-activation selection check, clean post-state; race B (writer starts while the import holds its locks) -> writer waits, then validates against -11 and is rejected, no stale id stored, import succeeds; import+activation 53,166 taxa, validates, 10.07 retired; 7 nb names via search_taxa_v2; 6 COL ids via resolve_taxon_external_id_v2; replay refused, state unchanged; rollback to 10.07 with -11 retired and rows kept",
-  "migration_side_fix_advisable_later": "yes: set_observation_identification_v2 / set_observation_selected_taxon_v2 should take FOR SHARE on the active release row before validating, so serialisation does not depend on the importer's table lock; not implemented"
- }
+  "script": "sporely-web scripts/taxonomy-v2/local-rehearsal.sh (PR #47, 48b96e0); generator faf37ab",
+  "inputs": "releases/tax-2026.10.23-11/rehearsal/inputs: read-only schema dump 2026-10-25 (public, taxonomy_v3, private, reference_rls; restore with no errors, 76 policies), 10.07 baseline taxonomy rows, legacy taxa (110,833) and taxa_vernacular (137,282) copied read-only, shared-reference policy singleton, 782 synthetic observations (production count), checks file",
+  "sql": "rehearsal/import-rehearsal.sql sha256 1c01616ba9d5277ffe7de8396f59077f2a8c6f7f5e3d70deb8b901cd1e6e1cf5 (generated twice, identical)",
+  "logs": "releases/tax-2026.10.23-11/rehearsal/logs and harness-run.out",
+  "result": "exit 0, 13 checks: schema restore clean; guard (exit 3, clean post-state); race A overlap asserted via pg_locks (import waiting on taxonomy_v2_releases while the validated writer holds it) -> writer commits 34119, import exit 3 on the post-activation selection check, clean post-state; race B overlap asserted (set_observation_identification_v2 as authenticated owner waiting on the cutover lock) -> RPC exit 1 'missing from the active taxonomy-v2 release', import exit 0, no stale id; import+activation; 7 nb names; 6 COL ids; RPC after activation rejects 34119 and accepts a -11 concept; replay exit 3; rollback to 10.07",
+  "timing": {
+   "total_import_s": 6.2,
+   "cutover_lock_held_s": 3.297,
+   "note": "cutover = ACCESS EXCLUSIVE on taxonomy_v2_releases, sampled every ~10 ms from pg_locks; dominated by hashing the legacy taxa and taxa_vernacular tables (248k rows) twice for the protected-state check. During the cutover taxonomy reads (search) and writes to the locked reference holders wait; outside it nothing is blocked."
+  },
+  "migration_side_fix_advisable_later": "yes: the selection RPCs should take FOR SHARE on the active release row before validating; not implemented"
+ },
+ "import_operational_preconditions": [
+  "Privileged writers (service_role/postgres/admin tooling, repair-apply routines run by an operator) can set selected_sporely_taxon_id without the RPC's active-release validation. A privileged write that commits before the cutover is caught by the post-activation selection check (the import aborts); one queued behind the cutover locks resumes after commit and is not validated. Precondition: pause admin tooling, repair jobs and any service-role scripts that write observations or taxonomy-v3 tables during the import window.",
+  "Run in a quiet window: during the ~3 s cutover, search and writes to observations/reference tables wait (lock_timeout 10 s on the import side; clients may see a short stall).",
+  "Immediately before: refresh the read-only reference check, verify the production target (system identifier 7606130613603586966) and that public.sporely_local_rehearsal_marker is absent.",
+  "Requires release_approved for -11, regeneration of the production SQL and a diff against the rehearsal SQL, and a separate explicit approval to run it."
+ ]
 }
