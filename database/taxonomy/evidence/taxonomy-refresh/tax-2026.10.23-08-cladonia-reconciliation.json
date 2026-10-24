@@ -1,0 +1,16 @@
+{
+ "subject": "Cladonia matches 161510 (MKSRV -> 8LPWL) and 612934 (VKSW6 -> MKX9Q): authorship disagreement between the -04 workbook and the -08 decision report",
+ "finding": "The -04 workbook was right; the -08 decision report was wrong. Its decision-list wording ('same name, rank, authorship and family') described all seven consequential matches, but the receipt classifies five of them, including both Cladonia, as evidence 'same_name_record_authorship_differs'. That means a shared non-nomenclatural record (iNaturalist/Wikidata) and differing authorship. Only Colpoma juniperi and Lecanora argentata are exact.",
+ "evidence": {
+  "161510": {"r1_col": "MKSRV accepted 'Cladonia rigida var. rigida' authorship '(J.D. Hook. & Taylor) Hampe' (COL 26.7 XR, source 2030 Artsnavnebasen)",
+             "current_col": "8LPWL accepted 'Cladonia rigida var. rigida' authorship '' (COL 26.9 XR, source 2030)",
+             "shared_records": ["wikidata:Q21379719"], "index_fungorum": "none on either usage",
+             "said_differs": "R2-decisions-r04.xlsx 'Same-name successors' and build-r2c review-data holds110 ('authorship missing on one side')"},
+  "612934": {"r1_col": "VKSW6 accepted 'Cladonia verticillaris' authorship '(Raddi) Mont.' (COL 26.7 XR, source 2030 Artsnavnebasen)",
+             "current_col": "MKX9Q accepted 'Cladonia verticillaris' authorship '(Raddi) Fr.' (COL 26.9 XR, source 2031 BrazilianFlora)",
+             "shared_records": ["inat:868183", "wikidata:Q10454272"], "index_fungorum": "none on either usage",
+             "said_differs": "R2-decisions-r04.xlsx 'Same-name successors' ('Hold: authorship or family differs')"}
+ },
+ "outcome": "Not resolved cleanly: the combination authors differ (Mont. vs Fr.) or one is missing, and no nomenclatural record links the usages. Following the owner's condition, both stay held; the other five continuities were applied.",
+ "related": "Xylaria tabacina 607370 (TPKPX -> VRRW2, approved by the owner and applied) has the same kind of difference: (J. Kickx f.) Fr., 1851 vs (J. Kickx f.) Berk., linked by iNat 1066592 and Wikidata Q108482457 only. Flagged for the owner."
+}
