@@ -312,6 +312,7 @@ def test_bound_release_decision_allows_the_export(tmp_path: Path) -> None:
                   generated_at="2099-01-01T00:00:00Z", release_decision=decision)
     marker = json.loads((out / ce.MANIFEST_FILENAME).read_text(encoding="utf-8"))["release_approval"]
     assert marker["importable"] is True and marker["export_use"] == "release"
+    assert marker["decision"]["decision"] == "release_approved"  # the importer requires it
     assert marker["decision"]["sqlite_sha256"] == sha
     exported = json.loads((out / ce.MANIFEST_FILENAME).read_text(encoding="utf-8"))
     assert exported["source_hashes"]["sqlite_sha256"] == json.loads(

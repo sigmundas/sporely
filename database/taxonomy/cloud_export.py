@@ -1550,7 +1550,7 @@ def _release_marker(src: "SourceContext", release_decision: Optional[Path],
         raise ExportError(str(exc)) from exc
     return {"status": status, "export_use": "release", "importable": True,
             "decision": {k: decision[k] for k in (
-                "content_release_id", "sqlite_sha256", "approved_by", "approved_at",
+                "decision", "content_release_id", "sqlite_sha256", "approved_by", "approved_at",
                 "decision_reference")}}
 
 
