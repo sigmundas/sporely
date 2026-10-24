@@ -814,11 +814,17 @@ def compile_release(
         for new_id in group["new_col_ids"]:
             if new_id not in approved_new:
                 col_review_withheld[new_id] = "ambiguous match: " + ",".join(group["old_col_ids"])
+    col_review_cores: set[tuple[str, str, str]] = set()
     if col_review_withheld:
-        per_source_records[BACKBONE_SOURCE] = [
-            r for r in per_source_records.get(BACKBONE_SOURCE, []) if r.taxon_id_value not in col_review_withheld]
+        kept_backbone = []
+        for r in per_source_records.get(BACKBONE_SOURCE, []):
+            if r.taxon_id_value in col_review_withheld:
+                col_review_cores.add((r.source_code, r.core_row_id_namespace, r.core_row_id_value))
+            else:
+                kept_backbone.append(r)
+        per_source_records[BACKBONE_SOURCE] = kept_backbone
     continuity_withheld: list[dict] = []
-    withheld_core_rows: set[tuple[str, str, str]] = set()
+    withheld_core_rows: set[tuple[str, str, str]] = set(col_review_cores)
     continuity_vernaculars_withheld = 0
     if held_usages:
         for source_code, records in per_source_records.items():

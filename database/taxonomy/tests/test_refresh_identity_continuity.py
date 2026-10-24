@@ -257,3 +257,29 @@ def test_approved_mapping_to_a_renumbered_col_usage_follows_the_continuity(tmp_p
     ids = _ids(reg)
     assert ids[("nortaxa", "nortaxa_taxon_id", "N")] == a_id == ids[("col_xr", "col_usage_id", "A2")]
     assert a_id in _taxa(tmp_path / "r2")
+
+
+def test_vernaculars_of_a_withheld_review_usage_are_dropped_not_fatal(tmp_path):
+    reg = tmp_path / "registry.jsonl"
+    common = dict(manual_mappings_path=_write_manual_mappings(tmp_path / "m.json", []),
+                  mapping_policy_path=_POLICY_PATH, registry_path=reg)
+    old = _col(tmp_path / "v1", "1", [_sp("B", "Echinoderma carinii")])
+    compile_release(normalized_source_dirs=[old], output_dir=tmp_path / "r1", release_id="tax-2026.01.01-01", **common)
+    new = _col(tmp_path / "v2", "2", [_sp("B2", "Echinoderma carinii")])
+    cores = {json.loads(l)["taxon_id"]["value"]: json.loads(l)["core_row_id"] for l in (new / "taxa.jsonl").read_text().splitlines()}
+    (new / "vernacular.jsonl").write_text(json.dumps({
+        "source_code": "col_xr", "source_release": {"version": "2", "issued_date": "2026-01-01"},
+        "core_row_id": cores["B2"], "language": "en", "is_preferred": True, "vernacular_name": "x"}) + "\n")
+    path, _ = _receipt(tmp_path, {"col_xr": old}, {"col_xr": new}, {"mappings": []}, {"supersessions": []}, reg)
+    compile_release(normalized_source_dirs=[new], output_dir=tmp_path / "r2", release_id="tax-2026.01.02-01",
+                    continuity_receipt_path=path, **common)
+    assert ("col_xr", "col_usage_id", "B2") not in _ids(reg)
+
+
+def test_r2_refresh_supersessions_are_candidate_only_and_cite_the_owner_decision():
+    ledger = json.loads((SCRIPTS.parent / "policies" / "concept_supersessions.yml").read_text(encoding="utf-8"))
+    r2 = [s for s in ledger["supersessions"] if s["supersession_id"].startswith("taxonomy-r2-")]
+    assert [s["superseded_sporely_taxon_id"] for s in r2] == [624546]
+    for s in r2:
+        assert s["approval_scope"] == "candidate_build_only" and s["release_approval"] == "pending"
+        assert "Owner decision 2026-10-24" in s["rationale"]
