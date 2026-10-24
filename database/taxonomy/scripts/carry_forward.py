@@ -402,9 +402,16 @@ def col_continuity_candidates(previous_dir: Path, current_dir: Path, anchors: di
     for value, before in sorted(previous_anchored.items()):
         after = current_anchored[value]
         old_ids, new_ids = name_record_ids(before), name_record_ids(after)
-        if before.scientific_name == after.scientific_name or not old_ids or not new_ids or old_ids & new_ids:
+        if before.scientific_name == after.scientific_name:
             continue
-        moved_to = sorted({record_owner_now[rid] for rid in old_ids if record_owner_now.get(rid, value) != value})
+        # Compare per identifier scheme: a record of a scheme the usage still
+        # has under another value counts as changed even if other schemes stayed.
+        scheme = lambda ids: {i.split(":", 1)[0]: i for i in ids}
+        old_by, new_by = scheme(old_ids), scheme(new_ids)
+        changed = [old_by[k] for k in old_by.keys() & new_by.keys() if old_by[k] != new_by[k]]
+        if not changed:
+            continue
+        moved_to = sorted({record_owner_now[rid] for rid in changed if record_owner_now.get(rid, value) != value})
         if moved_to:
             transfers.append({"col_id": value, "sporely_taxon_id": col_anchor[value],
                               "name_before": before.scientific_name, "name_after": after.scientific_name,

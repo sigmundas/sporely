@@ -409,3 +409,13 @@ def test_names_of_a_live_duplicate_alias_do_not_fail_the_compile(tmp_path):
                     continuity_receipt_path=path, **common)
     diag = json.loads((tmp_path / "r3" / "diagnostics.json").read_text())["source_continuity"]
     assert diag["live_duplicate_vernaculars_dropped"] == 1
+
+
+def test_name_record_transfer_is_seen_when_another_identifier_stayed(tmp_path):
+    before, after, taxa, receipt, diag = _two_releases(
+        tmp_path,
+        [_sp("XQVS", "Conocybe ochraceodiscus", "Watling"), _sp("XQVT", "Conocybe ochraceodisca", "Watling")],
+        [_sp("XQVS", "Conocybe ochraceodisca", "Watling"), _sp("XQVT", "Conocybe ochraceodiscus", "Watling")],
+        {"XQVS": ["indexfungorum:344355"], "XQVT": ["indexfungorum:311682", "wikidata:Q107588245"]},
+        {"XQVS": ["indexfungorum:311682"], "XQVT": ["indexfungorum:344355", "wikidata:Q107588245"]})
+    assert {t["col_id"] for t in receipt["col_continuity_candidates"]["name_record_transfers"]} == {"XQVS", "XQVT"}
