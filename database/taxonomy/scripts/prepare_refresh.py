@@ -105,6 +105,12 @@ def _snapshot_all(directory: Path) -> dict[tuple[str, str], carry_forward.Snapsh
     return out
 
 
+def _has_name_record_ids(directory: Path) -> bool:
+    with (directory / "taxa.jsonl").open(encoding="utf-8") as handle:
+        first = handle.readline()
+    return bool(first) and "name_record_ids" in json.loads(first)
+
+
 def source_diff(previous: Path, current: Path) -> dict:
     old, new = _snapshot_all(previous), _snapshot_all(current)
     changed: dict[str, int] = {}
@@ -554,6 +560,21 @@ def prepare(args: argparse.Namespace) -> dict:
             if result.returncode != 0:
                 raise RefreshStop(f"normalize {source['code']} failed: {result.stderr[-800:]}")
             current_dirs[source["code"]] = out
+        previous_col = next((s for s in json.loads(args.previous_recipe.read_text())["sources"]
+                             if s["code"] == "col_xr"), None)
+        if "col_xr" in overrides and previous_col and not _has_name_record_ids(previous_dirs["col_xr"]):
+            # The identity baseline was normalized before name-record ids were
+            # kept: re-normalize the same pinned previous archive (no exclusion
+            # policy, so it stays the baseline's COL content) for evidence.
+            renorm = work / "previous-norm" / "col_xr"
+            argv = [str(SCRIPTS / "normalize_col_xr.py"), "--archive",
+                    str(args.archive_root.resolve() / previous_col["release_dir"] / "archive.zip"),
+                    "--output", str(renorm), "--source-release-version", previous_col["version"],
+                    "--source-release-issued-date", previous_col["issued_date"]]
+            result = subprocess.run([args.python, *argv], cwd=REPO_ROOT, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RefreshStop(f"re-normalize previous col_xr failed: {result.stderr[-800:]}")
+            previous_dirs["col_xr"] = renorm
         report["source_diffs"] = {code: source_diff(previous_dirs[code], current_dirs[code])
                                   for code in overrides}
 

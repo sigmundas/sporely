@@ -228,6 +228,17 @@ def _iter_taxa(source_dir: Path) -> Iterator[NormalizedTaxonRecord]:
                 ) from exc
 
 
+def typography_key(authorship: str) -> str:
+    """Authorship with only whitespace/punctuation-spacing differences removed."""
+    text = re.sub(r"\s+", " ", authorship or "").strip()
+    return re.sub(r"\s*([.,&():])\s*", r"\1", text)
+
+
+def name_record_ids(record) -> frozenset[str]:
+    """Nomenclatural record ids a COL usage carries (normalize_col_xr ``name_record_ids``)."""
+    return frozenset((record.raw or {}).get("name_record_ids") or [])
+
+
 def is_aggregate_name(name: str) -> bool:
     """coll./agg./s.lat./s.l./group marker (same rule as carry_forward)."""
     return bool(_AGGREGATE_MARKER.search(name or ""))
@@ -814,6 +825,12 @@ def compile_release(
         for new_id in group["new_col_ids"]:
             if new_id not in approved_new:
                 col_review_withheld[new_id] = "ambiguous match: " + ",".join(group["old_col_ids"])
+    # Two anchored COL ids exchanged nomenclatural records: neither Sporely id
+    # can follow a record safely, so the usage is held for review.
+    for transfer in candidates.get("name_record_transfers") or []:
+        col_review_withheld[transfer["col_id"]] = (
+            f"name record transfer: {transfer['name_before']} -> {transfer['name_after']} "
+            f"(old record now on {','.join(transfer['old_record_now_on'])})")
     col_review_cores: set[tuple[str, str, str]] = set()
     if col_review_withheld:
         kept_backbone = []
@@ -922,6 +939,66 @@ def compile_release(
     # Apply approved manual exact mappings first, so their target IDs (either
     # pre-existing anchors or targets to be allocated) are recorded before
     # any source-native allocation.
+    # ----- Live-duplicate prevention (refresh receipts only) -----------------
+    # A new, unbound COL usage whose name and rank equal a concept that is
+    # still live is not given a fresh permanent id. A unique exact match
+    # (same normalized authorship and compatible family, or a shared
+    # nomenclatural record id) reuses that identity as an append-only alias;
+    # anything else is withheld for review. Identity is never inferred from
+    # name and rank alone.
+    live_duplicate_bound: list[dict] = []
+    live_duplicate_withheld: dict[str, dict] = {}
+    if continuity_receipt is not None:
+        approved_new_keys = {(BACKBONE_SOURCE, "col_usage_id", e["new_col_id"])
+                             for e in continuity_receipt.get("col_id_continuity") or []}
+        live_by_name: dict[tuple[str, str], dict[int, list[NormalizedTaxonRecord]]] = {}
+        for key, record in usage_index.items():
+            if record.taxonomic_status.casefold() not in ("accepted", "provisionally accepted", "valid"):
+                continue
+            bound = registry.lookup(*key)
+            if bound is None:
+                continue
+            live_by_name.setdefault((record.scientific_name, record.rank.casefold()), {}) \
+                .setdefault(bound.sporely_taxon_id, []).append(record)
+        for key, record in sorted(usage_index.items()):
+            if key[0] != BACKBONE_SOURCE or key in approved_new_keys or registry.lookup(*key) is not None:
+                continue
+            if record.taxonomic_status.casefold() not in ("accepted", "provisionally accepted"):
+                continue
+            same = live_by_name.get((record.scientific_name, record.rank.casefold()))
+            if not same:
+                continue
+            family = (record.classification or {}).get("family", "")
+            exact = sorted(
+                taxon for taxon, recs in same.items()
+                if any((typography_key(r.authorship) == typography_key(record.authorship)
+                        and (not family or not (r.classification or {}).get("family")
+                             or (r.classification or {}).get("family") == family))
+                       or (name_record_ids(r) & name_record_ids(record)) for r in recs))
+            if len(exact) == 1 and len(same) == 1:
+                registry.bind_alias(existing_sporely_taxon_id=exact[0], source=key[0], namespace=key[1],
+                                    identifier=key[2], allocated_in_release=release_id,
+                                    first_seen_source_release=_release_string(record.source_release))
+                live_duplicate_bound.append({"usage": "/".join(key), "sporely_taxon_id": exact[0],
+                                             "scientific_name": record.scientific_name})
+                continue
+            live_duplicate_withheld[key[2]] = {
+                "scientific_name": record.scientific_name, "rank": record.rank, "authorship": record.authorship,
+                "live_ids": sorted(same), "exact_ids": exact,
+                "live_sources": sorted({r.source_code for recs in same.values() for r in recs}),
+                "phylum": (record.classification or {}).get("phylum", ""),
+                "class": ("ambiguous" if len(exact) > 1 or (exact and len(same) > 1)
+                          else "different_authorship_or_classification")}
+        if live_duplicate_withheld:
+            withheld_keys = {k for k in usage_index if k[0] == BACKBONE_SOURCE and k[2] in live_duplicate_withheld}
+            for withheld_key in withheld_keys:
+                record = usage_index.pop(withheld_key, None)
+                if record is not None:
+                    withheld_core_rows.add((record.source_code, record.core_row_id_namespace,
+                                            record.core_row_id_value))
+            all_records = [r for r in all_records if not (
+                r.source_code == BACKBONE_SOURCE and r.taxon_id_value in live_duplicate_withheld)]
+
     blockers = continuity_blockers(continuity_receipt)
     if blockers:
         raise CompilerError(
@@ -1897,6 +1974,8 @@ def compile_release(
                 "withheld_vernacular_rows": continuity_vernaculars_withheld,
                 "col_id_continuity_applied": col_continuity_applied,
                 "col_continuity_review_withheld": dict(sorted(col_review_withheld.items())),
+                "live_duplicate_bound": live_duplicate_bound,
+                "live_duplicate_withheld": dict(sorted(live_duplicate_withheld.items())),
                 "nortaxa_fallback_canonical": nortaxa_fallback,
                 "species_history_carried": sorted("/".join(k) for k in species_history),
                 "supersessions_held_target_absent": sorted(supersessions_held_target_absent),

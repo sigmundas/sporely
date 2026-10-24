@@ -283,3 +283,106 @@ def test_r2_refresh_supersessions_are_candidate_only_and_cite_the_owner_decision
     for s in r2:
         assert s["approval_scope"] == "candidate_build_only" and s["release_approval"] == "pending"
         assert "Owner decision 2026-10-24" in s["rationale"]
+
+
+# ----- name-record transfers, live duplicates, authorship/year (R2e) ---------
+
+def _with_records(directory: Path, records: dict[str, list[str]]) -> Path:
+    rows = [json.loads(l) for l in (directory / "taxa.jsonl").read_text().splitlines()]
+    for r in rows:
+        r["name_record_ids"] = records.get(r["taxon_id"]["value"], [])
+    (directory / "taxa.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    return directory
+
+
+def _two_releases(tmp_path, v1_rows, v2_rows, v1_records=None, v2_records=None, nortaxa_rows=None, continuity=()):
+    reg = tmp_path / "registry.jsonl"
+    common = dict(manual_mappings_path=_write_manual_mappings(tmp_path / "m.json", []),
+                  mapping_policy_path=_POLICY_PATH, registry_path=reg)
+    nt = (_src(tmp_path / "nt", "nortaxa", "1", [{"core_row_id": "R", "taxon_id": "R", "scientific_name": "Fungi",
+                                                    "rank": "kingdom"}] + nortaxa_rows) if nortaxa_rows else None)
+    old = _with_records(_col(tmp_path / "v1", "1", v1_rows), v1_records or {})
+    compile_release(normalized_source_dirs=[old] + ([nt] if nt else []), output_dir=tmp_path / "r1",
+                    release_id="tax-2026.01.01-01", **common)
+    before = _ids(reg)
+    new = _with_records(_col(tmp_path / "v2", "2", v2_rows), v2_records or {})
+    prev, cur = {"col_xr": old}, {"col_xr": new}
+    if nt:
+        prev["nortaxa"] = cur["nortaxa"] = nt
+    path, receipt = _receipt(tmp_path, prev, cur, {"mappings": []}, {"supersessions": []}, reg, continuity=continuity)
+    compile_release(normalized_source_dirs=[new] + ([nt] if nt else []), output_dir=tmp_path / "r2",
+                    release_id="tax-2026.01.02-01", continuity_receipt_path=path, **common)
+    diag = json.loads((tmp_path / "r2" / "diagnostics.json").read_text())["source_continuity"]
+    return before, _ids(reg), _taxa(tmp_path / "r2"), receipt, diag
+
+
+def test_two_col_ids_exchanging_name_records_are_held_not_relabelled(tmp_path):
+    before, after, taxa, receipt, diag = _two_releases(
+        tmp_path,
+        [_sp("A", "Kaskaskia macrospore", "G.C. Zhao"), _sp("B", "Kaskaskia macrospora", "G.C. Zhao")],
+        [_sp("A", "Kaskaskia macrospora", "G.C. Zhao"), _sp("B", "Kaskaskia macrospore", "G.C. Zhao")],
+        {"A": ["indexfungorum:800412"], "B": ["indexfungorum:840860"]},
+        {"A": ["indexfungorum:840860"], "B": ["indexfungorum:800412"]})
+    a, b = before[("col_xr", "col_usage_id", "A")], before[("col_xr", "col_usage_id", "B")]
+    assert {t["col_id"] for t in receipt["col_continuity_candidates"]["name_record_transfers"]} == {"A", "B"}
+    assert a not in taxa and b not in taxa  # held: neither id takes the other's name record
+    assert set(diag["col_continuity_review_withheld"]) == {"A", "B"}
+    assert after == before  # nothing rebound, nothing allocated
+
+
+def test_spelling_correction_on_the_same_name_record_is_not_held(tmp_path):
+    before, after, taxa, receipt, _ = _two_releases(
+        tmp_path, [_sp("A", "Boletellus lepidospora", "Hongo")], [_sp("A", "Boletellus lepidosporus", "Hongo")],
+        {"A": ["indexfungorum:1"]}, {"A": ["indexfungorum:1"]})
+    a = before[("col_xr", "col_usage_id", "A")]
+    assert receipt["col_continuity_candidates"]["name_record_transfers"] == []
+    assert taxa[a]["scientific_name"] == "Boletellus lepidosporus"
+
+
+def test_new_col_usage_exactly_duplicating_a_live_concept_reuses_its_id(tmp_path):
+    before, after, taxa, _, diag = _two_releases(
+        tmp_path, [_sp("A", "Entoloma sericeum", "Quél.")],
+        [_sp("A", "Entoloma sericeum", "Quél."), _sp("C", "Entoloma sericeum", "Quél.")])
+    a = before[("col_xr", "col_usage_id", "A")]
+    assert after[("col_xr", "col_usage_id", "C")] == a  # append-only alias, no new permanent id
+    assert len(set(after.values())) == len(set(before.values()))
+    assert diag["live_duplicate_bound"][0]["sporely_taxon_id"] == a
+
+
+def test_new_col_usage_with_different_authorship_is_withheld_not_allocated(tmp_path):
+    before, after, taxa, _, diag = _two_releases(
+        tmp_path, [_sp("A", "Entoloma sericeum", "Quél.")],
+        [_sp("A", "Entoloma sericeum", "Quél."), _sp("C", "Entoloma sericeum", "(Bull.) Quél.")])
+    assert ("col_xr", "col_usage_id", "C") not in after
+    assert before[("col_xr", "col_usage_id", "A")] in taxa
+    assert diag["live_duplicate_withheld"]["C"]["class"] == "different_authorship_or_classification"
+
+
+def test_new_col_usage_matching_a_live_nortaxa_concept_reuses_it_only_when_exact(tmp_path):
+    nt = [{"core_row_id": "N", "taxon_id": "N", "parent": "R", "parent_resolution": "resolved",
+           "scientific_name": "Nosema apis", "authorship": "Zander", "status": "valid"}]
+    before, after, taxa, _, diag = _two_releases(
+        tmp_path, [], [_sp("C", "Nosema apis", "Zander")], nortaxa_rows=nt)
+    n = before[("nortaxa", "nortaxa_taxon_id", "N")]
+    assert after[("col_xr", "col_usage_id", "C")] == n and n in taxa
+
+
+def test_authorship_year_change_on_the_same_name_record_is_a_continuity_candidate(tmp_path):
+    reg_rows = [_sp("A", "Russula xerampelina", "(Schaeff.) Fr. 1838")]
+    before, after, taxa, receipt, diag = _two_releases(
+        tmp_path, reg_rows, [_sp("A2", "Russula xerampelina", "(Schaeff.) Fr.")],
+        {"A": ["indexfungorum:9"]}, {"A2": ["indexfungorum:9"]})
+    pairs = receipt["col_continuity_candidates"]["pairs"]
+    assert pairs == [{"old_col_id": "A", "new_col_id": "A2", "sporely_taxon_id": before[("col_xr", "col_usage_id", "A")],
+                      "scientific_name": "Russula xerampelina", "rank": "species",
+                      "evidence": "same_name_record_authorship_differs"}]
+    assert ("col_xr", "col_usage_id", "A2") not in after  # unapproved: reviewed, not allocated
+    # A substantively different citation without a shared record stays out of the pairs.
+    assert "A2" in diag["col_continuity_review_withheld"]
+
+
+def test_normalizer_reads_index_fungorum_and_alternative_record_ids():
+    from normalize_col_xr import _name_record_ids
+    assert _name_record_ids("http://www.indexfungorum.org/Names/NamesRecord.asp?RecordID=800412",
+                            "wikidata:Q107588245", "") == ["indexfungorum:800412", "wikidata:Q107588245"]
+    assert _name_record_ids("", "", "") == []

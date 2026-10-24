@@ -227,6 +227,28 @@ def _identifier_namespaces() -> dict[str, str]:
     }
 
 
+_INDEX_FUNGORUM_LINK = re.compile(r"indexfungorum\.org/.*[?&]RecordID=(\d+)", re.IGNORECASE)
+
+
+def _name_record_ids(link: str, *alternatives: str) -> list[str]:
+    """Sorted ``scheme:id`` name-record identifiers (e.g. ``indexfungorum:800412``)."""
+    ids: set[str] = set()
+    match = _INDEX_FUNGORUM_LINK.search(link or "")
+    if match:
+        ids.add(f"indexfungorum:{match.group(1)}")
+    for field in alternatives:
+        for token in (field or "").split(","):
+            token = token.strip()
+            if ":" in token:
+                scheme, value = token.split(":", 1)
+                scheme = scheme.casefold()
+                if scheme in ("if", "indexfungorum"):
+                    scheme = "indexfungorum"
+                if value:
+                    ids.add(f"{scheme}:{value}")
+    return sorted(ids)
+
+
 def _emit_record(
     *,
     row: list[str],
@@ -273,6 +295,11 @@ def _emit_record(
             "name_remarks": value("nameRemarks"),
         },
         "external_ids": {},
+        # Nomenclatural record identifiers the source attaches to the usage
+        # (Index Fungorum RecordID from col:link, col:alternativeID and
+        # col:nameAlternativeID). Evidence only: they tell a changed name
+        # record apart from a cosmetic citation change; never identity keys.
+        "name_record_ids": _name_record_ids(value("link"), value("alternativeID"), value("nameAlternativeID")),
         "provenance": {
             "source_code": SOURCE_CODE,
             "source_release": source_release,

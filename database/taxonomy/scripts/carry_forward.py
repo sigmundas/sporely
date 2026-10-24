@@ -44,7 +44,7 @@ from typing import Iterable
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from compile_release import _iter_taxa, is_aggregate_name  # noqa: E402
+from compile_release import _iter_taxa, is_aggregate_name, name_record_ids, typography_key  # noqa: E402,F401
 
 RECEIPT_FORMAT = "sporely-source-continuity-receipt-v1"
 HOLDS_FORMAT = "sporely-source-continuity-holds-v1"
@@ -109,12 +109,6 @@ def load_id_continuity(path: Path | None) -> dict[tuple[str, str, str], dict]:
     doc = json.loads(Path(path).read_text(encoding="utf-8"))
     return {("col_xr", "col_usage_id", e["old_col_id"]): e for e in doc.get("continuity") or []}
 COMPARED_FIELDS = ("scientific_name", "rank", "taxonomic_status", "accepted", "parent", "kingdom")
-
-
-def typography_key(authorship: str) -> str:
-    """Authorship with only whitespace/punctuation-spacing differences removed."""
-    text = re.sub(r"\s+", " ", authorship or "").strip()
-    return re.sub(r"\s*([.,&():])\s*", r"\1", text)
 
 
 @dataclass(frozen=True)
@@ -329,42 +323,99 @@ def continuity_key(record) -> tuple[str, str, str, str]:
 
 
 def col_continuity_candidates(previous_dir: Path, current_dir: Path, anchors: dict[int, tuple]) -> dict:
-    """Vanished COL registry anchors and the new, unanchored COL usages that
-    match them on name, rank, normalized authorship and family. Report and
-    review input only: the compile never allocates a new id for a matched new
-    usage unless an approved continuity binds it to the old id."""
+    """COL identity continuity evidence for the compile (review input; nothing is approved here).
+
+    * vanished registry anchors, and new unanchored COL usages that match one
+      on name, rank, family and either normalized authorship or a shared
+      nomenclatural record id (an authorship/year change on the same Index
+      Fungorum record is cosmetic). Unique pairs are ``pairs``; the compile
+      binds one only under an approved continuity and never allocates a
+      duplicate id for it.
+    * name-record transfers: an anchored COL usage whose name changed while
+      its old nomenclatural record moved to another anchored COL usage (two
+      COL ids exchanging name records). Its Sporely id cannot follow either
+      record safely, so the usage is held (withheld) for review.
+    """
     col_anchor = {usage[2]: taxon for taxon, usage in anchors.items() if usage[0] == "col_xr"}
     excluded_path = current_dir / "excluded_by_policy.jsonl"
     excluded = ({json.loads(line)["col_usage_id"] for line in excluded_path.open(encoding="utf-8")}
                 if excluded_path.is_file() else set())
-    current: dict[tuple, list[str]] = {}
-    present: set[str] = set()
+    current_new: dict[tuple, list[str]] = {}
+    current_new_by_record: dict[tuple, list[str]] = {}
+    current_anchored: dict[str, object] = {}
     for record in _iter_taxa(current_dir):
-        present.add(record.taxon_id_value)
-        if record.taxon_id_value not in col_anchor:
-            current.setdefault(continuity_key(record), []).append(record.taxon_id_value)
+        value = record.taxon_id_value
+        if value in col_anchor:
+            current_anchored[value] = record
+            continue
+        key = continuity_key(record)
+        current_new.setdefault(key, []).append(value)
+        for rid in name_record_ids(record):
+            current_new_by_record.setdefault((key[0], key[1], key[3], rid), []).append(value)
     vanished: dict[str, dict] = {}
     by_key: dict[tuple, list[str]] = {}
+    previous_anchored: dict[str, object] = {}
     for record in _iter_taxa(previous_dir):
         value = record.taxon_id_value
-        if value in col_anchor and value not in present and value not in excluded:
+        if value not in col_anchor:
+            continue
+        if value in current_anchored:
+            previous_anchored[value] = record
+        elif value not in excluded:
             key = continuity_key(record)
             vanished[value] = {"sporely_taxon_id": col_anchor[value], "scientific_name": record.scientific_name,
-                               "authorship": record.authorship, "rank": record.rank,
-                               "family": key[3]}
+                               "authorship": record.authorship, "rank": record.rank, "family": key[3],
+                               "name_record_ids": sorted(name_record_ids(record)), "_key": key}
             by_key.setdefault(key, []).append(value)
     pairs, ambiguous = [], []
+    matched_new: set[str] = set()
     for key, olds in sorted(by_key.items()):
-        news = sorted(current.get(key, []))
+        news = sorted(current_new.get(key, []))
         if not news:
             continue
-        entry = {"old_col_ids": sorted(olds), "new_col_ids": news, "scientific_name": key[0], "rank": key[1]}
+        entry = {"old_col_ids": sorted(olds), "new_col_ids": news, "scientific_name": key[0], "rank": key[1],
+                 "evidence": "same_name_rank_authorship_family"}
         (pairs if len(olds) == 1 and len(news) == 1 else ambiguous).append(entry)
+        matched_new.update(news)
+    # Same name record, authorship or year cited differently.
+    paired_old = {o for e in pairs + ambiguous for o in e["old_col_ids"]}
+    for old, info in sorted(vanished.items()):
+        if old in paired_old:
+            continue
+        key = info["_key"]
+        news = sorted({n for rid in info["name_record_ids"]
+                       for n in current_new_by_record.get((key[0], key[1], key[3], rid), [])} - matched_new)
+        if not news:
+            continue
+        entry = {"old_col_ids": [old], "new_col_ids": news, "scientific_name": key[0], "rank": key[1],
+                 "evidence": "same_name_record_authorship_differs"}
+        (pairs if len(news) == 1 else ambiguous).append(entry)
+        matched_new.update(news)
+    for info in vanished.values():
+        info.pop("_key", None)
+    # Name-record transfers between anchored COL usages.
+    record_owner_now: dict[str, str] = {}
+    for value, record in current_anchored.items():
+        for rid in name_record_ids(record):
+            record_owner_now[rid] = value
+    transfers = []
+    for value, before in sorted(previous_anchored.items()):
+        after = current_anchored[value]
+        old_ids, new_ids = name_record_ids(before), name_record_ids(after)
+        if before.scientific_name == after.scientific_name or not old_ids or not new_ids or old_ids & new_ids:
+            continue
+        moved_to = sorted({record_owner_now[rid] for rid in old_ids if record_owner_now.get(rid, value) != value})
+        if moved_to:
+            transfers.append({"col_id": value, "sporely_taxon_id": col_anchor[value],
+                              "name_before": before.scientific_name, "name_after": after.scientific_name,
+                              "name_records_before": sorted(old_ids), "name_records_after": sorted(new_ids),
+                              "old_record_now_on": moved_to})
     return {"vanished_anchors": vanished,
             "pairs": [{"old_col_id": e["old_col_ids"][0], "new_col_id": e["new_col_ids"][0],
                        "sporely_taxon_id": col_anchor[e["old_col_ids"][0]], "scientific_name": e["scientific_name"],
-                       "rank": e["rank"]} for e in pairs],
-            "ambiguous": ambiguous}
+                       "rank": e["rank"], "evidence": e["evidence"]} for e in pairs],
+            "ambiguous": ambiguous,
+            "name_record_transfers": transfers}
 
 
 def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_dirs: dict[str, Path],
