@@ -1017,6 +1017,22 @@
       "decided_at": "2026-10-23",
       "decision": "Not approved by the owner. Keeps the existing NorTaxa-anchored Sporely id; the automatic COL26.9 match is not applied. Grouped for review in agent-holds-110.json.",
       "observed_change": "Eutypa lata var. lata: automatic exact match would move sporely_taxon_id=634887, cannot rebind to 165034"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/67963",
+      "reason": "agent_proposed_validation_hold",
+      "decided_by": "agent (validation hold for the disposable R2 candidate; not an owner decision)",
+      "decided_at": "2026-10-24",
+      "decision": "Not approved by the owner. Keeps the existing NorTaxa-anchored Sporely id; the automatic COL26.9 match is not applied.",
+      "observed_change": "Ceuthospora: with the same-name COL duplicate withheld for review, the automatic exact match would move sporely_taxon_id=628437 onto COL 62JZL (84778); same-name genus homonyms, part of the 90 same-name cases kept for review"
+    },
+    {
+      "source_usage": "nortaxa/nortaxa_taxon_id/78949",
+      "reason": "agent_proposed_validation_hold",
+      "decided_by": "agent (validation hold for the disposable R2 candidate; not an owner decision)",
+      "decided_at": "2026-10-24",
+      "decision": "Not approved by the owner. Keeps the existing NorTaxa-anchored Sporely id; the automatic COL26.9 match is not applied.",
+      "observed_change": "Sagedia: with the same-name COL duplicate withheld for review, the automatic exact match would move sporely_taxon_id=632916 onto COL 7BM8 (123749); same-name genus homonyms, part of the 90 same-name cases kept for review"
     }
   ],
   "named_rules": [
