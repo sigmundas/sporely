@@ -1,0 +1,19 @@
+{
+  "format": "sporely-taxonomy-release-decision-v1",
+  "decision": "release_preparation_approved",
+  "content_release_id": "tax-2026.10.23-10",
+  "sqlite_sha256": "dea398e1350698c23341dc4772d81057e8fd6ba877156ee1ed6d1a714db2604b",
+  "freeze_sha256": "a4df33c40ffabc8e4ed6f86029cd986b18f5c53476ed49b115ec6fa0cef64741",
+  "approved_by": "Sigmund Ås",
+  "approved_at": "2026-10-24",
+  "scope": {
+    "release_preparation": "approved",
+    "production_import": "NOT approved",
+    "cloud_publication": "NOT approved",
+    "deployment": "NOT approved",
+    "desktop_promotion_or_install": "NOT approved"
+  },
+  "decision_reference": "Owner release decision on tax-2026.10.23-10, given in chat on 2026-10-24 (relayed verbatim by the coordinator)",
+  "owner_text": "I approve `tax-2026.10.23-10` for release preparation, subject to final production preflight checks. Frozen SHA-256: a4df33c40ffabc8e4ed6f86029cd986b18f5c53476ed49b115ec6fa0cef64741 SQLite SHA-256: dea398e1350698c23341dc4772d81057e8fd6ba877156ee1ed6d1a714db2604b The reviewed taxonomy changes, explicitly held identities, Norwegian-name adjustments, publishing-ID removals and scope changes are accepted for this release. Proceed with final read-only checks and generation and review of import SQL. This approval does not authorize production database writes, cloud import, publication or deployment. Stop at that gate and provide the exact import plan and verification evidence for separate approval. No further taxonomy rebuilding unless the preflight reveals a substantive problem.",
+  "contract_note": "release_decision.py (sporely-taxonomy-release-decision-v1) knows only decision 'release_approved', which makes the cloud export importable and lets promotion run. 'release_preparation_approved' is deliberately not that value, so require_release_decision rejects it: no importable export, no import SQL, no desktop promotion until the owner records 'release_approved'."
+}
