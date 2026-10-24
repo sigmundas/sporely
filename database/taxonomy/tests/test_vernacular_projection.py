@@ -219,3 +219,20 @@ def test_review_approves_only_the_listed_languages_and_guard_keeps_the_rest():
     projected,evidence,_=v.project(**i)
     assert {(r['language'],r['vernacular_name']) for r in projected if r['sporely_taxon_id']==10}=={('nb','example')}
     assert [e['vernacular_name'] for e in evidence if e['evidence_class']==v.COL_ECHO_WITHHELD]==['eksempel']
+
+
+def test_carried_forward_name_keeps_the_twin_and_fails_the_compile_on_mismatch():
+    # Owner carry-forward (R2, 2026-10-24): the reviewed name is added to the
+    # COL concept; the NorTaxa twin keeps it; nothing about identity changes.
+    i=inputs();approve(i);i['reviews']['reviews'][0]['on_mismatch']='fail_compile'
+    before=copy.deepcopy((i['taxa'],i['bindings']))
+    projected,_,validations=v.project(**i)
+    assert sorted(p['sporely_taxon_id'] for p in projected)==[10,20] and validations[0]['status']=='reused'
+    assert (i['taxa'],i['bindings'])==before
+    for change in ('target_name','source_name','replacement_target'):
+        j=inputs();approve(j);j['reviews']['reviews'][0]['on_mismatch']='fail_compile'
+        if change=='target_name':j['records'][1].scientific_name='Other species'
+        elif change=='source_name':j['records'][0].scientific_name='Other species'
+        else:j['taxa'][1]['sporely_taxon_id']=11
+        with pytest.raises(v.ProjectionError,match='no longer matches'):
+            v.project(**j)

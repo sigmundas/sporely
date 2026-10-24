@@ -1,0 +1,18 @@
+{
+ "release_id": "tax-2026.10.23-10",
+ "scope": "Expected pinned vernacular projection for this validation-only R2 candidate. It records and explains this one count change; it does not exempt any later change from review.",
+ "previous_expected": {"automatic": 824, "reviewed": 18, "total": 842, "affected_concepts": 413, "release": "tax-2026.10.23-06 to -09"},
+ "expected_pinned_projection": {"automatic": 824, "reviewed": 25, "total": 849, "affected_concepts": 419},
+ "change": "+7 reviewed associations; +6 affected concepts (68411 Hygrocybe already had an automatic association)",
+ "cause": "Owner decision 2026-10-24 on tax-2026.10.23-09: carry forward 7 R1 Norwegian names onto their COL-backed picker concepts, recorded as owner reviews owner-2026-10-24-vernacular-<nortaxa id> in database/taxonomy/policies/vernacular_associations.json (on_mismatch fail_compile). COL 26.9 stopped supplying these names; NorTaxa 1.292 still supplies them on its own concepts, which keep them.",
+ "entered": [
+  {"review": "owner-2026-10-24-vernacular-56208", "target": 129742, "name": "nb kantareller"},
+  {"review": "owner-2026-10-24-vernacular-54298", "target": 8992, "name": "nb eggrøyksopper"},
+  {"review": "owner-2026-10-24-vernacular-56254", "target": 20056, "name": "nb fingersopper"},
+  {"review": "owner-2026-10-24-vernacular-57122", "target": 15031, "name": "nb fagerkjuker"},
+  {"review": "owner-2026-10-24-vernacular-298046", "target": 68411, "name": "nb beitemarkvokssopper"},
+  {"review": "owner-2026-10-24-vernacular-52026", "target": 6398, "name": "nb silkeparasollsopp"},
+  {"review": "owner-2026-10-24-vernacular-62014", "target": 140472, "name": "nb kalktalg"}
+ ],
+ "left": []
+}

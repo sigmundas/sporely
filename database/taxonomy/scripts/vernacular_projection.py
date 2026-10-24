@@ -89,6 +89,8 @@ def read_reviews(path):
             raise ProjectionError('duplicate vernacular concept approval')
         seen.add(review['review_id'])
         source_seen.add(usage_key(review['source_evidence']['source_usage']))
+        if review.get('on_mismatch', 'invalidate') not in ('invalidate', 'fail_compile'):
+            raise ProjectionError('unknown review on_mismatch policy')
         if (review.get('evidence_class') != REVIEWED or review.get('identity_effect') != 'none'
                 or review.get('external_identifier_emission') is not False
                 or not all(review.get(f) for f in ('reviewer', 'rationale', 'evidence_references'))):
@@ -229,6 +231,9 @@ def project(*, records, taxa, bindings, vernaculars, reviews, mappings, superses
                     and review['target_evidence']['sporely_taxon_id'] == constraint['strict_target_sporely_taxon_id']):
                 reasons.append('collective_to_strict_association_forbidden')
         # Never resolve a missing/replaced reviewed target by its name.
+        if reasons and review.get('on_mismatch') == 'fail_compile':
+            raise ProjectionError(f"reviewed vernacular association {review['review_id']} no longer matches: "
+                                  f"{', '.join(reasons)}")
         status = 'invalidated' if reasons else 'reused'
         validations.append({'review_id': review['review_id'], 'status': status, 'reasons': reasons,
                             'source_usage': review['source_evidence']['source_usage'],
