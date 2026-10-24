@@ -290,3 +290,18 @@ def test_candidate_build_only_artifact_promotes_with_its_release_decision(build,
         encoding="utf-8")
     manifest = promote.promote(**frozen, release_decision_path=decision)
     assert (build["bundle_dir"] / manifest["gz_artifact"]).is_file()
+
+
+def test_preparation_only_decision_never_promotes(build, tmp_path):
+    _mark_candidate_only(build)
+    frozen = _freeze(build, tmp_path / "frozen")
+    before = {p.name: p.read_bytes() for p in build["bundle_dir"].iterdir()}
+    decision = tmp_path / "decision.json"
+    decision.write_text(json.dumps({
+        "format": "sporely-taxonomy-release-decision-v1", "decision": "release_preparation_approved",
+        "content_release_id": RELEASE, "sqlite_sha256": _sha(build["sqlite_path"]),
+        "approved_by": "owner", "approved_at": "2026-10-24", "decision_reference": "test"}),
+        encoding="utf-8")
+    with pytest.raises(promote.PromotionError, match="expected 'release_approved'"):
+        promote.promote(**frozen, release_decision_path=decision)
+    assert {p.name: p.read_bytes() for p in build["bundle_dir"].iterdir()} == before

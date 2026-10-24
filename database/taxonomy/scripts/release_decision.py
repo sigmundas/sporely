@@ -20,6 +20,9 @@ from pathlib import Path
 META_KEY = "release_approval"
 PENDING_CANDIDATE_ONLY = "pending:candidate_build_only"
 DECISION_FORMAT = "sporely-taxonomy-release-decision-v1"
+#: Owner approval of release preparation only: a disposable local rehearsal
+#: export may be produced, never an importable export or a desktop promotion.
+PREPARATION_APPROVED = "release_preparation_approved"
 _REQUIRED = ("approved_by", "approved_at", "decision_reference")
 
 
@@ -69,4 +72,33 @@ def require_release_decision(*, meta_value: str | None, content_release_id: str,
             raise ReleaseDecisionError(
                 f"release decision {field} is {decision[field]!r}, expected {want!r}"
                 + (" (it names a different artifact)" if field in ("content_release_id", "sqlite_sha256") else ""))
+    return decision
+
+
+def require_preparation_decision(*, meta_value: str | None, content_release_id: str,
+                                 sqlite_sha256: str, decision_path: Path | None) -> dict:
+    """Return a decision that allows a local rehearsal export of this artifact.
+
+    Accepts ``release_preparation_approved`` (or ``release_approved``) bound to
+    this exact artifact. It grants nothing else: :func:`require_release_decision`,
+    which gates importable exports and desktop promotion, still refuses a
+    preparation-only decision.
+    """
+    if decision_path is None:
+        raise ReleaseDecisionError("a local rehearsal export needs a release decision file")
+    try:
+        decision = json.loads(Path(decision_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ReleaseDecisionError(f"cannot read release decision {decision_path}: {exc}") from exc
+    if not isinstance(decision, dict) or decision.get("format") != DECISION_FORMAT:
+        raise ReleaseDecisionError("release decision has an unknown format")
+    if decision.get("decision") not in (PREPARATION_APPROVED, "release_approved"):
+        raise ReleaseDecisionError(f"release decision {decision.get('decision')!r} does not approve preparation")
+    for field, want in (("content_release_id", content_release_id), ("sqlite_sha256", sqlite_sha256)):
+        if decision.get(field) != want:
+            raise ReleaseDecisionError(f"release decision {field} is {decision.get(field)!r}, expected {want!r} "
+                                       "(it names a different artifact)")
+    for field in _REQUIRED:
+        if not isinstance(decision.get(field), str) or not decision[field].strip():
+            raise ReleaseDecisionError(f"release decision field {field!r} must be a non-empty string")
     return decision

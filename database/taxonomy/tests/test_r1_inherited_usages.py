@@ -349,3 +349,29 @@ def test_scoped_manifest_carries_the_source_sqlite_sha(tmp_path: Path, monkeypat
     assert scoped["source_hashes"]["sqlite_sha256"] == sha
     assert scoped["release_approval"]["importable"] is False
 
+
+
+def test_preparation_only_decision_allows_only_a_local_rehearsal_export(tmp_path: Path) -> None:
+    from database.taxonomy.cloud_export import ExportError
+
+    ce, gz, manifest, policies, sha = _pending_artifact(tmp_path)
+    decision = tmp_path / "decision.json"
+    decision.write_text(json.dumps({
+        "format": "sporely-taxonomy-release-decision-v1", "decision": "release_preparation_approved",
+        "content_release_id": "tax-2026.10.23-02", "sqlite_sha256": sha,
+        "approved_by": "owner", "approved_at": "2026-10-24", "decision_reference": "test"}), encoding="utf-8")
+    # Not an importable export.
+    with pytest.raises(ExportError, match="expected 'release_approved'"):
+        ce.run_export(artifact_gz=gz, manifest=manifest, output_dir=tmp_path / "x",
+                      policy_dir=policies, release_decision=decision)
+    out = tmp_path / "rehearsal"
+    ce.run_export(artifact_gz=gz, manifest=manifest, output_dir=out, policy_dir=policies,
+                  generated_at="2099-01-01T00:00:00Z", release_decision=decision, local_rehearsal=True)
+    marker = json.loads((out / ce.MANIFEST_FILENAME).read_text(encoding="utf-8"))["release_approval"]
+    assert marker["export_use"] == "local_rehearsal" and marker["importable"] is False
+    assert marker["decision"]["decision"] == "release_preparation_approved"
+    # A rehearsal still needs a decision bound to this artifact.
+    decision.write_text(json.dumps({**json.loads(decision.read_text()), "sqlite_sha256": "0" * 64}), encoding="utf-8")
+    with pytest.raises(ExportError, match="different artifact"):
+        ce.run_export(artifact_gz=gz, manifest=manifest, output_dir=tmp_path / "y", policy_dir=policies,
+                      release_decision=decision, local_rehearsal=True)

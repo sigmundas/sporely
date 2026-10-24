@@ -1294,6 +1294,7 @@ def run_export(
     generated_at: Optional[str] = None,
     release_decision: Optional[Path] = None,
     candidate_validation_only: bool = False,
+    local_rehearsal: bool = False,
 ) -> ExportResult:
     """Produce a deterministic cloud-taxonomy export directory.
 
@@ -1314,7 +1315,7 @@ def run_export(
     with tempfile.TemporaryDirectory(prefix="sporely_cloud_export_verify_") as scratch:
         scratch_path = Path(scratch)
         src = verify_source(artifact_gz, manifest, scratch_path)
-        release_marker = _release_marker(src, release_decision, candidate_validation_only)
+        release_marker = _release_marker(src, release_decision, candidate_validation_only, local_rehearsal)
 
         release_id = src.content_release_id
         gen_at = generated_at or _iso_utc()
@@ -1509,7 +1510,7 @@ def _existing_matches_staged(existing_dir: Path, staged: ExportResult) -> bool:
 
 
 def _release_marker(src: "SourceContext", release_decision: Optional[Path],
-                    candidate_validation_only: bool) -> Optional[dict]:
+                    candidate_validation_only: bool, local_rehearsal: bool = False) -> Optional[dict]:
     """The export manifest's ``release_approval`` entry, or ``None``.
 
     A pending (candidate_build_only) artifact is exported only with a release
@@ -1527,6 +1528,20 @@ def _release_marker(src: "SourceContext", release_decision: Optional[Path],
         return None
     if candidate_validation_only and release_decision is None:
         return {"status": status, "export_use": "candidate_validation_only", "importable": False}
+    if local_rehearsal:
+        # Release preparation only: a disposable local import rehearsal. Not
+        # importable; the production importer and desktop promotion refuse it.
+        from database.taxonomy.scripts.release_decision import require_preparation_decision
+        try:
+            decision = require_preparation_decision(
+                meta_value=status, content_release_id=src.content_release_id,
+                sqlite_sha256=src.sqlite_sha256, decision_path=release_decision)
+        except ReleaseDecisionError as exc:
+            raise ExportError(str(exc)) from exc
+        return {"status": status, "export_use": "local_rehearsal", "importable": False,
+                "decision": {k: decision[k] for k in (
+                    "decision", "content_release_id", "sqlite_sha256", "approved_by", "approved_at",
+                    "decision_reference")}}
     try:
         decision = require_release_decision(
             meta_value=status, content_release_id=src.content_release_id,

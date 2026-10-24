@@ -96,6 +96,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Export a candidate_build_only artifact for local validation only (not for import).",
     )
     p.add_argument(
+        "--local-rehearsal",
+        action="store_true",
+        help="With a preparation-only release decision: export for a disposable local import rehearsal "
+             "(importable false; the production importer and desktop promotion refuse it).",
+    )
+    p.add_argument(
         "--quiet",
         action="store_true",
         help="Suppress non-error stdout.",
@@ -174,6 +180,7 @@ def main(argv: list[str] | None = None) -> int:
             verify_only=args.verify_only,
             release_decision=args.release_decision,
             candidate_validation_only=args.candidate_validation_only,
+            local_rehearsal=args.local_rehearsal,
         )
         elapsed = time.monotonic() - start
         # ru_maxrss is kilobytes on Linux, bytes on macOS. Report raw.
