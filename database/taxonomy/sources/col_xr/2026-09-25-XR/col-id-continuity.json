@@ -639,6 +639,51 @@
    "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
    "approval_scope": "candidate_build_only",
    "release_approval": "pending"
+  },
+  {
+   "old_col_id": "5ZNM9",
+   "new_col_id": "VN69W",
+   "sporely_taxon_id": 83507,
+   "name": "Colpoma juniperi (P. Karst.) Dennis",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, on tax-2026.10.23-08): approved for the validation-only R2 candidate; release approval pending; consequential continuity match (-08 decision report item 3); same name, rank, authorship, family and IF 295446; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "6P5PG",
+   "new_col_id": "6P5PH",
+   "sporely_taxon_id": 104329,
+   "name": "Lecanora argentata (Röhl.) Malme",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, on tax-2026.10.23-08): approved for the validation-only R2 candidate; release approval pending; consequential continuity match (-08 decision report item 3); same name, rank, authorship, family and IF 387644; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "NHMZK",
+   "new_col_id": "VNKQN",
+   "sporely_taxon_id": 163660,
+   "name": "Entoloma secotioides",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, on tax-2026.10.23-08): approved for the validation-only R2 candidate; release approval pending; consequential continuity match (-08 decision report item 3); same name, rank, family, iNat 1469168; authorship differs only in typography and year; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "QDDTJ",
+   "new_col_id": "VMP5Z",
+   "sporely_taxon_id": 168240,
+   "name": "Luteodorsum",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, on tax-2026.10.23-08): approved for the validation-only R2 candidate; release approval pending; consequential continuity match (-08 decision report item 3); same name, rank, family, iNat 1473940; authorship differs only in spacing and year; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "TPKPX",
+   "new_col_id": "VRRW2",
+   "sporely_taxon_id": 607370,
+   "name": "Xylaria tabacina",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, on tax-2026.10.23-08): approved for the validation-only R2 candidate; release approval pending; consequential continuity match (-08 decision report item 3); same name, rank, family, iNat 1066592, Wikidata Q108482457; combination author differs ((J. Kickx f.) Fr., 1851 -> (J. Kickx f.) Berk.); unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
   }
  ],
  "id_report_aug": {
@@ -1051,6 +1096,102 @@
     "RYTDQ",
     "VBVK"
    ]
+  }
+ },
+ "name_record_follow": [
+  {
+   "sporely_taxon_id": 20250,
+   "col_id": "3R3HS",
+   "follows_col_id": "9ZNFC",
+   "name_records": [
+    "indexfungorum:800412"
+   ],
+   "name": "Kaskaskia macrospore",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, on tax-2026.10.23-08): approved for the validation-only R2 candidate; release approval pending; the id keeps its R1 name record; registry bindings unchanged",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 107690,
+   "col_id": "6S6KH",
+   "follows_col_id": "746KJ",
+   "name_records": [
+    "indexfungorum:832858"
+   ],
+   "name": "Neoanungitea eucalyptorum",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, on tax-2026.10.23-08): approved for the validation-only R2 candidate; release approval pending; the id keeps its R1 name record; registry bindings unchanged",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 116473,
+   "col_id": "746KJ",
+   "follows_col_id": "6S6KH",
+   "name_records": [
+    "indexfungorum:823372"
+   ],
+   "name": "Neoanungitea eucalypti",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, on tax-2026.10.23-08): approved for the validation-only R2 candidate; release approval pending; the id keeps its R1 name record; registry bindings unchanged",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 137682,
+   "col_id": "9ZNFC",
+   "follows_col_id": "3R3HS",
+   "name_records": [
+    "indexfungorum:840860"
+   ],
+   "name": "Kaskaskia macrospora",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, on tax-2026.10.23-08): approved for the validation-only R2 candidate; release approval pending; the id keeps its R1 name record; registry bindings unchanged",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 616942,
+   "col_id": "XQVS",
+   "follows_col_id": "XQVT",
+   "name_records": [
+    "indexfungorum:344355"
+   ],
+   "name": "Conocybe ochraceodiscus",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, on tax-2026.10.23-08): approved for the validation-only R2 candidate; release approval pending; the id keeps its R1 name record; registry bindings unchanged",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 616943,
+   "col_id": "XQVT",
+   "follows_col_id": "XQVS",
+   "name_records": [
+    "indexfungorum:311682",
+    "wikidata:Q107588245"
+   ],
+   "name": "Conocybe ochraceodisca",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, on tax-2026.10.23-08): approved for the validation-only R2 candidate; release approval pending; the id keeps its R1 name record; registry bindings unchanged",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  }
+ ],
+ "owner_decisions_2026_10_24_on_08": {
+  "source": "Owner decision 2026-10-24 (Sigmund Ås, on tax-2026.10.23-08): approved for the validation-only R2 candidate; release approval pending",
+  "recorded": {
+   "name_record_follow": 6,
+   "continuity": [
+    "5ZNM9",
+    "6P5PG",
+    "NHMZK",
+    "QDDTJ",
+    "TPKPX"
+   ]
+  },
+  "held_after_reconciliation": {
+   "MKSRV->8LPWL": "Cladonia rigida var. rigida 161510: authorship (J.D. Hook. & Taylor) Hampe vs empty; matched only by Wikidata Q21379719",
+   "VKSW6->MKX9Q": "Cladonia verticillaris 612934: authorship (Raddi) Mont. vs (Raddi) Fr.; COL source dataset changed (2030 -> 2031); matched only by iNat/Wikidata"
+  },
+  "not_approved": {
+   "609873": "Cytospora auerswaldii: retired, no supersession row",
+   "170695": "Phoma (FinBIF RK58F): retired, no supersession row"
   }
  }
 }

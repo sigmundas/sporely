@@ -279,7 +279,7 @@ def test_vernaculars_of_a_withheld_review_usage_are_dropped_not_fatal(tmp_path):
 def test_r2_refresh_supersessions_are_candidate_only_and_cite_the_owner_decision():
     ledger = json.loads((SCRIPTS.parent / "policies" / "concept_supersessions.yml").read_text(encoding="utf-8"))
     r2 = [s for s in ledger["supersessions"] if s["supersession_id"].startswith("taxonomy-r2-")]
-    assert [s["superseded_sporely_taxon_id"] for s in r2] == [624546]
+    assert [s["superseded_sporely_taxon_id"] for s in r2] == [624546, 152153]
     for s in r2:
         assert s["approval_scope"] == "candidate_build_only" and s["release_approval"] == "pending"
         assert "Owner decision 2026-10-24" in s["rationale"]
