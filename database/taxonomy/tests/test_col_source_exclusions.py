@@ -120,3 +120,19 @@ def test_identity_comparison_separates_policy_exclusions(tmp_path: Path) -> None
     assert result["stopped_excluded_by_policy"] == {"excluded_by_policy:unite_sh_cluster": 1}
     assert result["stopped_unexplained"] == [3]
     assert result["policy_excluded_but_live"] == []
+
+
+def test_base_backing_is_a_diagnostic_tier(tmp_path: Path) -> None:
+    _, out = _normalize(tmp_path, POLICY)
+    base_zip = tmp_path / "base.zip"
+    base_rows = [("G", "", "F", "accepted", "Russula", "", "genus", "Fungi"),
+                 ("35WJB", "", "G", "accepted", "Russula unitensis", "A", "species", "Fungi"),
+                 ("SH3KM", "", "G", "accepted", "Russula other", "A", "species", "Fungi")]
+    with zipfile.ZipFile(base_zip, "w") as zf:
+        zf.writestr("NameUsage.tsv", HEADER + "\n" + "\n".join("\t".join(r) for r in base_rows) + "\n")
+    base = prepare_refresh.col_base_usages(base_zip)
+    assert set(base) == {"G", "35WJB", "SH3KM"}
+    tiers = prepare_refresh.base_backing(out, base)
+    assert tiers["base_backed"] == {"G", "35WJB"}
+    assert tiers["base_id_differs"] == {"SH3KM"}
+    assert tiers["xr_only"] == {"F", "SH7654321.10FU", "SH9999999.10FU"}

@@ -376,6 +376,41 @@ def col_churn(previous_dir: Path, current_dir: Path, archive: Path, anchors: dic
             "vanished_nortaxa_2030": source_ids.get("2030", 0)}
 
 
+def col_base_usages(base_archive: Path) -> dict[str, tuple[str, str, str]]:
+    """``col:ID -> (scientificName, rank, status)`` of the Fungi usages of a COL
+    Base ColDP archive (the Base release matching the XR release)."""
+    import zipfile
+    out: dict[str, tuple[str, str, str]] = {}
+    with zipfile.ZipFile(base_archive) as z:
+        member = next(n for n in z.namelist() if n.casefold().endswith("nameusage.tsv"))
+        with z.open(member) as handle:
+            header = handle.readline().decode("utf-8-sig").rstrip("\r\n").split("\t")
+            ix = {name: header.index(f"col:{name}") for name in ("ID", "scientificName", "rank", "status", "kingdom")}
+            for raw in handle:
+                if b"Fungi" not in raw:
+                    continue
+                fields = raw.decode("utf-8", "replace").rstrip("\r\n").split("\t")
+                if len(fields) > ix["kingdom"] and fields[ix["kingdom"]] == "Fungi":
+                    out[fields[ix["ID"]]] = (fields[ix["scientificName"]], fields[ix["rank"]], fields[ix["status"]])
+    return out
+
+
+def base_backing(col_dir: Path, base: dict[str, tuple[str, str, str]], usage_ids: set[str] | None = None) -> dict:
+    """Diagnostic only, never identity authority: which COL XR usages of a
+    normalized COL directory are Base-backed (same id, name, rank and status in
+    the matching Base release) and which are XR-only."""
+    tiers: dict[str, set[str]] = {"base_backed": set(), "base_id_differs": set(), "xr_only": set()}
+    for record in _iter_taxa(col_dir):
+        if usage_ids is not None and record.taxon_id_value not in usage_ids:
+            continue
+        hit = base.get(record.taxon_id_value)
+        tier = ("xr_only" if hit is None else "base_backed"
+                if (hit[0], hit[1], hit[2]) == (record.scientific_name, record.rank, record.taxonomic_status)
+                else "base_id_differs")
+        tiers[tier].add(record.taxon_id_value)
+    return tiers
+
+
 # ----- report ----------------------------------------------------------------
 
 def write_report(build_dir: Path, report: dict) -> None:
@@ -563,6 +598,20 @@ def prepare(args: argparse.Namespace) -> dict:
             report["col_churn"] = col_churn(previous_dirs["col_xr"], current_dirs["col_xr"],
                                             args.archive_root.resolve() / old_col["release_dir"] / "archive.zip",
                                             carry_forward.registry_anchors(registry_path), receipt)
+            if args.col_base_archive:
+                # Diagnostic tier of the vanished and live COL anchors against the matching Base release.
+                base = col_base_usages(args.col_base_archive)
+                anchored = {i[2] for i in carry_forward.registry_anchors(registry_path).values() if i[0] == "col_xr"}
+                previous_tiers = base_backing(previous_dirs["col_xr"], base, anchored)
+                current_tiers = base_backing(current_dirs["col_xr"], base)
+                current_ids = set().union(*current_tiers.values())
+                report["col_churn"]["base_backing"] = {
+                    "base_archive": str(args.col_base_archive),
+                    "base_archive_sha256": build_release.sha256_file(args.col_base_archive),
+                    "base_fungi_usages": len(base),
+                    "current_usages": {k: len(v) for k, v in current_tiers.items()},
+                    "vanished_anchors": {k: len(v - current_ids) for k, v in previous_tiers.items()},
+                }
         report["coverage"] = {"candidate": build_report["coverage"]["candidate"],
                               "delta_vs_bundled": build_report["coverage"].get("delta"),
                               "bundled_release_id": build_report["coverage"].get("baseline_release_id")}
@@ -663,6 +712,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--col-source-exclusions", default=None, metavar="POLICY",
                         help="repository-relative scope policy whose approved source_characteristic_exclusions "
                              "(UNITE SH clusters) are not compiled or allocated; recorded in the recipe")
+    parser.add_argument("--col-base-archive", type=Path, default=None,
+                        help="COL Base ColDP archive matching the XR release: Base-backed/XR-only diagnostic only")
     parser.add_argument("--vernacular-expectation", type=Path, default=None,
                         help="evidence file with this candidate's explained expected_pinned_projection")
     parser.add_argument("--fetch", action="store_true",
