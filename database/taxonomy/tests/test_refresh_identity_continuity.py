@@ -419,3 +419,23 @@ def test_name_record_transfer_is_seen_when_another_identifier_stayed(tmp_path):
         {"XQVS": ["indexfungorum:344355"], "XQVT": ["indexfungorum:311682", "wikidata:Q107588245"]},
         {"XQVS": ["indexfungorum:311682"], "XQVT": ["indexfungorum:344355", "wikidata:Q107588245"]})
     assert {t["col_id"] for t in receipt["col_continuity_candidates"]["name_record_transfers"]} == {"XQVS", "XQVT"}
+
+
+def test_second_compile_on_the_grown_registry_reports_the_same_diagnostics(tmp_path):
+    reg = tmp_path / "registry.jsonl"
+    common = dict(manual_mappings_path=_write_manual_mappings(tmp_path / "m.json", []),
+                  mapping_policy_path=_POLICY_PATH, registry_path=reg)
+    old = _col(tmp_path / "v1", "1", [_sp("A", "Entoloma sericeum", "Quél."), _sp("B", "Entoloma sinuatum", "Gillet")])
+    compile_release(normalized_source_dirs=[old], output_dir=tmp_path / "r1", release_id="tax-2026.01.01-01", **common)
+    new = _col(tmp_path / "v2", "2", [_sp("A", "Entoloma sericeum", "Quél."), _sp("C", "Entoloma sericeum", "Quél."),
+                                      _sp("B", "Entoloma sinuatum", "Gillet"), _sp("D", "Entoloma sinuatum", "Fr.")])
+    path, _ = _receipt(tmp_path, {"col_xr": old}, {"col_xr": new}, {"mappings": []}, {"supersessions": []}, reg)
+    outs = []
+    for name in ("b1", "b2"):
+        compile_release(normalized_source_dirs=[new], output_dir=tmp_path / name, release_id="tax-2026.01.02-01",
+                        continuity_receipt_path=path, **common)
+        outs.append({f.name: f.read_bytes() for f in sorted((tmp_path / name).iterdir()) if f.is_file()})
+    diag = json.loads(outs[0]["diagnostics.json"])["source_continuity"]
+    assert [b["usage"] for b in diag["live_duplicate_bound"]] == ["col_xr/col_usage_id/C"]
+    assert list(diag["live_duplicate_withheld"]) == ["D"]
+    assert outs[0] == outs[1]  # diagnostics and the manifest (hence its hash) are identical

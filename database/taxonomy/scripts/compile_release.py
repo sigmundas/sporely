@@ -953,9 +953,20 @@ def compile_release(
     if continuity_receipt is not None:
         approved_new_keys = {(BACKBONE_SOURCE, "col_usage_id", e["new_col_id"])
                              for e in continuity_receipt.get("col_id_continuity") or []}
+        # A recompile on a registry that already holds this release's aliases
+        # (build 2 onward) re-derives them, so the diagnostics are the same
+        # whichever compile bound them.
+        bound_here: dict[tuple[str, str, str], int] = {}
+        for key in usage_index:
+            if key[0] == BACKBONE_SOURCE and key not in approved_new_keys:
+                prior = registry.lookup(*key)
+                if prior is not None and prior.kind == "alias" and prior.allocated_in_release == release_id:
+                    bound_here[key] = prior.sporely_taxon_id
         live_by_name: dict[tuple[str, str], dict[int, list[NormalizedTaxonRecord]]] = {}
         for key, record in usage_index.items():
             if record.taxonomic_status.casefold() not in ("accepted", "provisionally accepted", "valid"):
+                continue
+            if key in bound_here:
                 continue
             bound = registry.lookup(*key)
             if bound is None:
@@ -963,7 +974,8 @@ def compile_release(
             live_by_name.setdefault((record.scientific_name, record.rank.casefold()), {}) \
                 .setdefault(bound.sporely_taxon_id, []).append(record)
         for key, record in sorted(usage_index.items()):
-            if key[0] != BACKBONE_SOURCE or key in approved_new_keys or registry.lookup(*key) is not None:
+            if key[0] != BACKBONE_SOURCE or key in approved_new_keys or (
+                    key not in bound_here and registry.lookup(*key) is not None):
                 continue
             if record.taxonomic_status.casefold() not in ("accepted", "provisionally accepted"):
                 continue
@@ -977,6 +989,12 @@ def compile_release(
                         and (not family or not (r.classification or {}).get("family")
                              or (r.classification or {}).get("family") == family))
                        or (name_record_ids(r) & name_record_ids(record)) for r in recs))
+            if key in bound_here:
+                if len(exact) == 1 and len(same) == 1 and exact[0] == bound_here[key]:
+                    live_duplicate_aliases.add(key[2])
+                    live_duplicate_bound.append({"usage": "/".join(key), "sporely_taxon_id": exact[0],
+                                                 "scientific_name": record.scientific_name})
+                continue
             if len(exact) == 1 and len(same) == 1:
                 registry.bind_alias(existing_sporely_taxon_id=exact[0], source=key[0], namespace=key[1],
                                     identifier=key[2], allocated_in_release=release_id,
