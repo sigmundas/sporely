@@ -756,7 +756,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def build_provenance() -> dict:
-    """The code and toolchain a build ran with (not part of any frozen bytes)."""
+    """The code and toolchain a build ran with. Recorded in build-report.json,
+    which the archived validation receipt includes, so it is part of the frozen
+    evidence archive (not of the SQLite)."""
     import platform
 
     def git(*args: str) -> str:
