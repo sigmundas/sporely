@@ -13,8 +13,9 @@
   "total": 431376,
   "policy": 430621,
   "superseded_to_live": 1,
-  "unexplained": 754,
-  "note": "'unexplained' here is the held-unaware recount (policy and supersession only); identity_vs_r1.stopped_unexplained (713) also excludes the 41 COL continuity holds"
+  "held_by_continuity": 41,
+  "unexplained": 713,
+  "method": "same hold classification as prepare_refresh (held_by_continuity on the continuity receipt); asserted equal to the change report stopped_unexplained"
  },
  "nb_concepts": {
   "r1": 6690,
