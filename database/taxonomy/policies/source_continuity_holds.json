@@ -3,38 +3,6 @@
   "semantics": "Owner-decided holds for a source refresh. A held record's flagged relationship is not applied to the changed source record: the compile leaves the current source usage (and its direct synonyms) out, applies no mapping to it and allocates nothing for it. The original approval, its historical Sporely ids and any supersession retirement stay as they are. A hold names one record; every other flag still stops preparation. A held relationship is a publication blocker until its impact is assessed. A hold may instead name a source_usage: when NorTaxa would rebind that usage to another Sporely id (registry alias conflict), the compile leaves the existing binding and does not rebind; any unlisted conflict still stops the compile.",
   "holds": [
     {
-      "record_id": "taxonomy-v3-1a-nortaxa-52015-to-col-33PVS",
-      "reason": "nortaxa_species_to_coll_concept_change",
-      "decided_by": "owner (Sigmund Ås)",
-      "decided_at": "2026-10-23",
-      "decision": "Not equivalent identities: a species-to-'coll.' change is a concept change (barcoding shows identical-looking mushrooms are distinct species). Hold the current-source relationship; keep historical ids and approvals; do not redirect species identities to aggregates.",
-      "observed_change": "NorTaxa 1.292 renames 52015 Cystolepiota moelleri to 'Cystolepiota moelleri coll.'"
-    },
-    {
-      "record_id": "taxonomy-v3-1a-nortaxa-52025-to-col-38HQG",
-      "reason": "nortaxa_species_to_coll_concept_change",
-      "decided_by": "owner (Sigmund Ås)",
-      "decided_at": "2026-10-23",
-      "decision": "Not equivalent identities: a species-to-'coll.' change is a concept change (barcoding shows identical-looking mushrooms are distinct species). Hold the current-source relationship; keep historical ids and approvals; do not redirect species identities to aggregates.",
-      "observed_change": "NorTaxa 1.292 renames 52025 Echinoderma jacobi to 'Echinoderma jacobi coll.'"
-    },
-    {
-      "record_id": "taxonomy-v3-2-nortaxa-52024-superseded-by-col-38HQF",
-      "reason": "nortaxa_species_to_coll_concept_change",
-      "decided_by": "owner (Sigmund Ås)",
-      "decided_at": "2026-10-23",
-      "decision": "Not equivalent identities: a species-to-'coll.' change is a concept change (barcoding shows identical-looking mushrooms are distinct species). Hold the current-source relationship; keep historical ids and approvals; do not redirect species identities to aggregates.",
-      "observed_change": "NorTaxa 1.292 renames 52024 Echinoderma hystrix to 'Echinoderma hystrix coll.'"
-    },
-    {
-      "record_id": "taxonomy-v3-2-nortaxa-55440-superseded-by-col-34XGY",
-      "reason": "nortaxa_species_to_coll_concept_change",
-      "decided_by": "owner (Sigmund Ås)",
-      "decided_at": "2026-10-23",
-      "decision": "Not equivalent identities: a species-to-'coll.' change is a concept change (barcoding shows identical-looking mushrooms are distinct species). Hold the current-source relationship; keep historical ids and approvals; do not redirect species identities to aggregates.",
-      "observed_change": "NorTaxa 1.292 renames 55440 Dermoloma cuneifolium to 'Dermoloma cuneifolium coll.' and changes authorship '(Fr. : Fr.) Bon' -> '(Fr.) Singer ex Bon'"
-    },
-    {
       "source_usage": "nortaxa/nortaxa_taxon_id/128204",
       "reason": "nortaxa_1292_identity_change_pending_review",
       "decided_by": "owner (Sigmund Ås)",
@@ -169,54 +137,6 @@
       "decided_at": "2026-10-23",
       "decision": "Hold for the R2 candidate; resolve through review.",
       "observed_change": "COL26.9 authorship 'Vûzda' for Bactrospora jenikii (was 'Vězda')"
-    },
-    {
-      "record_id": "taxonomy-r1-nortaxa-128420-superseded-by-col-VB26W",
-      "reason": "col_id_renumbered_unaccepted",
-      "decided_by": "owner (Sigmund Ås)",
-      "decided_at": "2026-10-23",
-      "decision": "Hold for the R2 candidate; resolve through review.",
-      "observed_change": "COL VB26W vanished; report-only candidate SQ4YJ (not documented in the 316441 id report)"
-    },
-    {
-      "record_id": "taxonomy-v3-2-nortaxa-55589-superseded-by-col-VJN4J",
-      "reason": "col_id_renumbered_unaccepted",
-      "decided_by": "owner (Sigmund Ås)",
-      "decided_at": "2026-10-23",
-      "decision": "Hold for the R2 candidate; resolve through review.",
-      "observed_change": "COL VJN4J vanished; report-only candidate 6J7QH"
-    },
-    {
-      "record_id": "taxonomy-v3-2-nortaxa-65201-superseded-by-col-936C",
-      "reason": "col_id_renumbered_unaccepted",
-      "decided_by": "owner (Sigmund Ås)",
-      "decided_at": "2026-10-23",
-      "decision": "Hold for the R2 candidate; resolve through review.",
-      "observed_change": "COL 936C vanished; report-only candidate 936B"
-    },
-    {
-      "record_id": "taxonomy-v3-2-nortaxa-69348-superseded-by-col-VPN5",
-      "reason": "col_id_renumbered_unaccepted",
-      "decided_by": "owner (Sigmund Ås)",
-      "decided_at": "2026-10-23",
-      "decision": "Hold for the R2 candidate; resolve through review.",
-      "observed_change": "COL VPN5 vanished; report-only candidate VPN4"
-    },
-    {
-      "record_id": "taxonomy-v3-2-nortaxa-77316-superseded-by-col-VKWB7",
-      "reason": "col_id_renumbered_unaccepted",
-      "decided_by": "owner (Sigmund Ås)",
-      "decided_at": "2026-10-23",
-      "decision": "Hold for the R2 candidate; resolve through review.",
-      "observed_change": "COL VKWB7 vanished; report-only candidate NZ597"
-    },
-    {
-      "record_id": "taxonomy-v3-4p-dyntaxa-228658-to-col-VPLR",
-      "reason": "col_id_renumbered_unaccepted",
-      "decided_by": "owner (Sigmund Ås)",
-      "decided_at": "2026-10-23",
-      "decision": "Hold for the R2 candidate; resolve through review.",
-      "observed_change": "COL VPLR vanished; report-only candidate VPLQ (Cladonia squamosa)"
     },
     {
       "source_usage": "nortaxa/nortaxa_taxon_id/123816",
@@ -1135,6 +1055,98 @@
       "decided_at": "2026-10-23",
       "scope": "R2 candidate preparation only; not a publication approval",
       "note": "Odontia calcicola: as 74HB4."
+    }
+  ],
+  "resolved_holds": [
+    {
+      "record_id": "taxonomy-v3-1a-nortaxa-52015-to-col-33PVS",
+      "reason": "nortaxa_species_to_coll_concept_change",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Not equivalent identities: a species-to-'coll.' change is a concept change (barcoding shows identical-looking mushrooms are distinct species). Hold the current-source relationship; keep historical ids and approvals; do not redirect species identities to aggregates.",
+      "observed_change": "NorTaxa 1.292 renames 52015 Cystolepiota moelleri to 'Cystolepiota moelleri coll.'",
+      "resolution": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending: species keeps its history (previous reviewed NorTaxa record, names and red-list name-id stay on the species); the aggregate is never bound to the species identity (continuity rule species_history)"
+    },
+    {
+      "record_id": "taxonomy-v3-1a-nortaxa-52025-to-col-38HQG",
+      "reason": "nortaxa_species_to_coll_concept_change",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Not equivalent identities: a species-to-'coll.' change is a concept change (barcoding shows identical-looking mushrooms are distinct species). Hold the current-source relationship; keep historical ids and approvals; do not redirect species identities to aggregates.",
+      "observed_change": "NorTaxa 1.292 renames 52025 Echinoderma jacobi to 'Echinoderma jacobi coll.'",
+      "resolution": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending: species keeps its history (previous reviewed NorTaxa record, names and red-list name-id stay on the species); the aggregate is never bound to the species identity (continuity rule species_history)"
+    },
+    {
+      "record_id": "taxonomy-v3-2-nortaxa-52024-superseded-by-col-38HQF",
+      "reason": "nortaxa_species_to_coll_concept_change",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Not equivalent identities: a species-to-'coll.' change is a concept change (barcoding shows identical-looking mushrooms are distinct species). Hold the current-source relationship; keep historical ids and approvals; do not redirect species identities to aggregates.",
+      "observed_change": "NorTaxa 1.292 renames 52024 Echinoderma hystrix to 'Echinoderma hystrix coll.'",
+      "resolution": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending: species keeps its history (previous reviewed NorTaxa record, names and red-list name-id stay on the species); the aggregate is never bound to the species identity (continuity rule species_history)"
+    },
+    {
+      "record_id": "taxonomy-v3-2-nortaxa-55440-superseded-by-col-34XGY",
+      "reason": "nortaxa_species_to_coll_concept_change",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Not equivalent identities: a species-to-'coll.' change is a concept change (barcoding shows identical-looking mushrooms are distinct species). Hold the current-source relationship; keep historical ids and approvals; do not redirect species identities to aggregates.",
+      "observed_change": "NorTaxa 1.292 renames 55440 Dermoloma cuneifolium to 'Dermoloma cuneifolium coll.' and changes authorship '(Fr. : Fr.) Bon' -> '(Fr.) Singer ex Bon'",
+      "resolution": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending: species keeps its history (previous reviewed NorTaxa record, names and red-list name-id stay on the species); the aggregate is never bound to the species identity (continuity rule species_history)"
+    },
+    {
+      "record_id": "taxonomy-r1-nortaxa-128420-superseded-by-col-VB26W",
+      "reason": "col_id_renumbered_unaccepted",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the R2 candidate; resolve through review.",
+      "observed_change": "COL VB26W vanished; report-only candidate SQ4YJ (not documented in the 316441 id report)",
+      "resolution": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending: COL id continuity recorded in col-id-continuity.json"
+    },
+    {
+      "record_id": "taxonomy-v3-2-nortaxa-55589-superseded-by-col-VJN4J",
+      "reason": "col_id_renumbered_unaccepted",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the R2 candidate; resolve through review.",
+      "observed_change": "COL VJN4J vanished; report-only candidate 6J7QH",
+      "resolution": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending: COL id continuity recorded in col-id-continuity.json"
+    },
+    {
+      "record_id": "taxonomy-v3-2-nortaxa-65201-superseded-by-col-936C",
+      "reason": "col_id_renumbered_unaccepted",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the R2 candidate; resolve through review.",
+      "observed_change": "COL 936C vanished; report-only candidate 936B",
+      "resolution": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending: COL id continuity recorded in col-id-continuity.json"
+    },
+    {
+      "record_id": "taxonomy-v3-2-nortaxa-69348-superseded-by-col-VPN5",
+      "reason": "col_id_renumbered_unaccepted",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the R2 candidate; resolve through review.",
+      "observed_change": "COL VPN5 vanished; report-only candidate VPN4",
+      "resolution": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending: COL id continuity recorded in col-id-continuity.json"
+    },
+    {
+      "record_id": "taxonomy-v3-2-nortaxa-77316-superseded-by-col-VKWB7",
+      "reason": "col_id_renumbered_unaccepted",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the R2 candidate; resolve through review.",
+      "observed_change": "COL VKWB7 vanished; report-only candidate NZ597",
+      "resolution": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending: COL id continuity recorded in col-id-continuity.json"
+    },
+    {
+      "record_id": "taxonomy-v3-4p-dyntaxa-228658-to-col-VPLR",
+      "reason": "col_id_renumbered_unaccepted",
+      "decided_by": "owner (Sigmund Ås)",
+      "decided_at": "2026-10-23",
+      "decision": "Hold for the R2 candidate; resolve through review.",
+      "observed_change": "COL VPLR vanished; report-only candidate VPLQ (Cladonia squamosa)",
+      "resolution": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending: COL id continuity recorded in col-id-continuity.json"
     }
   ]
 }

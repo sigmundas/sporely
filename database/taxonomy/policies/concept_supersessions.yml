@@ -3347,6 +3347,29 @@
       "source_release_range": {"first": "1.284", "last": "1.284"},
       "supersedes": null,
       "review_note": "Approved 2026-09-29 by Sigmund Ås, recorded against manual verification 2026-09-29, check 'group-b-owner-decisions', gate fbeea497a1cb45c8a94baae48be43acc (taxonomy-v3 Stage 2, decision 2). Reviewer's decision as given: 'I approve the routine one-to-one cases with independent shared-synonym evidence across all three authorship categories: typography_only--ordinary, sanctioning_citation--ordinary, different_authorship--ordinary [by SHA-256]. I also explicitly approve: Cantharellus cibarius: NorTaxa 56210 <-> COL QMKY; Gloeophyllum odoratum: NorTaxa 56449 <-> COL 3GBK2; Conocybe vexans / Pholiotina vexans: NorTaxa 58766 <-> COL XQZ6. All other cases remain open for now. In particular, this approval does not include ambiguous one-to-many cases, weak-evidence groups, cases with no published cross-reference, or the individually reviewed one-directional cases.'"
+    },
+    {
+      "supersession_id": "taxonomy-r2-nortaxa-52027-superseded-by-col-38HQJ",
+      "superseded_sporely_taxon_id": 624546,
+      "current_source_usage": {
+        "source": "col_xr",
+        "namespace": "col_usage_id",
+        "identifier": "38HQJ"
+      },
+      "relationship": "exact",
+      "review_status": "approved",
+      "reviewer": "Sigmund Ås",
+      "approval_scope": "candidate_build_only",
+      "release_approval": "pending",
+      "rationale": "Owner decision 2026-10-24 (Sigmund Ås, in chat), candidate preparation only. NorTaxa concept 52027 (sporely_taxon_id 624546, 'Echinoderma pseudoasperula (Knudsen) Bon') and COL 38HQJ (sporely_taxon_id 6399, 'Echinoderma pseudoasperulum (Knudsen) Bon') are the same species: the epithets differ only in grammatical gender agreement, the authorship is identical, and NorTaxa 1.292 itself binds its new species record 300295 'Echinoderma pseudoasperulum' to COL 38HQJ. Survivor 6399: the COL-anchored backbone concept with the longer history (Artportalen 2032), matching the established rule that a NorTaxa concept is retired append-only onto its COL concept; neither id has cloud or desktop observations. NorTaxa 1.292 turned 52027 into a synonym of the aggregate 300297 'Echinoderma pseudoasperulum coll.' (sporely 637798 in tax-2026.10.23-04), which stays a separate concept; the species history of 52027 (name, Norwegian name, red-list name-id) moves with 624546 onto 6399.",
+      "evidence_references": [
+        "database/taxonomy/evidence/taxonomy-refresh/tax-2026.10.23-04-review-summary.json",
+        "R2 decision workbook releases/R2-review/R2-decisions.xlsx, sheet '624546 aggregate'"
+      ],
+      "created_at": "2026-10-24T00:00:00Z",
+      "updated_at": "2026-10-24T00:00:00Z",
+      "source_release_range": {"first": "1.284", "last": "1.292"},
+      "supersedes": null
     }
   ]
 }

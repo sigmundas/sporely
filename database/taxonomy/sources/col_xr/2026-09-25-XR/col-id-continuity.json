@@ -1,72 +1,1056 @@
 {
-  "format": "sporely-col-id-continuity-v1",
-  "id_report": {
-    "url": "https://download.checklistbank.org/releases/3/633/id-reports.gz",
-    "sha256": "0528739c93dd77d73e2421b19cf7ab256924013af39324bfefb6b81a1243c7a0",
-    "covers": "COL XR 316115 (2026-08) -> 316441 (2026-09-25) only",
-    "retrieved_at": "2026-10-23",
-    "bytes": 3138596,
-    "provenance": "owner instruction 2026-10-23: evidence for R2 candidate continuity; public read-only GET (ChecklistBank cookie challenge followed)",
-    "local_copy": "scratch archives; not in git"
+ "format": "sporely-col-id-continuity-v1",
+ "id_report": {
+  "url": "https://download.checklistbank.org/releases/3/633/id-reports.gz",
+  "sha256": "0528739c93dd77d73e2421b19cf7ab256924013af39324bfefb6b81a1243c7a0",
+  "covers": "COL XR 316115 (2026-08) -> 316441 (2026-09-25) only",
+  "retrieved_at": "2026-10-23",
+  "bytes": 3138596,
+  "provenance": "owner instruction 2026-10-23: evidence for R2 candidate continuity; public read-only GET (ChecklistBank cookie challenge followed)",
+  "local_copy": "scratch archives; not in git"
+ },
+ "previous_col": "col_xr:2026-07-17-XR:2026-07-17",
+ "current_col": "col_xr:2026-09-25-XR:2026-09-25",
+ "vanished": 2588,
+ "counts": {
+  "1_documented_one_to_one": 5,
+  "2_undocumented_unique_candidate": 79,
+  "3_removed_or_unresolved": 2496,
+  "4_conflicting_replacement": 8
+ },
+ "rule": "Only documented one-to-one superseded.tsv rows whose replacement record has the same name, authorship, rank, status class, accepted name and parent name, is unique, and is not already a registry allocation. Jul->Aug hops: 316165 unstable.txt groups with exactly one old and one new usage of identical label and status/rank (316165 has no superseded.tsv); Aug->Sep hops: 316441 superseded.tsv.",
+ "continuity": [
+  {
+   "old_col_id": "3ZX22",
+   "new_col_id": "QNMSR",
+   "sporely_taxon_id": 31149,
+   "name": "Meruliopsis taxicola (Pers.) Bondartsev",
+   "evidence": "id-reports superseded.tsv row 3ZX22\tQNMSR"
   },
-  "previous_col": "col_xr:2026-07-17-XR:2026-07-17",
-  "current_col": "col_xr:2026-09-25-XR:2026-09-25",
-  "vanished": 2588,
-  "counts": {
-    "1_documented_one_to_one": 5,
-    "2_undocumented_unique_candidate": 79,
-    "3_removed_or_unresolved": 2496,
-    "4_conflicting_replacement": 8
+  {
+   "old_col_id": "S7WBX",
+   "new_col_id": "S7WBW",
+   "sporely_taxon_id": 172409,
+   "name": "Platystomum obtectum (Peck) Lindau",
+   "evidence": "id-reports superseded.tsv row S7WBX\tS7WBW"
   },
-  "rule": "Only documented one-to-one superseded.tsv rows whose replacement record has the same name, authorship, rank, status class, accepted name and parent name, is unique, and is not already a registry allocation. Jul->Aug hops: 316165 unstable.txt groups with exactly one old and one new usage of identical label and status/rank (316165 has no superseded.tsv); Aug->Sep hops: 316441 superseded.tsv.",
-  "continuity": [
-    {
-      "old_col_id": "3ZX22",
-      "new_col_id": "QNMSR",
-      "sporely_taxon_id": 31149,
-      "name": "Meruliopsis taxicola (Pers.) Bondartsev",
-      "evidence": "id-reports superseded.tsv row 3ZX22\tQNMSR"
-    },
-    {
-      "old_col_id": "S7WBX",
-      "new_col_id": "S7WBW",
-      "sporely_taxon_id": 172409,
-      "name": "Platystomum obtectum (Peck) Lindau",
-      "evidence": "id-reports superseded.tsv row S7WBX\tS7WBW"
-    },
-    {
-      "old_col_id": "VJHG4",
-      "new_col_id": "QQCBY",
-      "sporely_taxon_id": 612827,
-      "name": "Ionaspis granvina Hav. ex P.M.Jørg.",
-      "evidence": "316165 id-reports unstable.txt: VJHG4 -> QQCBY (Ionaspis granvina Hav. ex P.M.Jørg.)"
-    },
-    {
-      "old_col_id": "VJLQP",
-      "new_col_id": "L96FT",
-      "sporely_taxon_id": 612861,
-      "name": "Anema nummularium (Dufour ex Durieu & Mont.) Nyl. ex Forssell",
-      "evidence": "316165 id-reports unstable.txt: VJLQP -> L96FT (Anema nummularium (Dufour ex Durieu & Mont.) Nyl. ex Forssell)"
-    },
-    {
-      "old_col_id": "VKWM4",
-      "new_col_id": "SGC57",
-      "sporely_taxon_id": 612991,
-      "name": "Pseudocyphellaria lechleri (Müll.Arg.) Du Rietz",
-      "evidence": "316165 id-reports unstable.txt: VKWM4 -> SGC57 (Pseudocyphellaria lechleri (Müll.Arg.) Du Rietz)"
-    }
-  ],
-  "id_report_aug": {
-    "url": "https://download.checklistbank.org/releases/3/622/id-reports.gz",
-    "dataset": "316165 COL26.8 XR (attempt 622)",
-    "sha256": "2245768adebab254d83cb4459ad46371a8a92773faa32bb0b0480c38fe11819d",
-    "bytes": 2146753,
-    "members": "unstable.txt, deleted.tsv, created.tsv, resurrected.tsv (no superseded.tsv)",
-    "hits_on_vanished": {
-      "deleted": 641,
-      "unstable": 74
-    },
-    "retrieved_at": "2026-10-24",
-    "provenance": "owner authorisation 2026-10-24: read-only acquisition for analysis, not a release approval; one GET (ChecklistBank cookie challenge followed); local copy in scratch, not git"
+  {
+   "old_col_id": "VJHG4",
+   "new_col_id": "QQCBY",
+   "sporely_taxon_id": 612827,
+   "name": "Ionaspis granvina Hav. ex P.M.Jørg.",
+   "evidence": "316165 id-reports unstable.txt: VJHG4 -> QQCBY (Ionaspis granvina Hav. ex P.M.Jørg.)"
+  },
+  {
+   "old_col_id": "VJLQP",
+   "new_col_id": "L96FT",
+   "sporely_taxon_id": 612861,
+   "name": "Anema nummularium (Dufour ex Durieu & Mont.) Nyl. ex Forssell",
+   "evidence": "316165 id-reports unstable.txt: VJLQP -> L96FT (Anema nummularium (Dufour ex Durieu & Mont.) Nyl. ex Forssell)"
+  },
+  {
+   "old_col_id": "VKWM4",
+   "new_col_id": "SGC57",
+   "sporely_taxon_id": 612991,
+   "name": "Pseudocyphellaria lechleri (Müll.Arg.) Du Rietz",
+   "evidence": "316165 id-reports unstable.txt: VKWM4 -> SGC57 (Pseudocyphellaria lechleri (Müll.Arg.) Du Rietz)"
+  },
+  {
+   "old_col_id": "VB26W",
+   "new_col_id": "SQ4YJ",
+   "sporely_taxon_id": 612184,
+   "name": "Septoria crataegi J.Kickx",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group renumbered_6; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "VJN4J",
+   "new_col_id": "6J7QH",
+   "sporely_taxon_id": 612867,
+   "name": "Flammulaster carpophilus (Fr.) Earle ex Vellinga",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group renumbered_6; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "936C",
+   "new_col_id": "936B",
+   "sporely_taxon_id": 131357,
+   "name": "Acarospora macrospora A. Massal. ex Bagl.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group renumbered_6; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "VPN5",
+   "new_col_id": "VPN4",
+   "sporely_taxon_id": 613627,
+   "name": "Cladonia uncialis (L.) F.H. Wigg.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group renumbered_6; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "VKWB7",
+   "new_col_id": "NZ597",
+   "sporely_taxon_id": 612983,
+   "name": "Gyalidea scutellaris (Bagl. & Carestia) Lettau",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group renumbered_6; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "VPLR",
+   "new_col_id": "VPLQ",
+   "sporely_taxon_id": 613500,
+   "name": "Cladonia squamosa Hoffm.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group renumbered_6; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "463KP",
+   "new_col_id": "463KN",
+   "sporely_taxon_id": 37254,
+   "name": "Nectria sylvana Mouton",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "46YWR",
+   "new_col_id": "VNFDY",
+   "sporely_taxon_id": 38151,
+   "name": "Nephridiophaga maderae Radek, Owerfeldt, Gisder & Wurzbacher",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "4QYGD",
+   "new_col_id": "VN6F2",
+   "sporely_taxon_id": 58361,
+   "name": "Pyxidiophora marchalii (Sacc.) N. Lundq.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "4TWGG",
+   "new_col_id": "4TWGH",
+   "sporely_taxon_id": 62886,
+   "name": "Saccharomyces pastorianus Reess",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "5W32G",
+   "new_col_id": "FWFB",
+   "sporely_taxon_id": 80030,
+   "name": "Appendiculella lozanellae Rodr. Just. & M. Piepenbr.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "6FCMG",
+   "new_col_id": "6FCMD",
+   "sporely_taxon_id": 95817,
+   "name": "Entoloma pachydermum Arnolds & Noordel.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "6FD32",
+   "new_col_id": "6FD2Q",
+   "sporely_taxon_id": 96118,
+   "name": "Entoloma phlebodermum Noordel. & Hauskn.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "78MNC",
+   "new_col_id": "6WMNB",
+   "sporely_taxon_id": 121285,
+   "name": "Puccinia argophyllae Teakle",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "7DWZL",
+   "new_col_id": "7DWZK",
+   "sporely_taxon_id": 127307,
+   "name": "Uromyces inayatii Syd. & P. Syd.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "8TQJC",
+   "new_col_id": "3ZGV8",
+   "sporely_taxon_id": 131177,
+   "name": "Meliola littoralis Syd.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "8V97C",
+   "new_col_id": "XQVQ",
+   "sporely_taxon_id": 131183,
+   "name": "Conocybe obscurus Watling",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "8VF9V",
+   "new_col_id": "4HC37",
+   "sporely_taxon_id": 131188,
+   "name": "Phyllosticta moquilearum Bat.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "99NBC",
+   "new_col_id": "3P2TD",
+   "sporely_taxon_id": 131575,
+   "name": "Hypoxylon surannareei Suwann., Rodtong, Thienh. & Whalley",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "99ZXP",
+   "new_col_id": "XGGG",
+   "sporely_taxon_id": 131577,
+   "name": "Comoclathris rosarum Wanas., Camporesi, E.B.G. Jones & K.D. Hyde",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "9F273",
+   "new_col_id": "FPTY",
+   "sporely_taxon_id": 131592,
+   "name": "Aplosporella palmaceae Gonz. Frag. & Cif.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "9F54W",
+   "new_col_id": "4QD8W",
+   "sporely_taxon_id": 131594,
+   "name": "Puccinia erythraeensis Pazschke",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "B2P33",
+   "new_col_id": "VJMN6",
+   "sporely_taxon_id": 139521,
+   "name": "Calonarius citrinus (P.D. Orton) Niskanen & Liimat.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "B38XV",
+   "new_col_id": "B38XT",
+   "sporely_taxon_id": 145499,
+   "name": "Xenonectriella zimmermannii F. Berger & Brackel",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "BV945",
+   "new_col_id": "FTBQ",
+   "sporely_taxon_id": 146830,
+   "name": "Apoharknessia eucalyptorum Crous & M.J. Wingf.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "CB8J5",
+   "new_col_id": "B2MZR",
+   "sporely_taxon_id": 148305,
+   "name": "Kodamaea restingae (C.A. Rosa, Lachance, Starmer, J.S.F. Barker, J.M. Bowles & Schlag-Edl.) C.Y. Chai & F.L. Hui",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "CB98J",
+   "new_col_id": "B8XS2",
+   "sporely_taxon_id": 148326,
+   "name": "Melanoleuca chifengensis X.D. Yu & H.B. Guo",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "DRKNB",
+   "new_col_id": "VQRWL",
+   "sporely_taxon_id": 151132,
+   "name": "Pleurotus ostreatus × eryngii",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "HSDM",
+   "new_col_id": "HSDL",
+   "sporely_taxon_id": 155758,
+   "name": "Asterina enicostematis Hosag. & Chandrapr.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "NXWZP",
+   "new_col_id": "NXWZQ",
+   "sporely_taxon_id": 164561,
+   "name": "Harziella Kuntze",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "P478C",
+   "new_col_id": "VQGSW",
+   "sporely_taxon_id": 164813,
+   "name": "Gymnosporangium juniperi S. Ito",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "PFFGN",
+   "new_col_id": "VRGMQ",
+   "sporely_taxon_id": 165177,
+   "name": "Helvella infula Fr.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "PG6WJ",
+   "new_col_id": "87G2R",
+   "sporely_taxon_id": 165216,
+   "name": "Exogone Henn.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "PS5D7",
+   "new_col_id": "PS5D6",
+   "sporely_taxon_id": 166112,
+   "name": "Lecanora leptacinella Nyl.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "PV3VH",
+   "new_col_id": "PV3VG",
+   "sporely_taxon_id": 166393,
+   "name": "Lachnella pygmaeum W. Phillips",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "QLZYS",
+   "new_col_id": "637L",
+   "sporely_taxon_id": 168773,
+   "name": "Nephridiophaga Ivanić",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "QMGX8",
+   "new_col_id": "VQDB9",
+   "sporely_taxon_id": 168837,
+   "name": "Nephromyces Giard, 1888",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "RXSD7",
+   "new_col_id": "4HBBS",
+   "sporely_taxon_id": 171701,
+   "name": "Phyllosticta clematidis Brunaud",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "S4V5R",
+   "new_col_id": "63NDP",
+   "sporely_taxon_id": 172160,
+   "name": "Polydiscidium Wakef.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "SGDGH",
+   "new_col_id": "63S9C",
+   "sporely_taxon_id": 172954,
+   "name": "Rozella Cornu",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "SPYZW",
+   "new_col_id": "7FP5",
+   "sporely_taxon_id": 604385,
+   "name": "Septochytrium Berdan, 1939",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "STX44",
+   "new_col_id": "STX43",
+   "sporely_taxon_id": 604973,
+   "name": "Sorosporium dianthorum Cif.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "TPGSJ",
+   "new_col_id": "VMP55",
+   "sporely_taxon_id": 607333,
+   "name": "Xylaria enteroleuca (Speg.) P.M.D. Martin",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "TR5GK",
+   "new_col_id": "TR5GJ",
+   "sporely_taxon_id": 607468,
+   "name": "Umbilicaria pallens Poelt",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "TWHH6",
+   "new_col_id": "TWHH5",
+   "sporely_taxon_id": 607764,
+   "name": "Zygorhynchus Vuill., 1903",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "TWPHD",
+   "new_col_id": "TWPHF",
+   "sporely_taxon_id": 607783,
+   "name": "Zignoella minutissima (P.Karst.) Sacc.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "TYHP3",
+   "new_col_id": "85XX",
+   "sporely_taxon_id": 608107,
+   "name": "Varicosporella Lechat & J.Fourn.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "V4MLG",
+   "new_col_id": "L84TQ",
+   "sporely_taxon_id": 609481,
+   "name": "Stigmatomma",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "V7RCQ",
+   "new_col_id": "R6W9J",
+   "sporely_taxon_id": 609882,
+   "name": "Oidium tritici (Corda) Link",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "V7RDB",
+   "new_col_id": "3BB84",
+   "sporely_taxon_id": 609886,
+   "name": "Erynia gammae (Weiser) Glare & Milner",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "V7RDX",
+   "new_col_id": "54XR5",
+   "sporely_taxon_id": 609889,
+   "name": "Tarichium gammae Weiser",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "V7SDS",
+   "new_col_id": "PC4VZ",
+   "sporely_taxon_id": 610598,
+   "name": "Geopyxis hesperidea (Peck & Cooke) Sacc.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "V7TN5",
+   "new_col_id": "RW33F",
+   "sporely_taxon_id": 611273,
+   "name": "Phallus vulgaris P. Micheli",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "V8XPS",
+   "new_col_id": "PVSTN",
+   "sporely_taxon_id": 611706,
+   "name": "Lecidea subfumosa (Arnold) Zwackh",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "VCKGH",
+   "new_col_id": "V42YK",
+   "sporely_taxon_id": 612610,
+   "name": "Pestalotiopsis jiangmenensis Q. C. Wang & X. D. Zhou, 2025",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "VHLGB",
+   "new_col_id": "SQ5YV",
+   "sporely_taxon_id": 612804,
+   "name": "Septoria escalloniarum A.Agostini",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "VJFW8",
+   "new_col_id": "TNWQ9",
+   "sporely_taxon_id": 612817,
+   "name": "Verrucaria atlantica (H.Magn.) R.Sant.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "VJJ92",
+   "new_col_id": "R6VWK",
+   "sporely_taxon_id": 612849,
+   "name": "Oidium ruborum Rabenhorst",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "VK29R",
+   "new_col_id": "SQ3HB",
+   "sporely_taxon_id": 612897,
+   "name": "Septoria badhamii Berk. & Broome",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "VL6GF",
+   "new_col_id": "5678H",
+   "sporely_taxon_id": 613060,
+   "name": "Thecotheus holmskjoldii (E.C. Hansen) Chenant.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "VL92K",
+   "new_col_id": "V7RFY",
+   "sporely_taxon_id": 613072,
+   "name": "Hypoxylon smilacicolum Howe",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "VL94K",
+   "new_col_id": "V7S9G",
+   "sporely_taxon_id": 613074,
+   "name": "Phyllosticta zizyphi Thüm.",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "VL958",
+   "new_col_id": "V7SKS",
+   "sporely_taxon_id": 613075,
+   "name": "Chloroscypha platycladus Y.S. Dai",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "VL967",
+   "new_col_id": "S6MDH",
+   "sporely_taxon_id": 613076,
+   "name": "Rinodina imitatrix Zahlbruckner",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "old_col_id": "VP6VQ",
+   "new_col_id": "T45F6",
+   "sporely_taxon_id": 613338,
+   "name": "Steccherinaceae Parmasto",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending; group same_name_replacement; same name, rank, normalized authorship and family; unique; new usage not allocated",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
   }
+ ],
+ "id_report_aug": {
+  "url": "https://download.checklistbank.org/releases/3/622/id-reports.gz",
+  "dataset": "316165 COL26.8 XR (attempt 622)",
+  "sha256": "2245768adebab254d83cb4459ad46371a8a92773faa32bb0b0480c38fe11819d",
+  "bytes": 2146753,
+  "members": "unstable.txt, deleted.tsv, created.tsv, resurrected.tsv (no superseded.tsv)",
+  "hits_on_vanished": {
+   "deleted": 641,
+   "unstable": 74
+  },
+  "retrieved_at": "2026-10-24",
+  "provenance": "owner authorisation 2026-10-24: read-only acquisition for analysis, not a release approval; one GET (ChecklistBank cookie challenge followed); local copy in scratch, not git"
+ },
+ "nortaxa_fallback": [
+  {
+   "sporely_taxon_id": 158580,
+   "vanished_col_id": "LK6KW",
+   "nortaxa_taxon_id": "65750",
+   "name": "Arthothelium suspectabile",
+   "nortaxa_name": "Arthothelium suspectabile",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 159968,
+   "vanished_col_id": "M6CZ6",
+   "nortaxa_taxon_id": "71556",
+   "name": "Canomaculina",
+   "nortaxa_name": "Canomaculina",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 160735,
+   "vanished_col_id": "MD58W",
+   "nortaxa_taxon_id": "73464",
+   "name": "Buellia malmei",
+   "nortaxa_name": "Buellia malmei",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 160857,
+   "vanished_col_id": "MDT49",
+   "nortaxa_taxon_id": "220509",
+   "name": "Cerinomyces violaticus",
+   "nortaxa_name": "Cerinomyces violaticus",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 161485,
+   "vanished_col_id": "MKQKK",
+   "nortaxa_taxon_id": "69235",
+   "name": "Cladonia polia",
+   "nortaxa_name": "Cladonia polia",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 162801,
+   "vanished_col_id": "MYFRH",
+   "nortaxa_taxon_id": "52286",
+   "name": "Conocybe microspora var. tetraspora",
+   "nortaxa_name": "Conocybe microspora var. tetraspora",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 163609,
+   "vanished_col_id": "NH924",
+   "nortaxa_taxon_id": "142912",
+   "name": "Cyclomyces",
+   "nortaxa_name": "Cyclomyces",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 163680,
+   "vanished_col_id": "NJ3F4",
+   "nortaxa_taxon_id": "203639",
+   "name": "Dextrinodontia",
+   "nortaxa_name": "Dextrinodontia",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 164477,
+   "vanished_col_id": "NWT57",
+   "nortaxa_taxon_id": "57910",
+   "name": "Gloeocystidiellum clavuligerum subsp. bisporum",
+   "nortaxa_name": "Gloeocystidiellum clavuligerum subsp. bisporum",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 164791,
+   "vanished_col_id": "P3L6H",
+   "nortaxa_taxon_id": "173441",
+   "name": "Fissurina incrustans",
+   "nortaxa_name": "Fissurina incrustans",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 165286,
+   "vanished_col_id": "PHPF8",
+   "nortaxa_taxon_id": "77382",
+   "name": "Graphina parilis",
+   "nortaxa_name": "Graphina parilis",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 165487,
+   "vanished_col_id": "PK9CT",
+   "nortaxa_taxon_id": "171525",
+   "name": "Hypochnicium vellerum",
+   "nortaxa_name": "Hypochnicium vellerum",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 165749,
+   "vanished_col_id": "PP2M3",
+   "nortaxa_taxon_id": "71845",
+   "name": "Hypotrachyna minima",
+   "nortaxa_name": "Hypotrachyna minima",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 165896,
+   "vanished_col_id": "PR84W",
+   "nortaxa_taxon_id": "56565",
+   "name": "Hydnochaete",
+   "nortaxa_name": "Hydnochaete",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 169046,
+   "vanished_col_id": "QN82K",
+   "nortaxa_taxon_id": "201639",
+   "name": "Microporus veluticeps",
+   "nortaxa_name": "Microporus veluticeps",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 169904,
+   "vanished_col_id": "R2S57",
+   "nortaxa_taxon_id": "76083",
+   "name": "Mycosphaerella polaris",
+   "nortaxa_name": "Mycosphaerella polaris",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 169911,
+   "vanished_col_id": "R2V35",
+   "nortaxa_taxon_id": "76107",
+   "name": "Mycosphaerella septoriospora",
+   "nortaxa_name": "Mycosphaerella septoriospora",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 169922,
+   "vanished_col_id": "R2WQ4",
+   "nortaxa_taxon_id": "76114",
+   "name": "Mycosphaerella taraxaei",
+   "nortaxa_name": "Mycosphaerella taraxaei",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 170338,
+   "vanished_col_id": "RBX7S",
+   "nortaxa_taxon_id": "72336",
+   "name": "Parmotrema araucariarum",
+   "nortaxa_name": "Parmotrema araucariarum",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 170356,
+   "vanished_col_id": "RBXSJ",
+   "nortaxa_taxon_id": "72366",
+   "name": "Parmotrema cryptoxanthoides",
+   "nortaxa_name": "Parmotrema cryptoxanthoides",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 170431,
+   "vanished_col_id": "RBZS9",
+   "nortaxa_taxon_id": "72476",
+   "name": "Parmotrema rigidum",
+   "nortaxa_name": "Parmotrema rigidum",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 170633,
+   "vanished_col_id": "RJ5M6",
+   "nortaxa_taxon_id": "57277",
+   "name": "Piloporia",
+   "nortaxa_name": "Piloporia",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 171057,
+   "vanished_col_id": "RNZPB",
+   "nortaxa_taxon_id": "79168",
+   "name": "Peziza avernensis",
+   "nortaxa_name": "Peziza avernensis",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 171377,
+   "vanished_col_id": "RT7DR",
+   "nortaxa_taxon_id": "82132",
+   "name": "Placidiopsis cervinula",
+   "nortaxa_name": "Placidiopsis cervinula",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 171566,
+   "vanished_col_id": "RW7HH",
+   "nortaxa_taxon_id": "128330",
+   "name": "Penicillium chrysogenum var. chrysogenum",
+   "nortaxa_name": "Penicillium chrysogenum var. chrysogenum",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 171671,
+   "vanished_col_id": "RX8N8",
+   "nortaxa_taxon_id": "82095",
+   "name": "Parathelium",
+   "nortaxa_name": "Parathelium",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 171908,
+   "vanished_col_id": "S24JG",
+   "nortaxa_taxon_id": "171885",
+   "name": "Phellinus reichingeri",
+   "nortaxa_name": "Phellinus reichingeri",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 172336,
+   "vanished_col_id": "S6QFW",
+   "nortaxa_taxon_id": "74015",
+   "name": "Rinodina roboris var. ameriicola",
+   "nortaxa_name": "Rinodina roboris var. ameriicola",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 172370,
+   "vanished_col_id": "S72JS",
+   "nortaxa_taxon_id": "72577",
+   "name": "Pseudoparmelia ecaperata",
+   "nortaxa_name": "Pseudoparmelia ecaperata",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 604580,
+   "vanished_col_id": "SQBT4",
+   "nortaxa_taxon_id": "137590",
+   "name": "Septoria scabrosicola",
+   "nortaxa_name": "Septoria scabrosicola",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 605227,
+   "vanished_col_id": "SW2HJ",
+   "nortaxa_taxon_id": "66176",
+   "name": "Sigridea leptothallina",
+   "nortaxa_name": "Sigridea leptothallina",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 605287,
+   "vanished_col_id": "SXJ9S",
+   "nortaxa_taxon_id": "66151",
+   "name": "Schismatomma ocellatum",
+   "nortaxa_name": "Schismatomma ocellatum",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 605300,
+   "vanished_col_id": "SXL5Y",
+   "nortaxa_taxon_id": "135581",
+   "name": "Sphaeria vasculosa",
+   "nortaxa_name": "Sphaeria vasculosa",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 607466,
+   "vanished_col_id": "TR5CS",
+   "nortaxa_taxon_id": "77179",
+   "name": "Umbilicaria muehlenbergii",
+   "nortaxa_name": "Umbilicaria muehlenbergii",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 607522,
+   "vanished_col_id": "TSM7S",
+   "nortaxa_taxon_id": "79130",
+   "name": "Tromera",
+   "nortaxa_name": "Tromera",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 608150,
+   "vanished_col_id": "TYQ5N",
+   "nortaxa_taxon_id": "73029",
+   "name": "Xanthoparmelia caviculata",
+   "nortaxa_name": "Xanthoparmelia caviculata",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  },
+  {
+   "sporely_taxon_id": 612917,
+   "vanished_col_id": "VKSNW",
+   "nortaxa_taxon_id": "68857",
+   "name": "Catillaria michaudii",
+   "nortaxa_name": "Catillaria michaudii",
+   "evidence": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+   "approval_scope": "candidate_build_only",
+   "release_approval": "pending"
+  }
+ ],
+ "owner_decisions_2026_10_24": {
+  "source": "Owner decision 2026-10-24 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+  "recorded": {
+   "renumbered_6": 6,
+   "same_name_replacement": 59,
+   "nortaxa_fallback": 37
+  },
+  "not_recorded": {
+   "same_name_replacement": [
+    "3HNLK",
+    "4725F",
+    "5ZNM9",
+    "6P5PG",
+    "9XLCF",
+    "LMZHJ",
+    "MHVYR",
+    "MP42B",
+    "MZDDF",
+    "NKS4G",
+    "NTQCM",
+    "P6Z5J",
+    "PFDFL",
+    "RYTDQ",
+    "VBVK"
+   ]
+  }
+ }
 }
