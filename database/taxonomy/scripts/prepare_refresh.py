@@ -165,32 +165,78 @@ def live_concepts(path: Path) -> tuple[set[int], dict[int, int], dict[str, str]]
     return live, retired, meta
 
 
-def policy_exclusions(col_dir: Path, anchors: dict[int, tuple]) -> dict[int, str]:
-    """Sporely ids whose COL anchor the normalizer excluded by explicit policy
-    (``excluded_by_policy.jsonl``), with the policy reason label. The registry
-    keeps these allocations; they are reported apart from unexplained losses."""
+def policy_exclusions(col_dir: Path, anchors: dict[int, tuple], previous_archive: Path | None = None) -> dict[int, str]:
+    """Sporely ids whose COL anchor falls under an explicit exclusion policy,
+    with the policy reason label. Two cases: the normalizer excluded the
+    current usage (``excluded_by_policy.jsonl``), or the anchored usage
+    vanished from COL and its row in the previous archive matches the same
+    policy predicate (same source checks). The registry keeps these
+    allocations; they are reported apart from unexplained losses."""
     path = col_dir / "excluded_by_policy.jsonl"
     report_path = col_dir / "report.json"
     if not path.is_file() or not report_path.is_file():
         return {}
-    checks = (json.loads(report_path.read_text()).get("source_exclusions") or {}).get("checks") or {}
+    exclusion_report = json.loads(report_path.read_text()).get("source_exclusions") or {}
+    checks = exclusion_report.get("checks") or {}
+    label = lambda code: checks.get(code, {}).get("label") or f"excluded_by_policy:{code}"
     codes: dict[str, str] = {}
     with path.open(encoding="utf-8") as handle:
         for line in handle:
             row = json.loads(line)
-            codes[row["col_usage_id"]] = checks.get(row["code"], {}).get("label") or f"excluded_by_policy:{row['code']}"
-    return {taxon: codes[ident[2]] for taxon, ident in anchors.items()
-            if ident[0] == "col_xr" and ident[1] == "col_usage_id" and ident[2] in codes}
+            codes[row["col_usage_id"]] = label(row["code"])
+    anchored = {ident[2]: taxon for taxon, ident in anchors.items()
+                if ident[0] == "col_xr" and ident[1] == "col_usage_id"}
+    if previous_archive is not None and previous_archive.is_file() and exclusion_report.get("policy"):
+        import zipfile
+        import normalize_col_xr
+        exclusions = normalize_col_xr.load_source_exclusions(Path(exclusion_report["policy"]))["exclusions"]
+        current = {r.taxon_id_value for r in _iter_taxa(col_dir)}
+        vanished = set(anchored) - current - set(codes)
+        cache: dict = {}
+        with zipfile.ZipFile(previous_archive) as z:
+            member = next(n for n in z.namelist() if n.casefold().endswith("nameusage.tsv"))
+            with z.open(member) as handle:
+                header = handle.readline().decode("utf-8-sig").rstrip("\r\n").split("\t")
+                ix = {k: header.index(f"col:{k}") for k in ("ID", "scientificName", "rank", "sourceID")}
+                for raw in handle:
+                    fields = raw.decode("utf-8", "replace").rstrip("\r\n").split("\t")
+                    if fields[ix["ID"]] not in vanished:
+                        continue
+                    source_id = fields[ix["sourceID"]]
+                    hit = normalize_col_xr.excluded_by_source_policy(
+                        fields[ix["ID"]], fields[ix["scientificName"]], fields[ix["rank"]],
+                        normalize_col_xr._source_alias(z, source_id, cache) if source_id else None, exclusions)
+                    if hit is not None:
+                        codes[fields[ix["ID"]]] = hit["label"]
+    return {anchored[usage]: reason for usage, reason in codes.items() if usage in anchored}
+
+
+def held_by_continuity(receipt: dict, anchors: dict[int, tuple]) -> dict[int, str]:
+    """Sporely ids whose own anchor usage a held continuity record withholds."""
+    by_usage = {"/".join(ident): taxon for taxon, ident in anchors.items()}
+    out = {}
+    for record_id, record in (receipt.get("records") or {}).items():
+        if record.get("status") == "held":
+            for identifier in record.get("identifiers") or []:
+                if identifier in by_usage:
+                    out[by_usage[identifier]] = f"held:{record.get('kind')}"
+    return out
 
 
 def identity_comparison(previous_sqlite: Path, candidate_sqlite: Path,
-                        policy_excluded: dict[int, str] | None = None) -> dict:
+                        policy_excluded: dict[int, str] | None = None,
+                        held: dict[int, str] | None = None) -> dict:
     old_live, old_retired, _ = live_concepts(previous_sqlite)
     new_live, new_retired, _ = live_concepts(candidate_sqlite)
     stopped = old_live - new_live
     explained = {i for i in stopped if i in new_retired and new_retired[i] in new_live}
     policy_excluded = policy_excluded or {}
+    held = held or {}
     by_policy = {i for i in stopped - explained if i in policy_excluded}
+    by_hold = {i for i in stopped - explained - by_policy if i in held}
+    held_reasons: dict[str, int] = {}
+    for taxon in by_hold:
+        held_reasons[held[taxon]] = held_reasons.get(held[taxon], 0) + 1
     reasons: dict[str, int] = {}
     for taxon in by_policy:
         reasons[policy_excluded[taxon]] = reasons.get(policy_excluded[taxon], 0) + 1
@@ -198,7 +244,8 @@ def identity_comparison(previous_sqlite: Path, candidate_sqlite: Path,
             "new_live": len(new_live - old_live), "stopped_being_live": len(stopped),
             "stopped_by_supersession": len(explained),
             "stopped_excluded_by_policy": dict(sorted(reasons.items())),
-            "stopped_unexplained": sorted(stopped - explained - by_policy),
+            "stopped_held_by_continuity": dict(sorted(held_reasons.items())),
+            "stopped_unexplained": sorted(stopped - explained - by_policy - by_hold),
             "newly_retired": len(set(new_retired) - set(old_retired)),
             # Excluded allocations are never live again in this candidate.
             "policy_excluded_but_live": sorted(set(policy_excluded) & new_live)}
@@ -348,6 +395,11 @@ def col_churn(previous_dir: Path, current_dir: Path, archive: Path, anchors: dic
                 if excluded_path.is_file() else set())
     excluded_missing = (old - new) & excluded
     missing = old - new - excluded
+    exclusion_report = json.loads((current_dir / "report.json").read_text()).get("source_exclusions") or {}
+    import normalize_col_xr
+    exclusions = (normalize_col_xr.load_source_exclusions(Path(exclusion_report["policy"]))["exclusions"]
+                  if exclusion_report.get("policy") else [])
+    vanished_excluded: set[str] = set()
     anchored = {ident[2] for ident in anchors.values() if ident[0] == "col_xr"}
     reviewed = {i.split("/", 2)[2] for r in receipt["records"].values() for i in r["identifiers"]
                 if i.startswith("col_xr/")}
@@ -359,15 +411,26 @@ def col_churn(previous_dir: Path, current_dir: Path, archive: Path, anchors: dic
                 header = handle.readline().decode("utf-8-sig").rstrip("\r\n").split("\t")
                 id_col = header.index("col:ID")
                 src_col = header.index("col:sourceID") if "col:sourceID" in header else None
+                name_col, rank_col = header.index("col:scientificName"), header.index("col:rank")
+                cache: dict = {}
                 for raw in handle:
                     fields = raw.decode("utf-8", "replace").rstrip("\r\n").split("\t")
                     if len(fields) > id_col and fields[id_col] in missing:
                         key = fields[src_col] if src_col is not None and len(fields) > src_col else ""
+                        if exclusions and normalize_col_xr.excluded_by_source_policy(
+                                fields[id_col], fields[name_col], fields[rank_col],
+                                normalize_col_xr._source_alias(z, key, cache) if key else None, exclusions):
+                            vanished_excluded.add(fields[id_col])
+                            continue
                         source_ids[key or "(none)"] = source_ids.get(key or "(none)", 0) + 1
+    missing -= vanished_excluded
     return {"previous_usages": len(old), "current_usages": len(new), "vanished": len(missing),
             "excluded_by_policy": {"previous_usages": len(excluded_missing),
                                    "registry_anchors": len(excluded_missing & anchored),
                                    "current_release_total": len(excluded),
+                                   # Vanished from COL, but the previous row matches the policy predicate.
+                                   "vanished_from_col": len(vanished_excluded),
+                                   "vanished_registry_anchors": len(vanished_excluded & anchored),
                                    "not_in_registry": len(excluded - anchored)},
             "new": len(new - old), "vanished_registry_anchors": len(missing & anchored),
             "registry_col_anchors": len(anchored), "vanished_reviewed_targets": len(missing & reviewed),
@@ -580,13 +643,19 @@ def prepare(args: argparse.Namespace) -> dict:
             for k, v in (diagnostics.get("source_continuity") or {}).items()}
         report["build"]["reviewed_identity_only"] = diagnostics.get("counts", {}).get("reviewed_identity_only_sources")
         candidate = final / f"{args.release_id}-A.sqlite3"
-        excluded_ids = policy_exclusions(current_dirs["col_xr"], carry_forward.registry_anchors(registry_path)) \
+        base_anchors = carry_forward.registry_anchors(registry_path)
+        previous_col = next((s for s in json.loads(args.previous_recipe.read_text())["sources"]
+                             if s["code"] == "col_xr"), None)
+        excluded_ids = policy_exclusions(
+            current_dirs["col_xr"], base_anchors,
+            args.archive_root.resolve() / previous_col["release_dir"] / "archive.zip" if previous_col else None) \
             if "col_xr" in current_dirs else {}
-        report["identity"] = {"vs_previous": identity_comparison(previous_sqlite, candidate, excluded_ids)}
+        held_ids = held_by_continuity(receipt, base_anchors)
+        report["identity"] = {"vs_previous": identity_comparison(previous_sqlite, candidate, excluded_ids, held_ids)}
         report["comparison"] = {"vs_previous": compare_metrics(previous_sqlite, candidate)}
         for label, path in (args.compare_sqlite or []):
             other = _open_sqlite(Path(path), work)
-            report["identity"][f"vs_{label}"] = identity_comparison(other, candidate, excluded_ids)
+            report["identity"][f"vs_{label}"] = identity_comparison(other, candidate, excluded_ids, held_ids)
             report["comparison"][f"vs_{label}"] = compare_metrics(other, candidate)
         report["comparison"]["supersession_groups"] = supersession_groups(
             json.loads((REPO_ROOT / recipe["policies"]["concept_supersessions"]).read_text()), candidate)
@@ -645,7 +714,10 @@ def prepare(args: argparse.Namespace) -> dict:
         report["publication"].update({
             "release_approval_meta": {k: v for k, v in meta.items() if "approval" in k or k in ("state", "publication")},
             "informational": [f"{n} concepts stop being live: {reason} (registry keeps the allocations)"
-                              for reason, n in report["identity"]["vs_previous"]["stopped_excluded_by_policy"].items()],
+                              for reason, n in report["identity"]["vs_previous"]["stopped_excluded_by_policy"].items()]
+                             + [f"{n} concepts stop being live: {reason} (withheld until reviewed; the id keeps "
+                                "its history)" for reason, n in
+                                report["identity"]["vs_previous"]["stopped_held_by_continuity"].items()],
             "blockers": ([f"{len(unexplained)} concepts stop being live without a supersession"] if unexplained else [])
                         + ([f"{len(report['identity']['vs_previous']['policy_excluded_but_live'])} policy-excluded "
                             "concepts are still live"] if report["identity"]["vs_previous"]["policy_excluded_but_live"]

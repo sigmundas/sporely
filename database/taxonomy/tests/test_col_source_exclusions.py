@@ -136,3 +136,25 @@ def test_base_backing_is_a_diagnostic_tier(tmp_path: Path) -> None:
     assert tiers["base_backed"] == {"G", "35WJB"}
     assert tiers["base_id_differs"] == {"SH3KM"}
     assert tiers["xr_only"] == {"F", "SH7654321.10FU", "SH9999999.10FU"}
+
+
+def test_vanished_unite_cluster_is_classified_by_policy_not_unexplained(tmp_path: Path) -> None:
+    # Current release: the cluster SH1234567.10FU is gone from COL entirely.
+    rows = [r for r in ROWS if r[0] != "SH1234567.10FU"]
+    out = tmp_path / "cur"
+    normalize_col_xr(archive_path=_archive(tmp_path / "cur.zip", rows), output_dir=out,
+                     source_release={"version": "t", "issued_date": "2026-09-25"}, source_exclusion_policy=POLICY)
+    previous = _archive(tmp_path / "prev.zip")  # previous release still had it
+    anchors = {2: ("col_xr", "col_usage_id", "SH1234567.10FU"), 4: ("col_xr", "col_usage_id", "35WJB"),
+               5: ("col_xr", "col_usage_id", "GONE")}
+    assert prepare_refresh.policy_exclusions(out, anchors) == {}
+    excluded = prepare_refresh.policy_exclusions(out, anchors, previous)
+    assert excluded == {2: "excluded_by_policy:unite_sh_cluster"}
+    result = prepare_refresh.identity_comparison(_sqlite(tmp_path / "a.sqlite3", {2, 4, 5}),
+                                                 _sqlite(tmp_path / "b.sqlite3", {4}), excluded)
+    assert result["stopped_excluded_by_policy"] == {"excluded_by_policy:unite_sh_cluster": 1}
+    assert result["stopped_unexplained"] == [5]
+    # Headline counters reconcile: every stopped id is in exactly one bucket.
+    assert result["stopped_being_live"] == (result["stopped_by_supersession"] + len(result["stopped_unexplained"])
+                                            + sum(result["stopped_excluded_by_policy"].values())
+                                            + sum(result["stopped_held_by_continuity"].values()))
