@@ -230,3 +230,30 @@ def test_aggregate_nortaxa_record_never_supplies_a_fallback(tmp_path):
     taxa = _taxa(tmp_path / "r2")
     # Species history keeps N on the species; the id is live from it, never as "coll.".
     assert all("coll." not in t["scientific_name"] for t in taxa.values())
+
+
+def test_approved_mapping_to_a_renumbered_col_usage_follows_the_continuity(tmp_path):
+    reg = tmp_path / "registry.jsonl"
+    maps = _write_manual_mappings(tmp_path / "m.json", [{
+        "mapping_id": "map-N-A", "review_status": "approved", "relationship": "exact",
+        "source_usage": {"source": "nortaxa", "namespace": "nortaxa_taxon_id", "identifier": "N"},
+        "target": {"source_usage": {"source": "col_xr", "namespace": "col_usage_id", "identifier": "A"}}}])
+    nt = _src(tmp_path / "v1", "nortaxa", "1", [
+        {"core_row_id": "R", "taxon_id": "R", "scientific_name": "Fungi", "rank": "kingdom"},
+        {"core_row_id": "N", "taxon_id": "N", "parent": "R", "parent_resolution": "resolved",
+         "scientific_name": "Cladonia squamosa", "authorship": "Hoffm.", "status": "valid"}])
+    old = _col(tmp_path / "v1", "1", [_sp("A", "Cladonia squamosa", "Hoffm.")])
+    compile_release(normalized_source_dirs=[old, nt], output_dir=tmp_path / "r1", release_id="tax-2026.01.01-01",
+                    manual_mappings_path=maps, mapping_policy_path=_POLICY_PATH, registry_path=reg)
+    a_id = _ids(reg)[("col_xr", "col_usage_id", "A")]
+    new = _col(tmp_path / "v2", "2", [_sp("A2", "Cladonia squamosa", "Hoffm.")])
+    path, receipt = _receipt(tmp_path, {"col_xr": old, "nortaxa": nt}, {"col_xr": new, "nortaxa": nt},
+                             json.loads(maps.read_text()), {"supersessions": []}, reg,
+                             continuity=[{"old_col_id": "A", "new_col_id": "A2", "sporely_taxon_id": a_id}])
+    assert receipt["records"]["map-N-A"]["status"] == "carried"
+    compile_release(normalized_source_dirs=[new, nt], output_dir=tmp_path / "r2", release_id="tax-2026.01.02-01",
+                    manual_mappings_path=maps, mapping_policy_path=_POLICY_PATH, registry_path=reg,
+                    continuity_receipt_path=path)
+    ids = _ids(reg)
+    assert ids[("nortaxa", "nortaxa_taxon_id", "N")] == a_id == ids[("col_xr", "col_usage_id", "A2")]
+    assert a_id in _taxa(tmp_path / "r2")

@@ -966,22 +966,30 @@ def compile_release(
         else:
             assert mapping.target_source_usage is not None
             target_su = mapping.target_source_usage
-            if target_su not in usage_index:
+            continued_from = {(BACKBONE_SOURCE, "col_usage_id", e["old_col_id"])
+                              for e in (continuity_receipt or {}).get("col_id_continuity") or []}
+            if target_su not in usage_index and target_su in continued_from \
+                    and registry.lookup(*target_su) is not None:
+                # The approved target was renumbered; an approved COL id
+                # continuity keeps it on the same Sporely id.
+                target_id = registry.lookup(*target_su).sporely_taxon_id
+            elif target_su not in usage_index:
                 raise CompilerError(
                     f"manual mapping {mapping.mapping_id!r} targets source "
                     f"usage {target_su!r} that is absent from every "
                     f"normalized input"
                 )
-            target_rec = usage_index[target_su]
-            target_release = _release_string(target_rec.source_release)
-            target_anchor = registry.allocate(
-                source=target_rec.source_code,
-                namespace=target_rec.taxon_id_namespace,
-                identifier=target_rec.taxon_id_value,
-                allocated_in_release=release_id,
-                first_seen_source_release=target_release,
-            )
-            target_id = target_anchor.sporely_taxon_id
+            else:
+                target_rec = usage_index[target_su]
+                target_release = _release_string(target_rec.source_release)
+                target_anchor = registry.allocate(
+                    source=target_rec.source_code,
+                    namespace=target_rec.taxon_id_namespace,
+                    identifier=target_rec.taxon_id_value,
+                    allocated_in_release=release_id,
+                    first_seen_source_release=target_release,
+                )
+                target_id = target_anchor.sporely_taxon_id
         # If source_usage is already anchored to a DIFFERENT ID, fail closed.
         existing = registry.lookup(*source_usage)
         if existing is not None and existing.sporely_taxon_id != target_id:
