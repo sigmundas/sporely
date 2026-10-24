@@ -88,6 +88,73 @@ class ColNormalizeError(Exception):
     """Raised on any COL normalization consistency or IO failure."""
 
 
+# Source-characteristic exclusions (``source_characteristic_exclusions`` in
+# ``policies/global-macrofungi-scope.yml``) applied before compilation, so the
+# excluded usages are neither compiled nor allocated Sporely ids. Each approved
+# exclusion code the normalizer applies needs a source check here: the COL
+# ``col:sourceID`` of the row must resolve, via ``source/<id>.yaml`` in the same
+# archive, to this source alias. A code without an entry is refused, so a scope
+# rule can never silently start removing compiled concepts.
+# ``label`` is the retirement reason recorded in refresh reports.
+SOURCE_EXCLUSION_CHECKS = {
+    "exclude_unite_sequence_clusters": {
+        "source_alias": "UNITE",
+        "name_pattern": re.compile(r"SH\d+\.\d+FU"),
+        "label": "excluded_by_policy:unite_sh_cluster",
+    },
+}
+
+
+def load_source_exclusions(policy_path: Path) -> dict:
+    """The approved source-characteristic exclusions of a scope policy."""
+    try:
+        policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ColNormalizeError(f"source exclusion policy unreadable: {policy_path}: {exc}") from exc
+    exclusions = []
+    for entry in policy.get("source_characteristic_exclusions") or []:
+        if entry.get("review_status") != "approved" or entry.get("state") != "exclude":
+            continue
+        check = SOURCE_EXCLUSION_CHECKS.get(entry.get("code"))
+        if check is None:
+            raise ColNormalizeError(f"source exclusion {entry.get('code')!r} has no normalizer source check")
+        criteria = entry.get("criteria") or {}
+        if set(criteria) != {"rank", "col_id_prefix", "name_equals_col_id"} or not criteria["name_equals_col_id"]:
+            raise ColNormalizeError(f"source exclusion {entry['code']!r}: unsupported criteria {criteria}")
+        exclusions.append({"code": entry["code"], "rank": criteria["rank"],
+                           "col_id_prefix": criteria["col_id_prefix"], **check})
+    return {"policy": str(policy_path), "policy_sha256": hashlib.sha256(policy_path.read_bytes()).hexdigest(),
+            "exclusions": exclusions}
+
+
+def _source_alias(archive: zipfile.ZipFile, source_id: str, cache: dict[str, str | None]) -> str | None:
+    """``alias`` of ``source/<sourceID>.yaml`` (top-level key), or None."""
+    if source_id not in cache:
+        alias = None
+        try:
+            text = archive.read(f"source/{source_id}.yaml").decode("utf-8")
+        except KeyError:
+            text = ""
+        for line in text.splitlines():
+            if line.startswith("alias:"):
+                alias = line.split(":", 1)[1].strip().strip("'\"") or None
+                break
+        cache[source_id] = alias
+    return cache[source_id]
+
+
+def excluded_by_source_policy(row_id: str, name: str, rank: str, alias: str | None,
+                              exclusions: list[dict]) -> dict | None:
+    """The exclusion matching one COL usage: the scope policy criteria (rank,
+    id prefix, name equal to the id) plus the source checks (COL source alias,
+    identifier pattern). Named, ranked usages from the same source never match."""
+    for exclusion in exclusions:
+        if (rank == exclusion["rank"] and row_id.startswith(exclusion["col_id_prefix"]) and name == row_id
+                and exclusion["name_pattern"].fullmatch(name) and alias == exclusion["source_alias"]):
+            return exclusion
+    return None
+
+
 def _strip_col_prefix(name: str) -> str:
     return name[4:] if name.startswith("col:") else name
 
@@ -233,6 +300,7 @@ def normalize_col_xr(
     source_release: dict[str, str],
     kingdom_filter: str = "Fungi",
     row_limit: int | None = None,
+    source_exclusion_policy: Path | None = None,
 ) -> dict:
     """Two-pass streaming normalize of the pinned COL XR archive.
 
@@ -263,6 +331,8 @@ def normalize_col_xr(
             source_release=source_release,
             kingdom_filter=kingdom_filter,
             row_limit=row_limit,
+            source_exclusions=(load_source_exclusions(source_exclusion_policy)
+                               if source_exclusion_policy is not None else None),
         )
         os.replace(staging, output_dir)
         committed = True
@@ -360,8 +430,11 @@ def _normalize_vernaculars(archive, staging, target_ids, known_ids, source_relea
 def _normalize_into(
     *, archive_path: Path, staging: Path,
     source_release: dict[str, str], kingdom_filter: str, row_limit: int | None,
+    source_exclusions: dict | None = None,
 ) -> dict:
     taxa_out = staging / "taxa.jsonl"
+    excluded_out = staging / "excluded_by_policy.jsonl"
+    exclusions = (source_exclusions or {}).get("exclusions") or []
     report_out = staging / "report.json"
 
     with zipfile.ZipFile(archive_path, "r") as archive:
@@ -374,6 +447,12 @@ def _normalize_into(
         parent_index = columns["parentID"]
         kingdom_index = columns["kingdom"]
         status_index = columns["status"]
+        source_index = columns.get("sourceID")
+        name_index, rank_index = columns["scientificName"], columns["rank"]
+        if exclusions and source_index is None:
+            raise ColNormalizeError("source exclusions need col:sourceID in NameUsage")
+        alias_cache: dict[str, str | None] = {}
+        excluded: dict[str, str] = {}
 
         # ------ Pass 1: build parent_of for every row + initial target set ---
         parent_of: dict[str, str] = {}
@@ -399,6 +478,14 @@ def _normalize_into(
                 if kingdom_bytes in raw_line and \
                         row[kingdom_index] == kingdom_filter and \
                         row[status_index] in ACCEPTED_STATUSES:
+                    if exclusions:
+                        hit = excluded_by_source_policy(
+                            row_id, row[name_index], row[rank_index],
+                            _source_alias(archive, row[source_index], alias_cache) if row[source_index] else None,
+                            exclusions)
+                        if hit is not None:
+                            excluded[row_id] = hit["code"]
+                            continue
                     if row_limit is not None and initial_added >= row_limit:
                         continue
                     initial_targets.add(row_id)
@@ -418,6 +505,10 @@ def _normalize_into(
             if not parent:
                 continue
             if parent in target_ids or parent in ancestors:
+                continue
+            if parent in excluded:
+                # An excluded usage is never pulled back in as an ancestor;
+                # the child keeps an unresolved parent (reported as a gap).
                 continue
             if parent not in parent_of:
                 # Dangling parent — kept as a warning in pass 2.
@@ -468,6 +559,11 @@ def _normalize_into(
 
         vernacular_counts = _normalize_vernaculars(
             archive, staging, target_ids, parent_of, source_release)
+        if source_exclusions is not None:
+            with excluded_out.open("w", encoding="utf-8") as handle:
+                for row_id in sorted(excluded):
+                    handle.write(json.dumps({"col_usage_id": row_id, "code": excluded[row_id]},
+                                            sort_keys=True) + "\n")
 
     MAX_SAMPLES = 25
     unresolved_samples = [
@@ -502,6 +598,19 @@ def _normalize_into(
         "row_limit": row_limit,
         "scope_rule": "global_fungi + fungal_navigation_ancestors",
     }
+    if source_exclusions is not None:
+        counts: dict[str, int] = {}
+        for code in excluded.values():
+            counts[code] = counts.get(code, 0) + 1
+        report["source_exclusions"] = {
+            "policy": source_exclusions["policy"], "policy_sha256": source_exclusions["policy_sha256"],
+            "checks": {e["code"]: {"rank": e["rank"], "col_id_prefix": e["col_id_prefix"],
+                                   "name_equals_col_id": True, "name_pattern": e["name_pattern"].pattern,
+                                   "source_alias": e["source_alias"], "label": e["label"]} for e in exclusions},
+            "excluded_by_code": dict(sorted(counts.items())),
+            "excluded_ids": excluded_out.name,
+        }
+        report["record_counts"]["ExcludedByPolicy"] = len(excluded)
     report_out.write_text(
         json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -518,6 +627,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--kingdom", default="Fungi")
     parser.add_argument("--row-limit", type=int, default=None,
                         help="bound the number of matching Fungi rows (dry-run aid)")
+    parser.add_argument("--source-exclusion-policy", type=Path, default=None,
+                        help="scope policy whose approved source_characteristic_exclusions are not compiled")
     return parser
 
 
@@ -533,6 +644,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             },
             kingdom_filter=args.kingdom,
             row_limit=args.row_limit,
+            source_exclusion_policy=args.source_exclusion_policy,
         )
     except ColNormalizeError as exc:
         print(f"error: {exc}", file=sys.stderr)

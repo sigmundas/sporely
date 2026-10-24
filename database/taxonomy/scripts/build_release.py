@@ -110,6 +110,9 @@ class Source:
     version: str | None = None
     issued_date: str | None = None
     profile: str | None = None  # repository-relative, national_source only
+    # col_xr only, optional: repository-relative scope policy whose approved
+    # source_characteristic_exclusions are not compiled (normalize_col_xr.py).
+    source_exclusion_policy: str | None = None
 
     @property
     def manifest(self) -> str:
@@ -158,13 +161,16 @@ def load_recipe(path: Path) -> Recipe:
                  f"recipe source {code!r}: normalizer must be one of {NORMALIZERS}")
         source = Source(code=code, normalizer=normalizer, release_dir=entry.get("release_dir", ""),
                         version=entry.get("version"), issued_date=entry.get("issued_date"),
-                        profile=entry.get("profile"))
+                        profile=entry.get("profile"),
+                        source_exclusion_policy=entry.get("source_exclusion_policy"))
         _require(bool(source.release_dir), f"recipe source {code!r}: release_dir is required")
         if normalizer == "col_xr":
             _require(bool(source.version and source.issued_date),
                      f"recipe source {code!r}: col_xr needs version and issued_date")
         else:
             _require(bool(source.profile), f"recipe source {code!r}: national_source needs a profile")
+        _require(source.source_exclusion_policy is None or normalizer == "col_xr",
+                 f"recipe source {code!r}: source_exclusion_policy is col_xr only")
         sources.append(source)
     _require(bool(sources), "recipe lists no sources")
 
@@ -542,6 +548,8 @@ def build(options: Options, run: Runner | None = None, python: str = sys.executa
                     "--output", rel(norm / source.code),
                     "--source-release-version", source.version,
                     "--source-release-issued-date", source.issued_date]
+            if source.source_exclusion_policy:
+                argv += ["--source-exclusion-policy", str(REPO_ROOT / source.source_exclusion_policy)]
         else:
             argv = [_script("national_source.py"), "normalize", "--profile", source.profile,
                     "--archive", archive, "--output", rel(norm / source.code)]
