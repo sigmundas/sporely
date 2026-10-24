@@ -1,0 +1,203 @@
+{
+ "cloud_active_release": "tax-2026.10.07-01",
+ "cloud_check": {
+  "a_policy_unite": {
+   "cloud_observation_rows": 0,
+   "ids": 430621,
+   "ids_with_cloud_observations": 0,
+   "ids_with_cloud_references": 0,
+   "ids_with_desktop_refs": 0
+  },
+  "agg_624546": {
+   "cloud_observation_rows": 0,
+   "ids": 1,
+   "ids_with_cloud_observations": 0,
+   "ids_with_cloud_references": 0,
+   "ids_with_desktop_refs": 0
+  },
+  "external_identity_tuples_on_stopping_concepts": {},
+  "held_by_continuity": {
+   "cloud_observation_rows": 0,
+   "ids": 7,
+   "ids_with_cloud_observations": 0,
+   "ids_with_cloud_references": 0,
+   "ids_with_desktop_refs": 0
+  },
+  "retired_redirect_5": {
+   "cloud_observation_rows": 0,
+   "ids": 5,
+   "ids_with_cloud_observations": 0,
+   "ids_with_cloud_references": 0,
+   "ids_with_desktop_refs": 0
+  },
+  "swap_pairs": {
+   "cloud_observation_rows": 0,
+   "ids": 6,
+   "ids_with_cloud_observations": 0,
+   "ids_with_cloud_references": 0,
+   "ids_with_desktop_refs": 0
+  },
+  "unexplained_no_impact": {
+   "cloud_observation_rows": 0,
+   "ids": 706,
+   "ids_with_cloud_observations": 0,
+   "ids_with_cloud_references": 0,
+   "ids_with_desktop_refs": 0
+  },
+  "unexplained_with_impact": {
+   "cloud_observation_rows": 0,
+   "ids": 138,
+   "ids_with_cloud_observations": 0,
+   "ids_with_cloud_references": 0,
+   "ids_with_desktop_refs": 0
+  }
+ },
+ "col_churn": {
+  "base_backing": {
+   "base_archive": "/Users/sigmundas/Documents/Code/sporely/research/col-base-vs-xr/downloads/2026-09-11_coldp.zip",
+   "base_archive_sha256": "7feebad85ed9563c08bc67a5ce227f44afa7fb324ebd15fa8ea9ebfc88a13311",
+   "base_fungi_usages": 171554,
+   "current_usages": {
+    "base_backed": 171547,
+    "base_id_differs": 7,
+    "xr_only": 20848
+   },
+   "vanished_anchors": {
+    "base_backed": 0,
+    "base_id_differs": 0,
+    "xr_only": 431476
+   }
+  },
+  "excluded_by_policy": {
+   "current_release_total": 577359,
+   "not_in_registry": 148471,
+   "previous_usages": 428888,
+   "registry_anchors": 428888,
+   "vanished_from_col": 1733,
+   "vanished_registry_anchors": 1733
+  },
+  "vanished": 855,
+  "vanished_registry_anchors": 855
+ },
+ "freeze_sha256": "17b74966e1c36da145b346e385e420be56055ab27178c3b261a88709e5dded18",
+ "holds110_effects_vs_r1": {
+  "live_new": 38,
+  "nb_lost": 1,
+  "pub_lost": 8,
+  "redlist_lost": 1,
+  "scope_lost": 2
+ },
+ "identity_vs_r1": {
+  "candidate_live": 203814,
+  "new_live": 2904,
+  "newly_retired": 0,
+  "policy_excluded_but_live": [],
+  "previous_live": 632382,
+  "stopped_being_live": 431472,
+  "stopped_by_supersession": 0,
+  "stopped_excluded_by_policy": {
+   "excluded_by_policy:unite_sh_cluster": 430621
+  },
+  "stopped_held_by_continuity": {
+   "held:aggregate_meaning_change": 1,
+   "held:dyntaxa_mapping": 1,
+   "held:supersession": 5
+  },
+  "stopped_unexplained": 844
+ },
+ "note": "Disposable validation-only candidate; no publication. Cloud figures are aggregate counts from a BEGIN READ ONLY ... ROLLBACK query.",
+ "published_id_losses": 47,
+ "published_id_losses_in_candidate_export": {},
+ "reconcile": {
+  "a_policy_unite": 430621,
+  "held_by_continuity": 7,
+  "stopping": 431472,
+  "unexplained_no_impact": 706,
+  "unexplained_with_impact": 138
+ },
+ "redirect_withheld": [
+  {
+   "current_live_in_candidate": false,
+   "held_record": "held",
+   "r1_current": 612184,
+   "retired": 621396,
+   "supersession_id": "taxonomy-r1-nortaxa-128420-superseded-by-col-VB26W"
+  },
+  {
+   "current_live_in_candidate": false,
+   "held_record": "held",
+   "r1_current": 612867,
+   "retired": 626009,
+   "supersession_id": "taxonomy-v3-2-nortaxa-55589-superseded-by-col-VJN4J"
+  },
+  {
+   "current_live_in_candidate": false,
+   "held_record": "held",
+   "r1_current": 131357,
+   "retired": 627212,
+   "supersession_id": "taxonomy-v3-2-nortaxa-65201-superseded-by-col-936C"
+  },
+  {
+   "current_live_in_candidate": false,
+   "held_record": "held",
+   "r1_current": 613627,
+   "retired": 628943,
+   "supersession_id": "taxonomy-v3-2-nortaxa-69348-superseded-by-col-VPN5"
+  },
+  {
+   "current_live_in_candidate": false,
+   "held_record": "held",
+   "r1_current": 612983,
+   "retired": 632183,
+   "supersession_id": "taxonomy-v3-2-nortaxa-77316-superseded-by-col-VKWB7"
+  }
+ ],
+ "redirects": {
+  "resolves_to_live": 2508,
+  "withheld_or_broken": 5
+ },
+ "release_id": "tax-2026.10.23-04",
+ "sqlite_sha256": "370acb32db9e965d3b5816ac046ed8f3367bf72f0e7d9075cc02a7dad416a99d",
+ "vanished_2588": {
+  "a_unite_cluster_excluded_by_policy": 1733,
+  "b_base_backed_loss": 38,
+  "c_xr_only_documented_continuity": 60,
+  "d_xr_only_source_version_changed": 607,
+  "e_other_unresolved": 150
+ },
+ "verification": {
+  "agent_holds_still_unapproved": 110,
+  "canonical_binding_changed": [
+   31149,
+   172409,
+   612827,
+   612861,
+   612991
+  ],
+  "canonical_binding_changed_count": 5,
+  "holds_by_reason": {
+   "agent_proposed_validation_hold": 110,
+   "col_authorship_suspected_corruption": 1,
+   "col_id_renumbered_unaccepted": 6,
+   "nortaxa_1292_identity_change_pending_review": 16,
+   "nortaxa_species_to_coll_concept_change": 4
+  },
+  "name_or_rank_changed_count": 30,
+  "policy_excluded_ids_live": [],
+  "policy_excluded_registry_ids": 428888,
+  "r1_registry_bindings_changed": 0,
+  "receipt_held_by_kind": {
+   "aggregate_meaning_change": 1,
+   "dyntaxa_mapping": 1,
+   "nortaxa_mapping": 2,
+   "supersession": 8
+  },
+  "retired_reactivated": []
+ },
+ "with_real_impact": {
+  "b_base_backed_loss": 13,
+  "c_xr_only_documented_continuity": 13,
+  "d_xr_only_source_version_changed": 75,
+  "e_other_unresolved": 45
+ }
+}
