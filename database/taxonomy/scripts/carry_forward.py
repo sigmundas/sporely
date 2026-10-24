@@ -251,7 +251,9 @@ def reviewed_records(manual_mappings: dict, supersessions: dict, anchors: dict[i
         if retired:
             ids.append(retired)
         out.append({"record_id": entry["supersession_id"], "kind": "supersession",
-                    "approval_sha256": manifest_sha(entry), "identifiers": ids})
+                    "approval_sha256": manifest_sha(entry), "identifiers": ids,
+                    "retired_identifier": retired,
+                    "reviewed_through": str((entry.get("source_release_range") or {}).get("last") or "")})
     return out
 
 
@@ -512,13 +514,24 @@ def build_receipt(*, release_id: str, previous_dirs: dict[str, Path], current_di
         per_identifier[identifier] = reasons
     out_records = {}
     for record in sorted(records, key=lambda r: r["record_id"]):
+        # A supersession reviewed against the current release of the retired
+        # usage's source retires that usage because it vanished: its absence
+        # is the reviewed fact, not a change since review.
+        retired = record.get("retired_identifier")
+        vanished_reviewed = bool(
+            retired and per_identifier.get(tuple(retired)) == ["missing"] and record.get("reviewed_through")
+            and str((current_pins.get(retired[0]) or {}).get("source_release_id", "")).startswith(
+                f"{retired[0]}:{record['reviewed_through']}:"))
         reasons = sorted({f"{'/'.join(i)}:{reason}" for i in record["identifiers"]
-                          for reason in per_identifier[tuple(i)]})
+                          for reason in per_identifier[tuple(i)]
+                          if not (vanished_reviewed and tuple(i) == tuple(retired))})
         out_records[record["record_id"]] = {
             "kind": record["kind"], "approval_sha256": record["approval_sha256"],
             "identifiers": ["/".join(i) for i in record["identifiers"]],
             "status": "flagged" if reasons else "carried", "reasons": reasons}
         record_notes = sorted(f"{'/'.join(i)}:{notes[tuple(i)]}" for i in record["identifiers"] if tuple(i) in notes)
+        if vanished_reviewed:
+            record_notes.append(f"{'/'.join(retired)}:retired_usage_vanished_reviewed_in_current_release")
         if record_notes:
             out_records[record["record_id"]]["carried_by"] = record_notes
         hold = holds.get(record["record_id"])

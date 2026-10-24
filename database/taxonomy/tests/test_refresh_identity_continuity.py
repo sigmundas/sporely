@@ -470,3 +470,26 @@ def test_approved_name_record_follow_keeps_each_id_with_its_original_record(tmp_
     assert taxa[a]["scientific_name"] == "Kaskaskia macrospore"  # its R1 name / IF 800412, now on COL B
     assert taxa[b]["scientific_name"] == "Kaskaskia macrospora"
     assert _ids(tmp_path / "registry.jsonl") == before  # no key rebound, nothing allocated
+
+
+def test_supersession_reviewed_in_the_current_release_carries_its_vanished_retired_usage(tmp_path):
+    reg = tmp_path / "registry.jsonl"
+    old = _col(tmp_path / "v1", "1", [_sp("A", "Thyrea granatica", ""), _sp("B", "Lichinella cribellifera", "(Nyl.) Moreno & Egea")])
+    compile_release(normalized_source_dirs=[old], output_dir=tmp_path / "r1", release_id="tax-2026.01.01-01",
+                    manual_mappings_path=_write_manual_mappings(tmp_path / "m.json", []),
+                    mapping_policy_path=_POLICY_PATH, registry_path=reg)
+    a = _ids(reg)[("col_xr", "col_usage_id", "A")]
+    new = _col(tmp_path / "v2", "2", [_sp("B", "Lichinella cribellifera", "(Nyl.) Moreno & Egea")])
+
+    def status(last):
+        sup = {"supersessions": [{"supersession_id": "s", "superseded_sporely_taxon_id": a, "review_status": "approved",
+                                  "current_source_usage": {"source": "col_xr", "namespace": "col_usage_id", "identifier": "B"},
+                                  "source_release_range": {"first": "1", "last": last}}]}
+        _, receipt = _receipt(tmp_path, {"col_xr": old}, {"col_xr": new}, {"mappings": []}, sup, reg)
+        return receipt["records"]["s"]
+
+    current = status("2")  # reviewed against the release in which A vanished
+    assert current["status"] == "carried"
+    assert current["carried_by"] == ["col_xr/col_usage_id/A:retired_usage_vanished_reviewed_in_current_release"]
+    stale = status("1")  # reviewed earlier: the vanished usage is a change since review
+    assert stale["status"] == "flagged" and stale["reasons"] == ["col_xr/col_usage_id/A:missing"]
