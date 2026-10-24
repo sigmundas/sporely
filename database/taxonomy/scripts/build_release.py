@@ -642,6 +642,7 @@ def build(options: Options, run: Runner | None = None, python: str = sys.executa
 
     report = {
         "release_id": options.release_id,
+        "provenance": build_provenance(),
         "recipe": os.path.relpath(options.recipe_path, REPO_ROOT),
         "recipe_sha256": sha256_file(options.recipe_path),
         "inputs": inputs,
@@ -752,6 +753,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--expect-freeze-sha256",
                         help="freeze.json SHA-256 of the reviewed frozen set; required by --promote")
     return parser
+
+
+def build_provenance() -> dict:
+    """The code and toolchain a build ran with (not part of any frozen bytes)."""
+    import platform
+
+    def git(*args: str) -> str:
+        try:
+            return subprocess.run(["git", "-C", str(REPO_ROOT), *args], capture_output=True, text=True,
+                                  check=True).stdout.strip()
+        except (OSError, subprocess.CalledProcessError):
+            return ""
+    status = git("status", "--porcelain", "--untracked-files=no")
+    return {"git_commit": git("rev-parse", "HEAD"), "git_tracked_changes": len(status.splitlines()) if status else 0,
+            "python": platform.python_version(), "sqlite": sqlite3.sqlite_version}
 
 
 def main(argv: list[str] | None = None) -> int:
