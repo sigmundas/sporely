@@ -158,3 +158,24 @@ def test_vanished_unite_cluster_is_classified_by_policy_not_unexplained(tmp_path
     assert result["stopped_being_live"] == (result["stopped_by_supersession"] + len(result["stopped_unexplained"])
                                             + sum(result["stopped_excluded_by_policy"].values())
                                             + sum(result["stopped_held_by_continuity"].values()))
+
+
+def test_col_continuity_holds_are_classified_as_held_not_unexplained(tmp_path: Path) -> None:
+    receipt = {"records": {}, "col_id_continuity": [{"old_col_id": "P2", "new_col_id": "N2"}],
+               "col_continuity_candidates": {
+                   "vanished_anchors": {"P1": {"sporely_taxon_id": 3}, "P2": {"sporely_taxon_id": 4},
+                                        "Q1": {"sporely_taxon_id": 6}, "Q2": {"sporely_taxon_id": 7}},
+                   "name_record_transfers": [{"col_id": "A", "sporely_taxon_id": 1},
+                                             {"col_id": "B", "sporely_taxon_id": 2}],
+                   "pairs": [{"old_col_id": "P1", "new_col_id": "N1", "sporely_taxon_id": 3},
+                             {"old_col_id": "P2", "new_col_id": "N2", "sporely_taxon_id": 4}],
+                   "ambiguous": [{"old_col_ids": ["Q1", "Q2"], "new_col_ids": ["M1", "M2"]}]}}
+    held = prepare_refresh.held_by_continuity(receipt, {})
+    assert held == {1: "held:name_record_transfer", 2: "held:name_record_transfer",
+                    3: "held:col_continuity_unapproved", 6: "held:col_continuity_unapproved",
+                    7: "held:col_continuity_unapproved"}
+    result = prepare_refresh.identity_comparison(_sqlite(tmp_path / "a.sqlite3", {1, 2, 3, 4, 5, 6, 7, 8}),
+                                                 _sqlite(tmp_path / "b.sqlite3", {8}), None, held)
+    assert result["stopped_held_by_continuity"] == {"held:col_continuity_unapproved": 3,
+                                                    "held:name_record_transfer": 2}
+    assert result["stopped_unexplained"] == [4, 5]  # approved continuity that did not resolve; plain loss

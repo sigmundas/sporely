@@ -226,6 +226,21 @@ def held_by_continuity(receipt: dict, anchors: dict[int, tuple]) -> dict[int, st
             for identifier in record.get("identifiers") or []:
                 if identifier in by_usage:
                     out[by_usage[identifier]] = f"held:{record.get('kind')}"
+    # COL continuity holds the compiler applies from the receipt: a usage
+    # that took another anchored id's name record, and a vanished anchor
+    # whose matching new usage is withheld until the continuity is approved.
+    candidates = receipt.get("col_continuity_candidates") or {}
+    approved_new = {e["new_col_id"] for e in receipt.get("col_id_continuity") or []}
+    vanished = candidates.get("vanished_anchors") or {}
+    for transfer in candidates.get("name_record_transfers") or []:
+        out.setdefault(transfer["sporely_taxon_id"], "held:name_record_transfer")
+    for entry in (candidates.get("pairs") or []) + (candidates.get("ambiguous") or []):
+        if set(entry.get("new_col_ids") or [entry.get("new_col_id")]) & approved_new:
+            continue
+        for old in entry.get("old_col_ids") or [entry.get("old_col_id")]:
+            taxon = (vanished.get(old) or {}).get("sporely_taxon_id", entry.get("sporely_taxon_id"))
+            if taxon is not None:
+                out.setdefault(taxon, "held:col_continuity_unapproved")
     return out
 
 
