@@ -129,13 +129,17 @@ def test_restore_keeps_this_machines_auth_method_with_its_tokens(installation, t
     schema.save_app_settings({
         "cloud_access_token": "archived-password-token",
         "cloud_auth_method": "password",
+        "reference_client_device_id": "11111111-1111-4111-8111-111111111111",
         "ui_theme": "dark",
     })
     archive = _make_backup(tmp_path)
+    with ZipFile(archive) as zipped:
+        assert b"11111111-1111" not in zipped.read("data/app_settings.json")
     schema.save_app_settings({
         "cloud_access_token": "current-oauth-token",
         "cloud_refresh_token": "current-oauth-refresh",
         "cloud_auth_method": "oauth",
+        "reference_client_device_id": "22222222-2222-4222-8222-222222222222",
         "ui_theme": "light",
     })
 
@@ -145,6 +149,7 @@ def test_restore_keeps_this_machines_auth_method_with_its_tokens(installation, t
     assert restored["cloud_access_token"] == "current-oauth-token"
     assert restored["cloud_refresh_token"] == "current-oauth-refresh"
     assert restored["cloud_auth_method"] == "oauth"
+    assert restored["reference_client_device_id"] == "22222222-2222-4222-8222-222222222222"
     assert restored["ui_theme"] == "dark"
 
 

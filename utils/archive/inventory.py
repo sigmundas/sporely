@@ -189,6 +189,9 @@ APP_SETTING_POLICIES: dict[str, SettingPolicy] = {
     "images_dir": SettingPolicy.MACHINE_SPECIFIC,
     "last_export_dir": SettingPolicy.MACHINE_SPECIFIC,
     "last_import_dir": SettingPolicy.MACHINE_SPECIFIC,
+    # One device id per installed profile (utils/reference_client_capabilities):
+    # a restored copy must not claim another machine's device record.
+    "reference_client_device_id": SettingPolicy.MACHINE_SPECIFIC,
     "linked_cloud_user_id": SettingPolicy.EXACT,
     "cloud_user_id": SettingPolicy.EXACT,
     "cloud_user_email": SettingPolicy.EXACT,
