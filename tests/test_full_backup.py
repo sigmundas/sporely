@@ -502,6 +502,45 @@ def test_full_backup_accepts_representative_production_settings(installation, tm
     assert {key: archived[key] for key in production_settings} == production_settings
 
 
+def test_full_backup_keeps_cloud_sync_numeric_id_settings_and_drops_credentials(installation, tmp_path):
+    settings = {
+        "cloud_image_pull_injected_captured_at:8521": "cloud",
+        "cloud_location_precision_confirmed:497": "exact",
+        "inat_client_secret": "must-not-be-archived",
+    }
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        connection.executemany(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", settings.items(),
+        )
+        connection.commit()
+
+    destination = tmp_path / "numeric-id-settings.sporely"
+    create_full_backup(destination, app_version="test", qsettings_values={})
+
+    with ZipFile(destination) as archive:
+        staged = tmp_path / "numeric-id-settings.db"
+        staged.write_bytes(archive.read("databases/mushrooms.db"))
+    with sqlite3.connect(staged) as connection:
+        archived = dict(connection.execute("SELECT key, value FROM settings"))
+    assert archived["cloud_image_pull_injected_captured_at:8521"] == "cloud"
+    assert archived["cloud_location_precision_confirmed:497"] == "exact"
+    assert "inat_client_secret" not in archived
+    assert b"must-not-be-archived" not in staged.read_bytes()
+
+
+def test_malformed_numeric_id_setting_aborts_without_final_archive(installation, tmp_path):
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        connection.execute(
+            "INSERT INTO settings (key, value) VALUES "
+            "('cloud_image_pull_injected_captured_at:abc', 'cloud')"
+        )
+        connection.commit()
+    destination = tmp_path / "must-not-exist.sporely"
+    with pytest.raises(FullBackupError, match="unclassified database setting"):
+        create_full_backup(destination, app_version="test", qsettings_values={})
+    assert not destination.exists()
+
+
 def test_staged_database_does_not_retain_deleted_secret_bytes(installation, tmp_path):
     secret = "phase11-unique-secret-" + ("0123456789abcdef" * 128)
     with sqlite3.connect(schema.get_database_path()) as connection:

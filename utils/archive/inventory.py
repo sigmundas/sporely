@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -261,6 +262,14 @@ _DB_EXACT_PREFIXES = (
     "live_lab_", "observations_", "measure_view_", "measure_image_view_settings_",
     "measure_observation_scale_bar_value_", "raw_", "default_",
 )
+# Per-row markers keyed by a local numeric id, written by cloud sync: the
+# capture time a pull injected into an image (cloud_sync_impl/exif.py) and the
+# location precision the user confirmed for an observation
+# (cloud_sync_impl/location_precision.py). A full restore keeps local ids, so
+# they restore exactly; any other suffix stays unclassified.
+_DB_EXACT_ID_KEY = re.compile(
+    r"(?:cloud_image_pull_injected_captured_at|cloud_location_precision_confirmed):[0-9]+"
+)
 _CREDENTIAL_MARKERS = ("token", "password", "secret", "api_key")
 
 
@@ -276,6 +285,8 @@ def database_setting_policy(key: str) -> SettingPolicy:
     if normalized in _DB_REGENERABLE_KEYS or normalized.endswith(_DB_REGENERABLE_SUFFIXES):
         return SettingPolicy.REGENERABLE
     if normalized in _DB_EXACT_KEYS or normalized.startswith(_DB_EXACT_PREFIXES):
+        return SettingPolicy.EXACT
+    if _DB_EXACT_ID_KEY.fullmatch(normalized):
         return SettingPolicy.EXACT
     raise KeyError(f"unclassified database setting: {key}")
 
