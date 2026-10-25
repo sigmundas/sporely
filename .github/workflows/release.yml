@@ -52,7 +52,10 @@ jobs:
               echo "::error::$RELEASE_TAG is already published; refusing to upload into it"
               exit 1
             fi
-            echo "Reusing draft $RELEASE_TAG"
+            # A rebuild uploads installers from this commit, so the tag that
+            # publishing creates must point here too, not at the first build.
+            gh release edit "$RELEASE_TAG" --target "$GITHUB_SHA"
+            echo "Reusing draft $RELEASE_TAG, retargeted to $GITHUB_SHA"
           else
             gh release create "$RELEASE_TAG" --draft --target "$GITHUB_SHA" \
               --title "$RELEASE_TAG" --generate-notes
@@ -263,8 +266,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.validate-version.outputs.version }}
         run: |
-          gh release view "$RELEASE_TAG" --json isDraft,assets > release.json
+          gh release view "$RELEASE_TAG" --json isDraft,targetCommitish,assets > release.json
           jq -e '.isDraft == true' release.json
+          jq -e --arg sha "$GITHUB_SHA" '.targetCommitish == $sha' release.json \
+            || { echo "::error::draft targets $(jq -r .targetCommitish release.json), not $GITHUB_SHA"; exit 1; }
           for name in "Sporely-$VERSION-windows-setup.exe" "sporely_${VERSION}_amd64.deb" \
                       "Sporely-$RELEASE_TAG-macos-intel.dmg" "Sporely-$RELEASE_TAG-macos-apple-silicon.dmg"; do
             jq -e --arg n "$name" 'any(.assets[]; .name == $n and .size > 0)' release.json >/dev/null \
