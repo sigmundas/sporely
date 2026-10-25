@@ -97,7 +97,7 @@ from dataclasses import asdict, dataclass
 from typing import Callable, Iterable
 
 from PySide6.QtCore import QCoreApplication, QEvent, QModelIndex, QObject, QSettings, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QFont, QStandardItem, QStandardItemModel
+from PySide6.QtGui import QFont, QPalette, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -121,6 +121,15 @@ from PySide6.QtWidgets import (
 
 from database.models import MeasurementDB, ObservationDB, SettingsDB
 from database.taxon_lookup import TaxonLookupService
+from database.taxon_suggestions import (
+    KIND_NAME_MATCH,
+    KIND_NAME_ONLY,
+    KIND_VERIFIED,
+    ORIGIN_OBSERVATION,
+    TaxonSuggestion,
+    concept_source_labels,
+    reference_taxon_suggestions,
+)
 from database.vernacular_db import VernacularDB
 from utils.vernacular_utils import (
     normalize_vernacular_language,
@@ -194,6 +203,65 @@ def format_ai_candidate_display(entry: dict) -> str:
         return base
     percent = int(round(score * 100)) if score <= 1.0 else int(round(score))
     return f"{base}  {percent}%"
+
+
+def format_taxon_suggestion_display(suggestion: TaxonSuggestion, *, own_label: str = "") -> str:
+    """List label for one reference-taxon suggestion.
+
+    Concept rows name their source (``NorTaxa 54701``, ``COL 6J82Y``) so
+    concepts sharing a scientific name are told apart; rows without a
+    concept say so.
+    """
+    if suggestion.origin == ORIGIN_OBSERVATION and own_label:
+        base = own_label
+    else:
+        name = suggestion.scientific_name
+        if suggestion.concept_name:
+            name = f"{name} → {suggestion.concept_name}"
+        base = name
+        vernacular = suggestion.vernacular
+        if vernacular and vernacular.casefold() != suggestion.scientific_name.casefold():
+            base = f"{name} ({vernacular})"
+    if suggestion.is_concept and suggestion.source_label:
+        base = f"{base} · {suggestion.source_label}"
+    elif suggestion.is_concept and suggestion.origin != ORIGIN_OBSERVATION:
+        base = f"{base} · Sporely {suggestion.sporely_taxon_id}"
+    if suggestion.score is not None:
+        score = suggestion.score
+        percent = int(round(score * 100)) if score <= 1.0 else int(round(score))
+        base = f"{base}  {percent}%"
+    if suggestion.kind == KIND_NAME_MATCH:
+        return QCoreApplication.translate("AddReferenceDialog", "{label} — same name").format(label=base)
+    if suggestion.kind == KIND_NAME_ONLY:
+        return QCoreApplication.translate("AddReferenceDialog", "{label} — name only").format(label=base)
+    return base
+
+
+def taxon_suggestion_tooltip(suggestion: TaxonSuggestion) -> str:
+    """Why a reference-taxon suggestion is (or is not) a Sporely taxon."""
+    if suggestion.kind == KIND_VERIFIED and suggestion.raw_external_id:
+        return QCoreApplication.translate(
+            "AddReferenceDialog",
+            "The AI identifier {identifier} links this suggestion to this Sporely taxon.",
+        ).format(identifier=suggestion.raw_external_id)
+    if suggestion.kind == KIND_VERIFIED:
+        return QCoreApplication.translate("AddReferenceDialog", "The observation's Sporely taxon.")
+    if suggestion.kind == KIND_NAME_MATCH:
+        return QCoreApplication.translate(
+            "AddReferenceDialog",
+            "A Sporely taxon with this scientific name. Taxa can share a name; "
+            "choose the one you mean.",
+        )
+    if suggestion.external_id_unresolved:
+        return QCoreApplication.translate(
+            "AddReferenceDialog",
+            "The AI identifier {identifier} matches no single taxon in the installed "
+            "taxonomy. A reference saved under this name is not linked to a taxon.",
+        ).format(identifier=suggestion.raw_external_id)
+    return QCoreApplication.translate(
+        "AddReferenceDialog",
+        "A name without a Sporely taxon. A reference saved under it is not linked to a taxon.",
+    )
 
 
 def filter_library_candidates(
@@ -927,7 +995,11 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             for label, data in default_rows
             if folded in label.casefold()
         ]
-        seen_labels = {label for label, _ in rows}
+        # Keyed by label *and* concept: two concepts sharing a scientific
+        # name (a COL and a NorTaxa concept, say) are both offered, and told
+        # apart by their source below.
+        seen = {(label, data.get("taxon_id")) for label, data in rows}
+        search_start = len(rows)
         lookup = self._taxon_target_lookup()
         if lookup is not None:
             hits = lookup.suggest_scientific_names(
@@ -950,9 +1022,10 @@ class AddReferenceDialog(GeometryMixin, QDialog):
                 common_name = common_names.get((parts[0].casefold(), parts[1].casefold()))
                 if common_name:
                     label = f"{label} ({common_name})"
-                if label in seen_labels:
+                key = (label, hit.get("sporely_taxon_id"))
+                if key in seen:
                     continue
-                seen_labels.add(label)
+                seen.add(key)
                 rows.append((label, {
                     "genus": parts[0],
                     "species": parts[1],
@@ -969,16 +1042,38 @@ class AddReferenceDialog(GeometryMixin, QDialog):
                 if not genus or not species or not common or species.casefold() == genus.casefold():
                     continue
                 label = f"{common} ({genus} {species})"
-                if label in seen_labels:
+                key = (label, choice.taxon_id)
+                if key in seen:
                     continue
-                seen_labels.add(label)
+                seen.add(key)
                 rows.append((label, {
                     "genus": genus,
                     "species": species,
                     "taxon_id": choice.taxon_id,
                     "label": f"{genus} {species}",
                 }))
+            rows[search_start:] = self._disambiguate_same_label_rows(lookup, rows[search_start:])
         return rows
+
+    @staticmethod
+    def _disambiguate_same_label_rows(lookup, rows: list[tuple[str, dict]]) -> list[tuple[str, dict]]:
+        """Append the source to labels that several concepts share."""
+        ids_by_label: dict[str, set] = {}
+        for label, data in rows:
+            ids_by_label.setdefault(label, set()).add(data.get("taxon_id"))
+        shared = {label for label, ids in ids_by_label.items() if len(ids) > 1}
+        if not shared:
+            return rows
+        sources = concept_source_labels(
+            lookup, [data.get("taxon_id") for label, data in rows if label in shared]
+        )
+        out = []
+        for label, data in rows:
+            taxon_id = data.get("taxon_id")
+            if label in shared and taxon_id is not None:
+                label = f"{label} · {sources.get(int(taxon_id)) or f'Sporely {taxon_id}'}"
+            out.append((label, data))
+        return out
 
     @staticmethod
     def _common_names_for_hits(lookup, hits: list[dict]) -> dict[tuple[str, str], str]:
@@ -1096,48 +1191,67 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         combo.blockSignals(True)
         combo.clear()
         own_label = self._own_taxon_display_label()
-        if own_label:
-            # The observation's own taxon, listed first under its plain name.
+        own_index = -1
+        for suggestion in self._reference_taxon_suggestions():
             combo.addItem(
-                own_label,
+                format_taxon_suggestion_display(suggestion, own_label=own_label),
                 {
-                    "genus": self._own_genus,
-                    "species": self._own_species,
-                    "taxon_id": self._own_taxon_id,
-                    "label": own_label,
+                    "genus": suggestion.genus,
+                    "species": suggestion.species,
+                    "taxon_id": suggestion.sporely_taxon_id
+                    if suggestion.is_concept
+                    else None,
+                    "label": suggestion.scientific_name,
+                    "kind": suggestion.kind,
+                    "origin": suggestion.origin,
                 },
             )
-        # One row per taxon: an AI suggestion that repeats the observation
-        # taxon, or an earlier suggestion, adds nothing to choose from.
-        seen = set()
-        if own_label:
-            seen.add((str(self._own_genus or "").casefold(), str(self._own_species or "").casefold()))
-        for entry in self._ai_candidates:
-            genus = str(entry.get("genus") or "").strip()
-            species = str(entry.get("species") or "").strip()
-            if not genus or not species:
-                continue
-            key = (genus.casefold(), species.casefold())
-            if key in seen:
-                continue
-            seen.add(key)
-            combo.addItem(
-                format_ai_candidate_display(entry),
-                {
-                    "genus": genus,
-                    "species": species,
-                    "taxon_id": None,
-                    "label": f"{genus} {species}",
-                },
-            )
-        # With no observation taxon nothing is selected: the field starts
-        # empty, showing a prompt rather than text, so the user can type
+            index = combo.count() - 1
+            combo.setItemData(index, taxon_suggestion_tooltip(suggestion), Qt.ToolTipRole)
+            if suggestion.kind == KIND_NAME_ONLY:
+                combo.setItemData(index, combo.palette().color(QPalette.PlaceholderText), Qt.ForegroundRole)
+            if suggestion.origin == ORIGIN_OBSERVATION and own_index < 0:
+                own_index = index
+        # The picker opens on the observation's own taxon, wherever it is
+        # listed; with no observation taxon nothing is selected and the
+        # field starts empty, showing a prompt, so the user can type
         # straight away.
-        combo.setCurrentIndex(0 if own_label else -1)
+        combo.setCurrentIndex(own_index)
         combo.lineEdit().setPlaceholderText(
             QCoreApplication.translate("AddReferenceDialog", "Search scientific or common name…")
         )
         combo.blockSignals(False)
+
+    def _reference_taxon_suggestions(self) -> list[TaxonSuggestion]:
+        """Observation taxon and AI suggestions, ordered by evidence.
+
+        Verified Sporely concepts first (the observation's own identity, AI
+        identifiers the installed taxonomy resolves), then concepts sharing a
+        suggested name, then name-only rows. The names database is opened
+        only when there is something to resolve.
+        """
+        needs_lookup = bool(self._ai_candidates) or (
+            not self._own_taxon_id and bool(self._own_genus and self._own_species)
+        )
+        lookup = self._taxon_target_lookup() if needs_lookup else None
+        try:
+            return reference_taxon_suggestions(
+                lookup,
+                own_genus=self._own_genus,
+                own_species=self._own_species,
+                own_taxon_id=self._own_taxon_id,
+                own_label=self._own_taxon_display_label(),
+                ai_entries=self._ai_candidates,
+            )
+        except Exception:
+            return reference_taxon_suggestions(
+                None,
+                own_genus=self._own_genus,
+                own_species=self._own_species,
+                own_taxon_id=self._own_taxon_id,
+                own_label=self._own_taxon_display_label(),
+                ai_entries=self._ai_candidates,
+            )
 
     def _on_taxon_target_activated(self, index: int) -> None:
         data = self.taxon_target_combo.itemData(index)

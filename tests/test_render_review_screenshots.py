@@ -55,6 +55,7 @@ REFERENCE_IDS = {
     "reference.comparison-list-colors",
     "reference.add-dialog-default-size",
     "reference.add-dialog-taxon-selector",
+    "reference.add-dialog-taxon-evidence",
     "reference.fix2-suppressed-light",
     "reference.fix2-suppressed-dark",
     "reference.fix2-colors-light",

@@ -41,6 +41,8 @@ def isolated_picker_settings(tmp_path, monkeypatch):
         return QSettings(str(tmp_path / "picker.ini"), QSettings.IniFormat)
 
     monkeypatch.setattr(picker.MeasurementSetRepository, "get", lambda _id: None)
+    # No installed names database: tests that need taxon lookups inject one.
+    monkeypatch.setattr(picker, "resolve_vernacular_db_path", lambda *_args: None)
     monkeypatch.setattr(picker, "QSettings", settings)
     monkeypatch.setattr(geometry, "QSettings", settings)
 

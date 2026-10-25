@@ -173,6 +173,7 @@ from database.reference_library import (
     TaxonTreatmentRepository,
 )
 from database.taxon_lookup import TAXON_COMPLETER_LIMIT, TaxonChoice, TaxonLookupService
+from database.taxon_suggestions import ai_prediction_external_id
 from database.vernacular_db import VernacularDB
 from database.database_tags import DatabaseTerms
 from database.schema import (
@@ -11342,7 +11343,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Return AI suggestion entries for the active observation.
 
         Merges Artsorkael + iNaturalist predictions across all images,
-        deduplicates by (source, scientific name), keeps the highest score,
+        deduplicates by (source, identifier or scientific name), keeps the highest score,
         and sorts descending by score.
         """
         obs_id = getattr(self, "active_observation_id", None)
@@ -11385,7 +11386,12 @@ class MainWindow(GeometryMixin, QMainWindow):
                     entry = self._build_reference_ai_entry(pred, source_key)
                     if entry is None:
                         continue
-                    dedupe_key = (source_key, entry["scientific_name"].casefold())
+                    # Keyed by identifier when there is one: two concepts
+                    # sharing a name are different suggestions.
+                    dedupe_key = (
+                        source_key,
+                        entry["external_id"] or entry["scientific_name"].casefold(),
+                    )
                     existing = best_by_key.get(dedupe_key)
                     if existing is None or entry["score"] > existing["score"]:
                         best_by_key[dedupe_key] = entry
@@ -11520,6 +11526,9 @@ class MainWindow(GeometryMixin, QMainWindow):
             "genus": genus,
             "species": species,
             "score": score,
+            # The provider's verbatim identifier (``NBIC:54701``), so the
+            # picker can resolve the concept instead of matching the name.
+            "external_id": ai_prediction_external_id(pred, taxon),
         }
 
     @staticmethod

@@ -367,10 +367,13 @@ def _normalize_ai_prediction_taxon(prediction: dict, source: str | None = None) 
     # only as ``scientific_name_id``; without this the copy path saw no id at
     # all and stored neither ``ai_selected_taxon_id`` nor a provider identity.
     # ``scientific_name_id_shared`` (a GBIF id) is deliberately not used.
+    # A desktop run stores it either at the top level or inside ``taxon``.
     if not str(taxon.get("id") or "").strip():
-        name_id = str(pred.get("scientific_name_id") or pred.get("scientificNameId") or "").strip()
-        if name_id:
-            taxon["id"] = name_id
+        for holder in (pred, taxon):
+            name_id = str(holder.get("scientific_name_id") or holder.get("scientificNameId") or "").strip()
+            if name_id:
+                taxon["id"] = name_id
+                break
     return taxon
 
 
