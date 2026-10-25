@@ -1,0 +1,156 @@
+{
+ "release_id": "tax-2026.10.23-11",
+ "date": "2026-10-25",
+ "decision": "release_approved (owner, 2026-10-25); import execution not authorized",
+ "artifacts": {
+  "sqlite": "2a81f68435d0606633319be0845f9fa1de46ccd9c2442f391af742fad3899a97",
+  "freeze": "26e77446fb3b71720fa44cf54fe5237bb0bab5f240f2f762036da3e92877bc99",
+  "production_import_sql": "c150bb59f5ab6cb0197e74e7e9fca733983604c1ca80a9c5d225cf3075e605ed (run1 and run2 identical; generator sporely-web c9bd2c0; export with --generated-at 2026-10-25T00:00:00Z)",
+  "scope_export_manifest": "1948878753b26c0ede6d89ec61d3844106d4c4bca22a377b89ba1706c35267d2",
+  "w1_export_manifest": "9bda7125e5cb80b49ab84a6f529f7be6753857941480d02140f5a0806c2f42c5",
+  "manifest_release_approval": "export_use release, importable true, decision release_approved, sqlite 2a81f684...",
+  "paths": "/Users/sigmundas/Documents/Code/sporely/releases/tax-2026.10.23-11/production/run1, run2 (SHA256SUMS)"
+ },
+ "diff_vs_rehearsal_sql_1c01616b": {
+  "copy_data_blocks": "6 of 6 identical by sha256 (53,166 / 61,797 / 61,157 / 57,771 / 0 / 2,984 rows); whole_export_sha256 unchanged",
+  "hunks": [
+   "1 header line (LOCAL REHEARSAL -> PRIVATE PRODUCTION)",
+   "2 rehearsal guard block absent in production (marker/nonce/system identifier)",
+   "3 replay-preflight manifest_sha256 (75f3d8fb -> 19488787)",
+   "4 release row manifest_sha256 field",
+   "5 source_manifest JSON: release_approval (export_use, importable, decision, approved_at, decision_reference), scope_manifest_sha256 (x2), w1_manifest_sha256",
+   "6 import_runs source_directory (scope -> global_macrofungi_tax-2026.10.23-11)",
+   "7 post-load check manifest_sha256"
+  ],
+  "deviations": "none: COPY data, validation, limits, cutover lock order, activation, protected-state and selection checks identical"
+ },
+ "preflight": {
+  "results": [
+   {
+    "k": "system_identifier",
+    "v": "7606130613603586966"
+   },
+   {
+    "k": "rehearsal_marker_present",
+    "v": false
+   },
+   {
+    "k": "releases",
+    "v": [
+     {
+      "id": "tax-2026.08.01-01",
+      "status": "retired"
+     },
+     {
+      "id": "tax-2026.09.26-02",
+      "status": "retired"
+     },
+     {
+      "id": "tax-2026.09.30-01",
+      "status": "retired"
+     },
+     {
+      "id": "tax-2026.10.07-01",
+      "status": "active"
+     }
+    ]
+   },
+   {
+    "k": "r11_rows",
+    "v": {
+     "releases": 0,
+     "taxa": 0,
+     "import_runs": 0
+    }
+   },
+   {
+    "k": "latest_migrations",
+    "v": [
+     "20261020120000",
+     "20261020100100",
+     "20261020100000"
+    ]
+   },
+   {
+    "k": "cg1_selected_not_in_active",
+    "v": 0
+   },
+   {
+    "k": "long_transactions_over_60s",
+    "v": 0
+   },
+   {
+    "k": "idle_in_transaction",
+    "v": 0
+   },
+   {
+    "k": "locks_on_import_tables_by_others",
+    "v": 0
+   },
+   {
+    "k": "not_granted_locks",
+    "v": 0
+   },
+   {
+    "k": "rows",
+    "t": "public.observations",
+    "n": 782
+   },
+   {
+    "k": "rows",
+    "t": "public.taxa",
+    "n": 110833
+   },
+   {
+    "k": "rows",
+    "t": "public.taxa_vernacular",
+    "n": 137282
+   },
+   {
+    "k": "rows",
+    "t": "taxonomy_v3.resolution_link",
+    "n": 369
+   },
+   {
+    "k": "rows",
+    "t": "taxonomy_v3.identification_snapshot",
+    "n": 369
+   }
+  ],
+  "schema": "fresh read-only schema-only dump identical to the rehearsal dump of 2026-10-25 (0 diff lines, excluding dump-session markers)",
+  "cloud_references": {
+   "obs.identity_sporely": {
+    "distinct": 4,
+    "unresolved": 0,
+    "outside_cloud_scope": 0
+   },
+   "obs.resolved": {
+    "distinct": 189,
+    "unresolved": 0,
+    "outside_cloud_scope": 87
+   },
+   "obs.selected": {
+    "distinct": 63,
+    "unresolved": 0,
+    "outside_cloud_scope": 0
+   },
+   "priv.shared_contrib": {
+    "distinct": 2,
+    "unresolved": 0,
+    "outside_cloud_scope": 0
+   },
+   "ref.treatments": {
+    "distinct": 3,
+    "unresolved": 0,
+    "outside_cloud_scope": 1
+   },
+   "v3.resolution_link": {
+    "distinct": 190,
+    "unresolved": 0,
+    "outside_cloud_scope": 88
+   }
+  }
+ },
+ "runbook": "releases/tax-2026.10.23-11/release-prep/R11-IMPORT-RUNBOOK.md (copy: tax-2026.10.23-11-import-runbook.md)",
+ "note": "No production write, import, deployment or desktop promotion performed."
+}
