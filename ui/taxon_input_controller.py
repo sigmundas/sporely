@@ -470,9 +470,8 @@ class TaxonInputController(QObject):
             self._last_species_signature = ()
 
     def _effective_evidence_ids(self) -> frozenset[int]:
-        committed = TaxonIdentity.from_row(self._committed_snapshot)
-        if committed.is_proven_sporely and committed.sporely_taxon_id is not None:
-            return self._evidence_taxon_ids | {int(committed.sporely_taxon_id)}
+        """Provider evidence only. The committed concept is deliberately not
+        evidence: it must never hide the alternative a user may switch to."""
         return self._evidence_taxon_ids
 
     def _settle_concept_suggestions(self, suggestions: list[dict]) -> list[dict]:
@@ -486,6 +485,9 @@ class TaxonInputController(QObject):
             name_of=lambda row: row.get("scientific_name") or "",
             id_of=lambda row: row.get("sporely_taxon_id"),
             evidence=self._effective_evidence_ids(),
+            # Only a concept's own (canonical) name row can be settled; a
+            # synonym row keeps whatever concept it points at.
+            is_own_name=lambda row: row.get("link_kind") == "canonical",
         )
         ids_by_name: dict[str, set[int]] = {}
         for row in rows:
@@ -565,7 +567,10 @@ class TaxonInputController(QObject):
             if popup:
                 popup.hide()
             return values
-        signature = tuple((display, epithet, "") for display, epithet, _payload in rows)
+        signature = tuple(
+            (display, epithet, str(payload.get("sporely_taxon_id")) if isinstance(payload, dict) else "")
+            for display, epithet, payload in rows
+        )
         if signature != self._last_species_signature:
             self._species_model.clear()
             for display, epithet, payload in rows:
@@ -645,6 +650,10 @@ class TaxonInputController(QObject):
         genus = self._current_genus()
         prefix = self._current_species()
         query_key = (genus.casefold(), prefix.casefold(), self.max_suggestions)
+        if self._concept_species_suggestions:
+            # The rows depend on the evidence; a cached row must never point
+            # at a concept the current evidence no longer lists.
+            query_key = (*query_key, self._effective_evidence_ids())
         if self._last_species_query == query_key and self._species_model.rowCount():
             return [
                 self._clean_species_text(item.data(Qt.UserRole)) if item is not None else ""

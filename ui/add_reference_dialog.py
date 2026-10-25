@@ -1017,6 +1017,9 @@ class AddReferenceDialog(GeometryMixin, QDialog):
                     "species": parts[1],
                     "taxon_id": hit.get("sporely_taxon_id"),
                     "label": name,
+                    # A synonym row is not its concept's own name: it never
+                    # settles, nor is settled by, same-name alternatives.
+                    "own_name": hit.get("link_kind") == "canonical",
                 }))
             for choice in lookup.suggest_common_names(query, limit=self._TAXON_SEARCH_LIMIT):
                 genus = str(choice.genus or "").strip()
@@ -1043,6 +1046,7 @@ class AddReferenceDialog(GeometryMixin, QDialog):
                 name_of=lambda row: row[1].get("label") or "",
                 id_of=lambda row: row[1].get("taxon_id"),
                 evidence=evidence_ids,
+                is_own_name=lambda row: row[1].get("own_name", True),
             )
             rows = self._disambiguate_same_label_rows(lookup, rows)
         return rows

@@ -238,14 +238,20 @@ def evidence_concept_ids(lookup, ai_entries: Iterable[dict] = ()) -> frozenset[i
     return frozenset(ids)
 
 
-def collapse_same_name_by_evidence(rows: list, *, name_of, id_of, evidence: Iterable[int]) -> list:
+def collapse_same_name_by_evidence(
+    rows: list, *, name_of, id_of, evidence: Iterable[int], is_own_name=lambda _row: True,
+) -> list:
     """Drop same-name alternatives that identifier evidence rules out.
 
-    Rows sharing a name (case-insensitive) but naming different concepts
-    are genuinely ambiguous. When exactly one of those concepts is in
-    ``evidence``, only its rows are kept; otherwise all are kept, for the
-    caller to tell apart. Rows without a concept are never dropped. Order is
-    preserved.
+    Only rows that carry their concept's *own* name (``is_own_name``) take
+    part: concepts whose own names are equal (a COL and a NorTaxa concept
+    both named *Flammulina velutipes*) are genuinely ambiguous, and when
+    exactly one of them is in ``evidence`` the others' own-name rows are
+    dropped. A row reached through another name (a synonym or linked name)
+    is never dropped and never settles anything, so evidence for one name
+    cannot hide the concept another name means. Rows without a concept are
+    never dropped. Order is preserved; otherwise everything is kept for the
+    caller to tell apart.
     """
     evidence_ids = {int(t) for t in evidence or () if t is not None}
     if not evidence_ids:
@@ -253,7 +259,7 @@ def collapse_same_name_by_evidence(rows: list, *, name_of, id_of, evidence: Iter
     ids_by_name: dict[str, set[int]] = {}
     for row in rows:
         taxon_id = id_of(row)
-        if taxon_id is None:
+        if taxon_id is None or not is_own_name(row):
             continue
         ids_by_name.setdefault(_text(name_of(row)).casefold(), set()).add(int(taxon_id))
     keep_by_name: dict[str, int] = {}
@@ -267,7 +273,7 @@ def collapse_same_name_by_evidence(rows: list, *, name_of, id_of, evidence: Iter
     for row in rows:
         taxon_id = id_of(row)
         keep = keep_by_name.get(_text(name_of(row)).casefold())
-        if taxon_id is not None and keep is not None and int(taxon_id) != keep:
+        if taxon_id is not None and keep is not None and is_own_name(row) and int(taxon_id) != keep:
             continue
         out.append(row)
     return out
@@ -301,8 +307,8 @@ class ReferenceDefaults:
     #: Other AI suggestions, for an optional section. Never mixed into
     #: typed search results.
     ai: tuple[TaxonSuggestion, ...]
-    #: Concepts proven by identifiers (and the own concept), used to settle
-    #: same-name alternatives in typed search.
+    #: Concepts proven by identifiers (plus the own concept when there are
+    #: any), used to settle same-name alternatives in typed search.
     evidence_ids: frozenset[int]
 
 
@@ -372,8 +378,12 @@ def reference_default_suggestions(
             seen_names.add(folded)
         ai.append(suggestion)
 
+    # Provider identifiers only. The own concept joins them only when there
+    # are some, so that an identifier naming a *different* same-name concept
+    # is a conflict (both kept), while the own concept alone never hides the
+    # alternative.
     evidence = {s.sporely_taxon_id for s in resolved if s.is_concept}
-    if own_id is not None:
+    if own_id is not None and evidence:
         evidence.add(own_id)
     return ReferenceDefaults(own=own, link=link, ai=tuple(ai), evidence_ids=frozenset(evidence))
 

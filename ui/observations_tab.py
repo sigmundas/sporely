@@ -20398,6 +20398,14 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         controller = getattr(self, "_taxon_controller", None)
         if offer is None or controller is None:
             return
+        # The name may have changed since the offer was shown (programmatic
+        # fills do not hide it). Bind only what still applies to the name
+        # in the fields now.
+        shown_id = offer.sporely_taxon_id
+        self._refresh_identity_offer()
+        offer = getattr(self, "_identity_offer", None)
+        if offer is None or offer.sporely_taxon_id != shown_id:
+            return
         genus = self.genus_input.text().strip()
         species = self.species_input.text().strip()
         if offer.origin != ORIGIN_OBSERVATION and offer.raw_external_id:

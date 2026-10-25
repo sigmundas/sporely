@@ -179,6 +179,10 @@ def test_an_own_concept_keeps_a_different_same_name_ai_concept(lookup):
     assert [row.sporely_taxon_id for row in defaults.ai] == [NORTAXA_CONCEPT]
     # Both concepts are evidence, so typed search keeps both: real ambiguity.
     assert defaults.evidence_ids == {COL_CONCEPT, NORTAXA_CONCEPT}
+    # The own concept alone is no evidence: it never hides the alternative.
+    alone = reference_default_suggestions(
+        lookup, own_genus="Flammulina", own_species="velutipes", own_taxon_id=COL_CONCEPT)
+    assert alone.evidence_ids == frozenset()
 
 
 @pytest.mark.parametrize("evidence, expected", [
@@ -576,3 +580,60 @@ def test_a_name_only_species_row_binds_nothing():
     controller.on_species_selected(controller.species_model.index(0, 0))
     assert controller.species_input.text() == "referencia"
     assert controller.committed_snapshot() is None
+
+
+# ── Review findings (8989e55) ────────────────────────────────────────────────
+
+
+def test_evidence_for_one_name_never_hides_another_names_concept():
+    """A synonym row ("Foo bar" → X) shares its text with concept Y's own
+    name. Evidence for X (from another name) must not drop Y."""
+    rows = [("Foo bar", 1, False), ("Foo bar", 2, True)]
+    kept = collapse_same_name_by_evidence(
+        rows, name_of=lambda r: r[0], id_of=lambda r: r[1], evidence={1}, is_own_name=lambda r: r[2])
+    assert kept == rows
+    # Own-name duplicates are still settled, and the synonym row survives.
+    rows = [("A b", 1, True), ("A b", 2, True), ("A b", 3, False)]
+    kept = collapse_same_name_by_evidence(
+        rows, name_of=lambda r: r[0], id_of=lambda r: r[1], evidence={1}, is_own_name=lambda r: r[2])
+    assert [r[1] for r in kept] == [1, 3]
+
+
+def _pick_scientific(dialog, concept):
+    controller = dialog._taxon_controller
+    dialog.scientific_name_input.setText("Flammulina velutipes")
+    controller.refresh_scientific_suggestions()
+    model = controller._scientific_model
+    controller.on_scientific_name_selected(next(
+        model.index(r, 0) for r in range(model.rowCount())
+        if (model.item(r).data(ROLE_TAXON_CHOICE) or {}).get("sporely_taxon_id") == concept))
+
+
+def test_a_committed_concept_never_hides_the_alternative(editor):
+    """Committing one same-name concept is not evidence: both stay listed
+    in Species and Scientific, so the observer can switch."""
+    dialog = editor()
+    _pick_scientific(dialog, COL_CONCEPT)
+    controller = dialog._taxon_controller
+    controller.refresh_species_suggestions()
+    _pick_scientific(dialog, NORTAXA_CONCEPT)
+    assert dialog.get_data()["sporely_taxon_id"] == NORTAXA_CONCEPT
+
+    controller.refresh_species_suggestions()
+    model = controller.species_model
+    rows = {model.item(r).data(ROLE_TAXON_CHOICE)["sporely_taxon_id"]: r for r in range(model.rowCount())
+            if isinstance(model.item(r).data(ROLE_TAXON_CHOICE), dict)
+            and model.item(r).text().startswith("velutipes")}
+    assert set(rows) == {COL_CONCEPT, NORTAXA_CONCEPT}
+    controller.on_species_selected(model.index(rows[COL_CONCEPT], 0))
+    assert dialog.get_data()["sporely_taxon_id"] == COL_CONCEPT
+
+
+def test_link_binds_nothing_once_the_name_no_longer_matches(editor):
+    dialog = editor(**_observation())
+    assert not dialog.identity_offer_row.isHidden()
+    dialog.species_input.setText("elastica")          # a programmatic fill: no textEdited
+    dialog.identity_offer_button.click()
+    data = dialog.get_data()
+    assert data["sporely_taxon_id"] is None
+    assert (data["genus"], data["species"]) == ("Flammulina", "elastica")
