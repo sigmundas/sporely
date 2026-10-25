@@ -2,6 +2,17 @@
 
 All notable changes to Sporely are documented here.
 
+## 2026-10-25 (desktop 0.9.29)
+
+No server migrations. The server's active taxonomy is already `tax-2026.10.23-11` (imported 2026-10-25); this version bundles the same release.
+
+### Changed
+- **Taxonomy release `tax-2026.10.23-11`.** The bundled taxonomy follows the September 2026 Catalogue of Life and the current Norwegian species list. It restores seven Norwegian group names (for example *kantareller*, *fingersopper*, *eggrøyksopper*) and adds Swedish names such as *kantarell*. It is installed automatically at the first start, and existing observations keep their species identity.
+
+### Fixed
+- **Saving an observation could remove its species identity.** Observations whose identity was repaired in October lost it when they were opened and saved, even without changes. The identity is now kept unless you change the species.
+- **Saving an unchanged observation no longer reports a host change to the cloud.** An empty host genus or species was saved in a different form, which sync treated as an edit.
+
 ## 2026-10-19 (desktop 0.9.28)
 
 No server changes; works with the same server as 0.9.27.
