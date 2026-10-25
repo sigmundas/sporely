@@ -56,6 +56,8 @@ Source: former `PLAN.md`, the active cloud-sync extraction plan, the cloud-media
 
 Source: former `PLAN.md`.
 
+- Owner images folder (2026-10-25): 4,240 JPEGs (16.8 GB) are not referenced by any `images` row. They were mostly written July–September 2026, and full backup skips them. Produce a read-only list before any cleanup. Working JPEGs are full 20 MP (about 8.4 MB each; `resize_to_optimal_sampling` is off), so a full backup is about 39 GB. RAW originals (82 GB of ORF) are already excluded.
+
 ## UI / usability
 
 - In Analysis, default “Orient” and “Uniform scale” to on.
@@ -82,6 +84,13 @@ Source: former `PLAN.md`; unmatched-image work also appears in `docs/hardware-sy
   - Picking a species from the **Species** dropdown stores no identity; only the **Scientific** dropdown binds. Bind the clicked entry's own concept ID and never choose between same-name concepts (`ui/taxon_input_controller.py` `on_species_selected`).
   - Deferred by owner decision: 419 (copied Artsorakel selection unconfirmed) and 183 `same_name_ai_history_only` rows. Unresolved without new evidence: 147 no identity evidence, 87 unresolved external IDs, 24 cloud-selected unverified, 16 AI suggestions not adopted, 5 identifier/name mismatches, 3 numeric collisions.
   - Observations 382, 495 and 580 have no name locally or in the cloud; the only candidate is an unaccepted low-probability AI pick (`restore_lost_names` in the audit). Left unchanged by owner rule.
+
+- Owner observations checked read-only against `tax-2026.10.23-11` (2026-10-25):
+  - 997 (*Russula aeruginea*) is bound to COL 61673, which has no NorTaxa or Artsobservasjoner id. NorTaxa concept 626822 carries them. Re-pick it in the Scientific dropdown.
+  - 742, 775 and 917 hold a `legacy_unverified` `sporely_taxon_id` that points at an unrelated concept in -11: 56092 *Puccinia caricis-rhizopodae*, 55311 *Psilocybe mairei* and 52369 *Prospodium peruvianum*. The cloud gate never pushes these numbers. Check that nothing displays them (Red List badge, links), then re-pick to replace them.
+  - 17 of 18 `external_unresolved` NorTaxa tuples now resolve to exactly one concept, for example 1036 → 625761, 1017 and 1035 → 153280, and 1019, 1021, 1024 and 1034 → 158335. They bind only on an explicit pick or an offline repair run. 989 (NorTaxa 48041, *Ursus maritimus*) correctly stays unresolved.
+  - The Scientific picker lists the 2,618 same-name species pairs in -11 as identical rows: a COL concept without a NorTaxa link next to a NorTaxa concept with Artsdatabanken, Artportalen and iNaturalist ids. Examples are *Panaeolina foenisecii* 40673/624659 and *Russula aeruginea* 61673/626822. Picking the COL row loses the NorTaxa id. Check whether the row labels tell them apart. Related to the Group B item below.
+  - `TaxonLookupService.resolve_scientific`, which is display-only (vernacular and family), has no rank filter: "Cantharellus cibarius" resolves to var. *monstrosus* (150931). Identity binding is unaffected.
 
 - Consider the deferred observer-safe `Help → Taxonomy` menu described in `database/taxonomy/docs/ui-menu-recommendation.md`; keep acquisition, compilation, promotion, mapping edits, and deletion CLI-only.
 - Reconcile NorTaxa/COL duplicate candidates (Taxonomy v3 Group B): 7,338 NorTaxa concepts in 7,423 same-name pairs with a separate COL concept in `tax-2026.09.26-02`; the COL side is in the cloud scope for 2,132 pairs, the NorTaxa side never. Names and ids sit on the NorTaxa concept, so web users find no common name for species such as Cantharellus cibarius. Name equality only sizes this; identity needs reviewed evidence. Counts: `database/taxonomy/evidence/taxonomy-v3/stage0/coverage-report.json`.
@@ -153,6 +162,8 @@ The scoped reference-library work, including its deferred editor, quick-add, rev
 - Reconcile old “cloud deletion conflict” tests with tombstone behavior.
 - Add direct coverage for deterministic pagination ordering, metadata-only anchor byte-fetch prevention, broader pull-only zero-write surfaces, affirmative measurement/calibration identity repair, cross-restart retryability, and snapshot schema compatibility.
 
+- Full-backup settings classification (fixed in #35 and #37): the database-key AST guard only scans literal keys in top-level `utils/*.py`. Dynamic per-id keys such as `cloud_location_precision_confirmed:<id>` are invisible to it, and so is any old key left in a profile. The gaps were found by a key-names-only audit of the owner's profile. Consider a supported audit command that reports unclassified setting names, so the next gap is not found by a failed backup.
+
 Source: former `PLAN.md` and the active cloud-sync extraction plan.
 
 ## Hardware / ingestion
@@ -177,6 +188,11 @@ Source: former `PLAN.md`.
 - Re-check whether old R2 migration notes are obsolete after the Supabase baseline reset.
 - Re-check whether old Phase 7 SQL notes are obsolete after the Supabase baseline reset.
 - Verify whether the earlier AI crop backlog has already been completed before promoting any item.
+
+- Desktop 0.9.29 (2026-10-25): the draft release targets `081a24e` (main). Its generated notes predate #35–#37, so edit them before publishing. Publishing creates the `v0.9.29` tag and the update offer.
+- Housekeeping: merged branches `fix/backup-dynamic-setting-keys`, `fix/backup-cloud-auth-method` and `ci/release-draft-retarget` (local and remote) can be deleted. The `sporely-worktrees/py-taxonomy-audit` worktree holds uncommitted audit outputs (`relationship-pass/author-standards/`, `decision-package-e/`, `v3/NorTaxa-COL-avvik.xlsx` with an Excel lock file); commit or move them before removing it.
+- sporely-landing PR #9 (the public "why COL XR" explainer) is still unmerged. R2 has shipped, so it only needs the owner's go-ahead.
+- Free disk space on the development Mac dropped from 53 GB to 27 GB during 2026-10-25. No leftover backup or build files were found; cause unknown.
 
 Source: former `PLAN.md`; status could not be established safely from this repository alone.
 
