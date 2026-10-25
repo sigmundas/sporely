@@ -368,3 +368,11 @@ def test_the_cli_accepts_a_release_decision(tmp_path):
                                          "--promote", "--expect-freeze-sha256", "0" * 64,
                                          "--release-decision", str(tmp_path / "d.json")])
     assert args.release_decision == tmp_path / "d.json"
+
+
+def test_build_provenance_records_commit_and_toolchain():
+    import sqlite3 as _sqlite3
+    from build_release import build_provenance
+    prov = build_provenance()
+    assert set(prov) == {"git_commit", "git_tracked_changes", "python", "sqlite"}
+    assert len(prov["git_commit"]) in (0, 40) and prov["sqlite"] == _sqlite3.sqlite_version

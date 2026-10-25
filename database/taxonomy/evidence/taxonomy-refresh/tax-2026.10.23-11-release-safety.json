@@ -1,0 +1,104 @@
+{
+ "release_id": "tax-2026.10.23-11",
+ "supersedes": "tax-2026.10.23-10 (NOT-FOR-RELEASE: swap COL ids)",
+ "hashes": {
+  "sqlite": "2a81f68435d0606633319be0845f9fa1de46ccd9c2442f391af742fad3899a97",
+  "freeze": "26e77446fb3b71720fa44cf54fe5237bb0bab5f240f2f762036da3e92877bc99",
+  "rehearsal_export_manifest": "75f3d8fbda0862c05e28dcc7306c16e3bc9414f9a9c644d39c48d915a75a6d9e",
+  "rehearsal_import_sql": "471842528432599e89aaa4ea0ec83516660adf6ead4f86a37b041b5decd93898 (generated twice, identical; local-rehearsal only)"
+ },
+ "durable_path": "/Users/sigmundas/Documents/Code/sporely/releases/tax-2026.10.23-11 (SHA256SUMS)",
+ "build": "build-1 and build-2 SQLite, release outputs, normalized inputs and registries byte-identical. Against -10: business data differs only in the published COL id of the six name-record-follow ids (taxon_min.canonical_external_id, taxon_external_id_text_min); other differences are release labels (content release id, supersession release labels), the compiler-manifest and registry hashes. Registry: allocations and source-key -> Sporely-id mappings unchanged; 2,858 allocated_in_release labels read -11 instead of -10.",
+ "findings": {
+  "1_swapped_col_ids": {
+   "classification": "CONFIRMED",
+   "evidence": "-10 taxon_external_id_text_min and cloud export published 20250->3R3HS, 137682->9ZNFC, 107690->6S6KH, 116473->746KJ, 616942->XQVS, 616943->XQVT; in COL 26.9 each of those ids names the partner (e.g. XQVS = Conocybe ochraceodisca, IF 311682). resolve_taxon_external_id_v2('col_xr','col_usage_id','XQVS') would have returned 616942 Conocybe ochraceodiscus. Only the Conocybe pair is in cloud scope; all six are in the desktop SQLite.",
+   "fix": "sporely-py a945c50 (build_sqlite_candidate: applied name_record_follow publishes the current COL usage carrying the id's R1 name record; historical key kept in the registry only). Regression test test_lookup_by_current_col_id_of_a_followed_swap_returns_the_concept_now_carrying_that_name.",
+   "verified_in_rehearsal": "XQVS -> 616943 Conocybe ochraceodisca; XQVT -> 616942 Conocybe ochraceodiscus; the other four are outside cloud scope (no row), in -11 SQLite 20250->9ZNFC, 137682->3R3HS, 107690->746KJ, 116473->6S6KH"
+  },
+  "2_preparation_only_approval": {
+   "classification": "CONFIRMED (no path existed); resolved",
+   "fix": "sporely-py a4e4226: release_preparation_approved permits only export_cloud_taxonomy --local-rehearsal (export_use local_rehearsal, importable false); importable export and desktop promotion still require release_approved (tests). sporely-web PR #47 (branch feature/taxonomy-local-rehearsal-import 4f35de4, not merged): --local-rehearsal accepts only that export and its SQL refuses unless public.sporely_local_rehearsal_marker exists; production path refuses a local_rehearsal export (tests, 24 pass).",
+   "boundaries": {
+    "production generator": "refuses (verified on the -11 rehearsal export)",
+    "rehearsal SQL on a database without the marker": "refuses before any write (verified)",
+    "marker in production": "absent (read-only check)",
+    "desktop promotion": "refuses preparation-only decision (test)",
+    "activation": "taxonomy_v2_activate_release has no approval concept; the gate is the generator, which refuses"
+   }
+  },
+  "3_cloud_references": {
+   "classification": "CONFIRMED covered (the -10 preflight counted the three sets per source); restated against -11",
+   "sets": {
+    "observations.selected_sporely_taxon_id": {
+     "distinct": 63,
+     "unresolved_in_-11": 0,
+     "outside_cloud_scope": 0
+    },
+    "observations.resolved_sporely_taxon_id": {
+     "distinct": 189,
+     "unresolved_in_-11": 0,
+     "via_redirect": 0,
+     "outside_cloud_scope": 87,
+     "outside_active_10.07_too": 87
+    },
+    "taxonomy_v3.resolution_link": {
+     "distinct": 190,
+     "unresolved_in_-11": 0,
+     "via_redirect": 0,
+     "outside_cloud_scope": 88,
+     "outside_active_10.07_too": 88
+    }
+   },
+   "snapshot": "fresh read-only cloud snapshot 2026-10-24 (BEGIN READ ONLY ... ROLLBACK), active tax-2026.10.07-01"
+  },
+  "4_red_list_and_publishing_ids": {
+   "classification": "DISPROVED as an unintended change (wording corrected: 'no value moved' qualified by the 4 approved retargets)",
+   "red_list": "34,171 rows keyed by (assessment_area, assessment_id, assessed_name_id) in R1 and -10/-11; the only difference: Norge/9231/52027 Echinoderma pseudoasperula taxon 624546 -> 6399 via the owner-approved supersession taxonomy-r2-nortaxa-52027-superseded-by-col-38HQJ; name, category, criteria unchanged",
+   "publishing_ids": "lost exactly Artportalen 260433 (609873), ADB 69272 (161510), ADB 69357 (612934). Four approved supersession retargets move an ADB id with its retired concept: 52027, 58500, 58559 -> 6399 and 75713 -> 167358; apart from those, no value moved to another concept. 10 ADB ids keep their concept but change id_role accepted->synonym (NorTaxa 1.292 status changes); 44 new ADB ids from new NorTaxa 1.292 records."
+  },
+  "5_local_rehearsal": {
+   "classification": "DONE",
+   "db": "disposable container from local image public.ecr.aws/supabase/postgres:17.6.1.084 (no download); production schema from read-only pg_dump --schema-only (public, taxonomy_v3, private); 10.07 baseline rows copied read-only from production taxonomy_v2_* tables; no observation data copied; container removed afterwards",
+   "results": {
+    "import_and_activation": "ok in 3.8 s; -11 active, validate ok; counts taxa 53,166, scientific names 61,797, vernacular 61,157, external ids 57,771, red list 2,984",
+    "picker_search_v2": "the 7 carried nb names each return their COL concept",
+    "replay": "refused: identical completed release already installed",
+    "rollback_to_10.07": "runbook SQL works; 10.07 active and resolving",
+    "failed_import_rollback_and_concurrency": "an observation edit committed during the import aborts it ('protected ... observation state changed'); nothing of -11 remains (no release, taxa or import-run rows); 10.07 stays active. A content-identical update or a write after commit does not affect it."
+   },
+   "race_assessment": "web/Android writes cannot corrupt the import; they can only abort it (fail-safe). The import takes no lock on observations. Smallest safeguard: run in a quiet window with clients paused, or have the generator take LOCK TABLE public.observations IN SHARE MODE at the start (writers wait ~4 s) so the protected-state check cannot be tripped. Not implemented.",
+   "superseded_by": "rehearsal harness run below (rehearsal_harness); the first manual rehearsal logs are in rehearsal/superseded/"
+  }
+ },
+ "note": "No production write, import, publication, promotion or install performed.",
+ "production_sql_differs_from_rehearsal_sql": {
+  "note": "The production payload must be regenerated after release_approved and diffed against the rehearsal SQL before approval to run it.",
+  "expected_differences": [
+   "header (PRIVATE PRODUCTION vs LOCAL REHEARSAL) and the rehearsal guard block (marker row, nonce, system identifier)",
+   "release_approval/provenance JSON in source_manifest (export_use release, importable true, decision release_approved)",
+   "W1 export manifest fingerprint and the scope export manifest fingerprint (taxonomy_export_manifest.json sha256), whole_export_sha256 and the hashes stored in taxonomy_v2_releases / checked in the replay preflight",
+   "source_directory if the export directory basename changes"
+  ],
+  "expected_same": "COPY datasets (all jsonl bytes), insert mappings, validation, activation, locks, protected-state and selection checks"
+ },
+ "rehearsal_harness": {
+  "script": "sporely-web scripts/taxonomy-v2/local-rehearsal.sh (PR #47, 48b96e0); generator faf37ab",
+  "inputs": "releases/tax-2026.10.23-11/rehearsal/inputs: read-only schema dump 2026-10-25 (public, taxonomy_v3, private, reference_rls; restore with no errors, 76 policies), 10.07 baseline taxonomy rows, legacy taxa (110,833) and taxa_vernacular (137,282) copied read-only, shared-reference policy singleton, 782 synthetic observations (production count), checks file",
+  "sql": "rehearsal/import-rehearsal.sql sha256 1c01616ba9d5277ffe7de8396f59077f2a8c6f7f5e3d70deb8b901cd1e6e1cf5 (generated twice, identical)",
+  "logs": "releases/tax-2026.10.23-11/rehearsal/logs and harness-run.out",
+  "result": "exit 0, 13 checks: schema restore clean; guard (exit 3, clean post-state); race A overlap asserted via pg_locks (import waiting on taxonomy_v2_releases while the validated writer holds it) -> writer commits 34119, import exit 3 on the post-activation selection check, clean post-state; race B overlap asserted (set_observation_identification_v2 as authenticated owner waiting on the cutover lock) -> RPC exit 1 'missing from the active taxonomy-v2 release', import exit 0, no stale id; import+activation; 7 nb names; 6 COL ids; RPC after activation rejects 34119 and accepts a -11 concept; replay exit 3; rollback to 10.07",
+  "timing": {
+   "total_import_s": 6.2,
+   "cutover_lock_held_s": 3.297,
+   "note": "cutover = ACCESS EXCLUSIVE on taxonomy_v2_releases, sampled every ~10 ms from pg_locks; dominated by hashing the legacy taxa and taxa_vernacular tables (248k rows) twice for the protected-state check. During the cutover taxonomy reads (search) and writes to the locked reference holders wait; outside it nothing is blocked."
+  },
+  "migration_side_fix_advisable_later": "yes: the selection RPCs should take FOR SHARE on the active release row before validating; not implemented"
+ },
+ "import_operational_preconditions": [
+  "Privileged writers (service_role/postgres/admin tooling, repair-apply routines run by an operator) can set selected_sporely_taxon_id without the RPC's active-release validation. A privileged write that commits before the cutover is caught by the post-activation selection check (the import aborts); one queued behind the cutover locks resumes after commit and is not validated. Precondition: pause admin tooling, repair jobs and any service-role scripts that write observations or taxonomy-v3 tables during the import window.",
+  "Run in a quiet window: during the ~3 s cutover, search and writes to observations/reference tables wait (lock_timeout 10 s on the import side; clients may see a short stall).",
+  "Immediately before: refresh the read-only reference check, verify the production target (system identifier 7606130613603586966) and that public.sporely_local_rehearsal_marker is absent.",
+  "Requires release_approved for -11, regeneration of the production SQL and a diff against the rehearsal SQL, and a separate explicit approval to run it."
+ ]
+}

@@ -1,0 +1,764 @@
+{
+ "release_id": "tax-2026.10.23-09",
+ "sqlite": "adcca35c18e3667c4d5a53f5fbfb16411788fbcbe544bd47f5b0fa99669661e0",
+ "freeze": "ca3e02537f05ebb5e8047143dde9f7102ee641cb946edbfedf164804fa468080",
+ "duplicates": {
+  "r1_keys": 1028,
+  "r05_keys": 978,
+  "r05_new_keys_vs_r1": 16,
+  "r05_keys_with_new_id": 0,
+  "new_examples": []
+ },
+ "stopped_vs_r1": {
+  "total": 431365,
+  "policy": 430621,
+  "superseded_to_live": 2,
+  "held_by_continuity": 30,
+  "unexplained": 712
+ },
+ "nb_concepts": {
+  "r1": 6690,
+  "r04": 6696,
+  "r05": 6698,
+  "recovered_vs_r04": [
+   83507,
+   104329
+  ],
+  "recovered_vs_r04_count": 2
+ },
+ "redlist_resolved": {
+  "r1": 7866,
+  "r04": 7866,
+  "r05": 7866,
+  "recovered_vs_r04": []
+ },
+ "focus": {
+  "6399": {
+   "live": true,
+   "name": "Echinoderma pseudoasperulum",
+   "nb": [
+    "dvergparasollsopp"
+   ],
+   "redlist": [
+    [
+     "Norge",
+     "VU",
+     "Echinoderma pseudoasperula"
+    ]
+   ],
+   "adb": [
+    52027,
+    58500,
+    58559,
+    300295
+   ]
+  },
+  "624546": {
+   "live": false,
+   "name": null,
+   "nb": [],
+   "redlist": [],
+   "adb": []
+  },
+  "637798": {
+   "live": false,
+   "name": null,
+   "nb": [],
+   "redlist": [],
+   "adb": []
+  },
+  "6397": {
+   "live": true,
+   "name": "Echinoderma jacobi",
+   "nb": [
+    "langeparasollsopp",
+    "langes parasollsopp"
+   ],
+   "redlist": [
+    [
+     "Norge",
+     "VU",
+     "Echinoderma jacobi"
+    ]
+   ],
+   "adb": [
+    52025,
+    52048,
+    58530,
+    58546,
+    58549
+   ]
+  },
+  "6396": {
+   "live": true,
+   "name": "Echinoderma hystrix",
+   "nb": [
+    "raspparasollsopp"
+   ],
+   "redlist": [
+    [
+     "Norge",
+     "VU",
+     "Echinoderma hystrix"
+    ]
+   ],
+   "adb": [
+    52024,
+    58542
+   ]
+  },
+  "2538": {
+   "live": true,
+   "name": "Dermoloma cuneifolium",
+   "nb": [
+    "grå grynmusserong",
+    "rosabrun grynmusserong",
+    "rosagrå grynmusserong"
+   ],
+   "redlist": [
+    [
+     "Norge",
+     "NT",
+     "Dermoloma cuneifolium"
+    ]
+   ],
+   "adb": [
+    55440,
+    61539,
+    61668,
+    61686
+   ]
+  },
+  "1083": {
+   "live": true,
+   "name": "Cystolepiota moelleri",
+   "nb": [],
+   "redlist": [],
+   "adb": [
+    52015,
+    58501,
+    58564,
+    300296
+   ]
+  }
+ },
+ "redirects": {
+  "r1_total": 2513,
+  "resolve_to_live": 2513,
+  "blocked": [],
+  "target_changed": []
+ },
+ "cloud": {
+  "obs_refs_on_ids_stopping_vs_r1": {},
+  "obs_refs_not_resolvable_in_r05": {},
+  "source": "fresh read-only snapshot 2026-10-24 (BEGIN READ ONLY ... ROLLBACK; aggregate id counts only), cloud-ids-09 / active-taxa-09"
+ },
+ "cloud_scope": {
+  "export_count_r05": 53167,
+  "method_r05_count": null,
+  "vs_active": {
+   "added": 385,
+   "removed": 135,
+   "renamed": 5,
+   "removed_examples": [
+    34119,
+    43083,
+    101774,
+    131593,
+    137789,
+    137982,
+    138107,
+    151370,
+    152289,
+    152290
+   ],
+   "renamed_examples": [
+    [
+     151334,
+     "Typhula phacorrhiza complanata",
+     "Typhula phacorrhiza subsp. complanata"
+    ],
+    [
+     160391,
+     "Boletellus lepidospora",
+     "Boletellus lepidosporus"
+    ],
+    [
+     161926,
+     "Cortinarius chrysolitus var. chrysolitus",
+     "Cortinarius chrysolitus nothovar. chrysolitus"
+    ],
+    [
+     604796,
+     "Sclerotium pustula epicaula",
+     "Sclerotium pustula subsp. epicaula"
+    ],
+    [
+     607346,
+     "Xylaria hippoglossa",
+     "Xylaria hypoglossa"
+    ]
+   ]
+  },
+  "vs_r1": {
+   "added": 385,
+   "removed": 136,
+   "renamed": 5,
+   "removed_examples": [
+    34119,
+    43083,
+    101774,
+    131593,
+    137789,
+    137982,
+    138107,
+    150361,
+    151370,
+    152289
+   ],
+   "renamed_examples": [
+    [
+     151334,
+     "Typhula phacorrhiza complanata",
+     "Typhula phacorrhiza subsp. complanata"
+    ],
+    [
+     160391,
+     "Boletellus lepidospora",
+     "Boletellus lepidosporus"
+    ],
+    [
+     161926,
+     "Cortinarius chrysolitus var. chrysolitus",
+     "Cortinarius chrysolitus nothovar. chrysolitus"
+    ],
+    [
+     604796,
+     "Sclerotium pustula epicaula",
+     "Sclerotium pustula subsp. epicaula"
+    ],
+    [
+     607346,
+     "Xylaria hippoglossa",
+     "Xylaria hypoglossa"
+    ]
+   ]
+  }
+ },
+ "identity_vs_r1": {
+  "candidate_live": 203710,
+  "new_live": 2693,
+  "newly_retired": 2,
+  "policy_excluded_but_live": [],
+  "previous_live": 632382,
+  "stopped_being_live": 431365,
+  "stopped_by_supersession": 2,
+  "stopped_excluded_by_policy": {
+   "excluded_by_policy:unite_sh_cluster": 430621
+  },
+  "stopped_held_by_continuity": {
+   "held:col_continuity_unapproved": 30
+  },
+  "stopped_unexplained": 712
+ },
+ "builds": {
+  "build_1_sqlite": "adcca35c18e3667c4d5a53f5fbfb16411788fbcbe544bd47f5b0fa99669661e0",
+  "build_2_sqlite": "adcca35c18e3667c4d5a53f5fbfb16411788fbcbe544bd47f5b0fa99669661e0",
+  "freeze": "ca3e02537f05ebb5e8047143dde9f7102ee641cb946edbfedf164804fa468080",
+  "build_1_build_2_byte_identical": true,
+  "build_1_build_2_diagnostics_identical": true
+ },
+ "owner_decisions_applied": {
+  "source": "Owner decisions 2026-10-24 on tax-2026.10.23-08; candidate build only, release approval pending",
+  "name_record_follow_applied": {
+   "3R3HS": "9ZNFC",
+   "6S6KH": "746KJ",
+   "746KJ": "6S6KH",
+   "9ZNFC": "3R3HS",
+   "XQVS": "XQVT",
+   "XQVT": "XQVS"
+  },
+  "name_record_follow_published": "each of 20250/137682/107690/116473/616942/616943 has a taxon_min row identical to R1 apart from the release id (name and canonical COL id as in R1); IF ids are not a published field. The published canonical COL id is each id's historical key, which in COL 26.9 names the partner",
+  "continuity_applied": [
+   "5ZNM9->VN69W 83507",
+   "6P5PG->6P5PH 104329",
+   "NHMZK->VNKQN 163660",
+   "QDDTJ->VMP5Z 168240",
+   "TPKPX->VRRW2 607370"
+  ],
+  "continuity_kept_held": [
+   "MKSRV->8LPWL 161510",
+   "VKSW6->MKX9Q 612934"
+  ],
+  "supersession_applied": "taxonomy-r2-col-DSTLS-superseded-by-col-Q3TCN (152153 -> 167358)",
+  "retired_without_redirect": {
+   "609873": "Cytospora auerswaldii",
+   "170695": "Phoma (FinBIF RK58F)"
+  },
+  "batch_710_accepted": {
+   "no_redirects": true,
+   "registry_ids_retained": true,
+   "checks_before_applying": {
+    "count": 710,
+    "cloud_refs": 0,
+    "desktop_refs": 0,
+    "in_r1_redirects": 0,
+    "with_r1_bridge": 0,
+    "in_c09_scope_export": 0
+   },
+   "accepted_reduction_in_macrofungi_picker_coverage_72": [
+    [
+     34119,
+     "Mycena alcalina"
+    ],
+    [
+     131593,
+     "Boletellus lepidosporus"
+    ],
+    [
+     151370,
+     "Confistulina"
+    ],
+    [
+     152289,
+     "Tuberacaea"
+    ],
+    [
+     152290,
+     "Resiniceum"
+    ],
+    [
+     152440,
+     "Geasterites"
+    ],
+    [
+     158094,
+     "Lepiota"
+    ],
+    [
+     158309,
+     "Alloexidiopsis"
+    ],
+    [
+     158746,
+     "Amanita pseudofritillaria"
+    ],
+    [
+     158980,
+     "Archaeomarasmius"
+    ],
+    [
+     159148,
+     "Austropaxillus macnabbii"
+    ],
+    [
+     159743,
+     "Byssomerulius"
+    ],
+    [
+     160176,
+     "Boletus obscuratus"
+    ],
+    [
+     162201,
+     "Cortinarius milvinus"
+    ],
+    [
+     163050,
+     "Coprotus"
+    ],
+    [
+     163131,
+     "Dictyophora merulina"
+    ],
+    [
+     163323,
+     "Dentocorticium"
+    ],
+    [
+     163582,
+     "Entoloma ardosiacum"
+    ],
+    [
+     164597,
+     "Garcileccinum"
+    ],
+    [
+     164675,
+     "Gardeniomyces"
+    ],
+    [
+     165032,
+     "Heteroradulum"
+    ],
+    [
+     165182,
+     "Helvella neofistulosa"
+    ],
+    [
+     165816,
+     "Himantites"
+    ],
+    [
+     165886,
+     "Hydnellum"
+    ],
+    [
+     165897,
+     "Hydnophlebia"
+    ],
+    [
+     165930,
+     "Hydnum"
+    ],
+    [
+     166522,
+     "Lithopolyporales"
+    ],
+    [
+     166570,
+     "Lacrymaria coronata"
+    ],
+    [
+     166571,
+     "Lacrymaria lagenula"
+    ],
+    [
+     166696,
+     "Hygrocybula"
+    ],
+    [
+     167080,
+     "Hymenochaete circinatum"
+    ],
+    [
+     167511,
+     "Lopharia"
+    ],
+    [
+     167701,
+     "Laricifomitaceae"
+    ],
+    [
+     169740,
+     "Niveoboletus"
+    ],
+    [
+     169800,
+     "Odontia"
+    ],
+    [
+     169864,
+     "Nolanea juncea"
+    ],
+    [
+     170184,
+     "Nothopucciniastraceae"
+    ],
+    [
+     171106,
+     "Pleurotus cystidiosus subsp. abalonus"
+    ],
+    [
+     171108,
+     "Pleurotus ferulae"
+    ],
+    [
+     603775,
+     "Rhodocollybia prolixa var. longispora"
+    ],
+    [
+     603992,
+     "Rugosporella"
+    ],
+    [
+     604046,
+     "Russula huotanjun"
+    ],
+    [
+     604081,
+     "Russula sinoadusta"
+    ],
+    [
+     604086,
+     "Russula zhuzuijun"
+    ],
+    [
+     604392,
+     "Sarcodon"
+    ],
+    [
+     605303,
+     "Sphaeriopsis"
+    ],
+    [
+     605580,
+     "Xylodon"
+    ],
+    [
+     605593,
+     "Skvortzoviella"
+    ],
+    [
+     606149,
+     "Thelephora corticioides"
+    ],
+    [
+     606150,
+     "Thelephora glaucoflora"
+    ],
+    [
+     606969,
+     "Trichaptaceae"
+    ],
+    [
+     607327,
+     "Xylaria consociata"
+    ],
+    [
+     608431,
+     "Marasmiamimum"
+    ],
+    [
+     608432,
+     "Mesoagaracites"
+    ],
+    [
+     608560,
+     "Tropicoporia"
+    ],
+    [
+     608856,
+     "Rubroleccinum"
+    ],
+    [
+     608918,
+     "Citrinoporia"
+    ],
+    [
+     608922,
+     "Stratocorticium"
+    ],
+    [
+     608923,
+     "Staktophyllus"
+    ],
+    [
+     609362,
+     "Protohydnum galzinii"
+    ],
+    [
+     609364,
+     "Protohydnum livescens"
+    ],
+    [
+     609416,
+     "Gloeomyces bambusinus"
+    ],
+    [
+     609437,
+     "Phlebicolorata rosea"
+    ],
+    [
+     611122,
+     "Austroboletus schichianus"
+    ],
+    [
+     611289,
+     "Phellinus macgregorii"
+    ],
+    [
+     611299,
+     "Pyropolyporus macgregorii"
+    ],
+    [
+     611955,
+     "Macrolepiota macilenta"
+    ],
+    [
+     611961,
+     "Amanita fuscozonata"
+    ],
+    [
+     612119,
+     "Cis okennoni"
+    ],
+    [
+     612181,
+     "Cis"
+    ],
+    [
+     612481,
+     "Cabalodontia tenuissima"
+    ],
+    [
+     613266,
+     "Lepiota fracida"
+    ]
+   ]
+  },
+  "carried_forward_held": {
+   "continuity_matches": 30,
+   "live_duplicates_withheld": 62,
+   "note": "28 other continuity matches + 2 Cladonia; existing NorTaxa/Vězda holds unchanged"
+  }
+ },
+ "checks": {
+  "norwegian_names": {
+   "r1_concepts": 6690,
+   "c09_concepts": 6698,
+   "r1_pairs": 7377,
+   "c09_pairs": 7383,
+   "lost": [
+    [
+     134151,
+     134151,
+     [
+      "Gjeldflekklav"
+     ]
+    ],
+    [
+     62116,
+     62116,
+     [
+      "Mandelkremle"
+     ]
+    ],
+    [
+     68411,
+     68411,
+     [
+      "beitemarkvokssopper"
+     ]
+    ],
+    [
+     162315,
+     162315,
+     [
+      "soleihovbeger"
+     ]
+    ],
+    [
+     8992,
+     8992,
+     [
+      "eggrøyksopper"
+     ]
+    ],
+    [
+     73265,
+     73265,
+     [
+      "eikemusserong"
+     ]
+    ],
+    [
+     15031,
+     15031,
+     [
+      "fagerkjuker"
+     ]
+    ],
+    [
+     20056,
+     20056,
+     [
+      "fingersopper"
+     ]
+    ],
+    [
+     15524,
+     15524,
+     [
+      "grangelémusling"
+     ]
+    ],
+    [
+     140472,
+     140472,
+     [
+      "kalktalg"
+     ]
+    ],
+    [
+     129742,
+     129742,
+     [
+      "kantareller"
+     ]
+    ],
+    [
+     69090,
+     69090,
+     [
+      "lortkjernesopper",
+      "putesopper"
+     ]
+    ],
+    [
+     170695,
+     null,
+     [
+      "narrekjedemuggsopper"
+     ]
+    ],
+    [
+     6398,
+     6398,
+     [
+      "silkeparasollsopp"
+     ]
+    ]
+   ]
+  },
+  "publishing_ids": {
+   "r1": 70583,
+   "c09": 70624,
+   "lost_or_moved": [
+    [
+     "artportalen",
+     "260433",
+     609873,
+     null,
+     []
+    ],
+    [
+     "artsdatabanken",
+     "69272",
+     161510,
+     null,
+     []
+    ],
+    [
+     "artsdatabanken",
+     "69357",
+     612934,
+     null,
+     []
+    ]
+   ]
+  },
+  "registry_vs_r1": {
+   "r1_entries": 692068,
+   "c09_entries": 694927,
+   "r1_entries_changed_or_missing": 0,
+   "appended": 2859,
+   "appended_by_release": {
+    "tax-2026.10.23-09": 2859
+   },
+   "appended_kinds": {
+    "anchor": 2693,
+    "alias": 166
+   },
+   "new_ids": 2693
+  },
+  "refs_to_ids_not_live_without_redirect": {
+   "desktop": {},
+   "cloud_all_sources": {}
+  }
+ },
+ "vs_08": "data identical except the decided items: +11 live concepts (6 follows, 5 continuities), +1 supersession row (152153), +12 scientific names, +1 Artsdatabanken id (75713 on 167358 as synonym), +18 text external ids, +19 vernacular rows",
+ "vernacular_projection": "the gate passed with the -06 expectation file; no gate change",
+ "registry_baseline": "R1 tax-2026.10.23-01 registry plus the 2026-10-24 candidate decision files; R1 registry entries unchanged (0 changed), 2,859 appended for this release",
+ "note": "Validation-only candidate. Not approved for release, promotion, cloud import or production writes."
+}

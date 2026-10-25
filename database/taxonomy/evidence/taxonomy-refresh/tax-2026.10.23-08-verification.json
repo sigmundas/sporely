@@ -1,0 +1,367 @@
+{
+ "release_id": "tax-2026.10.23-08",
+ "sqlite": "2624f69c1dec1d5aa5b789082d272f05ee91995057a84b78ec9105856515bccb",
+ "freeze": "191828df9ee71ab253b277afa8551e09d15e67a80c65aa0bb5e2dbc71d620b77",
+ "duplicates": {
+  "r1_keys": 1028,
+  "r05_keys": 978,
+  "r05_new_keys_vs_r1": 16,
+  "r05_keys_with_new_id": 0,
+  "new_examples": []
+ },
+ "stopped_vs_r1": {
+  "total": 431376,
+  "policy": 430621,
+  "superseded_to_live": 1,
+  "held_by_continuity": 41,
+  "unexplained": 713
+ },
+ "nb_concepts": {
+  "r1": 6690,
+  "r04": 6696,
+  "r05": 6696,
+  "recovered_vs_r04": [],
+  "recovered_vs_r04_count": 0
+ },
+ "redlist_resolved": {
+  "r1": 7866,
+  "r04": 7866,
+  "r05": 7866,
+  "recovered_vs_r04": []
+ },
+ "focus": {
+  "6399": {
+   "live": true,
+   "name": "Echinoderma pseudoasperulum",
+   "nb": [
+    "dvergparasollsopp"
+   ],
+   "redlist": [
+    [
+     "Norge",
+     "VU",
+     "Echinoderma pseudoasperula"
+    ]
+   ],
+   "adb": [
+    52027,
+    58500,
+    58559,
+    300295
+   ]
+  },
+  "624546": {
+   "live": false,
+   "name": null,
+   "nb": [],
+   "redlist": [],
+   "adb": []
+  },
+  "637798": {
+   "live": false,
+   "name": null,
+   "nb": [],
+   "redlist": [],
+   "adb": []
+  },
+  "6397": {
+   "live": true,
+   "name": "Echinoderma jacobi",
+   "nb": [
+    "langeparasollsopp",
+    "langes parasollsopp"
+   ],
+   "redlist": [
+    [
+     "Norge",
+     "VU",
+     "Echinoderma jacobi"
+    ]
+   ],
+   "adb": [
+    52025,
+    52048,
+    58530,
+    58546,
+    58549
+   ]
+  },
+  "6396": {
+   "live": true,
+   "name": "Echinoderma hystrix",
+   "nb": [
+    "raspparasollsopp"
+   ],
+   "redlist": [
+    [
+     "Norge",
+     "VU",
+     "Echinoderma hystrix"
+    ]
+   ],
+   "adb": [
+    52024,
+    58542
+   ]
+  },
+  "2538": {
+   "live": true,
+   "name": "Dermoloma cuneifolium",
+   "nb": [
+    "grå grynmusserong",
+    "rosabrun grynmusserong",
+    "rosagrå grynmusserong"
+   ],
+   "redlist": [
+    [
+     "Norge",
+     "NT",
+     "Dermoloma cuneifolium"
+    ]
+   ],
+   "adb": [
+    55440,
+    61539,
+    61668,
+    61686
+   ]
+  },
+  "1083": {
+   "live": true,
+   "name": "Cystolepiota moelleri",
+   "nb": [],
+   "redlist": [],
+   "adb": [
+    52015,
+    58501,
+    58564,
+    300296
+   ]
+  }
+ },
+ "redirects": {
+  "r1_total": 2513,
+  "resolve_to_live": 2513,
+  "blocked": [],
+  "target_changed": []
+ },
+ "cloud": {
+  "obs_refs_on_ids_stopping_vs_r1": {},
+  "obs_refs_not_resolvable_in_r05": {},
+  "source": "read-only cloud observation id snapshot taken for -06; stopped id set unchanged"
+ },
+ "cloud_scope": {
+  "export_count_r05": 53162,
+  "method_r05_count": null,
+  "vs_active": {
+   "added": 385,
+   "removed": 140,
+   "renamed": 5,
+   "removed_examples": [
+    34119,
+    43083,
+    101774,
+    131593,
+    137789,
+    137982,
+    138107,
+    151370,
+    152289,
+    152290
+   ],
+   "renamed_examples": [
+    [
+     151334,
+     "Typhula phacorrhiza complanata",
+     "Typhula phacorrhiza subsp. complanata"
+    ],
+    [
+     160391,
+     "Boletellus lepidospora",
+     "Boletellus lepidosporus"
+    ],
+    [
+     161926,
+     "Cortinarius chrysolitus var. chrysolitus",
+     "Cortinarius chrysolitus nothovar. chrysolitus"
+    ],
+    [
+     604796,
+     "Sclerotium pustula epicaula",
+     "Sclerotium pustula subsp. epicaula"
+    ],
+    [
+     607346,
+     "Xylaria hippoglossa",
+     "Xylaria hypoglossa"
+    ]
+   ]
+  },
+  "vs_r1": {
+   "added": 385,
+   "removed": 141,
+   "renamed": 5,
+   "removed_examples": [
+    34119,
+    43083,
+    101774,
+    131593,
+    137789,
+    137982,
+    138107,
+    150361,
+    151370,
+    152289
+   ],
+   "renamed_examples": [
+    [
+     151334,
+     "Typhula phacorrhiza complanata",
+     "Typhula phacorrhiza subsp. complanata"
+    ],
+    [
+     160391,
+     "Boletellus lepidospora",
+     "Boletellus lepidosporus"
+    ],
+    [
+     161926,
+     "Cortinarius chrysolitus var. chrysolitus",
+     "Cortinarius chrysolitus nothovar. chrysolitus"
+    ],
+    [
+     604796,
+     "Sclerotium pustula epicaula",
+     "Sclerotium pustula subsp. epicaula"
+    ],
+    [
+     607346,
+     "Xylaria hippoglossa",
+     "Xylaria hypoglossa"
+    ]
+   ]
+  }
+ },
+ "identity_vs_r1": {
+  "candidate_live": 203699,
+  "new_live": 2693,
+  "newly_retired": 1,
+  "policy_excluded_but_live": [],
+  "previous_live": 632382,
+  "stopped_being_live": 431376,
+  "stopped_by_supersession": 1,
+  "stopped_excluded_by_policy": {
+   "excluded_by_policy:unite_sh_cluster": 430621
+  },
+  "stopped_held_by_continuity": {
+   "held:col_continuity_unapproved": 35,
+   "held:name_record_transfer": 6
+  },
+  "stopped_unexplained": 713
+ },
+ "continuity": {
+  "col_continuity_review_withheld": 41,
+  "col_id_continuity_applied": 70,
+  "live_duplicate_bound": 49,
+  "live_duplicate_vernaculars_dropped": 6,
+  "live_duplicate_withheld": 62,
+  "nortaxa_fallback_canonical": 37,
+  "species_history_carried": 5
+ },
+ "unexplained_breakdown": {
+  "6 macrofungi scope only": 72,
+  "7 no practical impact": 638,
+  "3 published external ids": 2,
+  "5 Norwegian name or red list": 1
+ },
+ "name_record_follow": [
+  {
+   "col_id": "3R3HS",
+   "follows_col_id": "9ZNFC",
+   "name_if_applied": "Kaskaskia macrospore",
+   "name_in_previous": "Kaskaskia macrospore",
+   "name_records": [
+    "indexfungorum:800412"
+   ],
+   "sporely_taxon_id": 20250,
+   "status": "proposed"
+  },
+  {
+   "col_id": "6S6KH",
+   "follows_col_id": "746KJ",
+   "name_if_applied": "Neoanungitea eucalyptorum",
+   "name_in_previous": "Neoanungitea eucalyptorum",
+   "name_records": [
+    "indexfungorum:832858"
+   ],
+   "sporely_taxon_id": 107690,
+   "status": "proposed"
+  },
+  {
+   "col_id": "746KJ",
+   "follows_col_id": "6S6KH",
+   "name_if_applied": "Neoanungitea eucalypti",
+   "name_in_previous": "Neoanungitea eucalypti",
+   "name_records": [
+    "indexfungorum:823372"
+   ],
+   "sporely_taxon_id": 116473,
+   "status": "proposed"
+  },
+  {
+   "col_id": "9ZNFC",
+   "follows_col_id": "3R3HS",
+   "name_if_applied": "Kaskaskia macrospora",
+   "name_in_previous": "Kaskaskia macrospora",
+   "name_records": [
+    "indexfungorum:840860"
+   ],
+   "sporely_taxon_id": 137682,
+   "status": "proposed"
+  },
+  {
+   "col_id": "XQVS",
+   "follows_col_id": "XQVT",
+   "name_if_applied": "Conocybe ochraceodiscus",
+   "name_in_previous": "Conocybe ochraceodiscus",
+   "name_records": [
+    "indexfungorum:344355"
+   ],
+   "sporely_taxon_id": 616942,
+   "status": "proposed"
+  },
+  {
+   "col_id": "XQVT",
+   "follows_col_id": "XQVS",
+   "name_if_applied": "Conocybe ochraceodisca",
+   "name_in_previous": "Conocybe ochraceodisca",
+   "name_records": [
+    "indexfungorum:311682",
+    "wikidata:Q107588245"
+   ],
+   "sporely_taxon_id": 616943,
+   "status": "proposed"
+  }
+ ],
+ "builds": {
+  "build_1_sqlite": "2624f69c1dec1d5aa5b789082d272f05ee91995057a84b78ec9105856515bccb",
+  "build_2_sqlite": "2624f69c1dec1d5aa5b789082d272f05ee91995057a84b78ec9105856515bccb",
+  "build_1_build_2_byte_identical": true,
+  "build_1_build_2_diagnostics_identical": true
+ },
+ "vs_07": {
+  "data_tables": "identical after substituting the release id",
+  "registry": "identical except allocated_in_release id",
+  "taxonomy_meta_differs": [
+   "content_release_id",
+   "compiler_manifest_sha256 (release-id strings in diagnostics/mappings)",
+   "registry_sha256"
+  ],
+  "frozen_inputs_differ": [
+   "inputs/continuity-receipt.json gains name_record_follow (6 proposals, status proposed)"
+  ],
+  "rebuild_reason": "the continuity receipt is part of the frozen evidence bundle; the proposals change it"
+ },
+ "registry_baseline": "R1 tax-2026.10.23-01 registry plus the same 2026-10-24 candidate decision files as -06/-07; no new decisions",
+ "note": "Disposable validation-only candidate; supersedes -07. Name-record follows proposed, not approved; six ids stay held. Owner Decision columns empty; no release approval."
+}

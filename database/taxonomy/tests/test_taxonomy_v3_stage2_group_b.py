@@ -291,10 +291,11 @@ def test_shipped_ledger_is_current_and_supersedes_only_approved_pairs():
         == set(_APPROVED.values())
     bound = verify_supersession_manifest_approvals(ledger)
     # Only Stage-2 records; taxonomy R1 records (prefix taxonomy-r1-) are
-    # checked by test_r1_ledger.py.
+    # checked by test_r1_ledger.py, refresh decisions (taxonomy-r2-) by
+    # test_refresh_identity_continuity.py.
     ledger = {**ledger, "supersessions": [
         s for s in ledger["supersessions"]
-        if not s["supersession_id"].startswith("taxonomy-r1-")]}
+        if not s["supersession_id"].startswith(("taxonomy-r1-", "taxonomy-r2-"))]}
     assert sum(1 for sha in bound.values() if sha in set(_APPROVED.values())) \
         == 179 + 336 + 836
 

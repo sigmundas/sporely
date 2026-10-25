@@ -15,7 +15,7 @@ from database.reference_data_paths import TAXONOMY_V2_DIR, TAXONOMY_V2_MANIFEST_
 from utils import taxonomy_v2
 
 ROOT = Path(__file__).resolve().parents[1]
-SHIPPED_RELEASE = "tax-2026.10.07-01"
+SHIPPED_RELEASE = "tax-2026.10.23-11"
 
 
 def _sha256(path: Path) -> str:

@@ -411,11 +411,26 @@ def _release_supersessions(manifest: dict, ledger_path: Path) -> dict[int, Super
         raise BuildError(str(exc)) from exc
     applied = {int(pair["superseded_sporely_taxon_id"]): int(pair["current_sporely_taxon_id"])
                for pair in (manifest.get("counts") or {}).get("concept_supersessions") or []}
-    if set(applied) != set(approved):
+    # A supersession held by an owner decision whose current usage left the
+    # source is withheld by the compiler, which records it; nothing else may be.
+    withheld = {int(i) for i in (manifest.get("counts") or {}).get("concept_supersessions_withheld_by_hold") or []}
+    if set(applied) & withheld or set(applied) | withheld != set(approved):
         raise BuildError("the release's applied concept supersessions differ from the approved "
                          f"records of {ledger_path}")
     return {retired: Supersession(approved[retired][0], current)
             for retired, current in applied.items()}
+
+
+def _name_record_follow_published_ids(release_dir: Path) -> dict[str, str]:
+    """Historical COL key -> published COL id for applied name-record follows."""
+    path = release_dir / "diagnostics.json"
+    if not path.exists():
+        return {}
+    applied = (json.loads(path.read_text(encoding="utf-8")).get("source_continuity") or {}) \
+        .get("name_record_follow_applied") or {}
+    if any(applied.get(target) != key for key, target in applied.items()):
+        raise BuildError(f"name-record follows are not closed exchanges: {applied}")
+    return dict(applied)
 
 
 def build_candidate(
@@ -427,6 +442,7 @@ def build_candidate(
     publishing_overlay_path: Path | None = None,
     inaturalist_refresh_path: Path | None = None,
     concept_supersessions_path: Path | None = None,
+    hold_unresolved_publishing_entries: bool = False,
 ) -> dict:
     """Transactionally build the SQLite candidate.
 
@@ -525,6 +541,7 @@ def build_candidate(
             superseded_rekeys=superseded_rekeys if concept_supersessions_path is not None else None,
             supersession_ids=({retired: s.supersession_id for retired, s in supersessions.items()}
                               if supersessions is not None else None),
+            hold_unresolved_publishing_entries=hold_unresolved_publishing_entries,
         )
         os.replace(tmp_db, output_db)
         committed = True
@@ -554,6 +571,7 @@ def _build_into(
     inaturalist_refresh_sha256: str | None = None,
     superseded_rekeys: dict[str, list[dict]] | None = None,
     supersession_ids: dict[int, str] | None = None,
+    hold_unresolved_publishing_entries: bool = False,
 ) -> dict:
     conn = sqlite3.connect(str(tmp_db), isolation_level=None)
     conn.execute("PRAGMA locking_mode = EXCLUSIVE")
@@ -570,6 +588,11 @@ def _build_into(
     try:
         # --- Pass 1: build source_usage → sporely_taxon_id index -----------
         source_usage_index = _iter_source_usage_source_index(source_usages_path)
+        # An applied name-record follow publishes each Sporely id under the
+        # current COL usage that carries its original name record; its
+        # historical key stays in the registry only, so a lookup by a COL id
+        # never returns the concept whose name that id no longer carries.
+        published_col_id = _name_record_follow_published_ids(release_dir)
 
         # --- Pass 2: insert canonical taxa in sporely_taxon_id order --------
         taxa_rows: list[tuple] = []
@@ -608,7 +631,8 @@ def _build_into(
                 None,   # preferred_scientific_name_sv
                 release_id,
                 canonical_source_usage["source"],
-                canonical_source_usage["identifier"],
+                (published_col_id.get(canonical_source_usage["identifier"], canonical_source_usage["identifier"])
+                 if canonical_source_usage["source"] == "col_xr" else canonical_source_usage["identifier"]),
             ))
         # Insert in ascending sporely_taxon_id order for determinism.
         taxa_rows.sort(key=lambda r: r[0])
@@ -645,6 +669,8 @@ def _build_into(
             source_code = u["source_code"]
             ns = u["source_usage"]["namespace"]
             identifier = u["source_usage"]["identifier"]
+            if source_code == "col_xr" and ns == "col_usage_id":
+                identifier = published_col_id.get(identifier, identifier)
             sci_name = u.get("scientific_name") or ""
             authorship = u.get("authorship") or ""
             note = (u.get("alias_reason") or "") or None
@@ -843,6 +869,28 @@ def _build_into(
         publishing_counts: dict[str, object] = {}
         if superseded_rekeys is not None:
             publishing_counts["superseded_rekeys"] = superseded_rekeys
+        if hold_unresolved_publishing_entries:
+            # Refresh candidates only: an entry whose concept is not live or
+            # whose name changed is held and listed, never applied or re-keyed.
+            from dataclasses import replace as _replace
+            from publishing_ids import _canonical_names
+            held: list[dict] = []
+
+            def _keep(label, taxon_id, name):
+                current = _canonical_names(conn, [taxon_id]).get(taxon_id)
+                if current == name:
+                    return True
+                held.append({"input": label, "sporely_taxon_id": taxon_id, "reviewed_name": name,
+                             "reason": "concept_not_in_release" if current is None else f"name_now:{current}"})
+                return False
+            if overlay_entries is not None:
+                overlay_entries = [e for e in overlay_entries if _keep(
+                    "artportalen_overlay", int(e["sporely_taxon_id"]), e["scientific_name"])]
+            if inaturalist_refresh is not None:
+                inaturalist_refresh = _replace(inaturalist_refresh, entries=tuple(
+                    e for e in inaturalist_refresh.entries
+                    if _keep("inaturalist_refresh", e.sporely_taxon_id, e.scientific_name)))
+            publishing_counts["held_unresolved_entries"] = held
         try:
             if inaturalist_refresh is not None:
                 external_int_rows, publishing_counts["inaturalist_refresh"] = \
@@ -1079,6 +1127,22 @@ def _build_into(
             pass
         raise
 
+    if hold_unresolved_publishing_entries:
+        # Refresh candidates only: a source binding can outlive its concept
+        # (the concept's anchor usage left the source). Its rows have no live
+        # taxon; they are removed here and listed, never re-pointed.
+        dangling: dict[str, dict] = {}
+        for table in ("taxon_redlist_min", "taxon_external_id_text_min", "taxon_external_id_min",
+                      "scientific_name_min", "vernacular_min"):
+            where = (f"FROM {table} WHERE taxon_id IS NOT NULL AND taxon_id NOT IN "
+                     "(SELECT taxon_id FROM taxon_min)")
+            ids = sorted({r[0] for r in conn.execute(f"SELECT taxon_id {where}")})
+            if ids:
+                count = conn.execute(f"SELECT COUNT(*) {where}").fetchone()[0]
+                conn.execute(f"DELETE {where}")
+                dangling[table] = {"rows": count, "concepts": len(ids), "sample_concepts": ids[:20]}
+        publishing_counts["refresh_rows_dropped_concept_not_live"] = dangling
+
     # --- Integrity checks --------------------------------------------------
     integrity = list(conn.execute("PRAGMA integrity_check"))
     if integrity != [("ok",)]:
@@ -1221,6 +1285,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--concept-supersessions", type=Path, default=None,
                         help="the supersession ledger the release was compiled with; re-keys "
                              "publishing-id entries of retired concepts to their survivor")
+    parser.add_argument("--hold-unresolved-publishing-entries", action="store_true",
+                        help="refresh candidates: hold and list publishing-id entries whose concept is not "
+                             "live or was renamed, instead of failing")
     return parser
 
 
@@ -1235,6 +1302,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             publishing_overlay_path=args.publishing_overlay,
             inaturalist_refresh_path=args.inaturalist_refresh,
             concept_supersessions_path=args.concept_supersessions,
+            hold_unresolved_publishing_entries=args.hold_unresolved_publishing_entries,
         )
     except (BuildError, BridgeEmissionError) as exc:
         print(f"error: {exc}", file=sys.stderr)

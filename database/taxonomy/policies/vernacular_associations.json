@@ -920,6 +920,573 @@
           "rosenekornnøtt"
         ]
       ]
+    },
+    {
+      "evidence_class": "owner_reviewed_vernacular_association",
+      "evidence_references": [
+        "Owner decision 2026-10-24 on tax-2026.10.23-09 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+        "R1 tax-2026.10.23-01 vernacular_min row: taxon_id 129742, nb 'kantareller' (source col_xr)"
+      ],
+      "external_identifier_emission": false,
+      "identity_effect": "none",
+      "on_mismatch": "fail_compile",
+      "r1_evidence": {
+        "content_release_id": "tax-2026.10.23-01",
+        "language": "nb",
+        "source_system": "col_xr",
+        "taxon_id": 129742,
+        "vernacular_name": "kantareller"
+      },
+      "rationale": "Owner-approved carry-forward of an R1 Norwegian name. R1 showed nb 'kantareller' on 129742 'Cantharellus' (COL 7NRT6), the concept in the macrofungi picker; COL 26.9 no longer supplies the name, NorTaxa 1.292 still gives it to 56208 'Cantharellus' (whose own concept keeps it). Only this nb name is approved for this target; no identity equivalence, merge, rebinding or external-ID bridge is inferred.",
+      "review_id": "owner-2026-10-24-vernacular-56208",
+      "reviewed_against_source_pins": {
+        "col_source_release": "2026-09-25-XR",
+        "content_release_id": "tax-2026.10.23-09",
+        "nortaxa_source_release": "1.292"
+      },
+      "reviewer": "Owner",
+      "source_authorship_diagnostic": "Adans. ex Fr.",
+      "source_evidence": {
+        "accepted_usage_id": {
+          "namespace": "nortaxa_accepted_name_usage_id",
+          "value": "56208"
+        },
+        "concept_annotation": {},
+        "kingdom": "Fungi",
+        "nomenclatural_status": "",
+        "rank": "genus",
+        "raw_concept_annotation": {
+          "nameAccordingTo": "",
+          "taxonRemarks": ""
+        },
+        "scientific_name": "Cantharellus",
+        "source_status": "valid",
+        "source_usage": {
+          "identifier": "56208",
+          "namespace": "nortaxa_taxon_id",
+          "source": "nortaxa"
+        }
+      },
+      "source_evidence_sha256": "11e8c8900eb4e5fbb932bf60300848597a4d4b646feb0747e3f407b23c388fa9",
+      "target_authorship_diagnostic": "Adans. ex Fr., 1821",
+      "target_evidence": {
+        "accepted_usage_id": null,
+        "canonical_source_usage": {
+          "identifier": "7NRT6",
+          "namespace": "col_usage_id",
+          "source": "col_xr"
+        },
+        "concept_annotation": {},
+        "kingdom": "Fungi",
+        "nomenclatural_status": "",
+        "rank": "genus",
+        "raw_concept_annotation": {
+          "name_phrase": "",
+          "name_remarks": "",
+          "remarks": ""
+        },
+        "scientific_name": "Cantharellus",
+        "source_status": "accepted",
+        "source_usage": {
+          "identifier": "7NRT6",
+          "namespace": "col_usage_id",
+          "source": "col_xr"
+        },
+        "sporely_taxon_id": 129742
+      },
+      "target_evidence_sha256": "6bc40d08e50eca1b57ccf770a1a5d23ae4e72c2aefe24fd93d6715be1d7393a2",
+      "vernacular_names": [
+        [
+          "nb",
+          "kantareller"
+        ]
+      ]
+    },
+    {
+      "evidence_class": "owner_reviewed_vernacular_association",
+      "evidence_references": [
+        "Owner decision 2026-10-24 on tax-2026.10.23-09 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+        "R1 tax-2026.10.23-01 vernacular_min row: taxon_id 8992, nb 'eggrøyksopper' (source col_xr)"
+      ],
+      "external_identifier_emission": false,
+      "identity_effect": "none",
+      "on_mismatch": "fail_compile",
+      "r1_evidence": {
+        "content_release_id": "tax-2026.10.23-01",
+        "language": "nb",
+        "source_system": "col_xr",
+        "taxon_id": 8992,
+        "vernacular_name": "eggrøyksopper"
+      },
+      "rationale": "Owner-approved carry-forward of an R1 Norwegian name. R1 showed nb 'eggrøyksopper' on 8992 'Bovista' (COL 3C4P), the concept in the macrofungi picker; COL 26.9 no longer supplies the name, NorTaxa 1.292 still gives it to 54298 'Bovista' (whose own concept keeps it). Only this nb name is approved for this target; no identity equivalence, merge, rebinding or external-ID bridge is inferred.",
+      "review_id": "owner-2026-10-24-vernacular-54298",
+      "reviewed_against_source_pins": {
+        "col_source_release": "2026-09-25-XR",
+        "content_release_id": "tax-2026.10.23-09",
+        "nortaxa_source_release": "1.292"
+      },
+      "reviewer": "Owner",
+      "source_authorship_diagnostic": "Pers.",
+      "source_evidence": {
+        "accepted_usage_id": {
+          "namespace": "nortaxa_accepted_name_usage_id",
+          "value": "54298"
+        },
+        "concept_annotation": {},
+        "kingdom": "Fungi",
+        "nomenclatural_status": "",
+        "rank": "genus",
+        "raw_concept_annotation": {
+          "nameAccordingTo": "",
+          "taxonRemarks": ""
+        },
+        "scientific_name": "Bovista",
+        "source_status": "valid",
+        "source_usage": {
+          "identifier": "54298",
+          "namespace": "nortaxa_taxon_id",
+          "source": "nortaxa"
+        }
+      },
+      "source_evidence_sha256": "5ecf861b427955d65f6141cb185d56f5363f7fa539d59a55b37c057d770c9bad",
+      "target_authorship_diagnostic": "Pers., 1794",
+      "target_evidence": {
+        "accepted_usage_id": null,
+        "canonical_source_usage": {
+          "identifier": "3C4P",
+          "namespace": "col_usage_id",
+          "source": "col_xr"
+        },
+        "concept_annotation": {},
+        "kingdom": "Fungi",
+        "nomenclatural_status": "",
+        "rank": "genus",
+        "raw_concept_annotation": {
+          "name_phrase": "",
+          "name_remarks": "",
+          "remarks": ""
+        },
+        "scientific_name": "Bovista",
+        "source_status": "accepted",
+        "source_usage": {
+          "identifier": "3C4P",
+          "namespace": "col_usage_id",
+          "source": "col_xr"
+        },
+        "sporely_taxon_id": 8992
+      },
+      "target_evidence_sha256": "ebe704770d6a364bdb6850632b591666086e90a1cbe168297de949346fd9eeb6",
+      "vernacular_names": [
+        [
+          "nb",
+          "eggrøyksopper"
+        ]
+      ]
+    },
+    {
+      "evidence_class": "owner_reviewed_vernacular_association",
+      "evidence_references": [
+        "Owner decision 2026-10-24 on tax-2026.10.23-09 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+        "R1 tax-2026.10.23-01 vernacular_min row: taxon_id 20056, nb 'fingersopper' (source col_xr)"
+      ],
+      "external_identifier_emission": false,
+      "identity_effect": "none",
+      "on_mismatch": "fail_compile",
+      "r1_evidence": {
+        "content_release_id": "tax-2026.10.23-01",
+        "language": "nb",
+        "source_system": "col_xr",
+        "taxon_id": 20056,
+        "vernacular_name": "fingersopper"
+      },
+      "rationale": "Owner-approved carry-forward of an R1 Norwegian name. R1 showed nb 'fingersopper' on 20056 'Clavulina' (COL 3QQZ), the concept in the macrofungi picker; COL 26.9 no longer supplies the name, NorTaxa 1.292 still gives it to 56254 'Clavulina' (whose own concept keeps it). Only this nb name is approved for this target; no identity equivalence, merge, rebinding or external-ID bridge is inferred.",
+      "review_id": "owner-2026-10-24-vernacular-56254",
+      "reviewed_against_source_pins": {
+        "col_source_release": "2026-09-25-XR",
+        "content_release_id": "tax-2026.10.23-09",
+        "nortaxa_source_release": "1.292"
+      },
+      "reviewer": "Owner",
+      "source_authorship_diagnostic": "J. Schröt.",
+      "source_evidence": {
+        "accepted_usage_id": {
+          "namespace": "nortaxa_accepted_name_usage_id",
+          "value": "56254"
+        },
+        "concept_annotation": {},
+        "kingdom": "Fungi",
+        "nomenclatural_status": "",
+        "rank": "genus",
+        "raw_concept_annotation": {
+          "nameAccordingTo": "",
+          "taxonRemarks": ""
+        },
+        "scientific_name": "Clavulina",
+        "source_status": "valid",
+        "source_usage": {
+          "identifier": "56254",
+          "namespace": "nortaxa_taxon_id",
+          "source": "nortaxa"
+        }
+      },
+      "source_evidence_sha256": "ca17ecd9d9b18d109c00fd8c2ac76c3e00feecbe3229ea9505aba65c56281e92",
+      "target_authorship_diagnostic": "J.Schröt., 1888",
+      "target_evidence": {
+        "accepted_usage_id": null,
+        "canonical_source_usage": {
+          "identifier": "3QQZ",
+          "namespace": "col_usage_id",
+          "source": "col_xr"
+        },
+        "concept_annotation": {},
+        "kingdom": "Fungi",
+        "nomenclatural_status": "",
+        "rank": "genus",
+        "raw_concept_annotation": {
+          "name_phrase": "",
+          "name_remarks": "",
+          "remarks": ""
+        },
+        "scientific_name": "Clavulina",
+        "source_status": "accepted",
+        "source_usage": {
+          "identifier": "3QQZ",
+          "namespace": "col_usage_id",
+          "source": "col_xr"
+        },
+        "sporely_taxon_id": 20056
+      },
+      "target_evidence_sha256": "039ac77bc62a35f3653c54c6bb86294c82a289b80da074af74031aa5c5dcf37e",
+      "vernacular_names": [
+        [
+          "nb",
+          "fingersopper"
+        ]
+      ]
+    },
+    {
+      "evidence_class": "owner_reviewed_vernacular_association",
+      "evidence_references": [
+        "Owner decision 2026-10-24 on tax-2026.10.23-09 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+        "R1 tax-2026.10.23-01 vernacular_min row: taxon_id 15031, nb 'fagerkjuker' (source col_xr)"
+      ],
+      "external_identifier_emission": false,
+      "identity_effect": "none",
+      "on_mismatch": "fail_compile",
+      "r1_evidence": {
+        "content_release_id": "tax-2026.10.23-01",
+        "language": "nb",
+        "source_system": "col_xr",
+        "taxon_id": 15031,
+        "vernacular_name": "fagerkjuker"
+      },
+      "rationale": "Owner-approved carry-forward of an R1 Norwegian name. R1 showed nb 'fagerkjuker' on 15031 'Ceriporia' (COL 3L56), the concept in the macrofungi picker; COL 26.9 no longer supplies the name, NorTaxa 1.292 still gives it to 57122 'Ceriporia' (whose own concept keeps it). Only this nb name is approved for this target; no identity equivalence, merge, rebinding or external-ID bridge is inferred.",
+      "review_id": "owner-2026-10-24-vernacular-57122",
+      "reviewed_against_source_pins": {
+        "col_source_release": "2026-09-25-XR",
+        "content_release_id": "tax-2026.10.23-09",
+        "nortaxa_source_release": "1.292"
+      },
+      "reviewer": "Owner",
+      "source_authorship_diagnostic": "Donk",
+      "source_evidence": {
+        "accepted_usage_id": {
+          "namespace": "nortaxa_accepted_name_usage_id",
+          "value": "57122"
+        },
+        "concept_annotation": {},
+        "kingdom": "Fungi",
+        "nomenclatural_status": "",
+        "rank": "genus",
+        "raw_concept_annotation": {
+          "nameAccordingTo": "",
+          "taxonRemarks": ""
+        },
+        "scientific_name": "Ceriporia",
+        "source_status": "valid",
+        "source_usage": {
+          "identifier": "57122",
+          "namespace": "nortaxa_taxon_id",
+          "source": "nortaxa"
+        }
+      },
+      "source_evidence_sha256": "d60d43beede86298a3e0d411de2eefa5dca1250925a61d15cf27cb9d60a0b250",
+      "target_authorship_diagnostic": "Donk, 1933",
+      "target_evidence": {
+        "accepted_usage_id": null,
+        "canonical_source_usage": {
+          "identifier": "3L56",
+          "namespace": "col_usage_id",
+          "source": "col_xr"
+        },
+        "concept_annotation": {},
+        "kingdom": "Fungi",
+        "nomenclatural_status": "",
+        "rank": "genus",
+        "raw_concept_annotation": {
+          "name_phrase": "",
+          "name_remarks": "",
+          "remarks": ""
+        },
+        "scientific_name": "Ceriporia",
+        "source_status": "accepted",
+        "source_usage": {
+          "identifier": "3L56",
+          "namespace": "col_usage_id",
+          "source": "col_xr"
+        },
+        "sporely_taxon_id": 15031
+      },
+      "target_evidence_sha256": "3c09e9a51affb5198072ca6ea51578cebcb35f9a55fb7644479c18987a9a17ad",
+      "vernacular_names": [
+        [
+          "nb",
+          "fagerkjuker"
+        ]
+      ]
+    },
+    {
+      "evidence_class": "owner_reviewed_vernacular_association",
+      "evidence_references": [
+        "Owner decision 2026-10-24 on tax-2026.10.23-09 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+        "R1 tax-2026.10.23-01 vernacular_min row: taxon_id 68411, nb 'beitemarkvokssopper' (source col_xr)"
+      ],
+      "external_identifier_emission": false,
+      "identity_effect": "none",
+      "on_mismatch": "fail_compile",
+      "r1_evidence": {
+        "content_release_id": "tax-2026.10.23-01",
+        "language": "nb",
+        "source_system": "col_xr",
+        "taxon_id": 68411,
+        "vernacular_name": "beitemarkvokssopper"
+      },
+      "rationale": "Owner-approved carry-forward of an R1 Norwegian name. R1 showed nb 'beitemarkvokssopper' on 68411 'Hygrocybe' (COL 4ZXK), the concept in the macrofungi picker; COL 26.9 no longer supplies the name, NorTaxa 1.292 still gives it to 298046 'Hygrocybe s. lato' (whose own concept keeps it). Only this nb name is approved for this target; no identity equivalence, merge, rebinding or external-ID bridge is inferred.",
+      "review_id": "owner-2026-10-24-vernacular-298046",
+      "reviewed_against_source_pins": {
+        "col_source_release": "2026-09-25-XR",
+        "content_release_id": "tax-2026.10.23-09",
+        "nortaxa_source_release": "1.292"
+      },
+      "reviewer": "Owner",
+      "source_authorship_diagnostic": "(Fr.) P. Kumm.",
+      "source_evidence": {
+        "accepted_usage_id": {
+          "namespace": "nortaxa_accepted_name_usage_id",
+          "value": "298046"
+        },
+        "concept_annotation": {},
+        "kingdom": "Fungi",
+        "nomenclatural_status": "",
+        "rank": "genus",
+        "raw_concept_annotation": {
+          "nameAccordingTo": "",
+          "taxonRemarks": ""
+        },
+        "scientific_name": "Hygrocybe s. lato",
+        "source_status": "valid",
+        "source_usage": {
+          "identifier": "298046",
+          "namespace": "nortaxa_taxon_id",
+          "source": "nortaxa"
+        }
+      },
+      "source_evidence_sha256": "d5061eec81da0a3b05d0c178e9b7747e30a574bcbf3dccc970dc46c34ce6b437",
+      "target_authorship_diagnostic": "(Fr.) P.Kumm., 1871",
+      "target_evidence": {
+        "accepted_usage_id": null,
+        "canonical_source_usage": {
+          "identifier": "4ZXK",
+          "namespace": "col_usage_id",
+          "source": "col_xr"
+        },
+        "concept_annotation": {},
+        "kingdom": "Fungi",
+        "nomenclatural_status": "",
+        "rank": "genus",
+        "raw_concept_annotation": {
+          "name_phrase": "",
+          "name_remarks": "",
+          "remarks": ""
+        },
+        "scientific_name": "Hygrocybe",
+        "source_status": "accepted",
+        "source_usage": {
+          "identifier": "4ZXK",
+          "namespace": "col_usage_id",
+          "source": "col_xr"
+        },
+        "sporely_taxon_id": 68411
+      },
+      "target_evidence_sha256": "768b3f412fd53d33663933eeab7665b6f787d3d4f293dc513653c1f5aa7026c2",
+      "vernacular_names": [
+        [
+          "nb",
+          "beitemarkvokssopper"
+        ]
+      ]
+    },
+    {
+      "evidence_class": "owner_reviewed_vernacular_association",
+      "evidence_references": [
+        "Owner decision 2026-10-24 on tax-2026.10.23-09 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+        "R1 tax-2026.10.23-01 vernacular_min row: taxon_id 6398, nb 'silkeparasollsopp' (source col_xr)"
+      ],
+      "external_identifier_emission": false,
+      "identity_effect": "none",
+      "on_mismatch": "fail_compile",
+      "r1_evidence": {
+        "content_release_id": "tax-2026.10.23-01",
+        "language": "nb",
+        "source_system": "col_xr",
+        "taxon_id": 6398,
+        "vernacular_name": "silkeparasollsopp"
+      },
+      "rationale": "Owner-approved carry-forward of an R1 Norwegian name. R1 showed nb 'silkeparasollsopp' on 6398 'Echinoderma perplexum' (COL 38HQH), the concept in the macrofungi picker; COL 26.9 no longer supplies the name, NorTaxa 1.292 still gives it to 52026 'Echinoderma perplexa' (whose own concept keeps it). Only this nb name is approved for this target; no identity equivalence, merge, rebinding or external-ID bridge is inferred.",
+      "review_id": "owner-2026-10-24-vernacular-52026",
+      "reviewed_against_source_pins": {
+        "col_source_release": "2026-09-25-XR",
+        "content_release_id": "tax-2026.10.23-09",
+        "nortaxa_source_release": "1.292"
+      },
+      "reviewer": "Owner",
+      "source_authorship_diagnostic": "(Knudsen) Bon",
+      "source_evidence": {
+        "accepted_usage_id": {
+          "namespace": "nortaxa_accepted_name_usage_id",
+          "value": "52026"
+        },
+        "concept_annotation": {},
+        "kingdom": "Fungi",
+        "nomenclatural_status": "",
+        "rank": "species",
+        "raw_concept_annotation": {
+          "nameAccordingTo": "",
+          "taxonRemarks": ""
+        },
+        "scientific_name": "Echinoderma perplexa",
+        "source_status": "valid",
+        "source_usage": {
+          "identifier": "52026",
+          "namespace": "nortaxa_taxon_id",
+          "source": "nortaxa"
+        }
+      },
+      "source_evidence_sha256": "aab7dbc47032c4fb390e25b482cbf52119385bf1bb4873e7efb06a906382a5be",
+      "target_authorship_diagnostic": "(Knudsen) Bon",
+      "target_evidence": {
+        "accepted_usage_id": null,
+        "canonical_source_usage": {
+          "identifier": "38HQH",
+          "namespace": "col_usage_id",
+          "source": "col_xr"
+        },
+        "concept_annotation": {},
+        "kingdom": "Fungi",
+        "nomenclatural_status": "",
+        "rank": "species",
+        "raw_concept_annotation": {
+          "name_phrase": "",
+          "name_remarks": "",
+          "remarks": ""
+        },
+        "scientific_name": "Echinoderma perplexum",
+        "source_status": "accepted",
+        "source_usage": {
+          "identifier": "38HQH",
+          "namespace": "col_usage_id",
+          "source": "col_xr"
+        },
+        "sporely_taxon_id": 6398
+      },
+      "target_evidence_sha256": "a3eb3f6e1c6a8c8b9037aae5930161c79333dd0e3445d315e5365f3a384b4970",
+      "vernacular_names": [
+        [
+          "nb",
+          "silkeparasollsopp"
+        ]
+      ]
+    },
+    {
+      "evidence_class": "owner_reviewed_vernacular_association",
+      "evidence_references": [
+        "Owner decision 2026-10-24 on tax-2026.10.23-09 (Sigmund Ås, in chat): approved for the validation-only R2 candidate; release approval pending",
+        "R1 tax-2026.10.23-01 vernacular_min row: taxon_id 140472, nb 'kalktalg' (source col_xr)"
+      ],
+      "external_identifier_emission": false,
+      "identity_effect": "none",
+      "on_mismatch": "fail_compile",
+      "r1_evidence": {
+        "content_release_id": "tax-2026.10.23-01",
+        "language": "nb",
+        "source_system": "col_xr",
+        "taxon_id": 140472,
+        "vernacular_name": "kalktalg"
+      },
+      "rationale": "Owner-approved carry-forward of an R1 Norwegian name. R1 showed nb 'kalktalg' on 140472 'Alloexidiopsis calcea' (COL B2RM5), the concept in the macrofungi picker; COL 26.9 no longer supplies the name, NorTaxa 1.292 still gives it to 62014 'Exidiopsis calcea' (whose own concept keeps it). Only this nb name is approved for this target; no identity equivalence, merge, rebinding or external-ID bridge is inferred.",
+      "review_id": "owner-2026-10-24-vernacular-62014",
+      "reviewed_against_source_pins": {
+        "col_source_release": "2026-09-25-XR",
+        "content_release_id": "tax-2026.10.23-09",
+        "nortaxa_source_release": "1.292"
+      },
+      "reviewer": "Owner",
+      "source_authorship_diagnostic": "(Pers. : Fr) K. Wells",
+      "source_evidence": {
+        "accepted_usage_id": {
+          "namespace": "nortaxa_accepted_name_usage_id",
+          "value": "62014"
+        },
+        "concept_annotation": {},
+        "kingdom": "Fungi",
+        "nomenclatural_status": "illegitimate",
+        "rank": "species",
+        "raw_concept_annotation": {
+          "nameAccordingTo": "",
+          "taxonRemarks": ""
+        },
+        "scientific_name": "Exidiopsis calcea",
+        "source_status": "valid",
+        "source_usage": {
+          "identifier": "62014",
+          "namespace": "nortaxa_taxon_id",
+          "source": "nortaxa"
+        }
+      },
+      "source_evidence_sha256": "ca6eb13f7ff9b12840cdb8b87b91e62b2209b6cc8cc3083afb3d71285c0a43c0",
+      "target_authorship_diagnostic": "(Pers.) L.W. Zhou & S.L. Liu",
+      "target_evidence": {
+        "accepted_usage_id": null,
+        "canonical_source_usage": {
+          "identifier": "B2RM5",
+          "namespace": "col_usage_id",
+          "source": "col_xr"
+        },
+        "concept_annotation": {},
+        "kingdom": "Fungi",
+        "nomenclatural_status": "",
+        "rank": "species",
+        "raw_concept_annotation": {
+          "name_phrase": "",
+          "name_remarks": "",
+          "remarks": ""
+        },
+        "scientific_name": "Alloexidiopsis calcea",
+        "source_status": "accepted",
+        "source_usage": {
+          "identifier": "B2RM5",
+          "namespace": "col_usage_id",
+          "source": "col_xr"
+        },
+        "sporely_taxon_id": 140472
+      },
+      "target_evidence_sha256": "b303071a6d326d1621eff5c3bae87ff5b2bfa34ee0c72912f8f04e2080eac924",
+      "vernacular_names": [
+        [
+          "nb",
+          "kalktalg"
+        ]
+      ]
     }
   ],
   "semantic_constraints": [

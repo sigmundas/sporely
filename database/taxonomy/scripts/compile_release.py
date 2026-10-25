@@ -45,6 +45,7 @@ any consumer runtime store.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
 import json
 import os
@@ -221,39 +222,64 @@ def _iter_taxa(source_dir: Path) -> Iterator[NormalizedTaxonRecord]:
                     f"{taxa_path}:{line_number}: malformed JSON: {exc}"
                 ) from exc
             try:
-                core_row = payload["core_row_id"]
-                taxon_id = payload["taxon_id"]
-                yield NormalizedTaxonRecord(
-                    source_code=str(payload["source_code"]),
-                    source_release=dict(payload["source_release"]),
-                    core_row_id_value=str(core_row["value"]),
-                    core_row_id_namespace=str(core_row["namespace"]),
-                    taxon_id_value=str(taxon_id["value"]),
-                    taxon_id_namespace=str(taxon_id["namespace"]),
-                    accepted_name_usage_id=(
-                        dict(payload["accepted_name_usage_id"])
-                        if payload.get("accepted_name_usage_id") else None
-                    ),
-                    parent_name_usage_id=(
-                        dict(payload["parent_name_usage_id"])
-                        if payload.get("parent_name_usage_id") else None
-                    ),
-                    parent_reference_resolution=str(
-                        payload.get("parent_reference_resolution", "absent")
-                    ),
-                    scientific_name=str(payload.get("scientific_name", "")),
-                    authorship=str(payload.get("authorship", "")),
-                    rank=str(payload.get("rank", "")),
-                    taxonomic_status=str(payload.get("taxonomic_status", "")),
-                    external_ids=dict(payload.get("external_ids", {})),
-                    classification=dict(payload.get("classification", {})),
-                    inclusion_reason=str(payload.get("col_inclusion_reason", "")),
-                    raw=payload,
-                )
+                yield _record_from_payload(payload)
             except (KeyError, TypeError) as exc:
                 raise CompilerError(
                     f"{taxa_path}:{line_number}: missing required field: {exc}"
                 ) from exc
+
+
+def typography_key(authorship: str) -> str:
+    """Authorship with only whitespace/punctuation-spacing differences removed."""
+    text = re.sub(r"\s+", " ", authorship or "").strip()
+    return re.sub(r"\s*([.,&():])\s*", r"\1", text)
+
+
+def name_record_ids(record) -> frozenset[str]:
+    """Nomenclatural record ids a COL usage carries (normalize_col_xr ``name_record_ids``)."""
+    return frozenset((record.raw or {}).get("name_record_ids") or [])
+
+
+def is_aggregate_name(name: str) -> bool:
+    """coll./agg./s.lat./s.l./group marker (same rule as carry_forward)."""
+    return bool(_AGGREGATE_MARKER.search(name or ""))
+
+
+_AGGREGATE_MARKER = re.compile(r"(?:^|\s)(?:coll\.|agg\.|aggr\.|s\.\s?lat\.|s\.\s?l\.|sensu lato|group|grp\.)(?:\s|$)",
+                               re.IGNORECASE)
+
+
+def _record_from_payload(payload: dict) -> "NormalizedTaxonRecord":
+    """One normalized taxa.jsonl row as a record (KeyError/TypeError on bad input)."""
+    core_row = payload["core_row_id"]
+    taxon_id = payload["taxon_id"]
+    return NormalizedTaxonRecord(
+        source_code=str(payload["source_code"]),
+        source_release=dict(payload["source_release"]),
+        core_row_id_value=str(core_row["value"]),
+        core_row_id_namespace=str(core_row["namespace"]),
+        taxon_id_value=str(taxon_id["value"]),
+        taxon_id_namespace=str(taxon_id["namespace"]),
+        accepted_name_usage_id=(
+            dict(payload["accepted_name_usage_id"])
+            if payload.get("accepted_name_usage_id") else None
+        ),
+        parent_name_usage_id=(
+            dict(payload["parent_name_usage_id"])
+            if payload.get("parent_name_usage_id") else None
+        ),
+        parent_reference_resolution=str(
+            payload.get("parent_reference_resolution", "absent")
+        ),
+        scientific_name=str(payload.get("scientific_name", "")),
+        authorship=str(payload.get("authorship", "")),
+        rank=str(payload.get("rank", "")),
+        taxonomic_status=str(payload.get("taxonomic_status", "")),
+        external_ids=dict(payload.get("external_ids", {})),
+        classification=dict(payload.get("classification", {})),
+        inclusion_reason=str(payload.get("col_inclusion_reason", "")),
+        raw=payload,
+    )
 
 
 def _iter_legacy_enrichment(path: Path) -> Iterator[dict]:
@@ -372,6 +398,89 @@ def reviewed_only_mapping_inapplicable(
         if compiled.get(src) != (rid, sha):
             return f"compiled_{src}_differs_from_reviewed_pin"
     return None
+
+
+CONTINUITY_RECEIPT_FORMAT = "sporely-source-continuity-receipt-v1"
+
+
+def _pin_map(pins: object) -> dict[str, tuple[str, str]]:
+    return {str(src): (str((pin or {}).get("source_release_id") or ""), str((pin or {}).get("sha256") or ""))
+            for src, pin in (pins or {}).items()} if isinstance(pins, dict) else {}
+
+
+def load_continuity_receipt(path: Path | None, compiled: dict[str, tuple[str, str]]) -> dict | None:
+    """The refresh's source-continuity receipt (``carry_forward.py``), or None.
+
+    Its current pins must be exactly the compiled inputs, or the receipt
+    describes another build and is refused.
+    """
+    if path is None:
+        return None
+    try:
+        receipt = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CompilerError(f"continuity receipt unreadable: {exc}") from exc
+    if receipt.get("format") != CONTINUITY_RECEIPT_FORMAT:
+        raise CompilerError("continuity receipt has an unknown format")
+    current = _pin_map(receipt.get("current_pins"))
+    if current != {code: tuple(pin) for code, pin in compiled.items()}:
+        raise CompilerError("continuity receipt current_pins are not the compiled source inputs")
+    return receipt
+
+
+def continuity_inapplicable(mapping: "ManualMapping", receipt: dict) -> str | None:
+    """None when the receipt carries this approved record unchanged from the
+    source releases it was reviewed against to the compiled ones.
+
+    It does not widen the approval: the record must be in the receipt as
+    ``carried``, under the same approval hash, and every reviewed pin must be
+    either the receipt's previous pin for that source or already the
+    compiled one; the record's ``source_release_range`` must be the reviewed
+    (previous) release of its own source.
+    """
+    record = (receipt.get("records") or {}).get(mapping.mapping_id)
+    if record is None:
+        return "continuity_record_absent"
+    if record.get("status") != "carried":
+        return "flagged_by_continuity_receipt"
+    if record.get("approval_sha256", "") != mapping.approved_manifest_file_sha256:
+        return "continuity_approval_hash_differs"
+    previous, current = _pin_map(receipt.get("previous_pins")), _pin_map(receipt.get("current_pins"))
+    for src, rid, sha in mapping.reviewed_source_pins:
+        if (rid, sha) not in (previous.get(src), current.get(src)):
+            return f"continuity_previous_{src}_differs_from_reviewed_pin"
+    source = mapping.source_usage[0]
+    reviewed = {src: rid for src, rid, _ in mapping.reviewed_source_pins}.get(source, "")
+    version = reviewed.split(":")[1] if reviewed.count(":") == 2 else ""
+    if not version or mapping.source_release_range != (version, version):
+        return "continuity_release_range_is_not_the_reviewed_release"
+    return None
+
+
+def continuity_held_usages(receipt: dict | None) -> set[tuple[str, str, str]]:
+    """Current non-backbone source usages of owner-held records. The compile
+    leaves them (and their direct synonyms) out of its inputs, so a held
+    relationship is not applied to the changed source record; supersessions
+    themselves (retirements of historical ids) stay applied."""
+    held: set[tuple[str, str, str]] = set()
+    for record in (receipt or {}).get("records", {}).values():
+        if record.get("status") != "held":
+            continue
+        for identifier in record.get("identifiers") or []:
+            source, namespace, value = identifier.split("/", 2)
+            if source != BACKBONE_SOURCE:
+                held.add((source, namespace, value))
+    return held
+
+
+def continuity_blockers(receipt: dict | None) -> list[str]:
+    """Flagged NorTaxa mappings and supersessions: these bind or retire ids
+    without a pin check, so a flagged one stops the compile for review."""
+    if not receipt:
+        return []
+    return sorted(rid for rid, record in (receipt.get("records") or {}).items()
+                  if record.get("status") == "flagged"
+                  and record.get("kind") in ("nortaxa_mapping", "supersession"))
 
 
 @dataclass(frozen=True)
@@ -628,6 +737,7 @@ def compile_release(
     previous_vernacular_evidence_path: Path | None = None,
     enable_vernacular_enrichment: bool = True,
     vernacular_scope_policy_path: Path | None = None,
+    continuity_receipt_path: Path | None = None,
 ) -> dict:
     """Compile a deterministic candidate release into ``output_dir``.
 
@@ -675,6 +785,105 @@ def compile_release(
             p for p in normalized_source_dirs if _read_report(p).source_code == source_code
         )
         per_source_records[source_code] = list(_iter_taxa(source_dir))
+    compiled_source_pins = {
+        code: (f"{code}:{_release_string(report.source_release)}",
+               report.archive_sha256)
+        for code, report in source_reports.items()
+    }
+    continuity_receipt = load_continuity_receipt(continuity_receipt_path, compiled_source_pins)
+    held_usages = continuity_held_usages(continuity_receipt)
+    # Species history: a bound non-backbone usage whose source record now
+    # names an aggregate keeps the previous reviewed (species) record and its
+    # vernaculars, so the historical binding is never reused for the aggregate.
+    species_history: dict[tuple[str, str, str], NormalizedTaxonRecord] = {}
+    species_history_vernaculars: dict[str, list[dict]] = {}
+    species_history_cores: set[tuple[str, str, str]] = set()
+    for record_id, entry in sorted(((continuity_receipt or {}).get("records") or {}).items()):
+        if entry.get("status") != "species_history" or not entry.get("previous_record"):
+            continue
+        previous = _record_from_payload(entry["previous_record"])
+        key = (previous.source_code, previous.taxon_id_namespace, previous.taxon_id_value)
+        if "/".join(key) not in entry.get("identifiers", []):
+            raise CompilerError(f"{record_id}: previous record is not the named usage")
+        species_history[key] = previous
+        species_history_cores.add((previous.source_code, previous.core_row_id_namespace, previous.core_row_id_value))
+        species_history_vernaculars.setdefault(previous.source_code, []).extend(entry.get("previous_vernaculars") or [])
+    for source_code, records in per_source_records.items():
+        if any(k[0] == source_code for k in species_history):
+            per_source_records[source_code] = [
+                species_history.get((r.source_code, r.taxon_id_namespace, r.taxon_id_value), r) for r in records]
+    # COL continuity review: a new COL usage that matches a vanished registry
+    # anchor (name, rank, normalized authorship, family) is never allocated a
+    # duplicate id. An approved continuity binds it to the old id; any other
+    # matched or ambiguous new usage is withheld for review.
+    candidates = (continuity_receipt or {}).get("col_continuity_candidates") or {}
+    approved_new = {e["new_col_id"] for e in (continuity_receipt or {}).get("col_id_continuity") or []}
+    col_review_withheld: dict[str, str] = {}
+    for pair in candidates.get("pairs") or []:
+        if pair["new_col_id"] not in approved_new:
+            col_review_withheld[pair["new_col_id"]] = f"matches vanished {pair['old_col_id']} (unapproved)"
+    for group in candidates.get("ambiguous") or []:
+        for new_id in group["new_col_ids"]:
+            if new_id not in approved_new:
+                col_review_withheld[new_id] = "ambiguous match: " + ",".join(group["old_col_ids"])
+    # Two anchored COL ids exchanged nomenclatural records: neither Sporely id
+    # can follow a record safely, so the usage is held for review.
+    # An owner-approved name-record follow (both members of a closed exchange)
+    # gives each Sporely id, in this release only, the current record of the
+    # usage that now carries its original name record; no key is rebound.
+    follows = {e["col_id"]: e["follows_col_id"] for e in (continuity_receipt or {}).get("name_record_follow") or []
+               if e.get("status") == "approved"}
+    if follows:
+        if any(follows.get(target) != col_id for col_id, target in follows.items()):
+            raise CompilerError(f"name-record follows are not closed exchanges: {follows}")
+        backbone = per_source_records.get(BACKBONE_SOURCE, [])
+        by_value = {r.taxon_id_value: r for r in backbone if r.taxon_id_value in follows}
+        referencing = sorted(r.taxon_id_value for r in backbone if any(
+            str((ref or {}).get("value") or "") in follows and str((ref or {}).get("value")) != r.taxon_id_value
+            for ref in (r.accepted_name_usage_id, r.parent_name_usage_id)))
+        if set(by_value) != set(follows) or referencing:
+            raise CompilerError(f"name-record follow cannot apply: missing {sorted(set(follows) - set(by_value))}, "
+                                f"referenced by {referencing[:20]}")
+        per_source_records[BACKBONE_SOURCE] = [
+            dataclasses.replace(by_value[follows[r.taxon_id_value]], taxon_id_value=r.taxon_id_value)
+            if r.taxon_id_value in follows else r for r in backbone]
+    for transfer in candidates.get("name_record_transfers") or []:
+        if transfer["col_id"] in follows:
+            continue
+        col_review_withheld[transfer["col_id"]] = (
+            f"name record transfer: {transfer['name_before']} -> {transfer['name_after']} "
+            f"(old record now on {','.join(transfer['old_record_now_on'])})")
+    col_review_cores: set[tuple[str, str, str]] = set()
+    if col_review_withheld:
+        kept_backbone = []
+        for r in per_source_records.get(BACKBONE_SOURCE, []):
+            if r.taxon_id_value in col_review_withheld:
+                col_review_cores.add((r.source_code, r.core_row_id_namespace, r.core_row_id_value))
+            else:
+                kept_backbone.append(r)
+        per_source_records[BACKBONE_SOURCE] = kept_backbone
+    continuity_withheld: list[dict] = []
+    withheld_core_rows: set[tuple[str, str, str]] = set(col_review_cores)
+    continuity_vernaculars_withheld = 0
+    if held_usages:
+        for source_code, records in per_source_records.items():
+            kept = []
+            for record in records:
+                key = (record.source_code, record.taxon_id_namespace, record.taxon_id_value)
+                # The accepted reference is a same-source taxonID under its own
+                # namespace (e.g. nortaxa_accepted_name_usage_id): match the value.
+                accepted_value = str((record.accepted_name_usage_id or {}).get("value") or "")
+                accepted_key = next((h for h in held_usages if h[0] == record.source_code
+                                     and h[2] == accepted_value and accepted_value != key[2]), None)
+                if key in held_usages or accepted_key is not None:
+                    withheld_core_rows.add((record.source_code, record.core_row_id_namespace,
+                                            record.core_row_id_value))
+                    continuity_withheld.append({"usage": "/".join(key), "name": record.scientific_name,
+                                                "held_via": "/".join(key if key in held_usages else accepted_key)})
+                    continue
+                kept.append(record)
+            per_source_records[source_code] = kept
+    for source_code in source_reports:
         all_records.extend(per_source_records[source_code])
 
     # Cross-source usage index for manual-mapping target resolution and for
@@ -752,19 +961,115 @@ def compile_release(
     # Apply approved manual exact mappings first, so their target IDs (either
     # pre-existing anchors or targets to be allocated) are recorded before
     # any source-native allocation.
-    compiled_source_pins = {
-        code: (f"{code}:{_release_string(report.source_release)}",
-               report.archive_sha256)
-        for code, report in source_reports.items()
-    }
+    # ----- Live-duplicate prevention (refresh receipts only) -----------------
+    # A new, unbound COL usage whose name and rank equal a concept that is
+    # still live is not given a fresh permanent id. A unique exact match
+    # (same normalized authorship and compatible family, or a shared
+    # nomenclatural record id) reuses that identity as an append-only alias;
+    # anything else is withheld for review. Identity is never inferred from
+    # name and rank alone.
+    live_duplicate_bound: list[dict] = []
+    live_duplicate_aliases: set[str] = set()
+    live_duplicate_vernaculars_dropped = 0
+    live_duplicate_withheld: dict[str, dict] = {}
+    if continuity_receipt is not None:
+        approved_new_keys = {(BACKBONE_SOURCE, "col_usage_id", e["new_col_id"])
+                             for e in continuity_receipt.get("col_id_continuity") or []}
+        # A recompile on a registry that already holds this release's aliases
+        # (build 2 onward) re-derives them, so the diagnostics are the same
+        # whichever compile bound them.
+        bound_here: dict[tuple[str, str, str], int] = {}
+        for key in usage_index:
+            if key[0] == BACKBONE_SOURCE and key not in approved_new_keys:
+                prior = registry.lookup(*key)
+                if prior is not None and prior.kind == "alias" and prior.allocated_in_release == release_id:
+                    bound_here[key] = prior.sporely_taxon_id
+        live_by_name: dict[tuple[str, str], dict[int, list[NormalizedTaxonRecord]]] = {}
+        for key, record in usage_index.items():
+            if record.taxonomic_status.casefold() not in ("accepted", "provisionally accepted", "valid"):
+                continue
+            if key in bound_here:
+                continue
+            bound = registry.lookup(*key)
+            if bound is None:
+                continue
+            live_by_name.setdefault((record.scientific_name, record.rank.casefold()), {}) \
+                .setdefault(bound.sporely_taxon_id, []).append(record)
+        for key, record in sorted(usage_index.items()):
+            if key[0] != BACKBONE_SOURCE or key in approved_new_keys or (
+                    key not in bound_here and registry.lookup(*key) is not None):
+                continue
+            if record.taxonomic_status.casefold() not in ("accepted", "provisionally accepted"):
+                continue
+            same = live_by_name.get((record.scientific_name, record.rank.casefold()))
+            if not same:
+                continue
+            family = (record.classification or {}).get("family", "")
+            exact = sorted(
+                taxon for taxon, recs in same.items()
+                if any((typography_key(r.authorship) == typography_key(record.authorship)
+                        and (not family or not (r.classification or {}).get("family")
+                             or (r.classification or {}).get("family") == family))
+                       or (name_record_ids(r) & name_record_ids(record)) for r in recs))
+            if key in bound_here:
+                if len(exact) == 1 and len(same) == 1 and exact[0] == bound_here[key]:
+                    live_duplicate_aliases.add(key[2])
+                    live_duplicate_bound.append({"usage": "/".join(key), "sporely_taxon_id": exact[0],
+                                                 "scientific_name": record.scientific_name})
+                continue
+            if len(exact) == 1 and len(same) == 1:
+                registry.bind_alias(existing_sporely_taxon_id=exact[0], source=key[0], namespace=key[1],
+                                    identifier=key[2], allocated_in_release=release_id,
+                                    first_seen_source_release=_release_string(record.source_release))
+                live_duplicate_aliases.add(key[2])
+                live_duplicate_bound.append({"usage": "/".join(key), "sporely_taxon_id": exact[0],
+                                             "scientific_name": record.scientific_name})
+                continue
+            live_duplicate_withheld[key[2]] = {
+                "scientific_name": record.scientific_name, "rank": record.rank, "authorship": record.authorship,
+                "live_ids": sorted(same), "exact_ids": exact,
+                "live_sources": sorted({r.source_code for recs in same.values() for r in recs}),
+                "phylum": (record.classification or {}).get("phylum", ""),
+                "class": ("ambiguous" if len(exact) > 1 or (exact and len(same) > 1)
+                          else "different_authorship_or_classification")}
+        if live_duplicate_withheld:
+            withheld_keys = {k for k in usage_index if k[0] == BACKBONE_SOURCE and k[2] in live_duplicate_withheld}
+            for withheld_key in withheld_keys:
+                record = usage_index.pop(withheld_key, None)
+                if record is not None:
+                    withheld_core_rows.add((record.source_code, record.core_row_id_namespace,
+                                            record.core_row_id_value))
+            all_records = [r for r in all_records if not (
+                r.source_code == BACKBONE_SOURCE and r.taxon_id_value in live_duplicate_withheld)]
+
+    blockers = continuity_blockers(continuity_receipt)
+    if blockers:
+        raise CompilerError(
+            f"continuity receipt flags {len(blockers)} NorTaxa mapping(s)/supersession(s) whose "
+            f"source records changed; review them before compiling: {blockers[:20]}")
     reviewed_only_inapplicable: dict[str, dict[str, int]] = {}
+    reviewed_only_inapplicable_records: list[dict] = []
+    continuity_applied: dict[str, int] = {}
     approved_exact = []
     for m in manual_mappings:
         if m.relationship != "exact" or m.review_status != "approved":
             continue
+        if m.source_usage in held_usages:
+            reviewed_only_inapplicable_records.append(
+                {"mapping_id": m.mapping_id, "source": m.source_usage[0], "reason": "held_by_owner_decision"})
+            continue
         if m.source_usage[0] in REVIEWED_IDENTITY_ONLY_SOURCES:
             reason = reviewed_only_mapping_inapplicable(m, compiled_source_pins)
+            if reason is not None and continuity_receipt is not None:
+                continuity_reason = continuity_inapplicable(m, continuity_receipt)
+                if continuity_reason is None:
+                    continuity_applied[m.source_usage[0]] = continuity_applied.get(m.source_usage[0], 0) + 1
+                    reason = None
+                else:
+                    reason = continuity_reason
             if reason is not None:
+                reviewed_only_inapplicable_records.append(
+                    {"mapping_id": m.mapping_id, "source": m.source_usage[0], "reason": reason})
                 counts = reviewed_only_inapplicable.setdefault(
                     m.source_usage[0], {})
                 counts[reason] = counts.get(reason, 0) + 1
@@ -787,22 +1092,30 @@ def compile_release(
         else:
             assert mapping.target_source_usage is not None
             target_su = mapping.target_source_usage
-            if target_su not in usage_index:
+            continued_from = {(BACKBONE_SOURCE, "col_usage_id", e["old_col_id"])
+                              for e in (continuity_receipt or {}).get("col_id_continuity") or []}
+            if target_su not in usage_index and target_su in continued_from \
+                    and registry.lookup(*target_su) is not None:
+                # The approved target was renumbered; an approved COL id
+                # continuity keeps it on the same Sporely id.
+                target_id = registry.lookup(*target_su).sporely_taxon_id
+            elif target_su not in usage_index:
                 raise CompilerError(
                     f"manual mapping {mapping.mapping_id!r} targets source "
                     f"usage {target_su!r} that is absent from every "
                     f"normalized input"
                 )
-            target_rec = usage_index[target_su]
-            target_release = _release_string(target_rec.source_release)
-            target_anchor = registry.allocate(
-                source=target_rec.source_code,
-                namespace=target_rec.taxon_id_namespace,
-                identifier=target_rec.taxon_id_value,
-                allocated_in_release=release_id,
-                first_seen_source_release=target_release,
-            )
-            target_id = target_anchor.sporely_taxon_id
+            else:
+                target_rec = usage_index[target_su]
+                target_release = _release_string(target_rec.source_release)
+                target_anchor = registry.allocate(
+                    source=target_rec.source_code,
+                    namespace=target_rec.taxon_id_namespace,
+                    identifier=target_rec.taxon_id_value,
+                    allocated_in_release=release_id,
+                    first_seen_source_release=target_release,
+                )
+                target_id = target_anchor.sporely_taxon_id
         # If source_usage is already anchored to a DIFFERENT ID, fail closed.
         existing = registry.lookup(*source_usage)
         if existing is not None and existing.sporely_taxon_id != target_id:
@@ -836,6 +1149,31 @@ def compile_release(
         except RegistryError as exc:
             raise CompilerError(str(exc)) from exc
         manual_bindings[source_usage] = target_id
+
+    # ----- COL id continuity (category 1, refresh receipts only) ------------
+    # A documented one-to-one COL id replacement joins the existing Sporely id
+    # as an append-only alias, and that alias supplies the concept's canonical
+    # row while the old anchor usage is absent. Nothing is allocated or merged.
+    continuity_canonical: dict[int, tuple[str, str, str]] = {}
+    col_continuity_applied: list[dict] = []
+    for entry in (continuity_receipt or {}).get("col_id_continuity") or []:
+        old_key = (BACKBONE_SOURCE, "col_usage_id", entry["old_col_id"])
+        new_key = (BACKBONE_SOURCE, "col_usage_id", entry["new_col_id"])
+        old_alloc = registry.lookup(*old_key)
+        new_alloc = registry.lookup(*new_key)
+        already = (new_alloc is not None and old_alloc is not None and new_alloc.kind == "alias"
+                   and new_alloc.sporely_taxon_id == old_alloc.sporely_taxon_id)
+        if (old_alloc is None or old_alloc.kind != "anchor" or old_key in usage_index
+                or new_key not in usage_index or (new_alloc is not None and not already)
+                or old_alloc.sporely_taxon_id in continuity_canonical):
+            raise CompilerError(f"COL id continuity {entry['old_col_id']}->{entry['new_col_id']} "
+                                "is not a clean one-to-one replacement in this release")
+        if not already:
+            registry.bind_alias(existing_sporely_taxon_id=old_alloc.sporely_taxon_id, source=new_key[0],
+                                namespace=new_key[1], identifier=new_key[2], allocated_in_release=release_id,
+                                first_seen_source_release=_release_string(usage_index[new_key].source_release))
+        continuity_canonical[old_alloc.sporely_taxon_id] = new_key
+        col_continuity_applied.append({**entry, "sporely_taxon_id": old_alloc.sporely_taxon_id})
 
     # ----- Phase 2a: allocate backbone anchors ------------------------------
     backbone_records = sorted(
@@ -914,6 +1252,12 @@ def compile_release(
     # the proposal class — is what a projection needs in order to apply
     # `mapping_policy.authoritative_bridge_emission` without reclassifying.
     auto_alias_applied: dict[tuple[str, str, str], str] = {}
+    # Registry conflicts are collected over phases 2c and 2e and reported
+    # together, so a refresh sees every identity conflict at once.
+    alias_conflicts: list[dict] = []
+    vernaculars_dropped_concept_not_live: list[dict] = []
+    held_conflicts = set(((continuity_receipt or {}).get("held_alias_conflicts") or {}))
+    held_conflicts_applied: list[dict] = []
     for proposal in sorted(cross_source_proposals,
                            key=lambda p: p.source_usage):
         if proposal.proposal_class != PROPOSAL_AUTOMATIC_EXACT:
@@ -936,7 +1280,12 @@ def compile_release(
                 first_seen_source_release=_release_string(bridge_rec.source_release),
             )
         except RegistryError as exc:
-            raise CompilerError(str(exc)) from exc
+            if "alias conflict" not in str(exc):
+                raise CompilerError(str(exc)) from exc
+            entry = {"phase": "automatic_exact", "usage": "/".join(bridge_su),
+                     "name": bridge_rec.scientific_name, "message": str(exc)}
+            (held_conflicts_applied if entry["usage"] in held_conflicts else alias_conflicts).append(entry)
+            continue
         auto_alias_applied[bridge_su] = evidence_class_for_reason(
             proposal.evidence.get("reason", "")
         )
@@ -992,8 +1341,19 @@ def compile_release(
                 ),
             )
         except RegistryError as exc:
-            raise CompilerError(str(exc)) from exc
+            if "alias conflict" not in str(exc):
+                raise CompilerError(str(exc)) from exc
+            entry = {"phase": "synonym", "usage": "/".join(synonym_key),
+                     "accepted": "/".join(accepted_key),
+                     "name": synonym_rec.scientific_name if synonym_rec else "", "message": str(exc)}
+            (held_conflicts_applied if entry["usage"] in held_conflicts else alias_conflicts).append(entry)
+            continue
         synonym_alias_applied.add(synonym_key)
+    if alias_conflicts:
+        raise CompilerError(
+            f"{len(alias_conflicts)} registry alias conflict(s): source usages already bound to one "
+            f"Sporely id would be rebound to another: "
+            + json.dumps(sorted(alias_conflicts, key=lambda c: c["usage"]), ensure_ascii=False))
 
     # Persist registry BEFORE emitting outputs, so a crash after registry
     # flush leaves the identity commitment intact and re-runs are idempotent.
@@ -1011,8 +1371,16 @@ def compile_release(
     # is already flushed and untouched by anything below.
     superseded_to_current: dict[int, int] = {}
     names_only_superseded: set[int] = set()
+    held_records = {rid for rid, r in ((continuity_receipt or {}).get("records") or {}).items()
+                    if r.get("status") == "held"}
+    supersessions_held_target_absent: list[str] = []
     for supersession in concept_supersessions:
         if supersession.review_status != "approved":
+            continue
+        if supersession.supersession_id in held_records \
+                and tuple(supersession.current_source_usage) not in usage_index:
+            # Held, and its current usage is gone: nothing current to select.
+            supersessions_held_target_absent.append(supersession.supersession_id)
             continue
         if supersession.relationship not in ("exact", "synonym"):
             raise CompilerError(
@@ -1054,6 +1422,46 @@ def compile_release(
                 f"{superseded_to_current[current_id]}. Resolving a chain "
                 f"requires its own reviewed decision."
             )
+
+    # ----- NorTaxa fallback for vanished COL anchors -------------------------
+    # When a COL anchor disappears, an already-reviewed NorTaxa usage bound to
+    # the same Sporely id may supply the canonical record: only if it is
+    # valid, still bound to that id, of the same rank and not an aggregate.
+    nortaxa_fallback: list[dict] = []
+    vanished_anchor_info = candidates.get("vanished_anchors") or {}
+    if vanished_anchor_info:
+        bound_by_id: dict[int, list[tuple[str, str, str]]] = {}
+        for allocation in registry.all_entries():
+            if allocation.source == "nortaxa":
+                bound_by_id.setdefault(allocation.sporely_taxon_id, []).append(
+                    (allocation.source, allocation.namespace, allocation.identifier))
+        reviewed_bridges = set(manual_bindings) | set(approved_manual_bridge_usages) | set(auto_alias_applied)
+        # An owner-approved fallback names the exact usage it approves.
+        reviewed_bridges |= {("nortaxa", "nortaxa_taxon_id", str(e["nortaxa_taxon_id"]))
+                             for e in (continuity_receipt or {}).get("nortaxa_fallback_approved") or []}
+        for col_id, info in sorted(vanished_anchor_info.items()):
+            taxon = int(info["sporely_taxon_id"])
+            if taxon in continuity_canonical or taxon in superseded_to_current:
+                continue
+            anchor = registry.lookup(BACKBONE_SOURCE, "col_usage_id", col_id)
+            if anchor is None or anchor.sporely_taxon_id != taxon or anchor.kind != "anchor":
+                continue
+            options = []
+            for key in bound_by_id.get(taxon, []):
+                record = usage_index.get(key)
+                if (record is not None and key in reviewed_bridges
+                        and record.taxonomic_status.casefold() in ("valid", "accepted")
+                        and record.rank.casefold() == str(info["rank"]).casefold()
+                        and not is_aggregate_name(record.scientific_name)):
+                    options.append(key)
+            if len(options) != 1:
+                continue
+            bound = registry.lookup(*options[0])
+            if bound is None or bound.sporely_taxon_id != taxon:
+                raise CompilerError(f"NorTaxa fallback would rebind {options[0]} away from {taxon}")
+            continuity_canonical[taxon] = options[0]
+            nortaxa_fallback.append({"sporely_taxon_id": taxon, "vanished_col_id": col_id,
+                                     "nortaxa_usage": "/".join(options[0])})
 
     # ----- Build canonical taxa + source_usages listings --------------------
     # ONE canonical taxon record per sporely_taxon_id, sourced from the
@@ -1182,7 +1590,9 @@ def compile_release(
             ),
             **inheritance_fields,
         })
-        if allocation.kind != "anchor" or record is None:
+        canonical_binding = allocation.kind == "anchor" or (
+            continuity_canonical.get(allocation.sporely_taxon_id) == binding_source_usage)
+        if not canonical_binding or record is None:
             continue
         # A superseded concept publishes no canonical taxon row. This is what
         # keeps the fix additive: the taxon both sources describe keeps
@@ -1310,15 +1720,26 @@ def compile_release(
         vern_dropped_unknown = 0
         vern_dropped_unreviewed: dict[str, int] = {}
         vern_dropped_language: dict[str, int] = {}
+        def _vernacular_entries(source_dir: Path, source_code: str):
+            for entry in _iter_vernacular(source_dir):
+                if (str(entry["source_code"]), str(entry["core_row_id"]["namespace"]),
+                        str(entry["core_row_id"]["value"])) in species_history_cores:
+                    continue  # the aggregate's names stay off the species
+                yield entry
+            yield from species_history_vernaculars.get(source_code, [])
+
         for source_dir in normalized_source_dirs:
             report = _read_report(source_dir)
-            for entry in _iter_vernacular(source_dir):
+            for entry in _vernacular_entries(source_dir, str(report.source_code)):
                 key = (
                     str(entry["source_code"]),
                     str(entry["core_row_id"]["namespace"]),
                     str(entry["core_row_id"]["value"]),
                 )
                 sporely_id = core_row_id_to_sporely.get(key)
+                if sporely_id is None and key in withheld_core_rows:
+                    continuity_vernaculars_withheld += 1
+                    continue
                 if sporely_id is None:
                     known = source_known_core_row_ids.get(
                         entry["source_code"], set()
@@ -1337,6 +1758,16 @@ def compile_release(
                         f"vernacular row references core_row_id {key!r} "
                         f"that does not resolve to any known source taxon"
                     )
+                bound_col = registry.lookup(BACKBONE_SOURCE, "col_usage_id", key[2]) if key[0] == "col_xr" else None
+                canonical_here = canonical_vernacular_targets.get(sporely_id)
+                if key[0] == "col_xr" and (key[2] in live_duplicate_aliases or (
+                        bound_col is not None and bound_col.kind == "alias" and canonical_here is not None
+                        and canonical_here["canonical_source_usage"] != {
+                            "source": "col_xr", "namespace": key[1], "identifier": key[2]})):
+                    # A COL usage that is an alias of a live concept (reusing its
+                    # identity) does not carry its own names onto that concept.
+                    live_duplicate_vernaculars_dropped += 1
+                    continue
                 if key[0] == "col_xr":
                     canonical = canonical_vernacular_targets.get(sporely_id)
                     if canonical is None or canonical["canonical_source_usage"] != {
@@ -1376,6 +1807,13 @@ def compile_release(
                     rules = scope_module.resolve_rules(scope_policy, {t.col_id: t for t in scoped_taxa.values()})
                     states = scope_module.evaluate(scoped_taxa, rules, scope_policy.get("source_characteristic_exclusions", []))
                     eligible_targets = {tid for tid, state in states.items() if state["state"] == "include"}
+                # A binding can outlive its concept (the concept's anchor usage
+                # left the source): its vernaculars have no live target.
+                live_ids = {t["sporely_taxon_id"] for t in compiled_taxa}
+                dropped_not_live = [v for v in compiled_vernaculars if v["sporely_taxon_id"] not in live_ids]
+                if dropped_not_live:
+                    vernaculars_dropped_concept_not_live.extend(dropped_not_live)
+                    compiled_vernaculars = [v for v in compiled_vernaculars if v["sporely_taxon_id"] in live_ids]
                 compiled_vernaculars, vernacular_evidence, review_validations = vernacular_projection.project(
                     records=[r for rows in per_source_records.values() for r in rows],
                     taxa=compiled_taxa, bindings=source_usages,
@@ -1573,6 +2011,36 @@ def compile_release(
                 vernaculars_dropped=vern_dropped_unreviewed,
             ),
         )
+        if supersessions_held_target_absent:
+            withheld_ids = {s.supersession_id: s.superseded_sporely_taxon_id for s in concept_supersessions}
+            diagnostics["counts"]["concept_supersessions_withheld_by_hold"] = sorted(
+                withheld_ids[sid] for sid in supersessions_held_target_absent)
+        if continuity_receipt is not None:
+            # Only with a receipt, so ordinary builds stay byte-identical.
+            diagnostics["source_continuity"] = {
+                "receipt_release_id": continuity_receipt.get("release_id"),
+                "receipt_carried_sha256": continuity_receipt.get("carried_sha256"),
+                "approved_mappings_applied_by_continuity": dict(sorted(continuity_applied.items())),
+                "held_records": sorted(rid for rid, r in continuity_receipt.get("records", {}).items()
+                                       if r.get("status") == "held"),
+                "withheld_source_usages": sorted(continuity_withheld, key=lambda r: r["usage"]),
+                "withheld_vernacular_rows": continuity_vernaculars_withheld,
+                "col_id_continuity_applied": col_continuity_applied,
+                "col_continuity_review_withheld": dict(sorted(col_review_withheld.items())),
+                **({"name_record_follow_applied": dict(sorted(follows.items()))} if follows else {}),
+                "live_duplicate_bound": live_duplicate_bound,
+                "live_duplicate_vernaculars_dropped": live_duplicate_vernaculars_dropped,
+                "live_duplicate_withheld": dict(sorted(live_duplicate_withheld.items())),
+                "nortaxa_fallback_canonical": nortaxa_fallback,
+                "species_history_carried": sorted("/".join(k) for k in species_history),
+                "supersessions_held_target_absent": sorted(supersessions_held_target_absent),
+                "vernacular_rows_dropped_concept_not_live": len(vernaculars_dropped_concept_not_live),
+                "vernacular_concepts_dropped_not_live": sorted({v["sporely_taxon_id"] for v in vernaculars_dropped_concept_not_live}),
+                "held_alias_conflicts_not_rebound": sorted(held_conflicts_applied, key=lambda c: c["usage"]),
+                "held_alias_conflicts_not_seen": sorted(held_conflicts - {c["usage"] for c in held_conflicts_applied}),
+                "approved_mappings_not_applicable": sorted(
+                    reviewed_only_inapplicable_records, key=lambda r: r["mapping_id"]),
+            }
         diagnostics_out.write_text(
             json.dumps(diagnostics, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
@@ -2654,6 +3122,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--source-release-manifest", action="append", default=[],
                         metavar="SOURCE_CODE=PATH",
                         help="bind a source_release manifest, repeatable")
+    parser.add_argument("--continuity-receipt", type=Path, default=None,
+                        help="source-continuity receipt from carry_forward.py (refresh builds)")
     parser.add_argument("--legacy-enrichment-input", type=Path, default=None,
                         help="JSONL export of pre-Stage-3A compatibility "
                              "enrichment (Artportalen IDs + non-Nordic "
@@ -2696,6 +3166,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             previous_vernacular_evidence_path=args.previous_vernacular_evidence,
             enable_vernacular_enrichment=not args.no_vernacular_enrichment,
             vernacular_scope_policy_path=args.vernacular_scope_policy,
+            continuity_receipt_path=args.continuity_receipt,
         )
     except CompilerError as exc:
         print(f"error: {exc}", file=sys.stderr)

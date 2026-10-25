@@ -165,3 +165,74 @@ def apply_exact_source_correction(
             "raw_bytes_preserved": True,
         },
     )
+
+
+# ----- per-release BOM corrections (schema v2) -------------------------------
+
+RELEASE_CORRECTIONS_SCHEMA_VERSION = 2
+
+
+def load_release_bom_corrections(policy: dict[str, Any], *, archive_sha256: str,
+                                 dataset_key: int, release_label: str) -> dict[int, dict[str, Any]]:
+    """Owner-approved BOM removals for one unpinned release, keyed by line.
+
+    The file binds one archive, one member and the exact rows: anything not
+    listed stays a malformed row.
+    """
+    if policy.get("correction_policy_schema_version") != RELEASE_CORRECTIONS_SCHEMA_VERSION:
+        raise AcquisitionError("release corrections must use schema version 2")
+    if policy.get("approval_status") != "approved" or not policy.get("approved_by"):
+        raise AcquisitionError("release corrections are not approved")
+    for key, value in (("archive_sha256", archive_sha256), ("dataset_key", dataset_key),
+                       ("release_label", release_label)):
+        if policy.get(key) != value:
+            raise AcquisitionError(f"release corrections bind another {key}")
+    rows = {}
+    for row in policy.get("corrections") or []:
+        rows[int(row["line_number"])] = {**row, "member_sha256": policy.get("member_sha256")}
+    if not rows:
+        raise AcquisitionError("release corrections list no rows")
+    return rows
+
+
+def apply_release_bom_correction(
+    raw_record: bytes,
+    *,
+    line_number: int,
+    normalized_header: tuple[str, ...],
+    correction: dict[str, Any],
+    max_line_bytes: int,
+    max_field_bytes: int,
+) -> AppliedCorrection:
+    """Remove U+FEFF from exactly the approved fields of one approved row."""
+    if correction.get("line_number") != line_number:
+        raise AcquisitionError("release correction line mismatch")
+    if len(raw_record) != correction["raw_row_bytes"] or _sha256(raw_record) != correction["raw_row_sha256"]:
+        raise AcquisitionError("release correction raw-row fingerprint mismatch")
+    terminator = b""
+    body = raw_record
+    for ending in (b"\r\n", b"\n"):
+        if body.endswith(ending):
+            terminator, body = ending, body[: -len(ending)]
+            break
+    fields = body.split(b"\t")
+    if len(fields) != correction["expected_columns"] or body.count(BOM) != correction["expected_bom_count"]:
+        raise AcquisitionError("release correction column or BOM count mismatch")
+    indexes = {name: position for position, name in enumerate(normalized_header)}
+    approved = {indexes[name] for name in correction["bom_fields"]}
+    if {i for i, value in enumerate(fields) if BOM in value} != approved:
+        raise AcquisitionError("release correction BOMs are not exactly in the approved fields")
+    cleaned = [value.replace(BOM, b"") if i in approved else value for i, value in enumerate(fields)]
+    parsed = parse_literal_tsv_record(b"\t".join(cleaned) + terminator, line_number=line_number,
+                                      max_line_bytes=max_line_bytes, max_field_bytes=max_field_bytes)
+    if parsed.raw_fields[indexes["ID"]] != correction["row_taxon_id"]:
+        raise AcquisitionError("release correction row ID mismatch")
+    raw_decoded = tuple(value.decode("utf-8") for value in fields)
+    return AppliedCorrection(
+        record=LiteralTsvRecord(raw_fields=raw_decoded, semantic_fields=parsed.semantic_fields,
+                                terminator=parsed.terminator),
+        evidence={"correction_id": correction["correction_id"], "line": line_number,
+                  "row_taxon_id": correction["row_taxon_id"], "fields": sorted(correction["bom_fields"]),
+                  "raw_row_sha256": correction["raw_row_sha256"],
+                  "removed_code_point_count": correction["expected_bom_count"], "raw_bytes_preserved": True},
+    )

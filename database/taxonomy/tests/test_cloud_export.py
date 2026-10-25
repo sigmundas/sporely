@@ -1178,6 +1178,7 @@ def test_pinned_release_regression_counts(tmp_path):
         output_dir=tmp_path / "cloud_export_pinned",
         policy_dir=_REPO / "database" / "taxonomy" / "policies",
         generated_at="2026-07-31T00:00:00Z",
+        candidate_validation_only=True,
     )
     exp = ce.PINNED_RELEASE_EXPECTATIONS
     assert len(result.scope.concept_ids) == exp["concepts_included"]
@@ -1201,6 +1202,7 @@ def test_pinned_release_determinism(tmp_path):
         manifest=_REPO / _PINNED_MANIFEST,
         policy_dir=_REPO / "database" / "taxonomy" / "policies",
         generated_at="2026-07-31T00:00:00Z",
+        candidate_validation_only=True,
     )
     a = ce.run_export(output_dir=tmp_path / "a", **kwargs)
     b = ce.run_export(output_dir=tmp_path / "b", **kwargs)

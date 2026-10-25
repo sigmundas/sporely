@@ -1,5 +1,5 @@
 {
-  "concatenated_sha256": "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9",
+  "concatenated_sha256": "716bff20853a7639b888548a06088d1dd71b0eb6684fd5c492758af3691da5f8",
   "manifest_schema_version": 1,
   "registry_schema_version": 1,
   "shard_bytes_target": 26214400,
@@ -35,12 +35,18 @@
       "sha256": "a950696aecfbef80f29924de2e9a646af25abd14aaa9aa4e69c737096f1c997e"
     },
     {
-      "bytes": 25658912,
-      "line_count": 114846,
+      "bytes": 26214230,
+      "line_count": 117354,
       "name": "part-0006.jsonl",
-      "sha256": "57188a81a5818ae330efaf894913c4743e13c640c09cd18fafa2e2b174712152"
+      "sha256": "d8347b2cfc6f404cbf8d09de0cfa99ae4fc525f5e73af07911752c5744792d1b"
+    },
+    {
+      "bytes": 75968,
+      "line_count": 350,
+      "name": "part-0007.jsonl",
+      "sha256": "b32f2404f097543af3680469999e17e4e50b6dbeaef9f8859c9c4f1483cb50bd"
     }
   ],
-  "total_bytes": 156730078,
-  "total_line_count": 692069
+  "total_bytes": 157361364,
+  "total_line_count": 694927
 }

@@ -110,6 +110,9 @@ class Source:
     version: str | None = None
     issued_date: str | None = None
     profile: str | None = None  # repository-relative, national_source only
+    # col_xr only, optional: repository-relative scope policy whose approved
+    # source_characteristic_exclusions are not compiled (normalize_col_xr.py).
+    source_exclusion_policy: str | None = None
 
     @property
     def manifest(self) -> str:
@@ -135,6 +138,11 @@ class Recipe:
     artportalen_overlay: dict | None = None
     inaturalist_refresh: dict | None = None
     vernacular_enrichment: dict | None = None
+    # Refresh builds only: carry_forward.py receipt, passed to the compiler
+    # and archived in the freeze. {"path": ..., "sha256": ...}
+    continuity_receipt: dict | None = None
+    # Extra named evidence files archived in the freeze (refresh reports).
+    extra_evidence: tuple[tuple[str, str], ...] = ()
 
 
 def load_recipe(path: Path) -> Recipe:
@@ -153,13 +161,16 @@ def load_recipe(path: Path) -> Recipe:
                  f"recipe source {code!r}: normalizer must be one of {NORMALIZERS}")
         source = Source(code=code, normalizer=normalizer, release_dir=entry.get("release_dir", ""),
                         version=entry.get("version"), issued_date=entry.get("issued_date"),
-                        profile=entry.get("profile"))
+                        profile=entry.get("profile"),
+                        source_exclusion_policy=entry.get("source_exclusion_policy"))
         _require(bool(source.release_dir), f"recipe source {code!r}: release_dir is required")
         if normalizer == "col_xr":
             _require(bool(source.version and source.issued_date),
                      f"recipe source {code!r}: col_xr needs version and issued_date")
         else:
             _require(bool(source.profile), f"recipe source {code!r}: national_source needs a profile")
+        _require(source.source_exclusion_policy is None or normalizer == "col_xr",
+                 f"recipe source {code!r}: source_exclusion_policy is col_xr only")
         sources.append(source)
     _require(bool(sources), "recipe lists no sources")
 
@@ -184,7 +195,8 @@ def load_recipe(path: Path) -> Recipe:
         _require(bool(legacy.get("bundled_db")), "recipe legacy_enrichment.bundled_db is required")
     pinned: dict[str, dict | None] = {}
     for key, raw_entry in (("artportalen_overlay", (raw.get("publishing_overlays") or {}).get("artportalen")),
-                           ("inaturalist_refresh", raw.get("inaturalist_refresh"))):
+                           ("inaturalist_refresh", raw.get("inaturalist_refresh")),
+                           ("continuity_receipt", raw.get("continuity_receipt"))):
         if raw_entry is None:
             pinned[key] = None
             continue
@@ -199,7 +211,10 @@ def load_recipe(path: Path) -> Recipe:
                   policies=dict(policies), registry=raw["registry"],
                   artportalen_overlay=pinned["artportalen_overlay"],
                   inaturalist_refresh=pinned["inaturalist_refresh"],
-                  vernacular_enrichment=vernacular)
+                  vernacular_enrichment=vernacular,
+                  continuity_receipt=pinned["continuity_receipt"],
+                  extra_evidence=tuple(sorted((str(k), str(v)) for k, v in
+                                              (raw.get("extra_evidence") or {}).items())))
 
 
 def manifest_archive_sha256(manifest: dict) -> str:
@@ -400,7 +415,8 @@ def preflight(options: Options, recipe: Recipe) -> dict:
     for key, rel in recipe.policies.items():
         _require((REPO_ROOT / rel).is_file(), f"missing policy {key}: {rel}")
     for key, pinned in (("artportalen_overlay", recipe.artportalen_overlay),
-                        ("inaturalist_refresh", recipe.inaturalist_refresh)):
+                        ("inaturalist_refresh", recipe.inaturalist_refresh),
+                        ("continuity_receipt", recipe.continuity_receipt)):
         if pinned is not None:
             inputs[f"{key}_sha256"] = verify_pinned(key, pinned)
     inputs["superseded_references"] = check_superseded_references(recipe)
@@ -532,6 +548,8 @@ def build(options: Options, run: Runner | None = None, python: str = sys.executa
                     "--output", rel(norm / source.code),
                     "--source-release-version", source.version,
                     "--source-release-issued-date", source.issued_date]
+            if source.source_exclusion_policy:
+                argv += ["--source-exclusion-policy", str(REPO_ROOT / source.source_exclusion_policy)]
         else:
             argv = [_script("national_source.py"), "normalize", "--profile", source.profile,
                     "--archive", archive, "--output", rel(norm / source.code)]
@@ -568,6 +586,8 @@ def build(options: Options, run: Runner | None = None, python: str = sys.executa
                      "--vernacular-scope-policy", recipe.vernacular_enrichment["scope_policy"]]
             if recipe.vernacular_enrichment.get("previous_evidence"):
                 argv += ["--previous-vernacular-evidence", recipe.vernacular_enrichment["previous_evidence"]]
+        if recipe.continuity_receipt:
+            argv += ["--continuity-receipt", recipe.continuity_receipt["path"]]
         run(f"compile{name}", argv)
         sqlite_argv = [_script("build_sqlite_candidate.py"),
                        "--release-dir", rel(b / f"release{name}"),
@@ -578,6 +598,8 @@ def build(options: Options, run: Runner | None = None, python: str = sys.executa
             sqlite_argv += ["--publishing-overlay", recipe.artportalen_overlay["path"]]
         if recipe.inaturalist_refresh:
             sqlite_argv += ["--inaturalist-refresh", recipe.inaturalist_refresh["path"]]
+        if recipe.continuity_receipt:
+            sqlite_argv += ["--hold-unresolved-publishing-entries"]
         stdout = run(f"sqlite{name}", sqlite_argv)
         sqlite_out[name] = json.loads(stdout)
 
@@ -620,6 +642,7 @@ def build(options: Options, run: Runner | None = None, python: str = sys.executa
 
     report = {
         "release_id": options.release_id,
+        "provenance": build_provenance(),
         "recipe": os.path.relpath(options.recipe_path, REPO_ROOT),
         "recipe_sha256": sha256_file(options.recipe_path),
         "inputs": inputs,
@@ -667,6 +690,10 @@ def build(options: Options, run: Runner | None = None, python: str = sys.executa
             freeze_argv += ["--evidence-input", "col-vernacular-rejections.jsonl=" + rel(col_rejections)]
         for name, path in recipe.policies.items():
             freeze_argv += ["--evidence-input", name + ".json=" + str(path)]
+        if recipe.continuity_receipt:
+            freeze_argv += ["--evidence-input", "continuity-receipt.json=" + recipe.continuity_receipt["path"]]
+        for name, path in recipe.extra_evidence:
+            freeze_argv += ["--evidence-input", name + "=" + path]
         if recipe.vernacular_enrichment:
             for name in ("review_ledger", "scope_policy"):
                 freeze_argv += ["--evidence-input", name + ".json=" + recipe.vernacular_enrichment[name]]
@@ -726,6 +753,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--expect-freeze-sha256",
                         help="freeze.json SHA-256 of the reviewed frozen set; required by --promote")
     return parser
+
+
+def build_provenance() -> dict:
+    """The code and toolchain a build ran with. Recorded in build-report.json,
+    which the archived validation receipt includes, so it is part of the frozen
+    evidence archive (not of the SQLite)."""
+    import platform
+
+    def git(*args: str) -> str:
+        try:
+            return subprocess.run(["git", "-C", str(REPO_ROOT), *args], capture_output=True, text=True,
+                                  check=True).stdout.strip()
+        except (OSError, subprocess.CalledProcessError):
+            return ""
+    status = git("status", "--porcelain", "--untracked-files=no")
+    return {"git_commit": git("rev-parse", "HEAD"), "git_tracked_changes": len(status.splitlines()) if status else 0,
+            "python": platform.python_version(), "sqlite": sqlite3.sqlite_version}
 
 
 def main(argv: list[str] | None = None) -> int:

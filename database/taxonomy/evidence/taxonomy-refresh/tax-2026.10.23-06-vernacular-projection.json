@@ -1,0 +1,16 @@
+{
+  "release_id": "tax-2026.10.23-06",
+  "scope": "Expected pinned vernacular projection for this disposable validation-only R2 candidate only (owner instruction 2026-10-24: an explained count change needs no further approval).",
+  "previous_expected": {"automatic": 813, "reviewed": 18, "total": 831, "affected_concepts": 410},
+  "expected_pinned_projection": {"automatic": 824, "reviewed": 18, "total": 842, "affected_concepts": 413},
+  "diff_basis": "projection_status=added rows of vernacular_evidence.jsonl, tax-2026.10.23-05 vs this candidate",
+  "entered": [
+    {"source": "nortaxa 53077 Inocybe", "rows": ["nb trevlesopper", "nn trevlesopper"], "target": 69871, "cause": "the same-name COL 26.9 genus is no longer given a new id (live-duplicate prevention), so the target is unique again (as in R1)"},
+    {"source": "nortaxa 53377 Entoloma", "rows": ["nb rødskivesopper", "nb rødsporesopper", "nn raudskivesoppar", "nn raudsporesoppar"], "target": 40656, "cause": "same: duplicate genus not allocated"},
+    {"source": "nortaxa 56774 Clathrus", "rows": ["nb gittersopper", "nn gittersopper"], "target": 19940, "cause": "same: duplicate genus not allocated"},
+    {"source": "nortaxa 79158 Peziza", "rows": ["nb begersopper", "nb storbegersopper", "nn begersoppar", "nn storbegersoppar"], "target": 101771, "cause": "same: duplicate genus not allocated"}
+  ],
+  "left": [
+    {"source": "nortaxa 299552 Cortinarius lithophilus", "rows": ["nb asurslørsopp"], "target": "637233 in -05", "cause": "the new COL 26.9 usage duplicates the live NorTaxa concept 624453 with a different authorship and is withheld for review; 624453 keeps its current-source name"}
+  ]
+}

@@ -1,0 +1,119 @@
+{
+  "proposal_schema_version": 2,
+  "approval_status": "proposed",
+  "download_authorized": false,
+  "release_label": "2026-09-25 XR",
+  "release_type": "Extended Release",
+  "dataset_key": 316441,
+  "issued_date": "2026-09-25",
+  "doi": "10.48580/dgz9s",
+  "archive_format": "ColDP",
+  "taxonomic_scope": {
+    "mode": "full_release",
+    "fungi_root_usage_id": "F",
+    "fungi_root_parent_usage_id": "CS5HF",
+    "rationale": "First acquisition should preserve complete lineage while filtered-export ancestor-row behavior remains undocumented."
+  },
+  "delivery": {
+    "http_method": "GET",
+    "delivery_mode": "public prebuilt full release",
+    "dataset_key": 316441,
+    "extended": true,
+    "format": "ColDP",
+    "authentication_required": false,
+    "export_job_submission_required": false,
+    "canonical_entry_endpoint": "https://api.checklistbank.org/dataset/316441/export.zip?extended=true&format=ColDP",
+    "permitted_redirect_hosts": [
+      "download.checklistbank.org"
+    ],
+    "max_redirects": 3,
+    "accepted_final_content_types": [
+      "application/octet-stream",
+      "application/x-zip-compressed",
+      "application/zip",
+      "application/zip-compressed"
+    ],
+    "resolved_archive_url_is_execution_evidence_only": true
+  },
+  "compiler_consumption": {
+    "compiler_required_fields": [
+      "NameUsage.ID",
+      "NameUsage.acceptedNameUsageID",
+      "NameUsage.authorship",
+      "NameUsage.parentID",
+      "NameUsage.rank",
+      "NameUsage.scientificName",
+      "NameUsage.status"
+    ],
+    "compiler_audit_fields": [
+      "NameUsage.code",
+      "NameUsage.extinct",
+      "NameUsage.origin",
+      "NameUsage.referenceID",
+      "NameUsage.sectorID",
+      "NameUsage.sourceID"
+    ],
+    "compiler_ignored_entities": [
+      "Distribution",
+      "Media",
+      "SpeciesInteraction",
+      "Treatment",
+      "TypeMaterial",
+      "VernacularName"
+    ],
+    "archive_preservation": "preserve complete immutable bytes",
+    "additional_archive_content_expected": true,
+    "field_selection_claim": false,
+    "ignored_entities_claimed_absent": false
+  },
+  "archive_policy": {
+    "proposed_maximum_bytes": 1610612736,
+    "maximum_basis": "1.5 GiB ceiling above official HEAD Content-Length 1236222035 captured 2026-10-23 (prebuilt job d651dcc8, Last-Modified 2026-10-06).",
+    "require_content_length_check_when_available": true,
+    "require_sufficient_local_free_space": true,
+    "require_streamed_incremental_sha256": true,
+    "fail_if_received_bytes_exceed_maximum": true,
+    "fail_if_received_bytes_mismatch_content_length": true,
+    "temporary_file_before_promotion": true,
+    "validate_zip_without_full_extraction": true,
+    "retain_original_archive_bytes_and_sha256": true,
+    "print_expected_size_and_available_disk_before_download": true
+  },
+  "expected_license": "CC BY 4.0; verify exact archive metadata before promotion",
+  "selection_evidence": {
+    "metadata_endpoint": "https://api.checklistbank.org/dataset/316441",
+    "metadata_observed": {
+      "alias": "COL26.9 XR",
+      "version": "2026-09-25 XR",
+      "issued": "2026-09-25",
+      "private": false,
+      "license": "cc by"
+    },
+    "official_download_page": "https://www.catalogueoflife.org/data/download",
+    "head_observed": {
+      "entry_status": 302,
+      "redirect_host": "download.checklistbank.org",
+      "final_status": 200,
+      "content_length": 1236222035,
+      "content_type": "application/zip"
+    },
+    "selection_reason": "Latest public COL Extended Release listed on the official site; COL26.10 XR (316691) has no public prebuilt export.",
+    "archive_body_retrieved": false,
+    "export_job_invoked": false
+  },
+  "future_approval_artifact": {
+    "filename": "approval.json",
+    "must_be_separately_generated": true,
+    "required_fields": [
+      "proposal_sha256",
+      "approval_status",
+      "download_authorized",
+      "approved_at",
+      "approved_canonical_endpoint",
+      "approved_maximum_bytes",
+      "approved_redirect_hosts",
+      "release_identity",
+      "request_sha256"
+    ]
+  }
+}

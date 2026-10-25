@@ -1,0 +1,166 @@
+{
+ "release_id": "tax-2026.10.23-10",
+ "date": "2026-10-24",
+ "method": "read-only: docker postgres:17 psql, BEGIN READ ONLY ... ROLLBACK, aggregate counts only",
+ "durable_path": "/Users/sigmundas/Documents/Code/sporely/releases/tax-2026.10.23-10 (SHA256SUMS; moved from scratch, build hashes identical before and after)",
+ "hashes": {
+  "sqlite": "dea398e1350698c23341dc4772d81057e8fd6ba877156ee1ed6d1a714db2604b",
+  "freeze": "a4df33c40ffabc8e4ed6f86029cd986b18f5c53476ed49b115ec6fa0cef64741",
+  "gz": "3e361fdc07e893b3a04f0b7ed1ed80f0c77fd1230f2b174b6824cc1f271c318a"
+ },
+ "pregate": [
+  {
+   "gate": "releases",
+   "v": [
+    {
+     "id": "tax-2026.08.01-01",
+     "status": "retired"
+    },
+    {
+     "id": "tax-2026.09.26-02",
+     "status": "retired"
+    },
+    {
+     "id": "tax-2026.09.30-01",
+     "status": "retired"
+    },
+    {
+     "id": "tax-2026.10.07-01",
+     "status": "active"
+    }
+   ]
+  },
+  {
+   "gate": "active",
+   "v": "tax-2026.10.07-01"
+  },
+  {
+   "gate": "R1 (-01) release row",
+   "v": 0
+  },
+  {
+   "gate": "-10 release row",
+   "v": 0
+  },
+  {
+   "gate": "CG1 selected ids absent from active release",
+   "v": 0
+  },
+  {
+   "gate": "CG5 external_unresolved with selection",
+   "v": 0
+  },
+  {
+   "gate": "external_unresolved nortaxa tuples",
+   "v": 67
+  },
+  {
+   "gate": "taxonomy functions",
+   "v": [
+    "taxonomy_v2_activate_release(p_release_id text)",
+    "taxonomy_v2_jsonb_nonnegative_integer_counts(p_value jsonb)",
+    "taxonomy_v2_national_name_errors(p_release_id text)",
+    "taxonomy_v2_validate_release(p_release_id text)"
+   ]
+  },
+  {
+   "gate": "release table columns",
+   "v": [
+    "release_id",
+    "taxonomy_schema_version",
+    "export_schema_version",
+    "manifest_schema_version",
+    "exporter_version",
+    "scope_predicate_id",
+    "source_gz_sha256",
+    "source_sqlite_sha256",
+    "whole_export_sha256",
+    "manifest_sha256",
+    "generated_at",
+    "status",
+    "row_counts",
+    "authoritative_namespace_counts",
+    "legacy_source_counts",
+    "dangling_parent_count",
+    "dangling_parent_report",
+    "source_manifest",
+    "created_at",
+    "loaded_at",
+    "activated_at",
+    "failed_at",
+    "failure_message"
+   ]
+  },
+  {
+   "gate": "latest migrations",
+   "v": [
+    "20261020120000",
+    "20261020100100",
+    "20261020100000",
+    "20261015090000",
+    "20261014120000"
+   ]
+  }
+ ],
+ "capacity": [
+  {
+   "t": "taxa",
+   "r": "tax-2026.10.07-01",
+   "n": 52917
+  },
+  {
+   "t": "sci",
+   "r": "tax-2026.10.07-01",
+   "n": 60697
+  },
+  {
+   "t": "vern",
+   "r": "tax-2026.10.07-01",
+   "n": 59884
+  },
+  {
+   "t": "ext",
+   "r": "tax-2026.10.07-01",
+   "n": 56959
+  },
+  {
+   "t": "red",
+   "r": "tax-2026.10.07-01",
+   "n": 2600
+  },
+  {
+   "t": "concepts",
+   "n": 52917
+  },
+  {
+   "db_bytes": 200387731,
+   "db_pretty": "191 MB"
+  }
+ ],
+ "export_and_sql": {
+  "importable_export": "not generated: release_decision.py accepts only 'release_approved'; the recorded preparation-only decision is refused (verified)",
+  "import_sql": "not generated: sporely-web origin/main 7b93c3d generator refuses the validation-only export ('release_approval is not importable'); verified",
+  "validation_only_manifest_carries_sqlite_sha256": true
+ },
+ "references": {
+  "cloud_ids_not_in_-10_export": "87 obs.resolved / 88 v3.resolution_link / 1 reference_treatment ids are outside the cloud scope in both the active 10.07 release and -10 (live in the full -10 SQLite); none newly unresolvable; obs.selected 63/63 and identity 4/4 in -10 export",
+  "nortaxa_tuples": "65 external_unresolved stay unresolved, 2 gain a -10 match; 1 sporely_v2 tuple (nortaxa 52372) has no match in -10 nor in the active release (pre-existing)",
+  "desktop": "0 unresolvable (r10 verification)"
+ },
+ "import_semantics": "one transaction: load, validate, activate; activate retires 10.07 (rows kept). No predecessor requirement: -10 imports directly on top of 10.07; R1 (-01) was never imported and must not be imported later",
+ "generator_review": {
+  "by": "read-only reviewer subagent (sporely-reviewer), findings verified",
+  "defect": "the protected-state check hashes all of public.observations before and after; any observation write during the import aborts it (fails safe, rolls back): run in a quiet window with clients paused",
+  "observations": [
+   "activation is in the same transaction as the load (no separate activation step in the generator)",
+   "end-to-end integration test is disabled on main (const integration = false)",
+   "no statement/lock timeout set in the SQL; runbook sets statement_timeout 30 min",
+   "a failed run leaves no audit row (rolled back)",
+   "retired releases are kept: DB grows ~75 MB"
+  ],
+  "no_drop_truncate_delete_of_user_data": true,
+  "tables_written": "taxonomy_v2_* and taxonomy_v2_import_runs only"
+ },
+ "desktop": "desktop reads the full SQLite bundle (vernacular_multilanguage_v2.sqlite3), not the scope DB. Promotion needs (a) the release_approved decision and (b) the post-compile registry (concatenated sha 8954180395b8..., +2,858 entries over committed 1cc2003a874e...) re-sharded and committed; stopped before both.",
+ "note": "No production writes, import, publication, promotion or install performed."
+}

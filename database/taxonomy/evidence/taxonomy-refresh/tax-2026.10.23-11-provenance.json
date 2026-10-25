@@ -1,0 +1,14 @@
+{
+ "release_id": "tax-2026.10.23-11",
+ "frozen": {"sqlite_sha256": "2a81f68435d0606633319be0845f9fa1de46ccd9c2442f391af742fad3899a97", "freeze_sha256": "26e77446fb3b71720fa44cf54fe5237bb0bab5f240f2f762036da3e92877bc99", "note": "frozen bytes unchanged"},
+ "clean_rebuild": {
+  "commit": "e8bf820a97d93c90049946fcd417027f7e2d031d (build code identical to a945c50, the -11 build commit)",
+  "worktree": "fresh git worktree, detached at that commit; git status --porcelain empty before and after the build",
+  "toolchain": {"python": "3.14.3", "sqlite": "3.54.1", "interpreter": "/Users/sigmundas/Documents/Code/sporely/sporely-py/.venv/bin/python"},
+  "inputs": "same prepare_refresh command, source archives (pinned sha256), R1 previous build and owner-decision files as the frozen -11",
+  "result": {"build_1_sqlite": "2a81f68435d0606633319be0845f9fa1de46ccd9c2442f391af742fad3899a97", "build_2_sqlite": "2a81f68435d0606633319be0845f9fa1de46ccd9c2442f391af742fad3899a97", "matches_frozen": true,
+             "sqlite_gz_and_compatibility_json": "byte-identical to the frozen -11",
+             "freeze_sha256": "437c4bcecbc3b0edcac6698fae66060ba30661aaccfd9bd050c96402bbc3f986 (differs)"}},
+ "frozen_package_reproduction_limits": "freeze.json, manifest.json and the evidence archive differ because three archived evidence files embed absolute paths of the build: inputs/col_xr-normalization.json (scope policy path in the worktree), inputs/release-recipe.json (continuity-receipt and vernacular-expectation paths in the build/worktree) and validation/receipt.json (relative recipe path and the per-build recipe hash, which itself contains those paths). No data or compiled content differs. A byte-identical frozen package needs the same build directory and worktree paths.",
+ "future_releases": "build-report.json now records git commit, tracked changes, python and sqlite versions (553addb)."
+}

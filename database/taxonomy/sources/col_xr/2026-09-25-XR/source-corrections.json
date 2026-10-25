@@ -1,0 +1,81 @@
+{
+  "correction_policy_schema_version": 2,
+  "approval_status": "approved",
+  "approved_by": "owner (Sigmund Ås)",
+  "approved_at": "2026-10-23",
+  "approval_basis": "Owner decision 2026-10-23 (coordinator relay): mechanical removal of the stray BOM characters in exactly the 5 affected NameUsage rows of this archive.",
+  "scope": "This archive (sha256 below) and these 5 rows only; disposable refresh candidate. Not a release approval. Any other malformed or BOM-bearing row still fails validation.",
+  "archive_sha256": "5a14356387bd2beec286625fb1754b27121e80badea04662f87d1ee657c51eb1",
+  "member_name": "NameUsage.tsv",
+  "member_sha256": "b9cea53ea2ee74c5f12fcc098d876406fef768fc05f3ea6087131af4fc8d8cf2",
+  "dataset_key": 316441,
+  "release_label": "2026-09-25 XR",
+  "operation": "remove every U+FEFF code point from the listed fields of the listed row; nothing else changes. The archive bytes are preserved; the cleaned values are the row's semantic values.",
+  "corrections": [
+    {
+      "correction_id": "col-xr-2026-09-25-nameusage-5BK77-bom-v1",
+      "line_number": 367823,
+      "row_taxon_id": "5BK77",
+      "raw_row_bytes": 511,
+      "raw_row_sha256": "91c4aa71cd4ea70d5c0c55b23dfaa92e60aa5bf76667ca8fcccdecaf5b14e0c0",
+      "expected_bom_count": 2,
+      "bom_fields": [
+        "namePublishedInPage"
+      ],
+      "expected_columns": 73
+    },
+    {
+      "correction_id": "col-xr-2026-09-25-nameusage-VR3R9-bom-v1",
+      "line_number": 2090652,
+      "row_taxon_id": "VR3R9",
+      "raw_row_bytes": 425,
+      "raw_row_sha256": "a96a588fcbec1b1df30589acd103cc7d10b993cb5129f5686a1ddea1bac5a8f7",
+      "expected_bom_count": 2,
+      "bom_fields": [
+        "scientificName",
+        "uninomial"
+      ],
+      "expected_columns": 73
+    },
+    {
+      "correction_id": "col-xr-2026-09-25-nameusage-BOLD.AHC6816-bom-v1",
+      "line_number": 5632468,
+      "row_taxon_id": "BOLD.AHC6816",
+      "raw_row_bytes": 367,
+      "raw_row_sha256": "e19245fe63db7c8dcbba3ce04d0a976938f5324c0632a14156fdab4082d06143",
+      "expected_bom_count": 2,
+      "bom_fields": [
+        "species",
+        "genus"
+      ],
+      "expected_columns": 73
+    },
+    {
+      "correction_id": "col-xr-2026-09-25-nameusage-BOLD.AHC6815-bom-v1",
+      "line_number": 7754462,
+      "row_taxon_id": "BOLD.AHC6815",
+      "raw_row_bytes": 367,
+      "raw_row_sha256": "421a09e7c7fdfc6fd5d106d61b6f8642b3f4c5990915fb378984f6fcc22ba118",
+      "expected_bom_count": 2,
+      "bom_fields": [
+        "species",
+        "genus"
+      ],
+      "expected_columns": 73
+    },
+    {
+      "correction_id": "col-xr-2026-09-25-nameusage-VR3RB-bom-v1",
+      "line_number": 8449776,
+      "row_taxon_id": "VR3RB",
+      "raw_row_bytes": 435,
+      "raw_row_sha256": "6ff2f79608f4e2a1178f55eb8de4093b3086a5bf749447a084a739a6a73576cb",
+      "expected_bom_count": 3,
+      "bom_fields": [
+        "scientificName",
+        "genericName",
+        "genus"
+      ],
+      "expected_columns": 73
+    }
+  ]
+}

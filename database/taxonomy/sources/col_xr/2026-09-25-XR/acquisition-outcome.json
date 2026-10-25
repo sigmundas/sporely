@@ -1,0 +1,18 @@
+{
+  "source_code": "col_xr",
+  "release": {"dataset_key": 316441, "alias": "COL26.9 XR", "release_label": "2026-09-25 XR", "issued_date": "2026-09-25", "doi": "10.48580/dgz9s"},
+  "acquired_at": "2026-10-23",
+  "state": "quarantined",
+  "requests": ["GET dataset metadata (200)", "HEAD export.zip (302 -> prebuilt job on download.checklistbank.org)", "HEAD job zip (200, 1236222035 bytes)", "acquire_col_xr.py acquire: one HEAD + one GET (302 -> 200)"],
+  "archive": {"bytes": 1236222035, "sha256": "5a14356387bd2beec286625fb1754b27121e80badea04662f87d1ee657c51eb1"},
+  "approval_spent": true,
+  "rejection": "NameUsage contains 5 rows with 11 U+FEFF (BOM) code points inside fields; the approved route admits no source correction for this release, so the archive was quarantined and not promoted. All 5 rows are Animalia (outside the fungal scope).",
+  "bom_rows": [
+    {"line": 367823, "col_id": "5BK77", "name": "Virpazaria stojaspali", "fields": ["namePublishedInPage"], "note": "same row the 2026-07-17 XR correction covered"},
+    {"line": 2090652, "col_id": "VR3R9", "name": "Janbinmorpha (BOM-prefixed)", "fields": ["scientificName", "uninomial"]},
+    {"line": 5632468, "col_id": "BOLD.AHC6816", "name": "BOLD:AHC6816", "fields": ["species", "genus"]},
+    {"line": 7754462, "col_id": "BOLD.AHC6815", "name": "BOLD:AHC6815", "fields": ["species", "genus"]},
+    {"line": 8449776, "col_id": "VR3RB", "name": "Janbinmorpha sculpticarina (BOM-prefixed)", "fields": ["scientificName", "genericName", "genus"]}
+  ],
+  "approval_needed_to_proceed": "An owner-approved source-corrections record bound to archive sha256 5a1435...51eb1 and the NameUsage member hash, listing these 5 rows (line, raw row sha256, fields, expected BOM offsets, normalized values: BOM removal only), plus support in acquire_col_xr.py for a per-release multi-row correction file (today only the single pinned 2026-07-17 correction exists). Validation would then be re-run on the quarantined bytes without a new download."
+}

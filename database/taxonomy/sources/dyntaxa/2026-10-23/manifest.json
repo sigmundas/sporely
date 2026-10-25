@@ -1,0 +1,60 @@
+{
+  "approval_file": "acquisition-approval.json",
+  "download": {
+    "archive_sha256": "f1eb20c6a8d85892c117652f55973a9663c1d2493af0b7a3924e7f7ddb0c2b29",
+    "bytes": 15808831,
+    "content_type": "application/zip",
+    "endpoint": "https://api.artdatabanken.se/taxonservice/v1/DarwinCore/Download?subscription-key=<redacted; from SPORELY_DYNTAXA_SUBSCRIPTION_KEY>",
+    "fetched_at": "2026-10-23T18:38:02.793819Z",
+    "get_attempts": 1,
+    "http_status": 200,
+    "local_path_note": "gitignored; the SHA-256 above is the pin, wherever the bytes live",
+    "members": [
+      {
+        "bytes": 40236549,
+        "name": "Reference.csv",
+        "sha256": "f779307e5e102febe64e07fbff9826ab9d06c2df75c8006ceafdf1568f0226bd"
+      },
+      {
+        "bytes": 15933091,
+        "name": "SpeciesDistribution.csv",
+        "sha256": "743e749c90d29133465b1c36863bfe59993926776075e2fd16997a52671329a0"
+      },
+      {
+        "bytes": 56768927,
+        "name": "Taxon.csv",
+        "sha256": "58a7c001551767b061b84e42cc5f5f853a0538168e388e2086a44cb9190395ea"
+      },
+      {
+        "bytes": 5165395,
+        "name": "VernacularName.csv",
+        "sha256": "589be27b4b7241b4eb22e53a8efac2730d416f4fbce5b5c0093b7e3ffde03929"
+      },
+      {
+        "bytes": 8251,
+        "name": "eml.xml",
+        "sha256": "f64a3d1703bd81a6854b164b6db034478897f0cc67ffb663129c572805498be5"
+      },
+      {
+        "bytes": 3426,
+        "name": "meta.xml",
+        "sha256": "cd67155251865dd289a00eb7975c5fb9897eaf2eb219e4c2f90ee21d369f3b2b"
+      }
+    ],
+    "sha256": "f1eb20c6a8d85892c117652f55973a9663c1d2493af0b7a3924e7f7ddb0c2b29"
+  },
+  "licence": {
+    "identifier": "CC0 1.0",
+    "uri": "http://creativecommons.org/publicdomain/zero/1.0/legalcode"
+  },
+  "manifest_schema_version": 1,
+  "profile_code": "dyntaxa_dwca",
+  "release": {
+    "issued_date": "2026-10-23",
+    "issued_date_basis": "eml.xml dataset/pubDate of the fetched archive",
+    "version": "2026-10-23",
+    "version_basis": "fetch date (unversioned rolling export)"
+  },
+  "source_code": "dyntaxa",
+  "state": "acquired"
+}

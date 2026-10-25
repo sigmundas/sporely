@@ -1,0 +1,24 @@
+{
+  "format": "sporely-frozen-publication-v1",
+  "content_release_id": "tax-2026.10.23-11",
+  "files": {
+    "compatibility.json": {
+      "sha256": "a2d9d74df1a78fee56ab57f28717a5b98ab83ea2a090c04e71d8665f027e2461",
+      "bytes": 3214
+    },
+    "manifest.json": {
+      "sha256": "694b6d8941325af76f44dfc3ab36a99c16827998644a6f910f3cb223f94905c9",
+      "bytes": 4235
+    },
+    "tax-2026.10.23-11.evidence.tar.gz": {
+      "sha256": "e85b2000298d8b36341892a1eb10d99b63a580b65f62651f7f638ab1eea8fe7e",
+      "bytes": 44277045
+    },
+    "tax-2026.10.23-11.sqlite3.gz": {
+      "sha256": "237466e14923fe6c33622314a7cbae0a1707ac6cc8d2f62a86922e922b3f9d38",
+      "bytes": 40037337
+    }
+  },
+  "baseline_manifest_sha256": "83686295d6de4213dd51c40a7992fde448e8ecfc0030a2fab39221766ca3ea15",
+  "baseline_compatibility_sha256": "abfb70df4ce19791f42b91cdc25b906ff8d801b1679c8f6d00ad0ba47b02d606"
+}
