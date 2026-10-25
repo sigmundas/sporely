@@ -218,3 +218,56 @@ def test_cloud_sync_numeric_id_setting_families_restore_exactly():
 def test_malformed_or_unknown_numeric_id_settings_fail_closed(key):
     with pytest.raises(KeyError, match="unclassified database setting"):
         database_setting_policy(key)
+
+
+def _app_setting_literal_writes(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8-sig").lstrip("\ufeff"))
+    constants = {
+        target.id: node.value.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    keys: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not node.args or not isinstance(node.args[0], ast.Dict):
+            continue
+        name = getattr(node.func, "attr", None) or getattr(node.func, "id", None)
+        if name not in {"update_app_settings", "save_app_settings"}:
+            continue
+        for key in node.args[0].keys:
+            if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                keys.add(key.value)
+            elif isinstance(key, ast.Name) and key.id in constants:
+                keys.add(constants[key.id])
+    return keys
+
+
+def test_app_setting_policy_covers_production_literal_writes():
+    root = Path(__file__).resolve().parents[1]
+    production_files = (
+        root / "main.py",
+        *(root / "database").rglob("*.py"),
+        *(root / "ui").rglob("*.py"),
+        *(root / "utils").rglob("*.py"),
+    )
+    keys = set().union(*(_app_setting_literal_writes(path) for path in production_files))
+    assert {"cloud_auth_method", "reference_client_device_id"} <= keys
+    unclassified = []
+    for key in sorted(keys):
+        try:
+            app_setting_policy(key)
+        except KeyError:
+            unclassified.append(key)
+    assert unclassified == []
+
+
+def test_cloud_auth_method_stays_with_the_session_tokens():
+    assert app_setting_policy("cloud_auth_method") is SettingPolicy.SECRET
+
+
+def test_reference_device_id_stays_on_its_machine():
+    assert app_setting_policy("reference_client_device_id") is SettingPolicy.MACHINE_SPECIFIC
