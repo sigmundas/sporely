@@ -21846,12 +21846,20 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 or restored_identity.is_cloud_selected_unverified
                 or restored_identity.has_external_evidence
             )
-            if snapshot_name and rank_snapshot and has_identity:
+            # A proven Sporely identity stored without name/rank snapshots
+            # (the 2026-10-07 stage 4 identity repair bound rows that way) is
+            # still the committed identity. Restore it as stored, without
+            # deriving a name from text or the release, so an unchanged save
+            # writes back the same columns; editing genus/species still
+            # invalidates it through the controller.
+            if has_identity and (
+                (snapshot_name and rank_snapshot) or restored_identity.is_proven_sporely
+            ):
                 _controller.load_committed_snapshot({
                     "genus": genus,
                     "species": species,
                     "scientific_name": snapshot_name,
-                    "taxon_rank_snapshot": rank_snapshot,
+                    "taxon_rank_snapshot": rank_snapshot or None,
                     # Canonical fields are not re-fetched on load.
                     **restored_identity.to_row(),
                 })
