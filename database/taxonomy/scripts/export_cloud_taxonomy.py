@@ -96,6 +96,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Export a candidate_build_only artifact for local validation only (not for import).",
     )
     p.add_argument(
+        "--generated-at",
+        default=None,
+        help="ISO-8601 UTC timestamp recorded as generated_at (default: now); pin it to reproduce an export byte for byte.",
+    )
+    p.add_argument(
         "--local-rehearsal",
         action="store_true",
         help="With a preparation-only release decision: export for a disposable local import rehearsal "
@@ -181,6 +186,7 @@ def main(argv: list[str] | None = None) -> int:
             release_decision=args.release_decision,
             candidate_validation_only=args.candidate_validation_only,
             local_rehearsal=args.local_rehearsal,
+            generated_at=args.generated_at,
         )
         elapsed = time.monotonic() - start
         # ru_maxrss is kilobytes on Linux, bytes on macOS. Report raw.
