@@ -366,6 +366,24 @@ def test_unrelated_edit_keeps_identity_and_issues_no_clear(env):
     assert local["notes"] == "notes A2"
 
 
+def test_identity_cleared_without_a_name_change_is_never_pushed(env):
+    """An editor save that drops the identity but keeps genus/species (the
+    pre-fix snapshot-less save) must not clear the cloud identity."""
+    cloud, local_id, cloud_id = env
+    _establish_proven_identity(cloud, local_id, cloud_id)
+    rpcs_before = len(cloud.rpcs)
+
+    cleared = {key: None for key in _proven_83668()}
+    _edit_locally(local_id, allow_nulls=True, notes="saved", **cleared)
+    assert TaxonIdentity.from_row(_local(local_id)).sporely_taxon_id is None
+    result = _sync(cloud)
+    assert result["errors"] == []
+
+    assert cloud.rows[cloud_id]["selected_sporely_taxon_id"] == 83668
+    assert cloud.rows[cloud_id]["taxon_identity_state"] == "sporely_v2"
+    assert len(cloud.rpcs) == rpcs_before, "no identity RPC for a clear without an identification edit"
+
+
 # ── C2: cloud identity moved to a THIRD concept since the baseline ──────────
 #
 # Baseline A (83668), cloud now C (a different concept the web or another
