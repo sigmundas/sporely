@@ -308,3 +308,57 @@ def test_picker_search_keeps_both_same_name_concepts(picker_settings, lookup):
         assert "NorTaxa 54701" in by_id[NORTAXA_CONCEPT]
     finally:
         dialog.reject()
+
+
+# ── The observation editor ───────────────────────────────────────────────────
+
+
+def test_observation_editor_offers_the_concept_and_binds_it_only_on_acceptance(
+    monkeypatch, tmp_path, shipped_artifact,
+):
+    from PySide6.QtWidgets import QApplication
+    from tests.test_observation_details_ai_copy_and_vernacular_autofill import _build_dialog
+
+    qapp = QApplication.instance() or QApplication([])
+    dialog = _build_dialog(
+        monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=shipped_artifact,
+        draft_data=_observation(common_name="vintersopp"),
+    )
+    try:
+        assert not dialog.identity_offer_row.isHidden()
+        assert "NBIC:54701" in dialog.identity_offer_label.text()
+        before = dialog.get_data()
+        assert before["sporely_taxon_id"] is None
+
+        dialog.identity_offer_button.click()
+        qapp.processEvents()
+
+        data = dialog.get_data()
+        assert (data["genus"], data["species"]) == ("Flammulina", "velutipes")
+        assert data["sporely_taxon_id"] == NORTAXA_CONCEPT
+        assert data["taxon_identity_proof"] == PROOF_EXTERNAL_ID_RESOLUTION
+        assert data["taxon_identity_raw_external_id"] == "NBIC:54701"
+        assert dialog.identity_offer_row.isHidden()
+    finally:
+        dialog._cleanup_dialog_threads()
+        dialog.deleteLater()
+
+
+def test_observation_editor_drops_the_offer_when_the_name_changes(monkeypatch, tmp_path, shipped_artifact):
+    from PySide6.QtWidgets import QApplication
+    from tests.test_observation_details_ai_copy_and_vernacular_autofill import _build_dialog
+
+    qapp = QApplication.instance() or QApplication([])
+    dialog = _build_dialog(
+        monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=shipped_artifact,
+        draft_data=_observation(),
+    )
+    try:
+        assert not dialog.identity_offer_row.isHidden()
+        dialog.species_input.setText("elastica")
+        dialog._refresh_identity_offer()
+        assert dialog.identity_offer_row.isHidden()
+        assert dialog.get_data()["sporely_taxon_id"] is None
+    finally:
+        dialog._cleanup_dialog_threads()
+        dialog.deleteLater()
