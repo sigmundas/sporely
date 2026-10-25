@@ -8,6 +8,7 @@ from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QCompleter, QLineEdit
 
 from database.taxon_lookup import TAXON_COMPLETER_LIMIT, TaxonChoice, TaxonLookupService
+from database.taxon_suggestions import collapse_same_name_by_evidence, concept_source_labels
 from utils.taxon_identity import IDENTITY_COLUMNS, TaxonIdentity
 
 
@@ -65,7 +66,13 @@ def _format_scientific_choice_display(suggestion: dict) -> str:
         parts.append(f"→ {concept_name}")
     elif link_kind == "linked" and concept_name and concept_name != name:
         parts.append(f"↦ {concept_name}")
-    # 3. Source system when neither authorship nor alias disambiguates.
+    # 3. Concepts sharing this name: their source (``COL 6J82Y``,
+    # ``NorTaxa 54701``), set only while the ambiguity is genuine.
+    source_label = str(suggestion.get("source_label") or "").strip()
+    if source_label:
+        parts.append(source_label)
+    # Otherwise the source system when neither authorship nor alias
+    # disambiguates.
     source = str(suggestion.get("canonical_source_system") or "").strip()
     if len(parts) == 1 and source and source != "col_xr":
         # COL is the backbone default; annotate only non-default sources.
@@ -165,6 +172,7 @@ class TaxonInputController(QObject):
         scientific_name_input: QLineEdit | None = None,
         on_snapshot_invalidated: Callable[[], None] | None = None,
         on_snapshot_committed: Callable[[dict], None] | None = None,
+        concept_species_suggestions: bool = False,
     ) -> None:
         super().__init__(parent)
         self.lookup = lookup
@@ -182,6 +190,14 @@ class TaxonInputController(QObject):
         self._on_snapshot_invalidated = on_snapshot_invalidated
         self._on_snapshot_committed = on_snapshot_committed
         self.scientific_name_input = scientific_name_input
+        # Species suggestions as database concepts (the observation editor):
+        # picking one commits that row's own Sporely concept, exactly like
+        # the Scientific picker. Off for hosts that only want epithets.
+        self._concept_species_suggestions = bool(concept_species_suggestions) and scientific_name_input is not None
+        # Concepts proven by provider identifiers (Artsorakel NBIC ids) for
+        # this observation. They settle which concept a name means when
+        # several share it; they never bind anything on their own.
+        self._evidence_taxon_ids: frozenset[int] = frozenset()
         # Stage 3B.3 selection-controlled snapshot.
         # None → no snapshot has been committed. Otherwise a tuple of
         # (genus, species, scientific_name, taxon_rank_snapshot,
@@ -441,6 +457,127 @@ class TaxonInputController(QObject):
             self._last_species_signature = tuple(built_signatures)
         return values
 
+    def set_evidence_taxon_ids(self, taxon_ids) -> None:
+        """Concepts that provider identifiers prove for this observation.
+
+        Used only to settle same-name alternatives in the Species and
+        Scientific suggestions; selection still binds the picked row.
+        """
+        ids = frozenset(int(t) for t in (taxon_ids or ()) if t is not None)
+        if ids != self._evidence_taxon_ids:
+            self._evidence_taxon_ids = ids
+            self._last_species_query = None
+            self._last_species_signature = ()
+
+    def _effective_evidence_ids(self) -> frozenset[int]:
+        committed = TaxonIdentity.from_row(self._committed_snapshot)
+        if committed.is_proven_sporely and committed.sporely_taxon_id is not None:
+            return self._evidence_taxon_ids | {int(committed.sporely_taxon_id)}
+        return self._evidence_taxon_ids
+
+    def _settle_concept_suggestions(self, suggestions: list[dict]) -> list[dict]:
+        """Drop same-name concepts that evidence rules out; label the rest.
+
+        Concepts sharing a scientific name stay listed (each with its
+        ``source_label``) unless exactly one of them is proven by evidence.
+        """
+        rows = collapse_same_name_by_evidence(
+            list(suggestions),
+            name_of=lambda row: row.get("scientific_name") or "",
+            id_of=lambda row: row.get("sporely_taxon_id"),
+            evidence=self._effective_evidence_ids(),
+        )
+        ids_by_name: dict[str, set[int]] = {}
+        for row in rows:
+            if row.get("sporely_taxon_id") is not None:
+                ids_by_name.setdefault(str(row.get("scientific_name") or "").casefold(), set()).add(
+                    int(row["sporely_taxon_id"]))
+        shared = {t for ids in ids_by_name.values() if len(ids) > 1 for t in ids}
+        if not shared:
+            return rows
+        labels = concept_source_labels(self.lookup, shared)
+        return [
+            {**row, "source_label": labels.get(int(row["sporely_taxon_id"]), f"Sporely {row['sporely_taxon_id']}")}
+            if row.get("sporely_taxon_id") is not None and int(row["sporely_taxon_id"]) in shared
+            else row
+            for row in rows
+        ]
+
+    def _set_species_concept_model(self, genus: str, prefix: str) -> list[str]:
+        """Species rows for ``genus`` as database concepts, then names.
+
+        Each concept row carries its own suggestion (as the Scientific
+        picker's rows do), so selecting it commits that concept. Epithets
+        known only from reference data follow as name rows.
+        """
+        from database.vernacular_db import parse_scientific_name_snapshot
+
+        lookup = self.lookup
+        query = f"{genus} {prefix}".strip()
+        try:
+            hits = lookup.suggest_scientific_names(query, limit=self.max_suggestions * 2) or []
+        except Exception:
+            hits = []
+        concepts: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+        for hit in hits:
+            name = str(hit.get("scientific_name") or "").strip()
+            parsed = parse_scientific_name_snapshot(name)
+            if parsed is None or hit.get("sporely_taxon_id") is None:
+                continue
+            hit_genus, epithet, rank = parsed
+            if rank != "species" or not epithet or hit_genus.casefold() != genus.casefold():
+                continue
+            key = (name, int(hit["sporely_taxon_id"]))
+            if key in seen:
+                continue
+            seen.add(key)
+            concepts.append(hit)
+        concepts = self._settle_concept_suggestions(concepts)[: self.max_suggestions]
+        rows: list[tuple[str, str, object]] = []
+        epithets: set[str] = set()
+        for hit in concepts:
+            epithet = parse_scientific_name_snapshot(hit["scientific_name"])[1]
+            epithets.add(epithet.casefold())
+            display = epithet
+            concept_name = str(hit.get("display_scientific_name") or hit.get("canonical_scientific_name") or "").strip()
+            if hit.get("link_kind") != "canonical" and concept_name and concept_name != hit["scientific_name"]:
+                display = f"{display} → {concept_name}"
+            if hit.get("source_label"):
+                display = f"{display} · {hit['source_label']}"
+            rows.append((display, epithet, hit))
+        try:
+            names = lookup.suggest_species(genus, prefix, limit=self.max_suggestions)
+        except Exception:
+            names = []
+        for choice in names:
+            epithet = self._clean_species_text(choice.species)
+            if epithet and epithet.casefold() not in epithets:
+                epithets.add(epithet.casefold())
+                rows.append((self._species_display_formatter(choice), epithet, choice))
+        values = [epithet for _display, epithet, _payload in rows]
+        if prefix and sum(1 for value in values if value.casefold() == prefix.casefold()) == 1 \
+                and len(values) == 1:
+            # The one remaining row is what was typed: nothing to choose.
+            self._species_model.clear()
+            self._last_species_signature = ()
+            popup = self._species_completer.popup()
+            if popup:
+                popup.hide()
+            return values
+        signature = tuple((display, epithet, "") for display, epithet, _payload in rows)
+        if signature != self._last_species_signature:
+            self._species_model.clear()
+            for display, epithet, payload in rows:
+                item = QStandardItem(display)
+                item.setData(epithet, Qt.UserRole)
+                item.setData(genus, Qt.UserRole + 1)
+                item.setData(epithet, Qt.UserRole + 2)
+                item.setData(payload, ROLE_TAXON_CHOICE)
+                self._species_model.appendRow(item)
+            self._last_species_signature = signature
+        return values
+
     def _set_vernacular_model(self, choices: list[TaxonChoice], *, hide_on_exact: bool = False, prefix: str = "") -> list[str]:
         if self._vernacular_model is None:
             return []
@@ -514,9 +651,13 @@ class TaxonInputController(QObject):
                 for row in range(self._species_model.rowCount())
                 if (item := self._species_model.item(row, 0)) is not None
             ]
-        choices = lookup.suggest_species(genus, prefix, limit=self.max_suggestions) if lookup and genus else []
-        self._last_species_query = query_key
-        values = self._set_species_model(choices, hide_on_exact=True, prefix=prefix)
+        if self._concept_species_suggestions and lookup and genus:
+            self._last_species_query = query_key
+            values = self._set_species_concept_model(genus, prefix)
+        else:
+            choices = lookup.suggest_species(genus, prefix, limit=self.max_suggestions) if lookup and genus else []
+            self._last_species_query = query_key
+            values = self._set_species_model(choices, hide_on_exact=True, prefix=prefix)
         if self.species_input.hasFocus() and values and self.auto_show_popup_on_focus and self._species_completer:
             self._species_completer.setCompletionPrefix(prefix)
             self._species_completer.complete()
@@ -784,6 +925,12 @@ class TaxonInputController(QObject):
         if self._is_suspended() or not index.isValid():
             return
         choice = index.data(ROLE_TAXON_CHOICE)
+        if isinstance(choice, dict):
+            # A database concept row: commit that row's own concept, the
+            # same commit as a Scientific pick. Never re-derived from the
+            # epithet text afterwards.
+            self._commit_scientific_suggestion(choice)
+            return
         species = ""
         if isinstance(choice, TaxonChoice):
             species = self._clean_species_text(choice.species)
@@ -1096,9 +1243,9 @@ class TaxonInputController(QObject):
         if not prefix or not lookup:
             self._scientific_model.clear()
             return []
-        suggestions = lookup.suggest_scientific_names(
+        suggestions = self._settle_concept_suggestions(lookup.suggest_scientific_names(
             prefix=prefix, limit=self.max_suggestions,
-        )
+        ))
         # Rebuild the model.
         self._scientific_model.clear()
         for suggestion in suggestions:
@@ -1142,18 +1289,26 @@ class TaxonInputController(QObject):
         suggestion = index.data(ROLE_TAXON_CHOICE)
         if not isinstance(suggestion, dict):
             return
+        self._commit_scientific_suggestion(suggestion)
+
+    def _commit_scientific_suggestion(self, suggestion: dict) -> bool:
+        """The one place a picked concept row becomes the committed snapshot;
+        shared by the Scientific and Species pickers. Returns whether a
+        snapshot was committed."""
+        if self.scientific_name_input is None:
+            return False
         scientific_name = str(suggestion.get("scientific_name") or "").strip()
         rank_snapshot = suggestion.get("taxon_rank_snapshot")
         sporely_id = suggestion.get("sporely_taxon_id")
         if not scientific_name or not rank_snapshot or sporely_id is None:
-            return
+            return False
         # Parse (genus, species) from the picked string using the same
         # bounded parser the suggestion source used — safe because the
         # picker only emits rows the parser accepted.
         from database.vernacular_db import parse_scientific_name_snapshot
         parsed = parse_scientific_name_snapshot(scientific_name)
         if parsed is None:
-            return
+            return False
         genus, species, _rank = parsed
         with self._suspended():
             self._set_text(self.genus_input, genus)
@@ -1186,6 +1341,7 @@ class TaxonInputController(QObject):
                 pass
         self._sync_vernacular_after_taxon_change()
         self._notify_taxon_changed()
+        return True
 
     def eventFilter(self, obj, event):
         event_type = event.type()

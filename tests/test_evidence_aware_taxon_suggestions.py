@@ -24,16 +24,16 @@ import pytest
 
 from database.taxon_lookup import InstalledTaxonConcept, TaxonLookupService
 from database.taxon_suggestions import (
-    KIND_NAME_MATCH,
     KIND_NAME_ONLY,
     KIND_VERIFIED,
-    ORIGIN_NAME,
-    ORIGIN_OBSERVATION,
     ai_prediction_external_id,
+    collapse_same_name_by_evidence,
+    evidence_concept_ids,
     observation_identity_offer,
-    reference_taxon_suggestions,
+    reference_default_suggestions,
 )
 from database.vernacular_db import VernacularDB
+from ui.taxon_input_controller import ROLE_TAXON_CHOICE
 from utils import taxonomy_v2
 from utils.taxon_identity import (
     PROOF_EXTERNAL_ID_RESOLUTION,
@@ -131,47 +131,67 @@ def test_the_shipped_release_holds_two_same_name_concepts(lookup):
     assert ids == {COL_CONCEPT, NORTAXA_CONCEPT}
 
 
-def test_an_artsorakel_identifier_offers_its_verified_concept_first(lookup):
-    rows = reference_taxon_suggestions(
+def test_the_own_name_is_offered_a_link_to_the_concept_its_identifier_proves(lookup):
+    defaults = reference_default_suggestions(
         lookup, own_genus="Flammulina", own_species="velutipes", ai_entries=[_ai_entry()],
     )
-    first = rows[0]
-    assert (first.kind, first.sporely_taxon_id, first.raw_external_id) == (
-        KIND_VERIFIED, NORTAXA_CONCEPT, "NBIC:54701")
-    assert first.source_label == "NorTaxa 54701"
-    # The identifier settled which concept it is: the COL concept is not
-    # offered as an alternative, and the observation's own name-only taxon
-    # stays listed (it is what the picker opens on).
-    assert COL_CONCEPT not in {r.sporely_taxon_id for r in rows}
-    assert [(r.kind, r.origin) for r in rows[1:]] == [(KIND_NAME_ONLY, ORIGIN_OBSERVATION)]
+    assert (defaults.own.kind, defaults.own.sporely_taxon_id) == (KIND_NAME_ONLY, None)
+    assert (defaults.link.sporely_taxon_id, defaults.link.raw_external_id) == (NORTAXA_CONCEPT, "NBIC:54701")
+    # The AI suggestion is the link itself, so the AI section repeats nothing.
+    assert defaults.ai == ()
+    assert defaults.evidence_ids == {NORTAXA_CONCEPT}
 
 
-def test_without_an_identifier_both_same_name_concepts_are_offered_and_told_apart(lookup):
-    rows = reference_taxon_suggestions(
+def test_ai_scores_play_no_part_in_the_evidence(lookup):
+    unlikely = {**_ai_entry(), "score": 0.0001}
+    assert evidence_concept_ids(lookup, [unlikely]) == {NORTAXA_CONCEPT}
+
+
+def test_without_an_identifier_there_is_no_link_and_no_evidence(lookup):
+    defaults = reference_default_suggestions(
         lookup, own_genus="Flammulina", own_species="velutipes",
         ai_entries=[_ai_entry(external_id="67594", source="inat")],   # iNat ids never resolve
     )
-    matches = [r for r in rows if r.kind == KIND_NAME_MATCH]
-    assert {r.sporely_taxon_id for r in matches} == {COL_CONCEPT, NORTAXA_CONCEPT}
-    assert len({r.source_label for r in matches}) == 2
-    assert all(r.source_label for r in matches)
-    assert rows[-1].kind == KIND_NAME_ONLY
-    assert not any(r.kind == KIND_VERIFIED for r in rows)
+    assert defaults.link is None
+    assert defaults.ai == ()                       # same name as the own taxon
+    assert defaults.evidence_ids == frozenset()
 
 
 def test_an_unknown_identifier_stays_name_only_and_says_so(lookup):
-    rows = reference_taxon_suggestions(lookup, ai_entries=[_ai_entry(external_id="NBIC:999999999")])
-    name_only = [r for r in rows if r.kind == KIND_NAME_ONLY]
-    assert len(name_only) == 1 and name_only[0].external_id_unresolved
-    assert {r.sporely_taxon_id for r in rows if r.is_concept} == {COL_CONCEPT, NORTAXA_CONCEPT}
-    assert not any(r.kind == KIND_VERIFIED for r in rows)
+    defaults = reference_default_suggestions(lookup, ai_entries=[_ai_entry(external_id="NBIC:999999999")])
+    (row,) = defaults.ai
+    assert row.kind == KIND_NAME_ONLY and row.external_id_unresolved
+    assert defaults.evidence_ids == frozenset()
 
 
 def test_a_synonym_name_resolves_by_identifier_to_its_concept(lookup):
-    rows = reference_taxon_suggestions(lookup, ai_entries=[_ai_entry(name="Collybia velutipes")])
-    assert (rows[0].kind, rows[0].sporely_taxon_id) == (KIND_VERIFIED, NORTAXA_CONCEPT)
-    assert rows[0].scientific_name == "Collybia velutipes"
-    assert rows[0].concept_name == "Flammulina velutipes"
+    (row,) = reference_default_suggestions(lookup, ai_entries=[_ai_entry(name="Collybia velutipes")]).ai
+    assert (row.kind, row.sporely_taxon_id) == (KIND_VERIFIED, NORTAXA_CONCEPT)
+    assert (row.scientific_name, row.concept_name) == ("Collybia velutipes", "Flammulina velutipes")
+
+
+def test_an_own_concept_keeps_a_different_same_name_ai_concept(lookup):
+    defaults = reference_default_suggestions(
+        lookup, own_genus="Flammulina", own_species="velutipes", own_taxon_id=COL_CONCEPT,
+        ai_entries=[_ai_entry()],
+    )
+    assert defaults.link is None
+    assert [row.sporely_taxon_id for row in defaults.ai] == [NORTAXA_CONCEPT]
+    # Both concepts are evidence, so typed search keeps both: real ambiguity.
+    assert defaults.evidence_ids == {COL_CONCEPT, NORTAXA_CONCEPT}
+
+
+@pytest.mark.parametrize("evidence, expected", [
+    ({NORTAXA_CONCEPT}, [NORTAXA_CONCEPT, None]),
+    (set(), [COL_CONCEPT, NORTAXA_CONCEPT, None]),
+    ({COL_CONCEPT, NORTAXA_CONCEPT}, [COL_CONCEPT, NORTAXA_CONCEPT, None]),
+    ({12345}, [COL_CONCEPT, NORTAXA_CONCEPT, None]),
+])
+def test_same_name_concepts_collapse_only_on_one_proven_concept(evidence, expected):
+    rows = [("Flammulina velutipes", COL_CONCEPT), ("flammulina velutipes", NORTAXA_CONCEPT),
+            ("Flammulina velutipes", None)]
+    kept = collapse_same_name_by_evidence(rows, name_of=lambda r: r[0], id_of=lambda r: r[1], evidence=evidence)
+    assert [r[1] for r in kept] == expected
 
 
 def _observation(**fields) -> dict:
@@ -276,62 +296,86 @@ def _picker(lookup, **kwargs):
     return AddReferenceDialog(None, **defaults), attached
 
 
-def test_picker_lists_the_verified_concept_first_and_opens_on_the_observation(picker_settings, lookup):
+def test_picker_opens_on_the_observation_taxon_and_offers_the_link(picker_settings, lookup):
     dialog, attached = _picker(lookup)
     try:
         combo = dialog.taxon_target_combo
-        first = combo.itemData(0)
-        assert (first["kind"], first["taxon_id"]) == (KIND_VERIFIED, NORTAXA_CONCEPT)
-        assert "NorTaxa 54701" in combo.itemText(0)
-        own = combo.itemData(combo.currentIndex())
-        assert (own["origin"], own["kind"], own["taxon_id"]) == (ORIGIN_OBSERVATION, KIND_NAME_ONLY, None)
-        assert combo.itemText(combo.currentIndex()).endswith("name only")
+        assert combo.currentIndex() == 0
+        assert combo.itemText(0) == "Flammulina velutipes"
         assert dialog._taxon_id is None
+        assert not dialog.taxon_link_button.isHidden()
 
-        # One explicit pick binds the concept as the reference taxon only.
-        dialog._on_taxon_target_activated(0)
+        dialog.taxon_link_button.click()
+        # The reference taxon only: the observation is untouched.
         assert dialog._taxon_id == str(NORTAXA_CONCEPT)
-        assert dialog._exclude_observation_id == 685
+        assert (dialog._genus, dialog._species) == ("Flammulina", "velutipes")
         assert dialog._own_taxon_id is None
+        assert dialog._exclude_observation_id == 685
         assert attached == []
+        assert dialog.taxon_link_button.isHidden()
+        assert "%" not in combo.currentText()
     finally:
         dialog.reject()
 
 
-def test_picker_never_opens_on_a_concept_matched_by_name_only(picker_settings, lookup):
+def test_picker_offers_no_link_without_an_identifier(picker_settings, lookup):
     dialog, _attached = _picker(lookup, ai_candidates=[])
     try:
-        combo = dialog.taxon_target_combo
-        matches = [combo.itemData(i) for i in range(combo.count())
-                   if combo.itemData(i)["kind"] == KIND_NAME_MATCH]
-        assert {m["taxon_id"] for m in matches} == {COL_CONCEPT, NORTAXA_CONCEPT}
-        assert all(m["origin"] == ORIGIN_NAME for m in matches)
-        current = combo.itemData(combo.currentIndex())
-        assert (current["kind"], current["origin"], current["taxon_id"]) == (
-            KIND_NAME_ONLY, ORIGIN_OBSERVATION, None)
-        # Return on the opened row keeps it name-only.
+        assert dialog.taxon_link_button.isHidden()
+        assert dialog.taxon_target_combo.count() == 1
         dialog._on_taxon_target_text_entered()
         assert dialog._taxon_id is None
     finally:
         dialog.reject()
 
 
-def test_identifiers_are_not_called_unresolved_without_a_taxonomy():
-    rows = reference_taxon_suggestions(None, ai_entries=[_ai_entry()])
-    assert [(r.kind, r.external_id_unresolved) for r in rows] == [(KIND_NAME_ONLY, False)]
+def test_unrelated_ai_suggestions_sit_in_their_own_section(picker_settings, lookup):
+    dialog, _attached = _picker(lookup, ai_candidates=[_ai_entry(), _ai_entry(
+        external_id="1234567", name="Flammulina elastica", source="inat")])
+    try:
+        rows = dialog._taxon_default_suggestion_rows()
+        labels = [label for label, _data in rows]
+        assert labels[0] == "Flammulina velutipes"
+        assert rows[1] == ("AI suggestions", None)
+        assert rows[2][0].startswith("Flammulina elastica") and rows[2][0].endswith("(name only)")
+        # Typed search is a database search: the AI row is not in it.
+        typed = dialog.taxon_search_rows("Flammulina elastica")
+        assert all(data["taxon_id"] is not None for _label, data in typed)
+    finally:
+        dialog.reject()
 
 
-def test_picker_search_keeps_both_same_name_concepts(picker_settings, lookup):
+def test_picker_search_shows_one_match_when_an_identifier_settles_it(picker_settings, lookup):
+    dialog, _attached = _picker(lookup)
+    try:
+        rows = dialog.taxon_search_rows("Flammulina velutipes")
+        ids = {data["taxon_id"] for _label, data in rows if data.get("label") == "Flammulina velutipes"}
+        assert ids == {NORTAXA_CONCEPT}
+        assert [label for label, data in rows if data.get("label") == "Flammulina velutipes"] == [
+            "Flammulina velutipes (vintersopp)"]
+        # A variety no identifier speaks for stays ambiguous, with sources.
+        variety = [label for label, data in rows if data.get("label") == "Flammulina velutipes var. velutipes"]
+        assert len(variety) == 2 and all("·" in label for label in variety)
+    finally:
+        dialog.reject()
+
+
+def test_picker_search_lists_both_sources_when_genuinely_ambiguous(picker_settings, lookup):
     dialog, _attached = _picker(lookup, ai_candidates=[])
     try:
         rows = dialog.taxon_search_rows("Flammulina velutipes")
         by_id = {data["taxon_id"]: label for label, data in rows
                  if data.get("label") == "Flammulina velutipes"}
         assert {COL_CONCEPT, NORTAXA_CONCEPT} <= set(by_id)
-        assert by_id[COL_CONCEPT] != by_id[NORTAXA_CONCEPT]
         assert "NorTaxa 54701" in by_id[NORTAXA_CONCEPT]
+        assert "COL" in by_id[COL_CONCEPT]
     finally:
         dialog.reject()
+
+
+def test_identifiers_are_not_called_unresolved_without_a_taxonomy():
+    (row,) = reference_default_suggestions(None, ai_entries=[_ai_entry()]).ai
+    assert (row.kind, row.external_id_unresolved) == (KIND_NAME_ONLY, False)
 
 
 # ── The observation editor ───────────────────────────────────────────────────
@@ -350,7 +394,8 @@ def test_observation_editor_offers_the_concept_and_binds_it_only_on_acceptance(
     )
     try:
         assert not dialog.identity_offer_row.isHidden()
-        assert "NBIC:54701" in dialog.identity_offer_label.text()
+        assert dialog.identity_offer_label.text() == "Flammulina velutipes is in the species database."
+        assert "NBIC:54701" in dialog.identity_offer_row.toolTip()
         before = dialog.get_data()
         assert before["sporely_taxon_id"] is None
 
@@ -413,3 +458,121 @@ def test_observation_editor_drops_the_offer_when_the_name_changes(monkeypatch, t
     finally:
         dialog._cleanup_dialog_threads()
         dialog.deleteLater()
+
+
+# ── The observation editor's Species picker ──────────────────────────────────
+
+
+def _species_rows(dialog, genus="Flammulina", prefix="vel"):
+    controller = dialog._taxon_controller
+    dialog.genus_input.setText(genus)
+    dialog.species_input.setText(prefix)
+    controller.refresh_species_suggestions()
+    model = controller.species_model
+    return [(model.item(r).text(), model.index(r, 0)) for r in range(model.rowCount())]
+
+
+@pytest.fixture
+def editor(monkeypatch, tmp_path, shipped_artifact):
+    from PySide6.QtWidgets import QApplication
+    from tests.test_observation_details_ai_copy_and_vernacular_autofill import _build_dialog
+
+    qapp = QApplication.instance() or QApplication([])
+    dialogs = []
+
+    def build(**draft):
+        dialog = _build_dialog(monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=shipped_artifact,
+                               draft_data=draft or None)
+        dialogs.append(dialog)
+        return dialog
+
+    yield build
+    for dialog in dialogs:
+        dialog._cleanup_dialog_threads()
+        dialog.deleteLater()
+
+
+@pytest.mark.parametrize("source, concept", [("COL", COL_CONCEPT), ("NorTaxa", NORTAXA_CONCEPT)])
+def test_species_pick_binds_the_picked_rows_own_concept(editor, source, concept):
+    dialog = editor()
+    rows = [(label, index) for label, index in _species_rows(dialog) if label.startswith("velutipes ·")]
+    assert len(rows) == 2                        # genuinely ambiguous: both, with sources
+    label, index = next(row for row in rows if source in row[0])
+    dialog._taxon_controller.on_species_selected(index)
+    data = dialog.get_data()
+    assert (data["genus"], data["species"]) == ("Flammulina", "velutipes")
+    assert data["sporely_taxon_id"] == concept
+    assert data["taxon_identity_proof"] == PROOF_TAXONOMY_V2_ARTIFACT
+    assert dialog.scientific_name_input.text() == "Flammulina velutipes"
+
+
+def test_species_and_scientific_picks_commit_the_same_snapshot(editor):
+    species_dialog = editor()
+    _label, index = next(row for row in _species_rows(species_dialog) if "NorTaxa" in row[0])
+    species_dialog._taxon_controller.on_species_selected(index)
+
+    scientific_dialog = editor()
+    controller = scientific_dialog._taxon_controller
+    scientific_dialog.scientific_name_input.setText("Flammulina velutipes")
+    controller.refresh_scientific_suggestions()
+    model = controller._scientific_model
+    pick = next(model.index(r, 0) for r in range(model.rowCount())
+                if (model.item(r).data(ROLE_TAXON_CHOICE) or {}).get("sporely_taxon_id") == NORTAXA_CONCEPT)
+    controller.on_scientific_name_selected(pick)
+
+    assert species_dialog._taxon_controller.committed_snapshot() == controller.committed_snapshot()
+
+
+def test_an_artsorakel_identifier_settles_the_species_and_scientific_lists(editor):
+    dialog = editor(**_observation(genus="", species=""))
+    labels = [label for label, _index in _species_rows(dialog)]
+    assert "velutipes" in labels
+    assert not any(label.startswith("velutipes ·") for label in labels)
+    _label, index = next(row for row in _species_rows(dialog) if row[0] == "velutipes")
+    dialog._taxon_controller.on_species_selected(index)
+    assert dialog.get_data()["sporely_taxon_id"] == NORTAXA_CONCEPT
+
+    controller = dialog._taxon_controller
+    dialog.scientific_name_input.setText("Flammulina velutipes")
+    rows = controller.refresh_scientific_suggestions()
+    assert [r["sporely_taxon_id"] for r in rows if r["scientific_name"] == "Flammulina velutipes"] == [
+        NORTAXA_CONCEPT]
+
+
+def test_genus_only_and_typed_names_bind_nothing_and_warn_nothing(editor):
+    dialog = editor()
+    dialog.genus_input.setText("Flammulina")
+    dialog._refresh_identity_offer()
+    assert dialog.identity_offer_row.isHidden()
+    assert dialog.get_data()["sporely_taxon_id"] is None
+    dialog.species_input.setText("velutipes")          # typed, never picked
+    dialog._refresh_identity_offer()
+    assert dialog.get_data()["sporely_taxon_id"] is None
+    assert dialog.identity_offer_row.isHidden()
+
+
+def test_a_name_only_species_row_binds_nothing():
+    from PySide6.QtWidgets import QApplication, QLineEdit
+    from database.taxon_lookup import TaxonChoice
+    from ui.taxon_input_controller import TaxonInputController
+
+    QApplication.instance() or QApplication([])
+
+    class _Lookup:
+        vernacular_db = None
+
+        def suggest_scientific_names(self, prefix, limit=40):
+            return []
+
+        def suggest_species(self, genus, prefix="", limit=40):
+            return [TaxonChoice(genus=genus, species="referencia", source="reference")]
+
+    controller = TaxonInputController(
+        _Lookup(), QLineEdit(), QLineEdit(), scientific_name_input=QLineEdit(),
+        concept_species_suggestions=True,
+    )
+    controller.genus_input.setText("Flammulina")
+    controller.refresh_species_suggestions()
+    controller.on_species_selected(controller.species_model.index(0, 0))
+    assert controller.species_input.text() == "referencia"
+    assert controller.committed_snapshot() is None

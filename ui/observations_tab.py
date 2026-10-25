@@ -99,6 +99,7 @@ from database.taxon_lookup import (
 from database.taxon_suggestions import (
     ORIGIN_OBSERVATION,
     ai_prediction_external_id,
+    evidence_concept_ids,
     observation_identity_offer,
 )
 from .taxon_input_controller import TaxonInputController
@@ -15640,22 +15641,18 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         # Offered, never applied: a provider identifier that resolves to one
         # Sporely taxon matching the entered name, for an observation without
-        # a proven identity. Only the button binds it.
-        self.identity_offer_row = QWidget()
-        identity_offer_layout = QHBoxLayout(self.identity_offer_row)
-        identity_offer_layout.setContentsMargins(taxonomy_label_width, 0, 0, 0)
-        identity_offer_layout.setSpacing(6)
-        self.identity_offer_label = QLabel("")
-        self.identity_offer_label.setWordWrap(True)
-        self.identity_offer_label.setStyleSheet("color: #6b7280; font-size: 11px;")
-        identity_offer_layout.addWidget(self.identity_offer_label, 1)
-        self.identity_offer_button = QPushButton(self.tr("Use this taxon"))
-        self.identity_offer_button.setToolTip(
-            self.tr("Link the observation to this Sporely taxon. The entered name is kept.")
-        )
-        self.identity_offer_button.clicked.connect(self._on_identity_offer_accepted)
-        identity_offer_layout.addWidget(self.identity_offer_button, 0, Qt.AlignVCenter)
+        # a proven identity. A one-line hint, and Link at the end of the
+        # Scientific row; only the button binds it.
+        self.identity_offer_row = QLabel("")
+        self.identity_offer_row.setWordWrap(True)
+        self.identity_offer_row.setStyleSheet("color: #6b7280; font-size: 11px;")
+        self.identity_offer_row.setContentsMargins(taxonomy_label_width, 0, 0, 0)
         self.identity_offer_row.setVisible(False)
+        self.identity_offer_label = self.identity_offer_row
+        self.identity_offer_button = QPushButton(self.tr("Link"))
+        self.identity_offer_button.clicked.connect(self._on_identity_offer_accepted)
+        self.identity_offer_button.setVisible(False)
+        scientific_row.addWidget(self.identity_offer_button)
         self._identity_offer = None
         identified_layout.addWidget(self.identity_offer_row)
 
@@ -17624,6 +17621,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._set_ai_status(self.tr("No AI suggestions found"), "#7f8c8d", source="arts")
         self._update_ai_controls_state()
         self._persist_ai_state_now()
+        # New Artsorakel identifiers may settle same-name taxa or prove the
+        # entered name's taxon.
+        self._refresh_identity_offer()
 
     def _on_ai_guess_error(self, _indices: list, message: str) -> None:
         if "500" in message:
@@ -20062,6 +20062,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             scientific_name_input=getattr(self, "scientific_name_input", None),
             on_snapshot_invalidated=self._on_scientific_snapshot_invalidated,
             on_snapshot_committed=self._on_scientific_snapshot_committed,
+            # Species picks bind the picked concept, like Scientific picks.
+            concept_species_suggestions=True,
         )
         self._genus_model = self._taxon_controller.genus_model
         self._species_model = self._taxon_controller.species_model
@@ -20318,23 +20320,47 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
     def _hide_identity_offer(self) -> None:
         self._identity_offer = None
-        row = getattr(self, "identity_offer_row", None)
-        if row is not None:
-            row.setVisible(False)
+        for widget in (getattr(self, "identity_offer_row", None), getattr(self, "identity_offer_button", None)):
+            if widget is not None:
+                widget.setVisible(False)
+
+    def _identity_evidence_entries(self) -> list[dict]:
+        """Provider identifiers on this observation: its stored AI selection
+        and the Artsorakel predictions in the dialog."""
+        entries = list(self._identity_offer_ai_entries())
+        selected = self._current_ai_selected_fields or {}
+        if not selected and isinstance(self.observation or self.draft_data, dict):
+            selected = self._ai_selected_fields(self.observation or self.draft_data)
+        selected_id = str(selected.get("ai_selected_taxon_id") or "").strip()
+        if selected_id:
+            entries.append({
+                "scientific_name": selected.get("ai_selected_scientific_name") or "",
+                "external_id": selected_id,
+            })
+        return entries
 
     def _refresh_identity_offer(self) -> None:
-        """Offer the Sporely taxon a provider identifier proves, if any.
+        """Use the observation's provider identifiers in the background.
 
-        Evidence comes only from identifiers (see
-        :func:`database.taxon_suggestions.observation_identity_offer`); the
-        entered name must agree with it. Nothing is bound until the user
-        presses the button.
+        They settle which taxon a name means when several database taxa
+        share it (the Species and Scientific suggestions then list one), and
+        they let the editor offer a one-click link for an entered name that
+        has no database taxon yet. Only identifiers count; an AI's
+        probability does not, and nothing is bound until the user picks a
+        row or presses Link (see
+        :func:`database.taxon_suggestions.observation_identity_offer`).
         """
         row = getattr(self, "identity_offer_row", None)
         controller = getattr(self, "_taxon_controller", None)
         if row is None or controller is None or not hasattr(self, "genus_input"):
             return
         self._hide_identity_offer()
+        lookup = self._ensure_taxon_lookup()
+        entries = self._identity_evidence_entries()
+        try:
+            controller.set_evidence_taxon_ids(evidence_concept_ids(lookup, entries))
+        except Exception:
+            controller.set_evidence_taxon_ids(())
         if self.is_unidentified():
             return
         record = dict(self.observation or self.draft_data or {})
@@ -20342,7 +20368,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         record.update(self._current_ai_selected_fields or {})
         try:
             offer = observation_identity_offer(
-                self._ensure_taxon_lookup(),
+                lookup,
                 record,
                 genus=self.genus_input.text(),
                 species=self.species_input.text(),
@@ -20352,16 +20378,20 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             offer = None
         if offer is None:
             return
-        identifier = offer.raw_external_id or self.tr("the stored identifier")
         name = offer.concept_name or offer.scientific_name
-        taxon_text = f"{name} · {offer.source_label}" if offer.source_label else name
         self.identity_offer_label.setText(
-            self.tr("{identifier} matches the Sporely taxon {taxon}.").format(
-                identifier=identifier, taxon=taxon_text
-            )
+            self.tr("{name} is in the species database.").format(name=name)
         )
+        identifier = offer.raw_external_id or self.tr("the stored identifier")
+        tooltip = self.tr(
+            "Matched by {identifier}. Link binds the observation to this database "
+            "taxon; the name you entered is kept."
+        ).format(identifier=identifier)
+        row.setToolTip(tooltip)
+        self.identity_offer_button.setToolTip(tooltip)
         self._identity_offer = offer
         row.setVisible(True)
+        self.identity_offer_button.setVisible(True)
 
     def _on_identity_offer_accepted(self) -> None:
         offer = getattr(self, "_identity_offer", None)
