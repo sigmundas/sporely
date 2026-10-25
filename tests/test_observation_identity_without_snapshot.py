@@ -205,3 +205,30 @@ def test_unresolved_external_identity_still_round_trips(monkeypatch, qapp, tmp_p
     finally:
         _close(dialog)
 
+
+# An unchanged save must not turn a stored NULL host into '' (or '' into
+# NULL): sync compares the values literally, so either would be a cloud change.
+@pytest.mark.parametrize("stored", [None, ""])
+def test_unchanged_save_keeps_the_stored_empty_host(monkeypatch, qapp, tmp_path, stored):
+    dialog = _open_dialog(monkeypatch, qapp, tmp_path, _observation(
+        habitat_host_genus=stored, habitat_host_species=stored,
+    ))
+    try:
+        data = dialog.get_data()
+        assert data["habitat_host_genus"] is stored or data["habitat_host_genus"] == stored
+        assert data["habitat_host_species"] is stored or data["habitat_host_species"] == stored
+        assert type(data["habitat_host_genus"]) is type(stored)
+    finally:
+        _close(dialog)
+
+
+def test_typed_host_is_saved(monkeypatch, qapp, tmp_path):
+    dialog = _open_dialog(monkeypatch, qapp, tmp_path, _observation(
+        habitat_host_genus=None, habitat_host_species=None,
+    ))
+    try:
+        dialog.host_genus_input.setText("Betula")
+        qapp.processEvents()
+        assert dialog.get_data()["habitat_host_genus"] == "Betula"
+    finally:
+        _close(dialog)

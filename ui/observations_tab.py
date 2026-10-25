@@ -18545,6 +18545,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         host_species = self.host_species_input.text().strip() if hasattr(self, "host_species_input") else ""
         host_vernacular = self.host_vernacular_input.text().strip() if hasattr(self, "host_vernacular_input") else ""
         host_scientific = f"{host_genus} {host_species}".strip()
+        # An edit that leaves an empty host field empty keeps the stored empty
+        # value (NULL or ''), so an unchanged save produces no sync change.
+        loaded = self.observation if self.edit_mode and isinstance(self.observation, dict) else {}
+        if not host_genus and loaded.get("habitat_host_genus") is None and "habitat_host_genus" in loaded:
+            host_genus = None
+        if not host_species and loaded.get("habitat_host_species") is None and "habitat_host_species" in loaded:
+            host_species = None
         ai_selected = dict(
             getattr(self, "_current_ai_selected_fields", None)
             or self._ai_selected_fields(
