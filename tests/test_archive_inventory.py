@@ -190,3 +190,31 @@ def test_qsettings_policy_preserves_plate_authorship_only():
     assert qsettings_policy(("Sporely", "SpeciesPlate"), "obs_42/crop_top_zoom") is SettingPolicy.EXACT
     assert qsettings_inventory(("Sporely", "SpeciesPlate"), "ins_r").portable is PortablePolicy.EXCLUDE
     assert qsettings_policy(("Other", "Other"), "ins_r") is SettingPolicy.EXCLUDE
+
+
+def test_cloud_sync_numeric_id_setting_families_restore_exactly():
+    # Keys as the producers build them, so a renamed family fails here.
+    from utils.cloud_sync_impl.exif import _pull_injected_captured_at_key
+    from utils.cloud_sync_impl.location_precision import _confirmed_location_precision_key
+
+    assert _pull_injected_captured_at_key(8521) == "cloud_image_pull_injected_captured_at:8521"
+    for key in (_pull_injected_captured_at_key(8521), _confirmed_location_precision_key(497)):
+        assert database_setting_policy(key) is SettingPolicy.EXACT
+
+
+@pytest.mark.parametrize(
+    "key",
+    (
+        "cloud_image_pull_injected_captured_at:",
+        "cloud_image_pull_injected_captured_at:abc",
+        "cloud_image_pull_injected_captured_at:-1",
+        "cloud_image_pull_injected_captured_at:12.5",
+        "cloud_image_pull_injected_captured_at:12:13",
+        "cloud_image_pull_injected_captured_at_8521",
+        "cloud_location_precision_confirmed:x497",
+        "cloud_image_pull_unknown:8521",
+    ),
+)
+def test_malformed_or_unknown_numeric_id_settings_fail_closed(key):
+    with pytest.raises(KeyError, match="unclassified database setting"):
+        database_setting_policy(key)

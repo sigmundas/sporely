@@ -101,6 +101,30 @@ def test_restore_replaces_installation_rebases_paths_and_keeps_machine_settings(
     assert sentinel.read_text(encoding="utf-8") == "keep"
 
 
+def test_restore_preserves_cloud_sync_numeric_id_settings(installation, tmp_path):
+    preserved = {
+        "cloud_image_pull_injected_captured_at:8521": "cloud",
+        "cloud_location_precision_confirmed:497": "exact",
+    }
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        connection.executemany(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", preserved.items(),
+        )
+        connection.commit()
+    archive = _make_backup(tmp_path)
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        connection.execute("DELETE FROM settings WHERE key LIKE 'cloud_%:%'")
+        connection.commit()
+
+    _restore_full_backup(archive, app_version="test", safety_backup_path=tmp_path / "safety.sporely")
+
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        restored = dict(connection.execute(
+            "SELECT key, value FROM settings WHERE key LIKE 'cloud_%:%'"
+        ))
+    assert restored == preserved
+
+
 def test_restore_clears_orf_original_excluded_by_backup_policy(installation, tmp_path):
     working = tmp_path / "source.jpg"
     working.write_bytes(b"working-image")
