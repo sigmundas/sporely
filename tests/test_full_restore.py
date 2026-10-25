@@ -125,6 +125,29 @@ def test_restore_preserves_cloud_sync_numeric_id_settings(installation, tmp_path
     assert restored == preserved
 
 
+def test_restore_keeps_this_machines_auth_method_with_its_tokens(installation, tmp_path):
+    schema.save_app_settings({
+        "cloud_access_token": "archived-password-token",
+        "cloud_auth_method": "password",
+        "ui_theme": "dark",
+    })
+    archive = _make_backup(tmp_path)
+    schema.save_app_settings({
+        "cloud_access_token": "current-oauth-token",
+        "cloud_refresh_token": "current-oauth-refresh",
+        "cloud_auth_method": "oauth",
+        "ui_theme": "light",
+    })
+
+    _restore_full_backup(archive, app_version="test", safety_backup_path=tmp_path / "safety.sporely")
+
+    restored = schema.get_app_settings()
+    assert restored["cloud_access_token"] == "current-oauth-token"
+    assert restored["cloud_refresh_token"] == "current-oauth-refresh"
+    assert restored["cloud_auth_method"] == "oauth"
+    assert restored["ui_theme"] == "dark"
+
+
 def test_restore_clears_orf_original_excluded_by_backup_policy(installation, tmp_path):
     working = tmp_path / "source.jpg"
     working.write_bytes(b"working-image")

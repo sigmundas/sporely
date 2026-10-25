@@ -180,6 +180,9 @@ RESOURCE_INVENTORY: tuple[ResourceSpec, ...] = tuple(sorted((
 APP_SETTING_POLICIES: dict[str, SettingPolicy] = {
     "cloud_access_token": SettingPolicy.SECRET,
     "cloud_refresh_token": SettingPolicy.SECRET,
+    # How the stored tokens were issued (oauth/password). Restore keeps this
+    # machine's tokens, so the method stays with them and is never archived.
+    "cloud_auth_method": SettingPolicy.SECRET,
     "database_folder": SettingPolicy.MACHINE_SPECIFIC,
     "database_path": SettingPolicy.MACHINE_SPECIFIC,
     "reference_database_path": SettingPolicy.MACHINE_SPECIFIC,

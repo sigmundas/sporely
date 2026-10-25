@@ -1,5 +1,6 @@
 import json
 import shutil
+import json
 import sqlite3
 from pathlib import Path
 from zipfile import ZipFile
@@ -539,6 +540,25 @@ def test_malformed_numeric_id_setting_aborts_without_final_archive(installation,
     with pytest.raises(FullBackupError, match="unclassified database setting"):
         create_full_backup(destination, app_version="test", qsettings_values={})
     assert not destination.exists()
+
+
+def test_full_backup_with_oauth_session_archives_no_session_settings(installation, tmp_path):
+    schema.save_app_settings({
+        "cloud_access_token": "oauth-access-token",
+        "cloud_refresh_token": "oauth-refresh-token",
+        "cloud_auth_method": "oauth",
+        "cloud_user_id": "user-1",
+        "ui_theme": "dark",
+    })
+
+    destination = tmp_path / "oauth-session.sporely"
+    create_full_backup(destination, app_version="test", qsettings_values={})
+
+    with ZipFile(destination) as archive:
+        payload = archive.read("data/app_settings.json")
+    archived = json.loads(payload)["settings"]
+    assert archived == {"cloud_user_id": "user-1", "ui_theme": "dark"}
+    assert b"oauth" not in payload
 
 
 def test_staged_database_does_not_retain_deleted_secret_bytes(installation, tmp_path):

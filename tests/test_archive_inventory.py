@@ -218,3 +218,41 @@ def test_cloud_sync_numeric_id_setting_families_restore_exactly():
 def test_malformed_or_unknown_numeric_id_settings_fail_closed(key):
     with pytest.raises(KeyError, match="unclassified database setting"):
         database_setting_policy(key)
+
+
+def _app_setting_literal_writes(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8-sig").lstrip("\ufeff"))
+    keys: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not node.args or not isinstance(node.args[0], ast.Dict):
+            continue
+        name = getattr(node.func, "attr", None) or getattr(node.func, "id", None)
+        if name in {"update_app_settings", "save_app_settings"}:
+            keys.update(
+                key.value for key in node.args[0].keys
+                if isinstance(key, ast.Constant) and isinstance(key.value, str)
+            )
+    return keys
+
+
+def test_app_setting_policy_covers_production_literal_writes():
+    root = Path(__file__).resolve().parents[1]
+    production_files = (
+        root / "main.py",
+        *(root / "database").rglob("*.py"),
+        *(root / "ui").rglob("*.py"),
+        *(root / "utils").rglob("*.py"),
+    )
+    keys = set().union(*(_app_setting_literal_writes(path) for path in production_files))
+    assert "cloud_auth_method" in keys
+    unclassified = []
+    for key in sorted(keys):
+        try:
+            app_setting_policy(key)
+        except KeyError:
+            unclassified.append(key)
+    assert unclassified == []
+
+
+def test_cloud_auth_method_stays_with_the_session_tokens():
+    assert app_setting_policy("cloud_auth_method") is SettingPolicy.SECRET
