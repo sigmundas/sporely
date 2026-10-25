@@ -27,6 +27,7 @@ from database.taxon_suggestions import (
     KIND_NAME_MATCH,
     KIND_NAME_ONLY,
     KIND_VERIFIED,
+    ORIGIN_NAME,
     ORIGIN_OBSERVATION,
     ai_prediction_external_id,
     observation_identity_offer,
@@ -297,6 +298,29 @@ def test_picker_lists_the_verified_concept_first_and_opens_on_the_observation(pi
         dialog.reject()
 
 
+def test_picker_never_opens_on_a_concept_matched_by_name_only(picker_settings, lookup):
+    dialog, _attached = _picker(lookup, ai_candidates=[])
+    try:
+        combo = dialog.taxon_target_combo
+        matches = [combo.itemData(i) for i in range(combo.count())
+                   if combo.itemData(i)["kind"] == KIND_NAME_MATCH]
+        assert {m["taxon_id"] for m in matches} == {COL_CONCEPT, NORTAXA_CONCEPT}
+        assert all(m["origin"] == ORIGIN_NAME for m in matches)
+        current = combo.itemData(combo.currentIndex())
+        assert (current["kind"], current["origin"], current["taxon_id"]) == (
+            KIND_NAME_ONLY, ORIGIN_OBSERVATION, None)
+        # Return on the opened row keeps it name-only.
+        dialog._on_taxon_target_text_entered()
+        assert dialog._taxon_id is None
+    finally:
+        dialog.reject()
+
+
+def test_identifiers_are_not_called_unresolved_without_a_taxonomy():
+    rows = reference_taxon_suggestions(None, ai_entries=[_ai_entry()])
+    assert [(r.kind, r.external_id_unresolved) for r in rows] == [(KIND_NAME_ONLY, False)]
+
+
 def test_picker_search_keeps_both_same_name_concepts(picker_settings, lookup):
     dialog, _attached = _picker(lookup, ai_candidates=[])
     try:
@@ -339,6 +363,33 @@ def test_observation_editor_offers_the_concept_and_binds_it_only_on_acceptance(
         assert data["taxon_identity_proof"] == PROOF_EXTERNAL_ID_RESOLUTION
         assert data["taxon_identity_raw_external_id"] == "NBIC:54701"
         assert dialog.identity_offer_row.isHidden()
+    finally:
+        dialog._cleanup_dialog_threads()
+        dialog.deleteLater()
+
+
+def test_observation_editor_binds_its_own_tuple_stored_without_a_raw_value(
+    monkeypatch, tmp_path, shipped_artifact,
+):
+    from PySide6.QtWidgets import QApplication
+    from tests.test_observation_details_ai_copy_and_vernacular_autofill import _build_dialog
+
+    qapp = QApplication.instance() or QApplication([])
+    dialog = _build_dialog(
+        monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=shipped_artifact,
+        draft_data=_observation(
+            ai_selected_taxon_id=None, scientific_name_snapshot="Flammulina velutipes",
+            taxon_rank_snapshot="species", taxon_identity_state=STATE_EXTERNAL_UNRESOLVED,
+            taxon_identity_source_system="nortaxa", taxon_identity_namespace="nortaxa_taxon_id",
+            taxon_identity_external_id="54701"),
+    )
+    try:
+        assert not dialog.identity_offer_row.isHidden()
+        dialog.identity_offer_button.click()
+        qapp.processEvents()
+        data = dialog.get_data()
+        assert data["sporely_taxon_id"] == NORTAXA_CONCEPT
+        assert data["taxon_identity_proof"] == PROOF_EXTERNAL_ID_RESOLUTION
     finally:
         dialog._cleanup_dialog_threads()
         dialog.deleteLater()

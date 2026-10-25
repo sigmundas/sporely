@@ -32,6 +32,9 @@ KIND_NAME_ONLY = "name_only"
 
 ORIGIN_OBSERVATION = "observation"
 ORIGIN_AI = "ai"
+#: A same-name concept: it comes from the installed taxonomy, not from the
+#: observation or an AI suggestion, whose name it merely shares.
+ORIGIN_NAME = "name"
 
 #: How many same-name concepts are offered for one suggested name.
 NAME_MATCH_LIMIT = 6
@@ -253,8 +256,11 @@ def ai_entry_suggestion(lookup, entry: dict) -> TaxonSuggestion | None:
     )
     concept = resolve_provider_concept(lookup, raw, scientific)
     if concept is None:
+        # "Unresolved" is a statement about an installed taxonomy; without
+        # one the identifier was simply not looked up.
+        looked_up = getattr(lookup, "vernacular_db", None) is not None
         prefixed = TaxonIdentity.from_prefixed_external_id(raw).has_external_evidence if raw else False
-        return replace(base, external_id_unresolved=prefixed)
+        return replace(base, external_id_unresolved=prefixed and looked_up)
     concept_name = _text(concept.scientific_name)
     return replace(
         base,
@@ -339,7 +345,7 @@ def reference_taxon_suggestions(
         if folded in checked_names or folded in verified_names:
             continue
         checked_names.add(folded)
-        for concept in name_match_concepts(lookup, suggestion.scientific_name, origin=suggestion.origin):
+        for concept in name_match_concepts(lookup, suggestion.scientific_name, origin=ORIGIN_NAME):
             if concept.sporely_taxon_id in seen_ids:
                 continue
             seen_ids.add(concept.sporely_taxon_id)
@@ -443,6 +449,7 @@ __all__ = [
     "KIND_NAME_ONLY",
     "KIND_VERIFIED",
     "ORIGIN_AI",
+    "ORIGIN_NAME",
     "ORIGIN_OBSERVATION",
     "TaxonSuggestion",
     "ai_entry_suggestion",

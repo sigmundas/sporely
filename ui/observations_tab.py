@@ -96,7 +96,11 @@ from database.taxon_lookup import (
     TaxonLookupService,
     determine_redlist_area,
 )
-from database.taxon_suggestions import ai_prediction_external_id, observation_identity_offer
+from database.taxon_suggestions import (
+    ORIGIN_OBSERVATION,
+    ai_prediction_external_id,
+    observation_identity_offer,
+)
 from .taxon_input_controller import TaxonInputController
 from database.reverse_location_lookup import (
     LocationLookupResult,
@@ -20366,14 +20370,15 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return
         genus = self.genus_input.text().strip()
         species = self.species_input.text().strip()
-        if offer.raw_external_id:
+        if offer.origin != ORIGIN_OBSERVATION and offer.raw_external_id:
             identity = TaxonIdentity.from_prefixed_external_id(
                 offer.raw_external_id,
                 scientific_name=" ".join(part for part in (genus, species) if part) or None,
                 rank="species" if species else "genus",
             )
         else:
-            # The observation's own preserved provider tuple.
+            # The observation's own preserved provider tuple, as stored: its
+            # raw value may be a bare id that does not parse on its own.
             identity = controller.committed_identity()
         # The same resolver and commit path as copying an AI suggestion: the
         # identifier is resolved again and bound with its provider evidence.
