@@ -1,12 +1,25 @@
 name: build-release
 
+# Builds every installer into a DRAFT release; publishing is a manual step.
+# Prefer workflow_dispatch: a draft created for a tag that does not exist yet
+# creates the tag only when it is published. A pushed tag appears in
+# releases.atom at once, and the desktop update check reads that feed.
 on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, e.g. v0.9.29 (created when the draft is published)"
+        required: true
 
 permissions:
   contents: write
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  GH_REPO: ${{ github.repository }}
 
 jobs:
   validate-version:
@@ -22,12 +35,31 @@ jobs:
         shell: bash
         run: |
           version=$(python tools/release_version.py check-release \
-            --tag "${{ github.ref_name }}" \
+            --tag "$RELEASE_TAG" \
             --app-file main.py)
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-  build-windows:
+  create-draft:
     needs: validate-version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create the draft release (or reuse an existing draft)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$RELEASE_TAG" --json isDraft -q .isDraft > is_draft.txt 2>/dev/null; then
+            if [ "$(cat is_draft.txt)" != "true" ]; then
+              echo "::error::$RELEASE_TAG is already published; refusing to upload into it"
+              exit 1
+            fi
+            echo "Reusing draft $RELEASE_TAG"
+          else
+            gh release create "$RELEASE_TAG" --draft --target "$GITHUB_SHA" \
+              --title "$RELEASE_TAG" --generate-notes
+          fi
+
+  build-windows:
+    needs: [validate-version, create-draft]
     runs-on: windows-latest
 
     steps:
@@ -60,14 +92,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           echo "name=Sporely-$version-windows-setup.exe" >> $env:GITHUB_OUTPUT
 
-      - name: Create Release and upload asset
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ steps.installer.outputs.name }}
-          generate_release_notes: true
+      - name: Upload installer to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: gh release upload "$env:RELEASE_TAG" "${{ steps.installer.outputs.name }}" --clobber
 
   build-linux:
-    needs: validate-version
+    needs: [validate-version, create-draft]
     runs-on: ubuntu-latest
 
     steps:
@@ -130,14 +162,13 @@ jobs:
           dpkg-deb --build "$pkg"
           echo "name=${pkg}.deb" >> $GITHUB_OUTPUT
 
-      - name: Create Release and upload asset
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ steps.deb.outputs.name }}
-          generate_release_notes: true
+      - name: Upload package to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$RELEASE_TAG" "${{ steps.deb.outputs.name }}" --clobber
 
   build-macos:
-    needs: validate-version
+    needs: [validate-version, create-draft]
     # Use a matrix to build for both Intel (x86_64) and Apple Silicon (arm64)
     strategy:
       matrix:
@@ -204,7 +235,7 @@ jobs:
         id: dmg
         run: |
           sleep 10
-          tag="${{ github.ref_name }}"
+          tag="$RELEASE_TAG"
           # Include architecture in the filename for clarity
           dmg_name="Sporely-${tag}-macos-${{ matrix.arch }}.dmg"
           staging="dmg_staging"
@@ -218,8 +249,25 @@ jobs:
             "$dmg_name"
           echo "name=$dmg_name" >> $GITHUB_OUTPUT
 
-      - name: Create Release and upload asset
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ steps.dmg.outputs.name }}
-          generate_release_notes: true
+      - name: Upload disk image to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$RELEASE_TAG" "${{ steps.dmg.outputs.name }}" --clobber
+
+  verify-draft:
+    needs: [validate-version, build-windows, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: The release is still a draft with all four installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.validate-version.outputs.version }}
+        run: |
+          gh release view "$RELEASE_TAG" --json isDraft,assets > release.json
+          jq -e '.isDraft == true' release.json
+          for name in "Sporely-$VERSION-windows-setup.exe" "sporely_${VERSION}_amd64.deb" \
+                      "Sporely-$RELEASE_TAG-macos-intel.dmg" "Sporely-$RELEASE_TAG-macos-apple-silicon.dmg"; do
+            jq -e --arg n "$name" 'any(.assets[]; .name == $n and .size > 0)' release.json >/dev/null \
+              || { echo "::error::missing asset $name"; exit 1; }
+          done
+          jq -r '.assets[] | "\(.name) \(.size)"' release.json
