@@ -1,0 +1,55 @@
+{
+  "release_id": "tax-2026.10.23-11",
+  "executed": true,
+  "owner_authorization": "Owner, in the conversation on 2026-10-25: 'Admin tools, repair jobs and service-role writers are paused. Go ahead and execute the production import of tax-2026.10.23-11 using SQL SHA-256 c150bb59f5ab6cb0197e74e7e9fca733983604c1ca80a9c5d225cf3075e605ed. Repeat the final checks immediately before execution. Stop if anything differs. Run the post-import verification and report the results. Do not promote or deploy the desktop release yet.'",
+  "import_sql_sha256": "c150bb59f5ab6cb0197e74e7e9fca733983604c1ca80a9c5d225cf3075e605ed",
+  "sqlite_sha256": "2a81f68435d0606633319be0845f9fa1de46ccd9c2442f391af742fad3899a97",
+  "freeze_sha256": "26e77446fb3b71720fa44cf54fe5237bb0bab5f240f2f762036da3e92877bc99",
+  "target_system_identifier": "7606130613603586966",
+  "preflight_immediately_before": "identical to the 2026-10-25 preflight (SHA256SUMS verified, SQL hash verified, 10.07 active, no -11 rows, latest migration 20261020120000, no long/idle transactions or locks)",
+  "started_at": "2026-10-25T06:57:20Z",
+  "finished_at": "2026-10-25T06:58:20Z",
+  "exit_status": 0,
+  "psql_stderr": "empty",
+  "post_import": {
+    "releases": [
+      {
+        "tax-2026.10.07-01": "retired"
+      },
+      {
+        "tax-2026.10.23-11": "active"
+      }
+    ],
+    "validate_ok": "true",
+    "import_run": "succeeded",
+    "taxa_tax-2026.10.23-11": 53166,
+    "taxa_tax-2026.10.07-01_kept": 52917,
+    "search_top_hit": {
+      "kantareller": 129742,
+      "eggrøyksopper": 8992,
+      "fingersopper": 20056,
+      "fagerkjuker": 15031,
+      "beitemarkvokssopper": 68411,
+      "silkeparasollsopp": 6398,
+      "kalktalg": 140472,
+      "dvergparasollsopp": 6399
+    },
+    "col_resolution": {
+      "XQVS": "616943",
+      "XQVT": "616942"
+    },
+    "observations_selecting_concept_absent_from_active": 0,
+    "cloud_references_unresolved_in_-11": {
+      "obs.selected": "0 of 63",
+      "obs.resolved": "0 of 189",
+      "v3.resolution_link": "0 of 190",
+      "obs.identity_sporely": "0 of 4",
+      "priv.shared_contrib": "0 of 2",
+      "ref.treatments": "0 of 3"
+    },
+    "external_identity_tuples": "65 rows, identical to the pre-import check",
+    "picker_smoke": "search_taxa_v2('kantarell') -> 168873 Cantharellus cibarius (kantarell), 129742 Cantharellus; legacy search_taxa answers (16 rows)"
+  },
+  "not_done": "desktop promotion/install and any deployment (separate authorization); writers to be resumed by the owner",
+  "artifacts_dir": "/Users/sigmundas/Documents/Code/sporely/releases/tax-2026.10.23-11/release-prep/import-execution-2026-10-25"
+}
