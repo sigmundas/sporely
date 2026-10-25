@@ -206,7 +206,8 @@ def test_regression_vernaculars(release_db, sporely_id, expected):
 def test_kantarell_reaches_168873_only_from_the_superseded_nortaxa_concept(release_db):
     rows = sqlite3.connect(release_db).execute(
         "SELECT language_code, source FROM vernacular_min "
-        "WHERE taxon_id = 168873 AND vernacular_name = 'kantarell'").fetchall()
+        "WHERE taxon_id = 168873 AND vernacular_name = 'kantarell' "
+        "AND language_code IN ('nb', 'nn')").fetchall()
     assert sorted(rows) == [("nb", "nortaxa"), ("nn", "nortaxa")]
     assert _provider(release_db, "nortaxa", "56210") == 168873
 

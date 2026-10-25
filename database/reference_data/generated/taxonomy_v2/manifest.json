@@ -1,17 +1,17 @@
 {
   "manifest_schema_version": 1,
   "taxonomy_schema_version": 2,
-  "content_release_id": "tax-2026.10.07-01",
+  "content_release_id": "tax-2026.10.23-11",
   "state": "candidate",
   "publication": "none",
-  "gz_artifact": "tax-2026.10.07-01.sqlite3.gz",
-  "gz_sha256": "bff40f0d5d70ec2be47fe415dfd4cfc623a7841553f8a7d928ed801117ca21c5",
-  "gz_bytes": 73281648,
-  "sqlite_sha256": "e349e8b1d7cdbafa688621a71f9be278ac6e381853ff7fe2763d8b856b7724f9",
-  "sqlite_bytes": 340250624,
-  "registry_concatenated_sha256": "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9",
-  "compiler_manifest_sha256": "a05bd4564177af1d52df863acd1d4f75fd3193f2822e67a1214f167903c464d1",
-  "freeze_artifact": "tax-2026.10.07-01.freeze.json",
+  "gz_artifact": "tax-2026.10.23-11.sqlite3.gz",
+  "gz_sha256": "237466e14923fe6c33622314a7cbae0a1707ac6cc8d2f62a86922e922b3f9d38",
+  "gz_bytes": 40037337,
+  "sqlite_sha256": "2a81f68435d0606633319be0845f9fa1de46ccd9c2442f391af742fad3899a97",
+  "sqlite_bytes": 142983168,
+  "registry_concatenated_sha256": "716bff20853a7639b888548a06088d1dd71b0eb6684fd5c492758af3691da5f8",
+  "compiler_manifest_sha256": "6c21ed302a9abf7e99c90f1a165026af65314c355a607df9e418b01f18becba8",
+  "freeze_artifact": "tax-2026.10.23-11.freeze.json",
   "install_target_name": "vernacular_multilanguage_v2.sqlite3",
   "redlist_no": {
     "source_system": "artsdatabanken_redlist",
@@ -56,9 +56,9 @@
     }
   },
   "compiler_evidence": {
-    "artifact": "tax-2026.10.07-01.evidence.tar.gz",
-    "sha256": "e2d1dfcaa261457fe1ae1392783c503ae56b833c7652a259056103012c089424",
-    "bytes": 53372637,
+    "artifact": "tax-2026.10.23-11.evidence.tar.gz",
+    "sha256": "e85b2000298d8b36341892a1eb10d99b63a580b65f62651f7f638ab1eea8fe7e",
+    "bytes": 44277045,
     "format": "sporely-compiler-evidence-v1"
   }
 }

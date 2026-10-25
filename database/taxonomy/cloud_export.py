@@ -458,53 +458,50 @@ def _verify_required_schema(conn: sqlite3.Connection) -> None:
 
 
 # The release the desktop bundles (database/reference_data/generated/
-# taxonomy_v2/manifest.json), tax-2026.10.07-01, built with build_release.py
-# from release-recipe.json (Norwegian vernacular enrichment, reviewed freeze
-# a86e3585). Against the previous pin (tax-2026.09.30-01): vernacular rows grow
-# from 31,140 to 96,136. Current COL vernaculars in every source language are
-# recovered (Stage 1B), and 1,619 automatic + 18 owner-reviewed Norwegian names
-# are added. Unsupported historical associations, qualified-source echoes and
-# source-marked obsolete names are withheld. Concepts, scientific names,
-# authoritative and legacy external ids, and the red list keep their counts.
+# taxonomy_v2/manifest.json), tax-2026.10.23-11, the owner-approved R2 release
+# (freeze 26e77446), imported into production on 2026-10-25. Against the
+# previous pin (tax-2026.10.07-01): the owner-approved UNITE SH exclusion stops
+# 430,621 species-hypothesis concepts from being live, so concepts fall from
+# 633,541 to 202,204 and COL id and scientific-name rows fall with them;
+# vernacular rows 96,136 -> 96,628; red-list rows 7,866 -> 7,865 (Norge).
+# The artifact is candidate_build_only; count checks export it validation-only.
 PINNED_RELEASE_EXPECTATIONS = {
-    "content_release_id": "tax-2026.10.07-01",
+    "content_release_id": "tax-2026.10.23-11",
     # The pin describes one exact artifact. Keying on the release id alone
     # would also fire on synthetic fixtures that reuse the name.
-    "sqlite_sha256": "e349e8b1d7cdbafa688621a71f9be278ac6e381853ff7fe2763d8b856b7724f9",
-    "concepts_included": 633541,
-    "concepts_excluded": 1,
-    "scientific_name_rows": 665946,
-    "vernacular_rows": 96136,
-    "vernacular_by_lang": {"acv": 1, "af": 71, "ain": 1, "ar": 11, "arg": 2, "arn": 3, "ast": 61, "az": 3,
-                           "bar": 3, "be": 57, "bg": 73, "bn": 2, "bnn": 4, "bo": 2, "br": 1, "bs": 1,
-                           "ca": 164, "ceb": 2, "chm": 1, "chr": 5, "co": 2, "cre": 6, "cs": 5181, "cy": 1403,
-                           "da": 5127, "de": 4727, "dnj": 6, "ee": 1, "el": 43, "en": 9111, "eo": 7,
-                           "es": 644, "et": 1328, "eu": 17, "fa": 5, "fi": 6332, "fqs": 1, "fr": 3360,
-                           "frr": 1, "fy": 8, "ga": 1, "gd": 91, "gl": 30, "haw": 2, "hbs": 1, "he": 964,
-                           "hr": 66, "hu": 2206, "hy": 65, "hz": 3, "id": 5, "io": 1, "is": 19, "it": 132,
-                           "ja": 3675, "ka": 7, "kbd": 1, "kk": 4, "ko": 758, "koi": 2, "kth": 2, "ku": 2,
-                           "kv": 1, "la": 5, "lb": 158, "lij": 1, "lt": 3802, "lub": 1, "lv": 809, "mg": 1,
-                           "mi": 14, "mia": 1, "mis": 1, "mk": 30, "ml": 1, "ms": 4, "mte": 3, "mwl": 1,
-                           "my": 1, "nb": 7881, "nl": 7463, "nmu": 2, "nmx": 2, "nn": 4812, "no": 21, "oc": 2,
-                           "oj": 15, "pa": 1, "pl": 1673, "pmm": 2, "pms": 4, "pnb": 1, "ps": 2, "pt": 143,
-                           "qu": 2, "rm": 1, "rn": 2, "ro": 13, "rom": 1, "ru": 5206, "sah": 6, "sat": 2,
-                           "scn": 2, "sco": 1, "se": 102, "sha": 1, "sk": 3521, "sl": 1992, "sn": 3, "sq": 3,
-                           "sr": 63, "sv": 6349, "ta": 4, "te": 1, "th": 163, "tn": 2, "to": 1, "tr": 123,
-                           "tsz": 6, "tt": 1, "twe": 1, "udm": 1, "uk": 809, "und": 7, "vec": 1, "vi": 9,
-                           "wa": 9, "war": 2, "wlk": 1, "yi": 1, "ynn": 1, "yo": 2, "zh": 5048},
+    "sqlite_sha256": "2a81f68435d0606633319be0845f9fa1de46ccd9c2442f391af742fad3899a97",
+    "concepts_included": 202204,
+    "concepts_excluded": 1505,
+    "scientific_name_rows": 234507,
+    "vernacular_rows": 96628,
+    "vernacular_by_lang": {"acv": 1, "af": 74, "ain": 1, "ar": 11, "arg": 2, "arn": 3, "ast": 62, "az": 3,
+                           "bar": 3, "be": 58, "bg": 77, "bn": 2, "bnn": 4, "bo": 2, "br": 1, "bs": 1, "ca": 167,
+                           "ceb": 2, "chm": 1, "chr": 5, "chv": 1, "co": 3, "cre": 6, "cs": 5212, "cy": 1418,
+                           "da": 5156, "de": 4808, "dnj": 6, "ee": 1, "el": 46, "en": 9125, "eo": 7, "es": 648,
+                           "et": 1340, "eu": 18, "fa": 5, "fi": 6341, "fqs": 1, "fr": 3483, "frr": 1, "fy": 8,
+                           "ga": 1, "gd": 91, "gl": 32, "haw": 2, "hbs": 1, "he": 956, "hr": 75, "hu": 2218,
+                           "hy": 65, "hz": 3, "id": 5, "io": 1, "is": 19, "it": 136, "ja": 3699, "ka": 7,
+                           "kbd": 1, "kk": 4, "ko": 990, "koi": 2, "kth": 2, "ku": 2, "kv": 1, "la": 4,
+                           "lb": 157, "lij": 1, "lt": 3813, "lub": 1, "lv": 812, "mg": 1, "mi": 14, "mia": 1,
+                           "mis": 1, "mk": 30, "ml": 1, "ms": 4, "mte": 3, "mwl": 1, "my": 1, "nb": 7390,
+                           "nl": 7501, "nmu": 2, "nmx": 2, "nn": 4432, "no": 21, "oc": 2, "oj": 15, "ori": 1,
+                           "pa": 1, "pl": 1698, "pmm": 2, "pms": 4, "pnb": 1, "ps": 2, "pt": 160, "qu": 2,
+                           "rm": 1, "rn": 2, "ro": 13, "rom": 1, "ru": 5215, "sah": 7, "sat": 2, "scn": 2,
+                           "sco": 1, "se": 98, "sha": 1, "sk": 3936, "sl": 1998, "sn": 3, "sq": 3, "sr": 63,
+                           "sv": 6413, "ta": 4, "te": 1, "th": 161, "tn": 2, "to": 1, "tr": 229, "tsz": 6,
+                           "tt": 1, "twe": 1, "udm": 1, "uk": 812, "und": 8, "vec": 1, "vi": 9, "wa": 9,
+                           "war": 2, "wlk": 1, "yi": 1, "ynn": 1, "yo": 2, "zh": 5108},
     # Authoritative external IDs split by source_system:
-    "external_authoritative_col_rows": 620975,   # from taxon_external_id_text_min
-    # derived from taxon_min.norwegian_taxon_id (12566), plus the reviewed
-    # nortaxa/nortaxa_taxon_id bridges emitted into taxon_external_id_text_min (9516)
-    "external_authoritative_nortaxa_rows": 22082,
+    "external_authoritative_col_rows": 190916,
+    "external_authoritative_nortaxa_rows": 22092,
     # reviewed dyntaxa/dyntaxa_taxon_id bridges (Stage 4P approved manifests)
     "external_authoritative_dyntaxa_rows": 2361,
-    "external_authoritative_total_rows": 645418,   # = 620975 + 22082 + 2361
-    # Legacy namespace-lost integer rows: artsdatabanken 61583, artportalen
-    # 9000 (8185 legacy + 815 overlay), inaturalist 8032.
-    "external_legacy_int_rows": 78615,
-    "redlist_rows": 7866,
-    "redlist_by_area": {"Norge": 7198, "Svalbard": 668},
+    "external_authoritative_total_rows": 215369,   # = 190916 + 22092 + 2361
+    # Legacy namespace-lost integer rows: artsdatabanken 61612, artportalen
+    # 8999, inaturalist 8032.
+    "external_legacy_int_rows": 78643,
+    "redlist_rows": 7865,
+    "redlist_by_area": {"Norge": 7197, "Svalbard": 668},
 }
 
 MAX_TREE_DEPTH = 200
