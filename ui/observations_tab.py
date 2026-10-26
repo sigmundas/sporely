@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, Q
                                 QStyledItemDelegate, QStyleOptionViewItem)
 from PySide6.QtCore import Signal, Qt, QDateTime, QSize, QStringListModel, QEvent, QTimer, QThread, QPointF, QStandardPaths, QCoreApplication, QSettings, QModelIndex, QItemSelectionModel
 from PySide6.QtGui import (
+    QAccessible,
+    QAccessibleTableModelChangeEvent,
     QAction,
     QActionGroup,
     QIcon,
@@ -6451,6 +6453,13 @@ class ObservationsTab(QWidget):
         table.setUpdatesEnabled(False)
         table.blockSignals(True)
         try:
+            # Retire accessible cells while their model indexes are still
+            # valid. Replacing items before the sorting layout reset leaves
+            # Qt's macOS accessibility cache holding destroyed cells, which
+            # can crash the post-sync refresh when it deletes those entries.
+            QAccessible.updateAccessibility(QAccessibleTableModelChangeEvent(
+                table, QAccessibleTableModelChangeEvent.ModelReset,
+            ))
             if sorting_enabled:
                 table.setSortingEnabled(False)
             table.setRowCount(len(visible_rows))

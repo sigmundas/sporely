@@ -2046,6 +2046,48 @@ def test_render_observations_table_places_status_before_map_and_external(qapp):
     assert table.item(0, 9).text() == "External"
 
 
+def test_table_refresh_retires_accessible_cells_before_replacing_items(qapp, monkeypatch):
+    from PySide6.QtCore import QEvent
+    from PySide6.QtGui import QAccessible
+
+    tab, table = _make_observation_table_render_tab()
+    rows = [{"row_kind": "local", "local_id": i, "id_display": str(i),
+             "genus": "Flammulina", "species": "velutipes",
+             "species_name": "Flammulina velutipes"} for i in (1, 2)]
+    tab._render_observations_table(rows, "", False, False, None)
+    table.setSortingEnabled(True)
+    was_active = QAccessible.isActive()
+    QAccessible.setActive(True)
+    try:
+        interface = QAccessible.queryAccessibleInterface(table)
+        # Exercise the same persistent cell interfaces that a screen reader
+        # or macOS GUI automation holds while a cloud sync is running.
+        cached = [QAccessible.uniqueId(interface.child(i))
+                  for i in range(interface.childCount())
+                  if interface.child(i).role() == QAccessible.Cell]
+        assert cached
+        original_set_item = table.setItem
+        writes = []
+
+        def checked_set_item(row, column, item):
+            if not writes:
+                assert all(QAccessible.accessibleInterface(i) is None for i in cached)
+            writes.append((row, column))
+            return original_set_item(row, column, item)
+
+        monkeypatch.setattr(table, "setItem", checked_set_item)
+        rows[0]["genus"] = "Updated"
+        tab._render_observations_table(rows, "", False, False, None)
+        assert writes and table.isSortingEnabled()
+        assert any(table.item(i, 2).text() == "Updated" for i in range(table.rowCount()))
+        fresh = QAccessible.queryAccessibleInterface(table)
+        assert fresh.childCount() == interface.childCount()
+    finally:
+        table.deleteLater()
+        qapp.sendPostedEvents(None, QEvent.DeferredDelete)
+        QAccessible.setActive(was_active)
+
+
 def test_external_publish_cell_is_blank_without_publication_ids():
     table = _render_external_publish_cell({"local_id": 389})
 
