@@ -185,6 +185,58 @@ def _acknowledge_local_use(use_id: str) -> None:
     )
 
 
+@pytest.mark.parametrize("changed", [None, "treatment", "measurement_set", "observation_use"])
+def test_pending_subtree_delete_reconciles_baselines_without_live_parents(databases, changed):
+    _seed_graph_and_observation()
+    client = PullClient(uses=[_use_row()])
+    assert pull_reference_library(client).errors == ()
+    ObservationReferenceUseRepository.detach("use-1")
+    ReferenceWorkRepository.delete("work-1")
+
+    if changed == "treatment":
+        client.treatments[0].update(row_version=2, treatment_notes="Remote correction")
+    elif changed == "measurement_set":
+        client.sets[0].update(row_version=2, length_max=10.0)
+    elif changed == "observation_use":
+        client.uses[0].update(row_version=2, note="Remote correction")
+
+    result = pull_reference_library(client)
+
+    assert result.errors == ()
+    assert result.blocked == ()
+    expected = {
+        "treatment": "treatment:treatment-1",
+        "measurement_set": "measurement_set:set-1",
+        "observation_use": "observation_use:use-1",
+    }
+    assert result.conflicts == (() if changed is None else (expected[changed],))
+    assert ReferenceWorkRepository.get("work-1") is None
+    assert TaxonTreatmentRepository.get("treatment-1") is None
+    assert MeasurementSetRepository.get("set-1") is None
+    assert ObservationReferenceUseRepository.get("use-1") is None
+    assert len(ReferenceCloudSyncStateRepository.list_library_tombstones("user-1")) == 3
+    assert len(ReferenceCloudSyncStateRepository.list_use_tombstones("user-1")) == 1
+
+
+def test_pending_delete_without_source_still_rejects_other_account(databases):
+    work, _, measurement_set = _seed_graph_and_observation()
+    local = ObservationReferenceUseRepository.attach(1, measurement_set.id)
+    _acknowledge_local_use(local.id)
+    ObservationReferenceUseRepository.detach(local.id)
+    ReferenceWorkRepository.delete(work.id)
+    feed = stage_observation_reference_use_feed(
+        "user-2", (_use_row(id=local.id, user_id="user-2"),)
+    )
+
+    result = reconcile_observation_reference_use_feed("user-2", feed)
+
+    assert result.conflicts == (f"observation_use:{local.id}",)
+    tombstone = ReferenceCloudSyncStateRepository.list_use_tombstones("user-1")[0]
+    assert tombstone.sync_status == "conflict"
+    assert tombstone.cloud_user_id == "user-1"
+    assert ObservationReferenceUseRepository.get(local.id) is None
+
+
 def test_fresh_use_pull_preserves_exact_uuid_and_frozen_snapshot(databases):
     _seed_graph_and_observation()
     remote = _use_row()
