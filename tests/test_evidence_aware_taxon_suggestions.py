@@ -637,3 +637,31 @@ def test_link_binds_nothing_once_the_name_no_longer_matches(editor):
     data = dialog.get_data()
     assert data["sporely_taxon_id"] is None
     assert (data["genus"], data["species"]) == ("Flammulina", "elastica")
+
+
+def test_observation_editor_drops_the_offer_for_a_different_scientific_name(
+    monkeypatch, tmp_path, shipped_artifact,
+):
+    """A name typed in the Scientific field (an infraspecific one, say) is
+    what the user sees: Link must not bind the species concept under it."""
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+    from tests.test_observation_details_ai_copy_and_vernacular_autofill import _build_dialog
+
+    qapp = QApplication.instance() or QApplication([])
+    dialog = _build_dialog(
+        monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=shipped_artifact,
+        draft_data=_observation(),
+    )
+    try:
+        assert not dialog.identity_offer_row.isHidden()
+        dialog.scientific_name_input.setFocus()
+        QTest.keyClicks(dialog.scientific_name_input, "Flammulina velutipes f. longispora")
+        assert dialog.identity_offer_row.isHidden()
+        dialog.scientific_name_input.editingFinished.emit()
+        assert dialog.identity_offer_row.isHidden()
+        dialog.identity_offer_button.click()
+        assert dialog.get_data()["sporely_taxon_id"] is None
+    finally:
+        dialog._cleanup_dialog_threads()
+        dialog.deleteLater()

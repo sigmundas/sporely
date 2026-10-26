@@ -20106,7 +20106,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 )
         # The identity offer follows the entered name: hidden while it is
         # edited, re-evaluated once editing finishes.
-        for widget in (self.genus_input, self.species_input):
+        for widget in (self.genus_input, self.species_input, getattr(self, "scientific_name_input", None)):
             if widget is not None:
                 widget.textEdited.connect(lambda _text: self._hide_identity_offer())
                 widget.editingFinished.connect(self._refresh_identity_offer)
@@ -20363,6 +20363,15 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             controller.set_evidence_taxon_ids(())
         if self.is_unidentified():
             return
+        genus = self.genus_input.text().strip()
+        species = self.species_input.text().strip()
+        # The Scientific field may hold a different name typed there (an
+        # infraspecific name, say); the offer then does not apply to what
+        # the user sees.
+        scientific_input = getattr(self, "scientific_name_input", None)
+        scientific = scientific_input.text().strip() if scientific_input is not None else ""
+        if scientific and " ".join(scientific.split()).casefold() != f"{genus} {species}".casefold():
+            return
         record = dict(self.observation or self.draft_data or {})
         record.update(controller.committed_identity().to_row())
         record.update(self._current_ai_selected_fields or {})
@@ -20370,8 +20379,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             offer = observation_identity_offer(
                 lookup,
                 record,
-                genus=self.genus_input.text(),
-                species=self.species_input.text(),
+                genus=genus,
+                species=species,
                 ai_entries=self._identity_offer_ai_entries(),
             )
         except Exception:
