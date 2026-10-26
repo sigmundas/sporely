@@ -833,9 +833,17 @@ def _suggest_scientific_names(
     prefix = (prefix or "").strip()
     if not prefix:
         return []
-    lo = prefix
-    hi = _prefix_upper_bound(prefix)
+    # Case-insensitive for typed input without giving up the indexed range
+    # scan: also scan the conventional spelling of a scientific name
+    # (capitalised genus, lower-case rest), so "flammulina vel" finds
+    # "Flammulina velutipes".
+    prefixes = [prefix]
+    conventional = prefix[:1].upper() + prefix[1:].lower()
+    if conventional != prefix:
+        prefixes.append(conventional)
 
+    canonical_rows: list = []
+    alias_rows: list = []
     with self._connect() as conn:
         # The concept's display name in this language: its national preferred
         # name when the release carries one, else the canonical name. The
@@ -843,29 +851,31 @@ def _suggest_scientific_names(
         # aliases (the compiler guarantees it), so the alias scan below
         # already finds a concept by it.
         national_expr = self._national_name_expr(conn)
-        # taxon_min canonical rows — structured rank from the DB.
-        canonical_rows = list(conn.execute(
-            "SELECT t.taxon_id, t.canonical_scientific_name, t.taxon_rank, "
-            "       t.taxonomic_status, t.family, t.canonical_source_system, "
-            f"      {national_expr} "
-            "FROM taxon_min t "
-            "WHERE t.canonical_scientific_name >= ? AND t.canonical_scientific_name < ? "
-            "ORDER BY t.canonical_scientific_name LIMIT ?",
-            (lo, hi, int(limit) * 2),
-        ))
-        # scientific_name_min alias rows — rank parsed from the string.
-        alias_rows = list(conn.execute(
-            "SELECT s.taxon_id, s.scientific_name, s.is_preferred_name, "
-            "       t.canonical_scientific_name, t.taxon_rank, t.taxonomic_status, "
-            f"      t.family, t.canonical_source_system, {national_expr} "
-            "FROM scientific_name_min s "
-            "JOIN taxon_min t ON t.taxon_id = s.taxon_id "
-            "WHERE s.language_code = 'sci' "
-            "  AND s.scientific_name >= ? AND s.scientific_name < ? "
-            "  AND s.is_preferred_name = 0 "
-            "ORDER BY s.scientific_name LIMIT ?",
-            (lo, hi, int(limit) * 2),
-        ))
+        for lo in prefixes:
+            hi = _prefix_upper_bound(lo)
+            # taxon_min canonical rows — structured rank from the DB.
+            canonical_rows += list(conn.execute(
+                "SELECT t.taxon_id, t.canonical_scientific_name, t.taxon_rank, "
+                "       t.taxonomic_status, t.family, t.canonical_source_system, "
+                f"      {national_expr} "
+                "FROM taxon_min t "
+                "WHERE t.canonical_scientific_name >= ? AND t.canonical_scientific_name < ? "
+                "ORDER BY t.canonical_scientific_name LIMIT ?",
+                (lo, hi, int(limit) * 2),
+            ))
+            # scientific_name_min alias rows — rank parsed from the string.
+            alias_rows += list(conn.execute(
+                "SELECT s.taxon_id, s.scientific_name, s.is_preferred_name, "
+                "       t.canonical_scientific_name, t.taxon_rank, t.taxonomic_status, "
+                f"      t.family, t.canonical_source_system, {national_expr} "
+                "FROM scientific_name_min s "
+                "JOIN taxon_min t ON t.taxon_id = s.taxon_id "
+                "WHERE s.language_code = 'sci' "
+                "  AND s.scientific_name >= ? AND s.scientific_name < ? "
+                "  AND s.is_preferred_name = 0 "
+                "ORDER BY s.scientific_name LIMIT ?",
+                (lo, hi, int(limit) * 2),
+            ))
 
     seen: set[tuple[int, str]] = set()
     out: list[dict] = []
