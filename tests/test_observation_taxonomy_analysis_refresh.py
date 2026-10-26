@@ -550,3 +550,40 @@ def test_translated_legacy_row_keeps_q_histogram_and_parmasto_overlays(monkeypat
     assert any("Q" in text for text in translated[0][3])  # mean-Q legend label kept
 
 
+
+
+def test_normalized_reference_draws_q_typical_and_extreme_guidelines(monkeypatch, qapp):
+    window = _build_minimal_window(monkeypatch)
+    window.gallery_filter_combo = QComboBox()
+    window.gallery_filter_combo.addItem("Spores", "spores")
+    window.gallery_plot_figure = main_window.Figure(figsize=(4, 4))
+    window.gallery_plot_canvas = main_window.FigureCanvas(window.gallery_plot_figure)
+    window.gallery_plot_settings = {"histogram": False, "legend": False,
+        "q_minmax": True, "q_extreme_minmax": True, "avg_q": False}
+    window.gallery_image_labels = {}
+    window.reference_values = {}
+    window.reference_series = [{"key": "q-use", "label": "Q source", "enabled": True,
+        "color": "#ff00ff", "data": {"source_kind": "reference", "reference_data_kind": "range",
+        "observation_reference_use_id": "q-use", "plot_color": "#ff00ff", "length_p05": 6, "length_p95": 10,
+        "width_p05": 2, "width_p95": 5, "length_min": 5, "length_max": 11,
+        "width_min": 1.5, "width_max": 5.5, "q_core_min": 2, "q_core_max": 3,
+        "q_min": 1.5, "q_max": 3.5}}]
+    window._gallery_highlighted_measurement_ids = lambda measurements: set()
+    window._format_observation_legend_label = lambda: "Spores"
+    window._gallery_plot_style = lambda settings=None: "ellipse"
+    window._apply_plot_light_theme = lambda *args, **kwargs: None
+    window._apply_plot_dark_theme = lambda *args, **kwargs: None
+    window._is_dark_theme = lambda: False
+    window._update_gallery_stats_preview = lambda: None
+    window.update_graph_plots([{"id": i, "length_um": 8 + i * .2, "width_um": 3 + i * .1,
+                               "measurement_type": "spores"} for i in range(1, 6)])
+    lines = window.gallery_plot_figure.axes[0].lines
+    drawn = {}
+    for line in lines:
+        xs, ys = line.get_xdata(), line.get_ydata()
+        if len(xs) == 2 and len(ys) == 2 and line.get_color() == "#ff00ff":
+            drawn[round(float(xs[0]) / float(ys[0]), 2)] = line.get_linestyle()
+    assert set(drawn) == {1.5, 2.0, 3.0, 3.5}
+    assert drawn[1.5] == drawn[3.5] == ":"
+    assert drawn[2.0] == drawn[3.0] != ":"
+    window.close()

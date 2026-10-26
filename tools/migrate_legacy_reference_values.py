@@ -288,8 +288,11 @@ def _compose_notes(
             "[legacy-migration] preserved from reference_values: "
             + ", ".join(unsupported)
         )
-    if not pieces:
-        return None
+    # Lossless provenance, including ambiguous p50 roles, Parmasto values,
+    # original publication metadata and fields this version does not know.
+    pieces.append("[legacy-migration] original row JSON: " + json.dumps(
+        dict(legacy_row), ensure_ascii=False, sort_keys=True, allow_nan=False
+    ))
     return "\n\n".join(pieces)
 
 
@@ -452,22 +455,12 @@ def _measurement_payload_from_legacy(
         width_core_max=_pick("width_p95"),
         width_max=_pick("width_max"),
         q_min=_pick("q_min"),
+        q_core_min=_pick("q_p05"),
+        q_core_max=_pick("q_p95"),
         q_max=_pick("q_max"),
-        q_mean=(
-            _pick("q_avg")
-            if _pick("q_avg") is not None
-            else _pick("q_p50")
-        ),
-        length_mean=(
-            _pick("length_avg")
-            if _pick("length_avg") is not None
-            else _pick("length_p50")
-        ),
-        width_mean=(
-            _pick("width_avg")
-            if _pick("width_avg") is not None
-            else _pick("width_p50")
-        ),
+        q_mean=_pick("q_avg"),
+        length_mean=_pick("length_avg"),
+        width_mean=_pick("width_avg"),
         sample_size=None,
         specimen_count=None,
         mount_medium=_pick("mount_medium"),
@@ -731,12 +724,14 @@ def run_migration(
                 f"entries are still 'unresolved': {unresolved_ids[:10]}"
             )
 
-    legacy_conn = sqlite3.connect(database_path)
+    uri = database_path.resolve().as_uri() + "?mode=ro"
+    legacy_conn = sqlite3.connect(uri, uri=True)
     legacy_conn.row_factory = sqlite3.Row
-    normalized_conn = sqlite3.connect(database_path)
+    normalized_conn = sqlite3.connect(uri, uri=True) if dry_run else sqlite3.connect(database_path)
     normalized_conn.row_factory = sqlite3.Row
     try:
-        init_reference_library_schema(normalized_conn)
+        if not dry_run:
+            init_reference_library_schema(normalized_conn)
         columns = _row_columns(legacy_conn)
         work_id_by_key: dict[str, str] = {}
 
@@ -744,17 +739,25 @@ def run_migration(
         # against a stored ``citation_key`` — the operator can pin a
         # normalized work to an already-existing library entry by setting
         # ``citation_key`` on the manifest work entry to the same value.
-        if not dry_run:
-            for key, work in manifest.works_by_key.items():
-                cite = work.get("citation_key")
-                if not cite:
-                    continue
+        for key, work in manifest.works_by_key.items():
+            existing_id = work.get("existing_work_id")
+            if existing_id:
                 row = normalized_conn.execute(
-                    "SELECT id FROM reference_works WHERE citation_key = ? LIMIT 1",
-                    (str(cite),),
+                    "SELECT id FROM reference_works WHERE id = ?", (str(existing_id),)
                 ).fetchone()
-                if row is not None:
-                    work_id_by_key[key] = row["id"]
+                if row is None:
+                    raise ManifestError(f"existing work {existing_id} not found")
+                work_id_by_key[key] = row["id"]
+                continue
+            cite = work.get("citation_key")
+            if not cite:
+                continue
+            row = normalized_conn.execute(
+                "SELECT id FROM reference_works WHERE citation_key = ? LIMIT 1",
+                (str(cite),),
+            ).fetchone()
+            if row is not None:
+                work_id_by_key[key] = row["id"]
 
         for entry in manifest.rows:
             action = entry["action"]

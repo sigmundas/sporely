@@ -127,6 +127,8 @@ from utils.vernacular_utils import (
     resolve_available_vernacular_language,
     resolve_vernacular_db_path,
 )
+from references.library_taxon_scope import matches_library_taxon
+
 from database.reference_library import (
     MeasurementSet,
     MeasurementSetCandidate,
@@ -204,25 +206,17 @@ def filter_library_candidates(
     query: str = "",
     taxon_text: str = "",
 ) -> list[MeasurementSetCandidate]:
-    """Pure taxon+search filter for the Library tab's results list.
+    """Filter by concept ID or complete published-name relevance, then search.
 
-    Mirrors ``ReferenceLibraryAttachDialog._filtered_candidates``'s taxon
-    scope and text-search semantics (search matches short label, published
-    taxon name, and raw expression; taxon scope and search AND together) so
-    both dialogs behave identically without sharing dialog state.
-
-    ``taxon_text`` is a fallback for when the picker's taxon target has no
-    known ``taxon_id`` -- an AI-suggested or freely-typed genus/species (see
-    ``AddReferenceDialog``'s taxon selector) -- and matches candidates whose
-    published name contains it instead of comparing ids.
+    A name match helps discovery when historical treatments have no ID or
+    another COL/NorTaxa concept. It never changes the stored taxon identity.
     """
     result = list(candidates)
-    if only_this_taxon and taxon_id is not None:
-        target = str(taxon_id)
-        result = [c for c in result if str(getattr(c, "taxon_id", "") or "") == target]
-    elif only_this_taxon and taxon_text.strip():
-        needle = taxon_text.strip().casefold()
-        result = [c for c in result if needle in str(c.name_as_published or "").casefold()]
+    if only_this_taxon:
+        result = [
+            c for c in result
+            if matches_library_taxon(c, taxon_id=taxon_id, taxon_name=taxon_text)
+        ]
     normalized_query = (query or "").strip().casefold()
     if normalized_query:
         def _match(c: MeasurementSetCandidate) -> bool:
@@ -269,12 +263,7 @@ def library_relevance(
     rows an identified one would, rather than silently demoting every match
     to ``same_genus``.
     """
-    target_id = str(taxon_id or "").strip()
-    if target_id and str(getattr(candidate, "taxon_id", "") or "") == target_id:
-        return "this_taxon"
-    name = str(candidate.name_as_published or "").casefold()
-    needle = taxon_name.strip().casefold()
-    if needle and needle in name:
+    if matches_library_taxon(candidate, taxon_id=taxon_id, taxon_name=taxon_name):
         return "this_taxon"
     target_genus = genus.strip().casefold()
     if target_genus and _published_genus(candidate).casefold() == target_genus:
@@ -1322,11 +1311,8 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self._update_footer_state()
 
     def _taxon_target_query_text(self) -> str:
-        """Fallback text for taxon filtering when the current target has no
-        ``taxon_id`` (an AI candidate or a freely-typed genus/species)."""
-        if self._taxon_id is not None:
-            return ""
-        return " ".join(part for part in (self._genus, self._species) if part).strip()
+        """Published-name evidence remains relevant alongside a concept ID."""
+        return self._taxon_name_text()
 
     def _taxon_name_text(self) -> str:
         """The current target as a binomial, whether or not it has an id.

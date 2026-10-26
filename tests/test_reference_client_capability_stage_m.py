@@ -58,9 +58,9 @@ def _app_version_and_report_state():
     capabilities_module._reset_reported_for_tests()
 
 
-def test_gates_stay_closed():
-    assert measurement_content_gates.MINIMUM_SUPPORTED_READER_VERSION_GATE_OPEN is False
-    assert measurement_content_gates.MINIMUM_SUPPORTED_DESKTOP_VERSION_GATE_OPEN is False
+def test_full_measurement_support_is_active():
+    assert measurement_content_gates.enhanced_attachments_enabled() is True
+    assert measurement_content_gates.enhanced_bundle_export_enabled() is True
 
 
 # Declaration ------------------------------------------------------------------------
@@ -427,13 +427,13 @@ def test_capability_refusal_keeps_change_pending_without_error(databases, status
 
 def test_held_change_is_not_retried_every_sync(databases):
     _graph()
-    client = HoldClient()
+    client = HoldClient("requires_newer_client")
     sync_reference_library(client)
     sync_reference_library(client)
     third = sync_reference_library(client)
 
     assert len(_set_calls(client)) == 1
-    assert third.capability_holds == ("measurement_set:set-a:older_client_active",)
+    assert third.capability_holds == ("measurement_set:set-a:requires_newer_client",)
     assert third.errors == ()
 
 
@@ -472,7 +472,7 @@ def test_hold_is_retried_after_a_local_edit(databases):
 
 def test_device_read_failure_keeps_the_hold(databases):
     _graph()
-    client = HoldClient()
+    client = HoldClient("requires_newer_client")
     sync_reference_library(client)
     client.devices = CloudSyncError("devices unavailable")
     sync_reference_library(client)
@@ -483,16 +483,16 @@ def test_device_read_failure_keeps_the_hold(databases):
 
 def test_use_waiting_on_a_held_set_is_part_of_the_hold(databases):
     _graph(with_use=True)
-    client = HoldClient()
+    client = HoldClient("requires_newer_client")
 
     result = sync_reference_library(client)
 
     assert not [call for call in client.calls if call[0] == "observation_use"]
     assert result.blocked == ()
     assert result.errors == ()
-    assert "measurement_set:set-a:older_client_active" in result.capability_holds
+    assert "measurement_set:set-a:requires_newer_client" in result.capability_holds
     assert any(
-        item.startswith("observation_use:") and item.endswith(":older_client_active")
+        item.startswith("observation_use:") and item.endswith(":requires_newer_client")
         for item in result.capability_holds
     )
 
@@ -677,3 +677,14 @@ def test_frozen_provenance_rejects_the_marker():
         envelope.pop("relationship_roles", None)
         with pytest.raises(CuratedReferenceError, match="omit measurement details"):
             normalize_curated_bundle(envelope, expected_taxon_id=TAXON, frozen=True)
+
+
+def test_retired_old_device_hold_is_retried_and_acknowledged(databases):
+    _graph()
+    client = HoldClient("older_client_active")
+    sync_reference_library(client)
+    client.status = None
+    result = sync_reference_library(client)
+    assert len(_set_calls(client)) == 2
+    assert not result.capability_holds
+    assert ReferenceCloudSyncStateRepository.get_library("measurement_set", "set-a").sync_status == "clean"

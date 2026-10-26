@@ -1042,6 +1042,7 @@ def _install_handler_environment(monkeypatch, stub, *, dialog_result):
             *,
             exclude_measurement_set_ids=None,
             taxon_id=None,
+            taxon_name="",
         ):
             self._exclude = set(exclude_measurement_set_ids or [])
             self._taxon_id = taxon_id

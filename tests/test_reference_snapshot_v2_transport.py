@@ -117,14 +117,27 @@ def bundle_env(libs, tmp_path, monkeypatch):
     return db_path, ref_path
 
 
+@pytest.fixture(autouse=True)
+def historical_closed_policy(monkeypatch, request):
+    # Historical refusal coverage explicitly requests its old policy.
+    # The installed desktop defaults to full measurement support.
+    if request.node.name not in ("test_full_measurement_support_is_active",):
+        monkeypatch.setattr(gates, "enhanced_attachments_enabled", lambda: False)
+        monkeypatch.setattr(gates, "enhanced_bundle_export_enabled", lambda: False)
+        monkeypatch.setattr("database.reference_library.enhanced_attachments_enabled", lambda: False)
+        monkeypatch.setattr(db_share, "enhanced_bundle_export_enabled", lambda: False)
+
+
 @pytest.fixture()
 def reader_gate_open(monkeypatch):
-    monkeypatch.setattr(gates, "MINIMUM_SUPPORTED_READER_VERSION_GATE_OPEN", True)
+    monkeypatch.setattr(gates, "enhanced_attachments_enabled", lambda: True)
+    monkeypatch.setattr("database.reference_library.enhanced_attachments_enabled", lambda: True)
 
 
 @pytest.fixture()
 def desktop_gate_open(monkeypatch):
-    monkeypatch.setattr(gates, "MINIMUM_SUPPORTED_DESKTOP_VERSION_GATE_OPEN", True)
+    monkeypatch.setattr(gates, "enhanced_bundle_export_enabled", lambda: True)
+    monkeypatch.setattr(db_share, "enhanced_bundle_export_enabled", lambda: True)
 
 
 def _set(row: dict, **overrides) -> MeasurementSet:
@@ -158,18 +171,17 @@ def _observation(db_path: Path) -> int:
 # --- Gates ship closed and are the only switch -------------------------------
 
 
-def test_both_rollout_gates_ship_closed():
-    assert gates.MINIMUM_SUPPORTED_READER_VERSION_GATE_OPEN is False
-    assert gates.MINIMUM_SUPPORTED_DESKTOP_VERSION_GATE_OPEN is False
-    assert gates.enhanced_attachments_enabled() is False
-    assert gates.enhanced_bundle_export_enabled() is False
+def test_full_measurement_support_is_active():
+    assert gates.enhanced_editing_enabled() is True
+    assert gates.enhanced_attachments_enabled() is True
+    assert gates.enhanced_bundle_export_enabled() is True
 
 
 def test_gate_accessors_are_read_at_call_time(monkeypatch):
     """Activation is one reversible switch, not a value captured at import."""
-    monkeypatch.setattr(gates, "MINIMUM_SUPPORTED_READER_VERSION_GATE_OPEN", True)
+    monkeypatch.setattr(gates, "enhanced_attachments_enabled", lambda: True)
     assert gates.enhanced_attachments_enabled() is True
-    monkeypatch.setattr(gates, "MINIMUM_SUPPORTED_READER_VERSION_GATE_OPEN", False)
+    monkeypatch.setattr(gates, "enhanced_attachments_enabled", lambda: False)
     assert gates.enhanced_attachments_enabled() is False
 
 

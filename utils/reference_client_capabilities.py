@@ -24,9 +24,9 @@ the caller's own device id). Two profiles on one machine report as two
 devices; both run the same binary and declare the same versions, so this
 never blocks anything.
 
-The two measurement-content gates in ``references.measurement_content_gates``
-are unrelated to this declaration and stay closed: declaring version 2 says
-this desktop can *read* version-2 content, which it can with the gates closed.
+Full measurement editing, attachment and export are active. Capability
+negotiation still protects unsupported formats; stale older-device records
+no longer govern what the single-user desktop may store or sync.
 """
 
 from __future__ import annotations
@@ -191,7 +191,9 @@ def parse_hold_marker(last_error: object) -> tuple[str, str, str] | None:
     parts = str(last_error or "").split(":")
     if len(parts) != 4 or parts[0] != CAPABILITY_HOLD_PREFIX:
         return None
-    if parts[1] not in CAPABILITY_HOLD_STATUSES:
+    if parts[1] not in CAPABILITY_HOLD_STATUSES or parts[1] == "older_client_active":
+        # The population-based creation hold was retired. Retry historical
+        # pending work so the deployed server can acknowledge it now.
         return None
     return parts[1], parts[2], parts[3]
 

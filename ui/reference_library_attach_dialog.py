@@ -30,6 +30,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from references.library_taxon_scope import matches_library_taxon
+
 from database.reference_library import (
     MeasurementSetCandidate,
     MeasurementSetPreferenceRepository,
@@ -69,10 +71,12 @@ class ReferenceLibraryAttachDialog(QDialog):
         exclude_measurement_set_ids: Iterable[str] | None = None,
         candidates: list[MeasurementSetCandidate] | None = None,
         taxon_id: int | str | None = None,
+        taxon_name: str = "",
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(self.tr("Attach library reference"))
         self.setModal(True)
+        self._taxon_name = taxon_name
         self._selected_id: str | None = None
         self._exclude_ids = {str(x) for x in (exclude_measurement_set_ids or [])}
         # Normalize the taxon id to a string so the join query (which
@@ -132,7 +136,7 @@ class ReferenceLibraryAttachDialog(QDialog):
                 "the active observation's taxon."
             )
         )
-        if self._taxon_id is None:
+        if self._taxon_id is None and not self._taxon_name.strip():
             self.only_this_taxon_checkbox.setEnabled(False)
             self.only_this_taxon_checkbox.setChecked(False)
         else:
@@ -238,13 +242,13 @@ class ReferenceLibraryAttachDialog(QDialog):
                 c for c in candidates if c.recent_use_sequence is not None
             ]
         if (
-            self._taxon_id is not None
-            and self.only_this_taxon_checkbox.isChecked()
+            self.only_this_taxon_checkbox.isChecked()
         ):
-            target = self._taxon_id
             candidates = [
                 c for c in candidates
-                if str(getattr(c, "taxon_id", "") or "") == target
+                if matches_library_taxon(
+                    c, taxon_id=self._taxon_id, taxon_name=self._taxon_name
+                )
             ]
         query_raw = self.search_input.text() if hasattr(self, "search_input") else ""
         query = (query_raw or "").strip().casefold()

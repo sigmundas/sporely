@@ -5244,14 +5244,14 @@ Nyeste versjon: {latest}</translation>
     <message>
         <location filename="../ui/main_window.py" line="7909"/>
         <location filename="../ui/main_window.py" line="21244"/>
-        <source>Plot Q 90% range (5%-95%)</source>
-        <translation>Plot Q 90% range (5%-95%)</translation>
+        <source>Plot Q inner range</source>
+        <translation>Vis indre Q-intervall</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7910"/>
         <location filename="../ui/main_window.py" line="21245"/>
-        <source>Show Q lines for the 5th to 95th percentile range</source>
-        <translation>Show Q lines for the 5th to 95th percentile range</translation>
+        <source>Show the measured 5th–95th percentile interval and each reference's published inner Q interval</source>
+        <translation>Vis det målte intervallet mellom 5. og 95. persentil og hver referanses publiserte indre Q-intervall</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7916"/>

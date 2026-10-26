@@ -6,6 +6,39 @@ sections under *Canonical stage sequence* below (Stage 1 → 2 → 3A → 3B →
 stage execution, newest first; they define nothing. The first one is the
 **current stage**; the rest are historical and kept verbatim.
 
+## Single-user completion — 2026-10-26 (current record)
+
+The user's end-to-end instruction supersedes the population-based rollout
+criteria below. Full L/W/Q editing, frozen v2 attachments and bundle export
+are active together; the two rollout switches are removed. Existing codec,
+unsupported-version, ownership, CAS and data-preservation checks remain.
+Q typical/extreme values and reported details now survive the plot adapter;
+Analysis draws their separate Q intervals without inventing a mean.
+Historical import no longer substitutes p50 for a mean, retains original row
+JSON, copies Q inner bounds independently, and publishes only new normalized
+entities in one transaction after validating a copy. Literature discovery
+matches IDs or complete published names without assigning taxonomic identity.
+
+Cloud activation is prepared as a current-head migration in sporely-web,
+`20261026180718_activate_reference_reported_statistics.sql`. It reuses the
+pinned September v2 implementation without editing or applying that file
+out of order, and retires the older-device creation hold. Production GO,
+local historical import and live sync validation remain pending; source
+changes and focused verification are recorded in the PRs and completion
+report, rather than creating another rollout stage.
+
+Verification: 581 focused desktop tests passed, including full Q editor,
+reopen, plot, reuse and simulated push/pull coverage; touched Python files
+compile and diff whitespace checks pass. Canonical renderer screenshots show
+the separate interval means and reported statistics without clipping. The
+cloud candidate passed four rollback-only reference SQL suites on an isolated
+local schema database and all 19 deployment-helper tests. The real historical
+manifest was applied twice to a disposable backup copy: 217 new sets plus one
+existing bridge, followed by zero new sets. Original databases passed backup
+integrity, checksum and table-count verification. Interactive restart and
+production sync are not claimed; production deployment and the real local
+import await the user's explicit GO. PR #39 remains on its separate branch.
+
 ## Stage 5 landing record — 2026-09-17 (current stage; both repositories merged, nothing activated)
 
 Status: **Both reviewed candidates are merged to `main` in both repositories.

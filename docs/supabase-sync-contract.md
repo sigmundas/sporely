@@ -676,8 +676,8 @@ retryable); a partial feed is never returned.
 `{"reference_snapshot_versions":[1,2],"device_id":<uuid>,"client":"desktop_app","app_version":<APP_VERSION>}`.
 Version 2 is declared only while the use-feed stager, the measurement-set
 feed stager and the public envelope normalizer all accept it
-(`declared_snapshot_versions`); this is independent of the two
-measurement-content gates, which stay closed. The device id is a uuid4
+(`declared_snapshot_versions`). Full measurement editing, attachment and
+bundle export are active in the single-user desktop. The device id is a uuid4
 generated once per profile and stored in the profile's `app_settings.json`
 (`reference_client_device_id`); a missing, malformed or nil value is
 replaced. Both `sync_reference_measurement_set` and
@@ -688,23 +688,13 @@ before its first reference push; failure is logged and retried at the next
 sync, never blocking. Download from Cloud never reports (the method is on the
 pull-only block list; the feed RPC is on the read allowlist).
 
-`requires_newer_client` and `older_client_active` (disposition
-`capability_hold`) keep the local change pending (`sync_status='retry'`,
-never downgraded) and record `capability_hold:<status>:<fingerprint>:<payload
-digest>` in `last_error`. A held row is skipped while both its payload and
-the fingerprint are unchanged; the fingerprint covers the declared versions,
-app version, device id and the owner's other devices that currently trip the
-creation guard (read from `reference_client_devices` only when a hold
-exists). So an app upgrade, an older device upgrading or ageing out of the
-30-day window, or a local edit of the row retries it; nothing else does. If
-the device read fails the fingerprint is `unknown` (at most one retry, then
-held again). Only rows blocked for `parent_not_acknowledged`,
-`parent_not_converged` or `superseded_set_not_acknowledged` behind a held set
-inherit the hold; any other block reason surfaces as itself. The notice says
-an `older_client_active` hold clears once that device updates and syncs, or
-up to 30 days after it last synced. Held rows, and rows waiting only on a held set, are reported in
-`reference_sync.capability_holds` and as a sync-status notice, not as
-errors or blocks.
+`requires_newer_client` retains the format-safety hold: the local change
+stays pending and is never downgraded. The cloud migration
+`20261026180718_activate_reference_reported_statistics` retires the
+population-based `older_client_active` creation hold. Historical local
+markers for that status no longer suppress a retry. Stale devices and the
+30-day window are not prerequisites for this single-user app. Per-request
+version validation, ownership, RLS, account binding and CAS remain enforced.
 
 Public reads `search_public_reference_contributions_v2` and
 `get_public_reference_contribution_v2` pass

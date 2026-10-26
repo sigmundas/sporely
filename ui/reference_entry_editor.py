@@ -1506,6 +1506,10 @@ class ReferenceEntryEditor(QWidget):
         "Width: no extreme values found.",
         "Length: no centre/mean value found.",
         "Width: no centre/mean value found.",
+        # This parser diagnostic describes its legacy projection. Full
+        # reported content is now saved and shown by this editor.
+        "Table mean, median and S.D. captured as reported statistics; they are "
+        "not applied to the legacy editor fields.",
     )
 
     def _filter_preview_warnings(self, warnings: list[str]) -> list[str]:

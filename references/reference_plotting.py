@@ -204,7 +204,19 @@ def _translate_range_or_summary(
     if width_mean is not None:
         data["width_p50"] = width_mean
         data["width_mean"] = width_mean
+    # Preserve the enhanced content for display, comparison and Q plotting.
+    # Legacy aliases feed the existing plot geometry; their meaning comes
+    # from the original snapshot, never from the p05/p95 column names.
+    data.update(measurements)
+    details = snapshot.get("measurement_details")
+    if details is not None:
+        data["measurement_details_json"] = json.dumps(details, ensure_ascii=False)
+    for key, alias in (("q_core_min", "q_p05"), ("q_core_max", "q_p95")):
+        value = _float_or_none(measurements.get(key))
+        if value is not None:
+            data[alias] = value
     if q_mean is not None:
+        data["q_mean"] = q_mean
         data["q_p50"] = q_mean
     if q_min is not None:
         data["q_min"] = q_min
