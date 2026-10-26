@@ -1,4 +1,5 @@
-PySide6>=6.6.0
+# Verified desktop runtime, including native macOS accessibility during sync.
+PySide6==6.10.3
 numpy>=1.24.0
 Pillow>=10.0.0
 pillow-heif>=0.16.0
