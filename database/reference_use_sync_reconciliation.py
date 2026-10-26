@@ -712,24 +712,31 @@ def reconcile_observation_reference_use_feed(
                 if observation_id is None:
                     blocked.append(f"observation_use:{row['id']}:missing_observation")
                     continue
-                if (
-                    remote_live_set_ids is not None
-                    and payload["reference_measurement_set_id"]
-                    not in remote_live_set_ids
-                ):
-                    blocked.append(
-                        f"observation_use:{row['id']}:"
-                        "missing_reference_measurement_set"
+                pending_delete = connection.execute(
+                    "SELECT 1 FROM observation_reference_use_cloud_tombstones WHERE use_id=?",
+                    (row["id"],),
+                ).fetchone() is not None
+                # The delete branch validates account and the frozen baseline
+                # itself, even when the source was deleted in the same batch.
+                if not pending_delete:
+                    if (
+                        remote_live_set_ids is not None
+                        and payload["reference_measurement_set_id"]
+                        not in remote_live_set_ids
+                    ):
+                        blocked.append(
+                            f"observation_use:{row['id']}:"
+                            "missing_reference_measurement_set"
+                        )
+                        continue
+                    dependency = _source_ready(
+                        cloud_user_id,
+                        payload["reference_measurement_set_id"],
+                        connection=connection if not owned_connection else None,
                     )
-                    continue
-                dependency = _source_ready(
-                    cloud_user_id,
-                    payload["reference_measurement_set_id"],
-                    connection=connection if not owned_connection else None,
-                )
-                if dependency is not None:
-                    blocked.append(f"observation_use:{row['id']}:{dependency}")
-                    continue
+                    if dependency is not None:
+                        blocked.append(f"observation_use:{row['id']}:{dependency}")
+                        continue
                 count, conflict = _reconcile_live(
                     connection, cloud_user_id, row, observation_id
                 )

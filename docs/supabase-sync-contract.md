@@ -542,6 +542,10 @@ All four owner feeds must be completely and successfully paginated and staged
 before pull applies any row. Missing dependencies block the affected child;
 feed absence alone never proves deletion. Pull advances table cursors only
 after the complete staged graph is free of unresolved blocks and conflicts.
+When an entity has a pending local tombstone, its remote live row is compared
+with the tombstone's saved baseline even if its local parent was deleted in
+the same batch. This does not recreate the entity. Account checks and remote
+edit conflicts still apply; ordinary live rows still require live dependencies.
 
 Every mutation uses the stable UUID and compare-and-set `row_version`. First
 use creation alone uses `historical_import`; acknowledged updates, explicit
