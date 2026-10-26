@@ -7907,8 +7907,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_avg_q_checkbox.stateChanged.connect(self.on_gallery_plot_setting_changed)
         plot_layout.addRow("", self.gallery_avg_q_checkbox)
 
-        self.gallery_q_minmax_checkbox = QCheckBox(self.tr("Plot Q 90% range (5%-95%)"))
-        self.gallery_q_minmax_checkbox.setToolTip(self.tr("Show Q lines for the 5th to 95th percentile range"))
+        self.gallery_q_minmax_checkbox = QCheckBox(self.tr("Plot Q inner range"))
+        self.gallery_q_minmax_checkbox.setToolTip(self.tr("Show the measured 5th–95th percentile interval and each reference's published inner Q interval"))
         self.gallery_q_minmax_checkbox.setChecked(bool(self.gallery_plot_settings.get("q_minmax", False)))
         self.gallery_q_minmax_checkbox.stateChanged.connect(self.on_gallery_plot_setting_changed)
         plot_layout.addRow("", self.gallery_q_minmax_checkbox)
@@ -10217,10 +10217,14 @@ class MainWindow(GeometryMixin, QMainWindow):
         excluded = self._current_attached_measurement_set_ids()
         taxon_getter = getattr(self, "_active_sporely_taxon_id", None)
         active_taxon = taxon_getter() if callable(taxon_getter) else None
+        observation = ObservationDB.get_observation(captured_observation_id) or {}
         dialog = ReferenceLibraryAttachDialog(
             self,
             exclude_measurement_set_ids=excluded,
             taxon_id=active_taxon,
+            taxon_name=" ".join(
+                str(observation.get(part) or "") for part in ("genus", "species")
+            ).strip(),
         )
         # The chooser owns the "Manage library…" lifecycle (opens the
         # manager as its own child modal and refreshes candidates on
@@ -18019,7 +18023,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 return None
             return start, end
 
-        def _plot_q_guideline(q_value, x_left, x_right, y_bottom, y_top, color, label=None):
+        def _plot_q_guideline(q_value, x_left, x_right, y_bottom, y_top, color, label=None, *, linestyle=None):
             segment = _q_segment_for_box(q_value, x_left, x_right, y_bottom, y_top)
             if segment is None:
                 return
@@ -18028,7 +18032,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 [x_start, x_end],
                 [y_start, y_end],
                 color=color,
-                linestyle=q_line_style,
+                linestyle=linestyle or q_line_style,
                 linewidth=q_line_width,
                 alpha=q_line_alpha,
                 dash_capstyle="round",
@@ -18566,6 +18570,24 @@ class MainWindow(GeometryMixin, QMainWindow):
                         )
                     except (TypeError, ValueError):
                         pass
+
+                # Q ranges are independent reported extents. Draw the typical
+                # interval and extremes with distinct line styles; do not turn
+                # either into a distribution or derive a mean from its bounds.
+                if show_q:
+                    if show_q_minmax:
+                        for q_value in (data.get("q_core_min"), data.get("q_core_max")):
+                            if q_value is not None:
+                                _plot_q_guideline(q_value, l_core_min, l_core_max,
+                                                  w_core_min, w_core_max, color)
+                    if show_q_extreme_minmax:
+                        for q_value in (data.get("q_min"), data.get("q_max")):
+                            if q_value is not None:
+                                _plot_q_guideline(q_value, ext_l_min, ext_l_max,
+                                                  ext_w_min, ext_w_max, color, linestyle=":")
+                    if show_avg_q and data.get("q_mean") is not None:
+                        _plot_q_guideline(data["q_mean"], l_core_min, l_core_max,
+                                          w_core_min, w_core_max, color)
 
                 if not labelled:
                     # Ensure the entry appears in the legend even when no
@@ -21250,8 +21272,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         avg_q_checkbox.setChecked(bool(settings.get("avg_q", False)))
         layout.addRow("", avg_q_checkbox)
 
-        q_minmax_checkbox = QCheckBox(self.tr("Plot Q 90% range (5%-95%)"))
-        q_minmax_checkbox.setToolTip(self.tr("Show Q lines for the 5th to 95th percentile range"))
+        q_minmax_checkbox = QCheckBox(self.tr("Plot Q inner range"))
+        q_minmax_checkbox.setToolTip(self.tr("Show the measured 5th–95th percentile interval and each reference's published inner Q interval"))
         q_minmax_checkbox.setChecked(bool(settings.get("q_minmax", False)))
         layout.addRow("", q_minmax_checkbox)
 

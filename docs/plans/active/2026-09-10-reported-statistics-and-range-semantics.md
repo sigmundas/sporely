@@ -6,6 +6,82 @@ sections under *Canonical stage sequence* below (Stage 1 → 2 → 3A → 3B →
 stage execution, newest first; they define nothing. The first one is the
 **current stage**; the rest are historical and kept verbatim.
 
+## Single-user completion — 2026-10-26 (current record)
+
+The user's end-to-end instruction supersedes the population-based rollout
+criteria below. Full L/W/Q editing, explicitly reported statistics, frozen v2
+attachments and bundle export are active together. The two rollout switches
+and older-device creation hold are retired. Existing codec, unsupported-version,
+ownership, CAS and data-preservation checks remain. Plotting preserves separate
+Q typical/extreme intervals and only plots means actually supplied by a source.
+
+After explicit GO, the reverified deployment tree applied only
+`20261026180718` to `zkpjklzfwzefhjluvhfw`. Post-verification confirms exact
+remote migration history; deferred `20260914090000` remains absent. Production
+read-back accepts full Q statistics and rejects unknown details versions.
+Desktop PR #40 merged as `79deb9a`; cloud PR #48 merged as `35a025e`.
+Taxonomy-picker PR #39 remains open and separate.
+
+With Sporely closed, the prepared real-local import created exactly 217 sets,
+reused one existing bridge and excluded seven blank/personal rows. SQLite
+integrity passed. The full legacy table digest is unchanged; all 218 selected
+legacy IDs have exactly one normalized bridge. Original values, Q, publication
+information and raw row JSON remain intact. p50 is preserved as originally
+stored and never substituted for a mean. Personal observation measurements
+remain separate. Published-name discovery does not assign or rewrite taxon IDs.
+
+Installed UI verification on NorTaxa Flammulina observation 1043 found Ripkova
+with Only this taxon enabled and attached it successfully; the historical
+reference's taxon ID remains NULL. A clearly labelled synthetic source saved
+Q typical 2–3 with extremes and mean NULL. A second set saved typical 2–3 and
+extremes 1.5–3.5 with mean NULL. Both reopened, were reused, retained exact v2
+attachment content, and plotted their separate Q lines. Production read-back
+verified both exact rows and snapshots after normal app sync, along with the
+217 imported literature sets. Reopening the installed Qt 6.10.3 app retained
+the same plot and attachments.
+
+Native table refresh crashed in Qt 6.11.1 and 6.12.0. An explicit cache reset
+also crashed and was withdrawn. Follow-up PR #41 pins Qt/PySide6 6.10.3;
+the isolated native table passed 100 cached refreshes with Orca accessibility
+active, and the installed app completed sync and table refresh without a crash.
+The runtime correction is committed as `bb0d576`. A narrowly scoped pull fix
+reconciles pending subtree deletes against their saved baselines without
+requiring deleted local parents. Regression cases reject the original code,
+retain remote-edit conflicts and reject another account; the sync contract
+records this behavior. Ordinary live rows retain dependency checks.
+
+Verification passed: 500 focused desktop tests on Qt 6.10.3; 78 targeted
+reference-sync checks plus the additional account regression; 122 transport
+and zero-write/media safety checks; 16 observation-use sync tests. Five checks
+requiring a non-headless GUI were skipped. Dependency consistency, touched-file
+syntax, diff checks and packaged runtime-asset verification passed. Pre-write
+cloud evidence remains four rollback-only SQL suites on an isolated schema
+and 19 deployment-helper tests.
+
+The final 0.9.29 desktop includes the runtime and pending-delete fixes. It was
+built with the build_mac.sh PyInstaller arguments, ad-hoc signed, installed at
+`/Applications/Sporely.app`, and passed `codesign --verify --deep --strict`.
+Installed executable SHA-256:
+`931321f906a941c5f10048ef35354609d8fe2eedd92e8fec86affa5dd760b7ea`.
+
+Synthetic attachments were removed through the UI. With Sporely closed, the
+normal repository deleted only their source, treatment and two sets; all other
+library rows and the legacy table were verified unchanged. Normal sync deleted
+all six synthetic cloud entities and cleared their tombstones. All 585 remaining
+library entities are clean/acknowledged, and Ripkova remains attached to 1043.
+Two unrelated older observations (421 and 393) retain explicit image conflicts:
+the linked cloud images were deleted remotely and normal sync refuses to
+resurrect them. Their local images and identities have not been rewritten.
+
+The verified database backup, previous app, original manifest, read-back JSON
+and inspected UI evidence remain at
+`/Users/sigmundas/Documents/Work-Code/sporely-reference-backup-20261026`.
+Final installed-app verification completed normal Profile & Cloud sync with
+accessibility active, returned to the observation table without a crash, and
+reported only the two existing image-deletion conflicts. No reference blocks
+or errors remain. Restart, plot and completion screenshots are retained in
+`ui-evidence/` beside the backup.
+
 ## Stage 5 landing record — 2026-09-17 (current stage; both repositories merged, nothing activated)
 
 Status: **Both reviewed candidates are merged to `main` in both repositories.

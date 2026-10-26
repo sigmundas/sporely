@@ -682,8 +682,13 @@ def _reconcile_live(
 
 
 def _live_dependency_blocked(
-    connection: sqlite3.Connection, kind: str, row: dict[str, Any]
+    connection: sqlite3.Connection, cloud_user_id: str, kind: str, row: dict[str, Any]
 ) -> str | None:
+    # A pending delete reconciles against its saved baseline, not a live
+    # parent. The whole subtree may already be absent locally.
+    pending = _pending_tombstone(connection, kind, row["id"])
+    if pending is not None and pending["cloud_user_id"] == cloud_user_id:
+        return None
     dependencies: list[tuple[str, str]] = []
     if kind == "treatment":
         dependencies.append(("work", row["reference_work_id"]))
@@ -912,7 +917,7 @@ def reconcile_reference_library_feed(
                 (item for item in _rows(feed, kind) if not item["deleted_at"]),
                 key=lambda item: item["id"],
             ):
-                blocked = _live_dependency_blocked(connection, kind, row)
+                blocked = _live_dependency_blocked(connection, cloud_user_id, kind, row)
                 if blocked:
                     blocked_items.append(f"{kind}:{row['id']}:{blocked}")
                     continue
@@ -923,7 +928,7 @@ def reconcile_reference_library_feed(
         for row in sorted(
             live_sets.values(), key=lambda item: (_set_depth(item, live_sets), item["id"])
         ):
-            blocked = _live_dependency_blocked(connection, "measurement_set", row)
+            blocked = _live_dependency_blocked(connection, cloud_user_id, "measurement_set", row)
             if blocked:
                 blocked_items.append(
                     f"measurement_set:{row['id']}:{blocked}"

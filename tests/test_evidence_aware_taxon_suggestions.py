@@ -665,3 +665,66 @@ def test_observation_editor_drops_the_offer_for_a_different_scientific_name(
     finally:
         dialog._cleanup_dialog_threads()
         dialog.deleteLater()
+
+
+@pytest.mark.parametrize("first, second", [
+    (COL_CONCEPT, NORTAXA_CONCEPT), (NORTAXA_CONCEPT, COL_CONCEPT),
+])
+@pytest.mark.parametrize("input_method", ["mouse", "keyboard"])
+def test_popup_selections_survive_focus_change_and_reopening(editor, first, second, input_method):
+    """Exercise the completer signals, rather than calling selection handlers.
+
+    Both concepts must remain selectable after a previous pick; the last
+    selection must survive Save's focus change and a reconstructed editor.
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    dialog = editor(**_observation(
+        ai_selected_service=None, ai_selected_taxon_id=None,
+        ai_selected_scientific_name=None,
+    ))
+    dialog.show()
+
+    def pick(field, completer, text, concept):
+        field.setFocus()
+        field.selectAll()
+        QTest.keyClicks(field, text)
+        QTest.qWait(300)
+        popup = completer.popup()
+        model = popup.model()
+        canonical = {
+            model.index(r, 0).data(ROLE_TAXON_CHOICE)["sporely_taxon_id"]
+            for r in range(model.rowCount())
+            if isinstance(model.index(r, 0).data(ROLE_TAXON_CHOICE), dict)
+            and model.index(r, 0).data(ROLE_TAXON_CHOICE)["scientific_name"]
+            == "Flammulina velutipes"
+        }
+        assert canonical == {COL_CONCEPT, NORTAXA_CONCEPT}
+        index = next(
+            model.index(r, 0) for r in range(model.rowCount())
+            if isinstance(model.index(r, 0).data(ROLE_TAXON_CHOICE), dict)
+            and model.index(r, 0).data(ROLE_TAXON_CHOICE)["sporely_taxon_id"] == concept
+        )
+        popup.setCurrentIndex(index)
+        if input_method == "mouse":
+            QTest.mouseClick(popup.viewport(), Qt.LeftButton,
+                             pos=popup.visualRect(index).center())
+        else:
+            QTest.keyClick(popup, Qt.Key_Return)
+        assert dialog.isVisible()  # selecting a suggestion must not save the dialog
+        assert dialog.get_data()["sporely_taxon_id"] == concept
+
+    controller = dialog._taxon_controller
+    pick(dialog.species_input, controller.species_completer, "VEL", first)
+    pick(dialog.scientific_name_input, controller._scientific_completer,
+         "fLaMmUlInA vEl", second)
+    dialog.submit_observation_btn.setFocus()
+    QTest.qWait(300)
+    data = dialog.get_data()
+    assert data["sporely_taxon_id"] == second
+    assert data["scientific_name_snapshot"] == "Flammulina velutipes"
+    dialog.hide()
+    reopened = editor(**data)
+    assert reopened.get_data()["sporely_taxon_id"] == second
+    assert reopened.scientific_name_input.text() == "Flammulina velutipes"

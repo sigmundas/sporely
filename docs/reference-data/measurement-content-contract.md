@@ -18,6 +18,20 @@ Terminology: a row is **enhanced** when any extension column is non-NULL.
 A request or import row **acknowledges** the contract when all three extension
 keys are present (values may be NULL). "Extension" means the three columns.
 
+## Active single-user policy — 2026-10-26
+
+The user has retired the population-based release prerequisites in sections
+6, 7 and 13. Full editing, v2 attachment and enhanced bundle export are active
+together; no released-client census or waiting window is required. Historical
+closed-policy tests remain loss-refusal fixtures, not deployment criteria.
+The local write barrier, typed validation, unknown-format preservation or
+rejection, snapshot versions, explicit import policy and scientific-content
+conflict group are unchanged. Cloud activation reuses the reviewed v2 schema
+at the current migration head and removes the stale-device creation hold.
+Historical p50 values with uncertain roles are retained as original evidence,
+never substituted for reported means; no source taxon ID is inferred from a
+name match used for library discovery.
+
 ## 1. Details object, version 1
 
 `measurement_details_json` stores one JSON object or SQL NULL. Version 1:
@@ -725,6 +739,5 @@ silently. Stage 2 loads the same block in a test of the real module.
  "barrier_message": "measurement content contract required",
  "barrier_triggers": ["reference_measurement_content_guard_update", "reference_measurement_content_guard_insert"],
  "unsupported_open_policy": "coarse_table_barrier_accepted",
- "release_gates": ["minimum_supported_desktop_version", "minimum_supported_reader_version",
-   "shipped_old_build_verification"]}
+ "release_gates": []}
 ```

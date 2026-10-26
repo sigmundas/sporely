@@ -266,11 +266,7 @@ def test_contract_document_spec_matches_these_constants():
     assert set(spec["release_gates"]) == RELEASE_GATES
 
 
-RELEASE_GATES = {
-    "minimum_supported_desktop_version",
-    "minimum_supported_reader_version",
-    "shipped_old_build_verification",
-}
+RELEASE_GATES = set()
 
 
 def test_contract_records_the_human_review_decisions():

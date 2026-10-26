@@ -238,6 +238,7 @@ class TaxonInputController(QObject):
         self._species_completer.setFilterMode(Qt.MatchStartsWith)
         self.species_input.setCompleter(self._species_completer)
         self._species_completer.activated[QModelIndex].connect(self.on_species_selected)
+        self._species_completer.popup().installEventFilter(self)
 
         if self.vernacular_input is not None and self._vernacular_model is not None:
             self._vernacular_completer = QCompleter(self._vernacular_model, self)
@@ -291,6 +292,7 @@ class TaxonInputController(QObject):
             self._scientific_completer.activated[QModelIndex].connect(
                 self.on_scientific_name_selected,
             )
+            self._scientific_completer.popup().installEventFilter(self)
             self._scientific_timer = QTimer(self)
             self._scientific_timer.setSingleShot(True)
             self._scientific_timer.timeout.connect(self.refresh_scientific_suggestions)
@@ -1354,6 +1356,13 @@ class TaxonInputController(QObject):
 
     def eventFilter(self, obj, event):
         event_type = event.type()
+        if event_type == QEvent.ShortcutOverride and event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            # The editor's Save shortcut must not take Enter away from a
+            # visible concept chooser. Let QCompleter activate its own row.
+            for completer in (self._species_completer, self._scientific_completer):
+                if completer is not None and obj is completer.popup() and obj.isVisible():
+                    event.accept()
+                    return True
         if event_type == QEvent.FocusIn:
             if obj == self.genus_input:
                 self.refresh_genus_suggestions()

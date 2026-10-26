@@ -23,6 +23,7 @@ from tools.review_ui.scenarios import create_registry
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON = ROOT / ".venv" / "bin" / "python"
 REFERENCE_IDS = {
+    "reference.analysis-panel-five-rows",
     "reference.add-range",
     "reference.reported-statistics",
     "reference.measurement-set-form-enhanced",

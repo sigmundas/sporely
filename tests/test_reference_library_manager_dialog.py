@@ -739,8 +739,10 @@ def test_measurement_form_parses_printed_expression_without_inventing_means(
         assert form.width_max_input.text() == "6.5"
         assert form.length_mean_input.text() == ""
         assert form.width_mean_input.text() == ""
-        assert form.q_min_input.text() == "1.5"
-        assert form.q_max_input.text() == "2"
+        assert form.q_core_min_input.text() == "1.5"
+        assert form.q_core_max_input.text() == "2"
+        assert form.q_min_input.text() == ""
+        assert form.q_max_input.text() == ""
         assert form.q_mean_input.text() == ""
         assert form.sample_size_input.text() == "24"
     finally:
