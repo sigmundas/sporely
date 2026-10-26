@@ -23,6 +23,7 @@ from tools.review_ui.scenarios import create_registry
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON = ROOT / ".venv" / "bin" / "python"
 REFERENCE_IDS = {
+    "reference.analysis-panel-five-rows",
     "reference.add-range",
     "reference.reported-statistics",
     "reference.measurement-set-form-enhanced",
@@ -55,6 +56,10 @@ REFERENCE_IDS = {
     "reference.comparison-list-colors",
     "reference.add-dialog-default-size",
     "reference.add-dialog-taxon-selector",
+    "reference.add-dialog-taxon-evidence",
+    "reference.add-dialog-taxon-link",
+    "reference.add-dialog-taxon-search-ambiguous",
+    "reference.add-dialog-taxon-search-settled",
     "reference.fix2-suppressed-light",
     "reference.fix2-suppressed-dark",
     "reference.fix2-colors-light",
@@ -112,6 +117,9 @@ CONFLICT_IDS = {
 OTHER_UI_IDS = {
     "measure.metadata-tags",
     "observations.image-metadata-tags",
+    "observations.taxon-link-offer",
+    "observations.species-picker-ambiguous",
+    "observations.species-picker-settled",
     "raw-processing.methods",
     "portable-import.all-selected",
     "portable-import.subset",

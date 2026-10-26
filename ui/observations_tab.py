@@ -96,6 +96,12 @@ from database.taxon_lookup import (
     TaxonLookupService,
     determine_redlist_area,
 )
+from database.taxon_suggestions import (
+    ORIGIN_OBSERVATION,
+    ai_prediction_external_id,
+    evidence_concept_ids,
+    observation_identity_offer,
+)
 from .taxon_input_controller import TaxonInputController
 from database.reverse_location_lookup import (
     LocationLookupResult,
@@ -367,10 +373,13 @@ def _normalize_ai_prediction_taxon(prediction: dict, source: str | None = None) 
     # only as ``scientific_name_id``; without this the copy path saw no id at
     # all and stored neither ``ai_selected_taxon_id`` nor a provider identity.
     # ``scientific_name_id_shared`` (a GBIF id) is deliberately not used.
+    # A desktop run stores it either at the top level or inside ``taxon``.
     if not str(taxon.get("id") or "").strip():
-        name_id = str(pred.get("scientific_name_id") or pred.get("scientificNameId") or "").strip()
-        if name_id:
-            taxon["id"] = name_id
+        for holder in (pred, taxon):
+            name_id = str(holder.get("scientific_name_id") or holder.get("scientificNameId") or "").strip()
+            if name_id:
+                taxon["id"] = name_id
+                break
     return taxon
 
 
@@ -15059,6 +15068,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._cloud_privacy_original_slot_consumption = 0
             self._update_cloud_privacy_slots_label()
         self._loading_form = False
+        self._refresh_identity_offer()
         # Coordinates as opened: what get_data() compares against to decide
         # whether the user changed the location in this dialog.
         if self.edit_mode:
@@ -15628,6 +15638,23 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.scientific_hint_label.setStyleSheet("color: #6b7280; font-size: 11px;")
         self.scientific_hint_label.setVisible(False)
         identified_layout.addWidget(self.scientific_hint_label)
+
+        # Offered, never applied: a provider identifier that resolves to one
+        # Sporely taxon matching the entered name, for an observation without
+        # a proven identity. A one-line hint, and Link at the end of the
+        # Scientific row; only the button binds it.
+        self.identity_offer_row = QLabel("")
+        self.identity_offer_row.setWordWrap(True)
+        self.identity_offer_row.setStyleSheet("color: #6b7280; font-size: 11px;")
+        self.identity_offer_row.setContentsMargins(taxonomy_label_width, 0, 0, 0)
+        self.identity_offer_row.setVisible(False)
+        self.identity_offer_label = self.identity_offer_row
+        self.identity_offer_button = QPushButton(self.tr("Link"))
+        self.identity_offer_button.clicked.connect(self._on_identity_offer_accepted)
+        self.identity_offer_button.setVisible(False)
+        scientific_row.addWidget(self.identity_offer_button)
+        self._identity_offer = None
+        identified_layout.addWidget(self.identity_offer_row)
 
         red_list_row = QHBoxLayout()
         red_list_label = QLabel(self.tr("Red list:"))
@@ -17594,6 +17621,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._set_ai_status(self.tr("No AI suggestions found"), "#7f8c8d", source="arts")
         self._update_ai_controls_state()
         self._persist_ai_state_now()
+        # New Artsorakel identifiers may settle same-name taxa or prove the
+        # entered name's taxon.
+        self._refresh_identity_offer()
 
     def _on_ai_guess_error(self, _indices: list, message: str) -> None:
         if "500" in message:
@@ -20032,6 +20062,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             scientific_name_input=getattr(self, "scientific_name_input", None),
             on_snapshot_invalidated=self._on_scientific_snapshot_invalidated,
             on_snapshot_committed=self._on_scientific_snapshot_committed,
+            # Species picks bind the picked concept, like Scientific picks.
+            concept_species_suggestions=True,
         )
         self._genus_model = self._taxon_controller.genus_model
         self._species_model = self._taxon_controller.species_model
@@ -20072,6 +20104,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 widget.editingFinished.connect(
                     self._on_taxon_manual_editing_finished
                 )
+        # The identity offer follows the entered name: hidden while it is
+        # edited, re-evaluated once editing finishes.
+        for widget in (self.genus_input, self.species_input, getattr(self, "scientific_name_input", None)):
+            if widget is not None:
+                widget.textEdited.connect(lambda _text: self._hide_identity_offer())
+                widget.editingFinished.connect(self._refresh_identity_offer)
 
         # Vernacular -> genus autofill: when the observer finishes
         # typing a common name that resolves unambiguously to a single
@@ -20262,7 +20300,140 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 return
         self._clear_red_list_for_identity_change()
 
+    def _identity_offer_ai_entries(self) -> list[dict]:
+        """Artsorakel predictions in this dialog, as identity-offer evidence."""
+        entries: list[dict] = []
+        for predictions in (getattr(self, "_ai_predictions_by_index", None) or {}).values():
+            for pred in predictions or []:
+                if not isinstance(pred, dict):
+                    continue
+                taxon = _normalize_ai_prediction_taxon(pred, source="arts")
+                genus, species = self._extract_genus_species_from_taxon(taxon)
+                entries.append({
+                    "source": "arts",
+                    "genus": genus,
+                    "species": species,
+                    "scientific_name": " ".join(part for part in (genus, species) if part),
+                    "external_id": ai_prediction_external_id(pred, taxon),
+                })
+        return entries
+
+    def _hide_identity_offer(self) -> None:
+        self._identity_offer = None
+        for widget in (getattr(self, "identity_offer_row", None), getattr(self, "identity_offer_button", None)):
+            if widget is not None:
+                widget.setVisible(False)
+
+    def _identity_evidence_entries(self) -> list[dict]:
+        """Provider identifiers on this observation: its stored AI selection
+        and the Artsorakel predictions in the dialog."""
+        entries = list(self._identity_offer_ai_entries())
+        selected = self._current_ai_selected_fields or {}
+        if not selected and isinstance(self.observation or self.draft_data, dict):
+            selected = self._ai_selected_fields(self.observation or self.draft_data)
+        selected_id = str(selected.get("ai_selected_taxon_id") or "").strip()
+        if selected_id:
+            entries.append({
+                "scientific_name": selected.get("ai_selected_scientific_name") or "",
+                "external_id": selected_id,
+            })
+        return entries
+
+    def _refresh_identity_offer(self) -> None:
+        """Use the observation's provider identifiers in the background.
+
+        They settle which taxon a name means when several database taxa
+        share it (the Species and Scientific suggestions then list one), and
+        they let the editor offer a one-click link for an entered name that
+        has no database taxon yet. Only identifiers count; an AI's
+        probability does not, and nothing is bound until the user picks a
+        row or presses Link (see
+        :func:`database.taxon_suggestions.observation_identity_offer`).
+        """
+        row = getattr(self, "identity_offer_row", None)
+        controller = getattr(self, "_taxon_controller", None)
+        if row is None or controller is None or not hasattr(self, "genus_input"):
+            return
+        self._hide_identity_offer()
+        lookup = self._ensure_taxon_lookup()
+        entries = self._identity_evidence_entries()
+        try:
+            controller.set_evidence_taxon_ids(evidence_concept_ids(lookup, entries))
+        except Exception:
+            controller.set_evidence_taxon_ids(())
+        if self.is_unidentified():
+            return
+        genus = self.genus_input.text().strip()
+        species = self.species_input.text().strip()
+        # The Scientific field may hold a different name typed there (an
+        # infraspecific name, say); the offer then does not apply to what
+        # the user sees.
+        scientific_input = getattr(self, "scientific_name_input", None)
+        scientific = scientific_input.text().strip() if scientific_input is not None else ""
+        if scientific and " ".join(scientific.split()).casefold() != f"{genus} {species}".casefold():
+            return
+        record = dict(self.observation or self.draft_data or {})
+        record.update(controller.committed_identity().to_row())
+        record.update(self._current_ai_selected_fields or {})
+        try:
+            offer = observation_identity_offer(
+                lookup,
+                record,
+                genus=genus,
+                species=species,
+                ai_entries=self._identity_offer_ai_entries(),
+            )
+        except Exception:
+            offer = None
+        if offer is None:
+            return
+        name = offer.concept_name or offer.scientific_name
+        self.identity_offer_label.setText(
+            self.tr("{name} is in the species database.").format(name=name)
+        )
+        identifier = offer.raw_external_id or self.tr("the stored identifier")
+        tooltip = self.tr(
+            "Matched by {identifier}. Link binds the observation to this database "
+            "taxon; the name you entered is kept."
+        ).format(identifier=identifier)
+        row.setToolTip(tooltip)
+        self.identity_offer_button.setToolTip(tooltip)
+        self._identity_offer = offer
+        row.setVisible(True)
+        self.identity_offer_button.setVisible(True)
+
+    def _on_identity_offer_accepted(self) -> None:
+        offer = getattr(self, "_identity_offer", None)
+        controller = getattr(self, "_taxon_controller", None)
+        if offer is None or controller is None:
+            return
+        # The name may have changed since the offer was shown (programmatic
+        # fills do not hide it). Bind only what still applies to the name
+        # in the fields now.
+        shown_id = offer.sporely_taxon_id
+        self._refresh_identity_offer()
+        offer = getattr(self, "_identity_offer", None)
+        if offer is None or offer.sporely_taxon_id != shown_id:
+            return
+        genus = self.genus_input.text().strip()
+        species = self.species_input.text().strip()
+        if offer.origin != ORIGIN_OBSERVATION and offer.raw_external_id:
+            identity = TaxonIdentity.from_prefixed_external_id(
+                offer.raw_external_id,
+                scientific_name=" ".join(part for part in (genus, species) if part) or None,
+                rank="species" if species else "genus",
+            )
+        else:
+            # The observation's own preserved provider tuple, as stored: its
+            # raw value may be a bare id that does not parse on its own.
+            identity = controller.committed_identity()
+        # The same resolver and commit path as copying an AI suggestion: the
+        # identifier is resolved again and bound with its provider evidence.
+        controller.commit_provider_identity(identity, genus=genus, species=species)
+        self._hide_identity_offer()
+
     def _on_scientific_snapshot_committed(self, snapshot: dict) -> None:
+        self._hide_identity_offer()
         # Stage 3B.3 red-list invariant: an explicit new taxonomy
         # selection clears the previous red-list snapshot BEFORE any
         # subsequent Artsorakel resolve populates a new one. Never carry

@@ -149,6 +149,17 @@ def test_suggest_scientific_names_returns_expected_hits(tmp_path: Path) -> None:
     assert ("Hygrocybe conica var. pseudoconica", "variety", "linked") in names
 
 
+@pytest.mark.parametrize("typed", ["hygrocybe conica", "HYGROCYBE CONICA", "hygrocybe Conica"])
+def test_suggest_scientific_names_ignores_the_typed_case(tmp_path: Path, typed: str) -> None:
+    from database.vernacular_db import VernacularDB
+    src = tmp_path / "v2.sqlite3"
+    _seed(src)
+    db = VernacularDB(src)
+    expected = db.suggest_scientific_names("Hygrocybe conica", limit=50)
+    assert expected
+    assert db.suggest_scientific_names(typed, limit=50) == expected
+
+
 def test_suggest_scientific_names_excludes_incertae_sedis(tmp_path: Path) -> None:
     from database.vernacular_db import VernacularDB
     src = tmp_path / "v2.sqlite3"

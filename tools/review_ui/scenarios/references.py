@@ -25,6 +25,9 @@ def _fixture(context: ReviewContext):
     factory = lambda *_args: QSettings(str(settings_path), QSettings.IniFormat)
     context.enter_fixture(patch.object(picker, "QSettings", factory))
     context.enter_fixture(patch.object(geometry, "QSettings", factory))
+    # Never the user's installed names database: a scenario that needs taxon
+    # lookups injects one built from the tracked bundle.
+    context.enter_fixture(patch.object(picker, "resolve_vernacular_db_path", lambda *_args: None))
     cached = context.state.get("reference.fixture")
     if cached is not None:
         return cached
@@ -1288,6 +1291,60 @@ def _add_dialog_taxon_selector(context: ReviewContext):
     return dialog
 
 
+def _taxonomy_lookup(context: ReviewContext):
+    from database.taxon_lookup import TaxonLookupService
+    from database.vernacular_db import VernacularDB
+    from utils import taxonomy_v2
+
+    artifact = context.state.get("reference.taxonomy_artifact")
+    if artifact is None:
+        artifact = taxonomy_v2.ensure_installed(app_data_dir=context.temporary_root / "taxonomy")
+        context.state["reference.taxonomy_artifact"] = artifact
+    return TaxonLookupService(vernacular_db=VernacularDB(artifact, language_code="no"), language_code="no")
+
+
+def _add_dialog_taxon_evidence(context: ReviewContext, *, ai: bool = True):
+    """The picker for a Flammulina velutipes observation with no database
+    taxon (the tracked taxonomy bundle).
+
+    With ``ai``: Artsorakel's NBIC:54701 proves the NorTaxa taxon, so the
+    picker offers "Link to species database"; an unrelated iNaturalist name
+    sits in the optional AI section. Without: nothing settles the name.
+    """
+    from ui.add_reference_dialog import AddReferenceDialog
+
+    _fixture(context)
+    ai_candidates = [
+        {"source": "arts", "scientific_name": "Flammulina velutipes", "vernacular": "vintersopp",
+         "genus": "Flammulina", "species": "velutipes", "score": 0.979, "external_id": "NBIC:54701"},
+        {"source": "inat", "scientific_name": "Flammulina elastica", "vernacular": "",
+         "genus": "Flammulina", "species": "elastica", "score": 0.12, "external_id": "1234567"},
+    ] if ai else []
+    return AddReferenceDialog(
+        context.host,
+        taxon_label="Flammulina velutipes",
+        taxon_id=None,
+        genus="Flammulina",
+        species="velutipes",
+        candidates=_add_dialog_candidates(),
+        community_results=[],
+        my_observations=[],
+        taxon_lookup=_taxonomy_lookup(context),
+        ai_candidates=ai_candidates,
+        attach_callback=lambda *_args: None,
+        cloud_attach_callback=lambda *_args: None,
+    )
+
+
+def _open_typed_taxon_search(dialog):
+    """Type a name and capture the search popup (run synchronously)."""
+    line_edit = dialog.taxon_target_combo.lineEdit()
+    line_edit.setFocus()
+    line_edit.setText("Flammulina velutipes")
+    dialog._set_taxon_search_rows(dialog.taxon_search_rows("Flammulina velutipes"))
+    return dialog._taxon_search_completer.popup().window()
+
+
 def _add_dialog_default_size(context: ReviewContext):
     """Initial production size with empty isolated geometry/splitter settings."""
     from ui.add_reference_dialog import AddReferenceDialog
@@ -1993,6 +2050,52 @@ def register_reference_scenarios(registry: ScenarioRegistry) -> None:
             description="An AI candidate is active in the taxon target selector, showing its match percentage; the Library tab and dialog title have re-filtered to it.",
             viewport=(1400, 760),
             build=_add_dialog_taxon_selector,
+        ),
+        ReviewScenario(
+            id="reference.add-dialog-taxon-evidence",
+            group="reference-library",
+            title="Add-reference picker — observation taxon and AI section",
+            description=(
+                "Flammulina velutipes without a database taxon (popup open): the "
+                "observation's taxon, then an optional AI suggestions section "
+                "holding an unrelated iNaturalist name."
+            ),
+            viewport=(1400, 760),
+            build=_add_dialog_taxon_evidence,
+            capture_target=_open_taxon_popup,
+        ),
+        ReviewScenario(
+            id="reference.add-dialog-taxon-link",
+            group="reference-library",
+            title="Add-reference picker — link to species database",
+            description=(
+                "Artsorakel's NBIC:54701 proves the database taxon for the "
+                "observation's name: the picker opens on the observation's taxon "
+                "and offers Link to species database."
+            ),
+            viewport=(1400, 760),
+            build=_add_dialog_taxon_evidence,
+        ),
+        ReviewScenario(
+            id="reference.add-dialog-taxon-search-ambiguous",
+            group="reference-library",
+            title="Add-reference picker — typed search, same-name taxa",
+            description=(
+                "Typed search lists database taxa only. With no identifier, the "
+                "two Flammulina velutipes taxa are shown with their sources."
+            ),
+            viewport=(1400, 760),
+            build=lambda context: _add_dialog_taxon_evidence(context, ai=False),
+            capture_target=_open_typed_taxon_search,
+        ),
+        ReviewScenario(
+            id="reference.add-dialog-taxon-search-settled",
+            group="reference-library",
+            title="Add-reference picker — typed search settled by an identifier",
+            description="Artsorakel's identifier settles Flammulina velutipes: one match.",
+            viewport=(1400, 760),
+            build=_add_dialog_taxon_evidence,
+            capture_target=_open_typed_taxon_search,
         ),
         ReviewScenario(
             id="reference.analysis-panel-empty",

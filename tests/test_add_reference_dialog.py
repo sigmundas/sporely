@@ -41,6 +41,8 @@ def isolated_picker_settings(tmp_path, monkeypatch):
         return QSettings(str(tmp_path / "picker.ini"), QSettings.IniFormat)
 
     monkeypatch.setattr(picker.MeasurementSetRepository, "get", lambda _id: None)
+    # No installed names database: tests that need taxon lookups inject one.
+    monkeypatch.setattr(picker, "resolve_vernacular_db_path", lambda *_args: None)
     monkeypatch.setattr(picker, "QSettings", settings)
     monkeypatch.setattr(geometry, "QSettings", settings)
 
@@ -136,6 +138,16 @@ def _ai_candidates() -> list[dict]:
     ]
 
 
+def _ai_row_indexes(combo) -> list[int]:
+    """Combo rows of the optional AI section (after the observation's own
+    row, a separator and the section heading)."""
+    return [
+        index for index in range(combo.count())
+        if isinstance(combo.itemData(index), dict)
+        and combo.itemText(index) != combo.itemText(0)
+    ] if combo.count() else []
+
+
 def test_format_ai_candidate_display():
     text = format_ai_candidate_display(_ai_candidates()[0])
     assert text == "Cortinarius rubellus (Bittersnerlerørsopp)  82%"
@@ -151,17 +163,18 @@ def test_selecting_ai_candidate_refilters_library_and_updates_title():
     dialog = _make_dialog(
         genus="Cortinarius", species="limonius", ai_candidates=_ai_candidates()
     )
-    assert dialog.taxon_target_combo.count() == 2
+    (ai_index,) = _ai_row_indexes(dialog.taxon_target_combo)
     # A real click both moves currentIndex and emits activated(); the two
     # are driven separately here to exercise the same path.
-    dialog.taxon_target_combo.setCurrentIndex(1)
-    dialog._on_taxon_target_activated(1)
+    dialog.taxon_target_combo.setCurrentIndex(ai_index)
+    dialog._on_taxon_target_activated(ai_index)
 
     assert dialog._genus == "Cortinarius"
     assert dialog._species == "rubellus"
     assert dialog._taxon_id is None
     assert "Cortinarius rubellus" in dialog.windowTitle()
-    assert "82%" in dialog.taxon_target_combo.currentText()
+    # An AI score is not confidence in the taxon: it is not shown.
+    assert "%" not in dialog.taxon_target_combo.currentText()
     # ms-3 is published as "Cortinarius rubellus Cooke" with no taxon_id
     # match against the picker's target -- the text fallback must still
     # narrow to it.
@@ -793,7 +806,9 @@ def test_return_after_selecting_ai_candidate_preserves_structured_taxon():
     accepted = []
     dialog.accepted.connect(lambda: accepted.append(True))
     dialog.show()
-    QTest.keyClick(dialog.taxon_target_combo, Qt.Key_Down)
+    (ai_index,) = _ai_row_indexes(dialog.taxon_target_combo)
+    dialog.taxon_target_combo.setCurrentIndex(ai_index)
+    dialog._on_taxon_target_activated(ai_index)
     dialog.add_to_plot_btn.setEnabled(True)
     submissions = []
     dialog.add_to_plot_btn.clicked.connect(lambda: submissions.append(True))
@@ -806,7 +821,7 @@ def test_return_after_selecting_ai_candidate_preserves_structured_taxon():
     assert dialog._genus == "Cortinarius"
     assert dialog._species == "rubellus"
     assert dialog._taxon_id is None
-    assert "82%" in dialog.taxon_target_combo.currentText()
+    assert dialog.taxon_target_combo.currentIndex() == ai_index
     assert accepted == []
     assert submissions == []
     dialog.reject()
@@ -887,7 +902,7 @@ def test_reference_taxon_search_finds_common_names_and_skips_genus_rows():
     assert rows[0][1]["taxon_id"] == 55260
 
 
-def test_reference_taxon_search_includes_matching_ai_suggestions_first():
+def test_reference_taxon_search_lists_database_rows_only_not_ai_suggestions():
     dialog = _make_dialog(
         genus="Cortinarius",
         species="limonius",
@@ -895,9 +910,12 @@ def test_reference_taxon_search_includes_matching_ai_suggestions_first():
         taxon_lookup=_FakeTaxonLookup(),
     )
 
-    rows = dialog.taxon_search_rows("rubel")
-
-    assert rows and rows[0][1]["species"] == "rubellus"
+    # The AI suggestion "Cortinarius rubellus" matches the text, but typed
+    # search is an ordinary database search.
+    assert dialog.taxon_search_rows("rubel") == []
+    assert [label for label, _ in dialog.taxon_search_rows("Psilocybe cy")] == [
+        "Psilocybe cyanescens (blånende fleinsopp)"
+    ]
 
 
 def test_picking_a_search_row_applies_its_identity_and_return_keeps_it():
@@ -931,8 +949,9 @@ def test_reference_taxon_field_starts_empty_without_observation_taxon():
     combo = dialog.taxon_target_combo
     assert combo.currentText() == ""
     assert combo.lineEdit().placeholderText()
-    # No blank "own taxon" row: only the AI suggestion is offered.
-    assert combo.count() == 1
+    # No blank "own taxon" row: only the AI section is offered.
+    assert [combo.itemData(i)["species"] for i in range(combo.count())
+            if isinstance(combo.itemData(i), dict)] == ["rubellus"]
 
 
 def test_manual_editor_has_no_second_taxon_field():
@@ -1394,8 +1413,9 @@ def test_changing_taxon_target_resets_manual_editor_publication_state():
     dialog = _make_dialog(taxon_id=7, ai_candidates=_ai_candidates())
     _set_manual_range(dialog)
     dialog.manual_editor._selected_work_id = "w-1"
-    dialog.taxon_target_combo.setCurrentIndex(1)
-    dialog.taxon_target_combo.activated.emit(1)
+    (ai_index,) = _ai_row_indexes(dialog.taxon_target_combo)
+    dialog.taxon_target_combo.setCurrentIndex(ai_index)
+    dialog.taxon_target_combo.activated.emit(ai_index)
     assert dialog.manual_editor._selected_work_id is None
     assert dialog.manual_editor._sporely_taxon_id is None  # AI candidate has no taxon_id
     assert dialog.manual_editor._genus == "Cortinarius"
@@ -1496,7 +1516,9 @@ def test_host_own_target_uses_captured_observation(monkeypatch, observation, exp
                 # No observation taxon: no own row at all, and never the
                 # reference panel's Amanita muscaria in its place.
                 assert (dialog._own_genus, dialog._own_species) == ("", "")
-                assert dialog.taxon_target_combo.count() == len(_ai_candidates())
+                combo = dialog.taxon_target_combo
+                assert len([i for i in range(combo.count())
+                            if isinstance(combo.itemData(i), dict)]) == len(_ai_candidates())
             dialog.taxon_target_combo.setCurrentIndex(1)
             dialog.taxon_target_combo.activated.emit(1)
             dialog.reject()
@@ -1772,8 +1794,7 @@ def test_reference_taxon_lists_observation_taxon_by_name_without_ai_duplicates()
     combo = dialog.taxon_target_combo
 
     assert combo.itemText(0) == "Cortinarius limonius"
-    assert combo.count() == 2
-    assert combo.itemData(1)["species"] == "rubellus"
+    assert [combo.itemData(i)["species"] for i in _ai_row_indexes(combo)] == ["rubellus"]
     assert combo.lineEdit().isClearButtonEnabled()
     dialog.reject()
 
