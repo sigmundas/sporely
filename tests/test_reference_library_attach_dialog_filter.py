@@ -202,3 +202,19 @@ def test_star_button_explicitly_toggles_favourite(qapp, monkeypatch):
     finally:
         dialog.deleteLater()
         parent.deleteLater()
+
+
+def test_name_relevance_survives_missing_or_different_concept_ids(qapp):
+    candidates = [
+        _candidate("missing", taxon_id=None, name="Flammulina velutipes"),
+        _candidate("col", taxon_id="21111", name="Flammulina velutipes (Curtis) Singer"),
+        _candidate("other", taxon_id=None, name="Flammulina finlandica"),
+        _candidate("prefix", taxon_id=None, name="Flammulina velutipesx"),
+    ]
+    dialog = ReferenceLibraryAttachDialog(candidates=candidates, taxon_id=625621,
+                                          taxon_name="Flammulina velutipes")
+    assert [c.measurement_set_id for c in dialog._filtered_candidates()] == ["missing", "col"]
+    assert candidates[0].taxon_id is None and candidates[1].taxon_id == "21111"
+    dialog.only_this_taxon_checkbox.setChecked(False)
+    assert len(dialog._filtered_candidates()) == 4
+    dialog.close()

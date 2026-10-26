@@ -106,8 +106,9 @@ def test_manual_reference_add_plot_creates_and_attaches(observation_id):
     ]
 
 
-def test_add_plot_persists_legacy_projection_while_gate_closed(observation_id):
+def test_add_plot_persists_legacy_projection_while_gate_closed(observation_id, monkeypatch):
     """Under a closed reader gate the extension columns stay untouched."""
+    monkeypatch.setattr(measurement_content_gates, "enhanced_attachments_enabled", lambda: False)
     assert measurement_content_gates.enhanced_editing_enabled() is False
 
     result = QuickAddReferenceService.create_and_attach(_request(observation_id))
@@ -119,8 +120,9 @@ def test_add_plot_persists_legacy_projection_while_gate_closed(observation_id):
     assert stored.q_core_max is None
 
 
-def test_add_plot_freezes_version_1_snapshot_while_gate_closed(observation_id):
+def test_add_plot_freezes_version_1_snapshot_while_gate_closed(observation_id, monkeypatch):
     """No enhanced content may become frozen evidence while the reader gate is closed."""
+    monkeypatch.setattr(measurement_content_gates, "enhanced_attachments_enabled", lambda: False)
     result = QuickAddReferenceService.create_and_attach(_request(observation_id))
 
     use = ObservationReferenceUseRepository.list_for_observation(observation_id)[0]

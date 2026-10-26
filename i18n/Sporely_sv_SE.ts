@@ -4819,14 +4819,14 @@ Senaste version: {latest}</translation>
     <message>
         <location filename="../ui/main_window.py" line="7909"/>
         <location filename="../ui/main_window.py" line="21244"/>
-        <source>Plot Q 90% range (5%-95%)</source>
-        <translation>Plot Q 90% range (5%-95%)</translation>
+        <source>Plot Q inner range</source>
+        <translation>Visa inre Q-intervall</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7910"/>
         <location filename="../ui/main_window.py" line="21245"/>
-        <source>Show Q lines for the 5th to 95th percentile range</source>
-        <translation>Show Q lines for the 5th to 95th percentile range</translation>
+        <source>Show the measured 5th–95th percentile interval and each reference's published inner Q interval</source>
+        <translation>Visa det uppmätta intervallet mellan 5:e och 95:e percentilen och varje referens publicerade inre Q-intervall</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7915"/>

@@ -383,7 +383,7 @@ def _measurement_set_form_enhanced(context: ReviewContext):
 
     _fixture(context)
     context.enter_fixture(
-        patch.object(gates, "MINIMUM_SUPPORTED_READER_VERSION_GATE_OPEN", True)
+        patch.object(gates, "enhanced_attachments_enabled", lambda: True)
     )
     from database.reference_library import TaxonTreatmentRepository
 

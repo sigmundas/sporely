@@ -79,10 +79,19 @@ def libs(tmp_path, monkeypatch):
     return db_path, ref_path
 
 
+@pytest.fixture(autouse=True)
+def historical_closed_policy(monkeypatch, request):
+    # Historical refusal coverage explicitly requests its old policy.
+    # The installed desktop defaults to full measurement support.
+    if request.node.name not in ("test_full_measurement_support_is_active",):
+        monkeypatch.setattr(gates, "enhanced_attachments_enabled", lambda: False)
+        monkeypatch.setattr(gates, "enhanced_bundle_export_enabled", lambda: False)
+
+
 @pytest.fixture()
 def reader_gate_open(monkeypatch):
     """Open the minimum-supported-reader-version gate for one test."""
-    monkeypatch.setattr(gates, "MINIMUM_SUPPORTED_READER_VERSION_GATE_OPEN", True)
+    monkeypatch.setattr(gates, "enhanced_attachments_enabled", lambda: True)
     return True
 
 
