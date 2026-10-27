@@ -949,6 +949,23 @@ def test_species_names_past_the_row_limit_are_not_offered_as_name_only_rows(edit
         assert any(isinstance(r, dict) and r["scientific_name"] == "Russula boedijnii" for r in rows)
 
 
+def test_link_writes_the_taxonomy_spelling_into_every_field(editor):
+    dialog = editor(**_observation(genus="flammulina", species="velutipes"))
+    assert dialog.scientific_name_input.text() == ""
+    assert not dialog.identity_offer_row.isHidden()
+    dialog.identity_offer_button.click()
+    data = dialog.get_data()
+    assert (dialog.genus_input.text(), dialog.species_input.text(), dialog.scientific_name_input.text()) == (
+        "Flammulina", "velutipes", "Flammulina velutipes")
+    assert (data["genus"], data["species"], data["scientific_name_snapshot"]) == (
+        "Flammulina", "velutipes", "Flammulina velutipes")
+    assert data["sporely_taxon_id"] == NORTAXA_CONCEPT
+    assert data["taxon_identity_proof"] == PROOF_EXTERNAL_ID_RESOLUTION
+    # The fields now match the snapshot: nothing invalidates it on its own.
+    reopened = editor(**data)
+    assert reopened.get_data()["sporely_taxon_id"] == NORTAXA_CONCEPT
+    assert reopened.scientific_name_input.text() == "Flammulina velutipes"
+
 
 class _MacPopupFocusReturn:
     """Reproduce macOS: a completer popup that hides hands focus back to its
