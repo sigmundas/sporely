@@ -970,12 +970,32 @@ def _suggest_scientific_names(
         0 if r["is_canonical"] else 1,
         r["sporely_taxon_id"],
     ))
-    if len(out) > limit:
-        out = out[:limit]
-    return out
+    return truncate_keeping_name_groups(out, limit)
+
+
+def truncate_keeping_name_groups(rows: list[dict], limit: int) -> list[dict]:
+    """The first ``limit`` name-sorted rows, never splitting one name.
+
+    Concepts sharing a scientific name (a COL and a NorTaxa concept, say)
+    sort next to each other; a cut between them would list one and hide
+    the other, silently choosing between them. The cut moves past the
+    whole group instead.
+    """
+    limit = max(0, int(limit))
+    if len(rows) <= limit:
+        return list(rows)
+    cut = limit
+    if cut:
+        last = str(rows[cut - 1].get("scientific_name") or "").casefold()
+        while cut < len(rows) and str(rows[cut].get("scientific_name") or "").casefold() == last:
+            cut += 1
+    return list(rows[:cut])
 
 
 VernacularDB.suggest_scientific_names = _suggest_scientific_names  # type: ignore[attr-defined]
 
 
-__all__ = ["VernacularDB", "national_scientific_name_column", "parse_scientific_name_snapshot"]
+__all__ = [
+    "VernacularDB", "national_scientific_name_column", "parse_scientific_name_snapshot",
+    "truncate_keeping_name_groups",
+]

@@ -539,7 +539,7 @@ class TaxonInputController(QObject):
         picker's rows do), so selecting it commits that concept. Epithets
         known only from reference data follow as name rows.
         """
-        from database.vernacular_db import parse_scientific_name_snapshot
+        from database.vernacular_db import parse_scientific_name_snapshot, truncate_keeping_name_groups
 
         lookup = self.lookup
         query = f"{genus} {prefix}".strip()
@@ -568,7 +568,7 @@ class TaxonInputController(QObject):
         # Listing them as name rows would offer a pick that binds nothing;
         # typing more of the epithet brings their concept rows instead.
         truncated = len(concepts) > self.max_suggestions or len(hits) >= self.max_suggestions * 2
-        concepts = concepts[: self.max_suggestions]
+        concepts = truncate_keeping_name_groups(concepts, self.max_suggestions)
         window_end = (
             parse_scientific_name_snapshot(concepts[-1]["scientific_name"])[1].casefold()
             if truncated and concepts else None

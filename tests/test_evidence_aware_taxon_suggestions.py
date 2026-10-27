@@ -1034,3 +1034,53 @@ def test_focus_returning_while_typing_keeps_the_popup_open(editor):
     popup.hide()
     QApplication.sendEvent(field, QFocusEvent(QEvent.FocusIn, Qt.PopupFocusReason))
     assert popup.isVisible()
+
+
+# ── Row limits never split same-name concepts ────────────────────────────────
+
+
+def test_a_row_limit_never_splits_concepts_sharing_a_name():
+    from database.vernacular_db import truncate_keeping_name_groups
+
+    rows = [{"scientific_name": n, "id": i} for i, n in enumerate(["A a", "B b", "b B", "C c"])]
+    assert [r["id"] for r in truncate_keeping_name_groups(rows, 2)] == [0, 1, 2]
+    assert [r["id"] for r in truncate_keeping_name_groups(rows, 1)] == [0]
+    assert [r["id"] for r in truncate_keeping_name_groups(rows, 9)] == [0, 1, 2, 3]
+    assert truncate_keeping_name_groups(rows, 0) == []
+
+
+def test_scientific_search_at_its_limit_still_lists_both_same_name_concepts(lookup):
+    rows = lookup.suggest_scientific_names("Flammulina velutipes", limit=1)
+    assert {r["sporely_taxon_id"] for r in rows if r["scientific_name"] == "Flammulina velutipes"} == {
+        COL_CONCEPT, NORTAXA_CONCEPT}
+
+
+def test_species_rows_at_their_limit_still_list_both_same_name_concepts():
+    from PySide6.QtWidgets import QApplication, QLineEdit
+    from ui.taxon_input_controller import TaxonInputController
+
+    QApplication.instance() or QApplication([])
+
+    def concept(name, taxon_id):
+        return {"scientific_name": name, "sporely_taxon_id": taxon_id, "taxon_rank_snapshot": "species",
+                "link_kind": "canonical", "canonical_scientific_name": name}
+
+    class _Lookup:
+        vernacular_db = None
+
+        def suggest_scientific_names(self, prefix, limit=40):
+            return [concept("Foo alpha", 1), concept("Foo beta", 2), concept("Foo beta", 3), concept("Foo gamma", 4)]
+
+        def suggest_species(self, genus, prefix="", limit=40):
+            return []
+
+    controller = TaxonInputController(
+        _Lookup(), QLineEdit(), QLineEdit(), scientific_name_input=QLineEdit(),
+        concept_species_suggestions=True, max_suggestions=2,
+    )
+    controller.genus_input.setText("Foo")
+    controller.refresh_species_suggestions()
+    model = controller.species_model
+    ids = [model.item(r).data(ROLE_TAXON_CHOICE)["sporely_taxon_id"] for r in range(model.rowCount())]
+    assert ids == [1, 2, 3]
+    assert [model.item(r).text() for r in range(1, 3)] == ["beta · Sporely 2", "beta · Sporely 3"]
