@@ -452,9 +452,11 @@ def test_failed_post_creation_check_removes_only_created_empty_dirs(tmp_path, mo
     )
     real_stat = acquire_col_xr.os.stat
 
-    def changed_device(path):
-        result = real_stat(path)
-        if Path(path) == staged.parent:
+    def changed_device(path, *args, **kwargs):
+        result = real_stat(path, *args, **kwargs)
+        # Only the planner's direct os.stat(path) calls; pathlib's own
+        # (Python 3.12 passes follow_symlinks) see the real result.
+        if not args and not kwargs and Path(path) == staged.parent:
             return type("Stat", (), {"st_dev": result.st_dev + 1})()
         return result
 
