@@ -370,9 +370,13 @@ def test_different_existing_ancestor_devices_are_rejected(tmp_path, monkeypatch)
     real_stat = acquire_col_xr.os.stat
     calls = 0
 
-    def different_devices(path):
+    def different_devices(path, *args, **kwargs):
         nonlocal calls
-        result = real_stat(path)
+        result = real_stat(path, *args, **kwargs)
+        if args or kwargs:
+            # pathlib's own stat calls (Python 3.12 passes follow_symlinks);
+            # only the layout planner's direct os.stat(path) calls count.
+            return result
         calls += 1
         if calls == 2:
             return type("Stat", (), {"st_dev": result.st_dev + 1})()

@@ -50,7 +50,7 @@ jobs:
       # its test is fixed.
       - name: Run tests
         run: >-
-          python -m pytest -q -p no:cacheprovider tests database
+          python -m pytest -q -rfE --tb=short -p no:cacheprovider tests database
           --ignore=tests/test_render_review_screenshots.py
           --deselect tests/test_live_lab_raw_controls.py::test_live_lab_review_keyboard_shortcuts_navigate_save_and_skip_text_focus
           --deselect tests/test_reference_add_dialog_normalized.py::test_parsed_q_range_is_refused_rather_than_silently_dropped
