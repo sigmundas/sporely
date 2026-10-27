@@ -20415,21 +20415,37 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         offer = getattr(self, "_identity_offer", None)
         if offer is None or offer.sporely_taxon_id != shown_id:
             return
-        genus = self.genus_input.text().strip()
-        species = self.species_input.text().strip()
+        # The offer matched the entered name ignoring case, against either
+        # the suggested name or the concept's own name. Bind and show that
+        # name as spelled in the taxonomy, so the fields, the stored name and
+        # the identity agree.
+        entered = " ".join(f"{self.genus_input.text()} {self.species_input.text()}".split()).casefold()
+        name = next(
+            (n for n in (offer.scientific_name, offer.concept_name) if n and n.casefold() == entered),
+            " ".join(f"{self.genus_input.text()} {self.species_input.text()}".split()),
+        )
+        genus, _, species = name.partition(" ")
         if offer.origin != ORIGIN_OBSERVATION and offer.raw_external_id:
             identity = TaxonIdentity.from_prefixed_external_id(
                 offer.raw_external_id,
-                scientific_name=" ".join(part for part in (genus, species) if part) or None,
+                scientific_name=name or None,
                 rank="species" if species else "genus",
             )
         else:
             # The observation's own preserved provider tuple, as stored: its
             # raw value may be a bare id that does not parse on its own.
-            identity = controller.committed_identity()
+            identity = dataclass_replace(controller.committed_identity(), scientific_name=name or None)
         # The same resolver and commit path as copying an AI suggestion: the
         # identifier is resolved again and bound with its provider evidence.
-        controller.commit_provider_identity(identity, genus=genus, species=species)
+        if controller.commit_provider_identity(identity, genus=genus, species=species):
+            with controller._suspended():
+                for widget, value in (
+                    (self.genus_input, genus),
+                    (self.species_input, species),
+                    (getattr(self, "scientific_name_input", None), name),
+                ):
+                    if widget is not None and widget.text() != value:
+                        widget.setText(value)
         self._hide_identity_offer()
 
     def _on_scientific_snapshot_committed(self, snapshot: dict) -> None:

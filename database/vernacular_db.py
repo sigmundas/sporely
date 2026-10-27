@@ -757,15 +757,18 @@ _SCIENTIFIC_PICKER_RANKS = frozenset(
 )
 # Aliases that appear in `scientific_name_min` but never make it into
 # `taxon_min.taxon_rank` — we parse them out of the name string.
+# An epithet may be hyphenated (ICN Art. 23.1: *Cortinarius albo-ochraceus*,
+# *Russula amici-mei*): lower-case letter runs joined by single hyphens.
+_EPITHET = r"[a-z]+(?:-[a-z]+)*"
 _ALIAS_MARKERS: tuple[tuple[re.Pattern, str], ...] = (
     (re.compile(r"^([A-Z][a-z]+)$"),                                                 "genus"),
-    (re.compile(r"^([A-Z][a-z]+) ([a-z]+)$"),                                        "species"),
-    (re.compile(r"^([A-Z][a-z]+) ([a-z]+) subsp\. ([a-z]+)$"),                       "subspecies"),
-    (re.compile(r"^([A-Z][a-z]+) ([a-z]+) ssp\. ([a-z]+)$"),                         "subspecies"),
-    (re.compile(r"^([A-Z][a-z]+) ([a-z]+) var\. ([a-z]+)$"),                         "variety"),
-    (re.compile(r"^([A-Z][a-z]+) ([a-z]+) f\. ([a-z]+)$"),                           "form"),
-    (re.compile(r"^([A-Z][a-z]+) ([a-z]+) coll\.$"),                                 "aggregate"),
-    (re.compile(r"^([A-Z][a-z]+) ([a-z]+) agg\.$"),                                  "aggregate"),
+    (re.compile(rf"^([A-Z][a-z]+) ({_EPITHET})$"),                                   "species"),
+    (re.compile(rf"^([A-Z][a-z]+) ({_EPITHET}) subsp\. ({_EPITHET})$"),              "subspecies"),
+    (re.compile(rf"^([A-Z][a-z]+) ({_EPITHET}) ssp\. ({_EPITHET})$"),                "subspecies"),
+    (re.compile(rf"^([A-Z][a-z]+) ({_EPITHET}) var\. ({_EPITHET})$"),                "variety"),
+    (re.compile(rf"^([A-Z][a-z]+) ({_EPITHET}) f\. ({_EPITHET})$"),                  "form"),
+    (re.compile(rf"^([A-Z][a-z]+) ({_EPITHET}) coll\.$"),                            "aggregate"),
+    (re.compile(rf"^([A-Z][a-z]+) ({_EPITHET}) agg\.$"),                             "aggregate"),
 )
 
 # Names that are placeholder / curatorial and MUST NOT appear in the picker.
@@ -967,12 +970,32 @@ def _suggest_scientific_names(
         0 if r["is_canonical"] else 1,
         r["sporely_taxon_id"],
     ))
-    if len(out) > limit:
-        out = out[:limit]
-    return out
+    return truncate_keeping_name_groups(out, limit)
+
+
+def truncate_keeping_name_groups(rows: list[dict], limit: int) -> list[dict]:
+    """The first ``limit`` name-sorted rows, never splitting one name.
+
+    Concepts sharing a scientific name (a COL and a NorTaxa concept, say)
+    sort next to each other; a cut between them would list one and hide
+    the other, silently choosing between them. The cut moves past the
+    whole group instead.
+    """
+    limit = max(0, int(limit))
+    if len(rows) <= limit:
+        return list(rows)
+    cut = limit
+    if cut:
+        last = str(rows[cut - 1].get("scientific_name") or "").casefold()
+        while cut < len(rows) and str(rows[cut].get("scientific_name") or "").casefold() == last:
+            cut += 1
+    return list(rows[:cut])
 
 
 VernacularDB.suggest_scientific_names = _suggest_scientific_names  # type: ignore[attr-defined]
 
 
-__all__ = ["VernacularDB", "national_scientific_name_column", "parse_scientific_name_snapshot"]
+__all__ = [
+    "VernacularDB", "national_scientific_name_column", "parse_scientific_name_snapshot",
+    "truncate_keeping_name_groups",
+]

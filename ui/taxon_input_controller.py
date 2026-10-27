@@ -103,6 +103,22 @@ def format_common_name_choice_display(choice: TaxonChoice) -> str:
     return name
 
 
+# Keys with which QCompleter closes its popup and then completes the row it
+# captured (or nothing, for Escape).
+_POPUP_CLOSING_KEYS = (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Tab, Qt.Key_Escape)
+
+
+def _is_popup_focus_return(event) -> bool:
+    """Whether focus is coming back to a field because a popup closed."""
+    reason_getter = getattr(event, "reason", None)
+    if not callable(reason_getter):
+        return False
+    try:
+        return reason_getter() == Qt.PopupFocusReason
+    except Exception:
+        return False
+
+
 def _should_select_all_on_focus(event) -> bool:
     reason_getter = getattr(event, "reason", None)
     if callable(reason_getter):
@@ -198,6 +214,13 @@ class TaxonInputController(QObject):
         # this observation. They settle which concept a name means when
         # several share it; they never bind anything on their own.
         self._evidence_taxon_ids: frozenset[int] = frozenset()
+        # Set while a completer popup is closing on a key (Enter, Tab,
+        # Escape). On macOS the popup hides -- handing focus back to its
+        # field -- *before* QCompleter completes the row it captured; a
+        # refresh on that focus-in would reset the model under the pending
+        # completion, so Qt completes the typed prefix instead of the row
+        # (and a stale row index could name a different row).
+        self._popup_closing_on_key = False
         # Stage 3B.3 selection-controlled snapshot.
         # None → no snapshot has been committed. Otherwise a tuple of
         # (genus, species, scientific_name, taxon_rank_snapshot,
@@ -230,6 +253,7 @@ class TaxonInputController(QObject):
         self._genus_completer.setCompletionMode(QCompleter.PopupCompletion)
         self.genus_input.setCompleter(self._genus_completer)
         self._genus_completer.activated[str].connect(self.on_genus_selected)
+        self._genus_completer.popup().installEventFilter(self)
 
         self._species_completer = QCompleter(self._species_model, self)
         self._species_completer.setCaseSensitivity(Qt.CaseInsensitive)
@@ -247,6 +271,7 @@ class TaxonInputController(QObject):
             self._vernacular_completer.setCompletionRole(Qt.UserRole)
             self.vernacular_input.setCompleter(self._vernacular_completer)
             self._vernacular_completer.activated[QModelIndex].connect(self.on_vernacular_selected)
+            self._vernacular_completer.popup().installEventFilter(self)
         else:
             self._vernacular_completer = None
 
@@ -514,7 +539,7 @@ class TaxonInputController(QObject):
         picker's rows do), so selecting it commits that concept. Epithets
         known only from reference data follow as name rows.
         """
-        from database.vernacular_db import parse_scientific_name_snapshot
+        from database.vernacular_db import parse_scientific_name_snapshot, truncate_keeping_name_groups
 
         lookup = self.lookup
         query = f"{genus} {prefix}".strip()
@@ -537,7 +562,17 @@ class TaxonInputController(QObject):
                 continue
             seen.add(key)
             concepts.append(hit)
-        concepts = self._settle_concept_suggestions(concepts)[: self.max_suggestions]
+        concepts = self._settle_concept_suggestions(concepts)
+        # When the concept rows stop short (the row limit), installed-taxonomy
+        # names past the last one are concepts too, just not listed yet.
+        # Listing them as name rows would offer a pick that binds nothing;
+        # typing more of the epithet brings their concept rows instead.
+        truncated = len(concepts) > self.max_suggestions or len(hits) >= self.max_suggestions * 2
+        concepts = truncate_keeping_name_groups(concepts, self.max_suggestions)
+        window_end = (
+            parse_scientific_name_snapshot(concepts[-1]["scientific_name"])[1].casefold()
+            if truncated and concepts else None
+        )
         rows: list[tuple[str, str, object]] = []
         epithets: set[str] = set()
         for hit in concepts:
@@ -556,6 +591,9 @@ class TaxonInputController(QObject):
             names = []
         for choice in names:
             epithet = self._clean_species_text(choice.species)
+            if window_end is not None and epithet.casefold() > window_end \
+                    and choice.source in ("taxonomy", "both"):
+                continue
             if epithet and epithet.casefold() not in epithets:
                 epithets.add(epithet.casefold())
                 rows.append((self._species_display_formatter(choice), epithet, choice))
@@ -637,6 +675,65 @@ class TaxonInputController(QObject):
     def _schedule_refresh(self, timer: QTimer) -> None:
         timer.start(self._debounce_ms)
 
+    @staticmethod
+    def _is_highlight_echo(completer: QCompleter | None, text: str) -> bool:
+        """Whether ``text`` was just written by ``completer`` highlighting a row.
+
+        QLineEdit copies a highlighted row's completion text into the field
+        (arrow keys). That is not new input: refreshing the
+        suggestions for it would rebuild the list under the highlight, and
+        Enter would then select nothing.
+        """
+        if completer is None:
+            return False
+        popup = completer.popup()
+        if popup is None or not popup.isVisible():
+            return False
+        index = popup.currentIndex()
+        if not index.isValid():
+            return False
+        completion = index.data(completer.completionRole())
+        return " ".join(str(completion or "").split()) == " ".join(str(text or "").split())
+
+    @staticmethod
+    def _completion_row_key(index: QModelIndex) -> tuple:
+        """What a popup row stands for: its concept, else its completion text."""
+        payload = index.data(ROLE_TAXON_CHOICE)
+        if isinstance(payload, dict):
+            return ("concept", payload.get("sporely_taxon_id"), str(payload.get("scientific_name") or ""))
+        return ("name", str(index.data(Qt.UserRole) or index.data(Qt.DisplayRole) or ""))
+
+    def _highlighted_row_key(self, completer: QCompleter | None) -> tuple | None:
+        if completer is None:
+            return None
+        popup = completer.popup()
+        if popup is None or not popup.isVisible():
+            return None
+        index = popup.currentIndex()
+        return self._completion_row_key(index) if index.isValid() else None
+
+    def _restore_highlighted_row(self, completer: QCompleter | None, key: tuple | None) -> None:
+        """Re-highlight the row ``key`` names after the list was rebuilt.
+
+        A rebuilt model drops the popup's current row. The same row (same
+        concept, or same name) is highlighted again when it is still listed;
+        otherwise nothing is, so Enter can never land on a different row.
+        """
+        if completer is None or key is None:
+            return
+        popup = completer.popup()
+        if popup is None or not popup.isVisible():
+            return
+        current = popup.currentIndex()
+        if current.isValid() and self._completion_row_key(current) == key:
+            return
+        model = completer.completionModel()
+        for row in range(model.rowCount()):
+            index = model.index(row, 0)
+            if self._completion_row_key(index) == key:
+                popup.setCurrentIndex(index)
+                return
+
     def refresh_genus_suggestions(self) -> list[str]:
         lookup = self.lookup
         text = self._current_genus()
@@ -662,6 +759,7 @@ class TaxonInputController(QObject):
                 for row in range(self._species_model.rowCount())
                 if (item := self._species_model.item(row, 0)) is not None
             ]
+        highlighted = self._highlighted_row_key(self._species_completer)
         if self._concept_species_suggestions and lookup and genus:
             self._last_species_query = query_key
             values = self._set_species_concept_model(genus, prefix)
@@ -672,6 +770,7 @@ class TaxonInputController(QObject):
         if self.species_input.hasFocus() and values and self.auto_show_popup_on_focus and self._species_completer:
             self._species_completer.setCompletionPrefix(prefix)
             self._species_completer.complete()
+        self._restore_highlighted_row(self._species_completer, highlighted)
         return values
 
     def refresh_vernacular_suggestions(self) -> list[str]:
@@ -829,13 +928,18 @@ class TaxonInputController(QObject):
             if self._vernacular_model is not None:
                 self._vernacular_model.clear()
                 self._last_vernacular_query = None
-        self._schedule_refresh(self._genus_timer)
+        if not self._is_highlight_echo(self._genus_completer, text):
+            self._schedule_refresh(self._genus_timer)
         if not self._current_species():
             self._schedule_refresh(self._species_timer)
         self._sync_vernacular_after_taxon_change()
 
     def on_species_text_changed(self, text: str) -> None:
         if self._is_suspended():
+            return
+        if self._is_highlight_echo(self._species_completer, text):
+            # Keep the list (and its highlighted row) as it is; a pick or
+            # editing-finished syncs the rest.
             return
         genus = self._current_genus()
         if not genus:
@@ -862,7 +966,8 @@ class TaxonInputController(QObject):
         # explicit completer selection (`on_vernacular_selected`) or Tab-
         # confirmed unique-match resolution (`on_vernacular_editing_finished`)
         # may change identity.
-        self._schedule_refresh(self._vernacular_timer)
+        if not self._is_highlight_echo(self._vernacular_completer, text):
+            self._schedule_refresh(self._vernacular_timer)
 
     def on_genus_editing_finished(self) -> None:
         if self._is_suspended():
@@ -1240,8 +1345,9 @@ class TaxonInputController(QObject):
         # completer selection may bind identity.
         if self._committed_snapshot is not None:
             self._invalidate_snapshot(reason="scientific_diverged")
-        # Refresh the completer suggestions from the fresh prefix.
-        if hasattr(self, "_scientific_timer"):
+        # Refresh the completer suggestions from the fresh prefix -- unless
+        # the text is a highlighted row's, which is not a new prefix.
+        if hasattr(self, "_scientific_timer") and not self._is_highlight_echo(self._scientific_completer, text):
             self._schedule_refresh(self._scientific_timer)
 
     def refresh_scientific_suggestions(self) -> list[dict]:
@@ -1257,6 +1363,7 @@ class TaxonInputController(QObject):
         suggestions = self._settle_concept_suggestions(lookup.suggest_scientific_names(
             prefix=prefix, limit=self.max_suggestions,
         ))
+        highlighted = self._highlighted_row_key(self._scientific_completer)
         # Rebuild the model.
         self._scientific_model.clear()
         for suggestion in suggestions:
@@ -1270,6 +1377,7 @@ class TaxonInputController(QObject):
                 and self._scientific_completer is not None:
             self._scientific_completer.setCompletionPrefix("")
             self._scientific_completer.complete()
+        self._restore_highlighted_row(self._scientific_completer, highlighted)
         return suggestions
 
     def _current_scientific_text(self) -> str:
@@ -1354,15 +1462,37 @@ class TaxonInputController(QObject):
         self._notify_taxon_changed()
         return True
 
+    def _popups(self) -> tuple:
+        return tuple(
+            completer.popup()
+            for completer in (
+                self._genus_completer, self._species_completer,
+                self._vernacular_completer, self._scientific_completer,
+            )
+            if completer is not None
+        )
+
+    def _end_popup_closing_on_key(self) -> None:
+        self._popup_closing_on_key = False
+
     def eventFilter(self, obj, event):
         event_type = event.type()
+        if event_type == QEvent.KeyPress and event.key() in _POPUP_CLOSING_KEYS \
+                and obj.isVisible() and obj in self._popups():
+            # Installed after QCompleter's own filter, so this runs first.
+            self._popup_closing_on_key = True
+            QTimer.singleShot(0, self._end_popup_closing_on_key)
         if event_type == QEvent.ShortcutOverride and event.key() in (Qt.Key_Return, Qt.Key_Enter):
             # The editor's Save shortcut must not take Enter away from a
-            # visible concept chooser. Let QCompleter activate its own row.
-            for completer in (self._species_completer, self._scientific_completer):
-                if completer is not None and obj is completer.popup() and obj.isVisible():
-                    event.accept()
-                    return True
+            # visible chooser. Let QCompleter activate its own row.
+            if obj.isVisible() and obj in self._popups():
+                event.accept()
+                return True
+        if event_type == QEvent.FocusIn and self._popup_closing_on_key and _is_popup_focus_return(event):
+            # Not new focus: the popup is closing on a pick (see
+            # ``_popup_closing_on_key``). Other popup returns still refresh:
+            # typing can close a popup on macOS, and the refresh reopens it.
+            return False
         if event_type == QEvent.FocusIn:
             if obj == self.genus_input:
                 self.refresh_genus_suggestions()
