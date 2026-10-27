@@ -72,6 +72,7 @@ ALIASES = [
 # (taxon_id, language, name, preferred)
 VERNACULARS = [
     (50109, "nb", "vintersopper", 1), (625619, "nb", "vintersopper", 1),
+    (50109, "nn", "vintersoppar", 1), (625619, "nn", "vintersoppar", 1),
     (625621, "nb", "vintersopp", 1),  # only the NorTaxa concept has the name
     (98272, "nb", "langsporet vintersopp", 1),
     (123322, "nb", "kremler", 1), (123322, "nn", "kremler", 1),
@@ -316,6 +317,17 @@ def test_plural_stem_is_norwegian_only(conn):
     # plural rule does not apply to Swedish searches.
     assert run(conn, "kremler", language_codes=("sv",)).rows == ()
     assert [r.name for r in run(conn, "kremla", language_codes=("sv",)).rows] == ["Russula aeruginea"]
+
+
+def test_umbrella_norwegian_prefers_bokmal_for_a_row(conn):
+    # "vintersopp" prefixes both nb "vintersopper" and nn "vintersoppar"; the
+    # umbrella search shows the Bokmål name, which comes first in its order.
+    codes = taxon_search.search_language_codes("no")
+    assert codes[:2] == ("nb", "no")
+    genus = row_named(run(conn, "vintersopp", language_codes=codes), "Flammulina")
+    assert genus.vernacular_name == "vintersopper"
+    nynorsk = row_named(run(conn, "vintersoppar", language_codes=codes), "Flammulina")
+    assert nynorsk.vernacular_name == "vintersoppar"
 
 
 def test_placeholders_and_unranked_names_are_never_offered(conn):

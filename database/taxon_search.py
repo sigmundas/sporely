@@ -184,6 +184,10 @@ class _Hit:
     tier: int
     sort_text: str
     vernacular: str | None = None
+    #: Position of the vernacular's language in the search's preference
+    #: order: with the umbrella ``no``, a Bokmål name beats the Nynorsk one
+    #: for the same row.
+    lang_rank: int = 0
 
 
 @dataclass
@@ -415,6 +419,7 @@ def _vernacular_prefix_sources(conn, query: str, codes: tuple[str, ...], cap: in
                     _tier(vernacular, query, TIER_VERNACULAR_PREFIX), MATCH_VERNACULAR,
                 )
                 if hit is not None:
+                    hit.lang_rank = codes.index(code)
                     source.hits.append(hit)
             if len(rows) >= cap:
                 source.boundary = _nocase(_norm(rows[-1][1]))
@@ -455,6 +460,7 @@ def _vernacular_part_sources(conn, query: str, codes: tuple[str, ...], cap: int)
                     TIER_VERNACULAR_PART, MATCH_VERNACULAR_PART,
                 )
                 if hit is not None:
+                    hit.lang_rank = codes.index(code)
                     source.hits.append(hit)
             if len(rows) >= cap:
                 source.boundary = _nocase(_norm(rows[-1][1]))
@@ -499,8 +505,8 @@ def _boosted_hits(conn, query: str, codes: tuple[str, ...], taxon_ids: Iterable[
     if codes:
         code_marks = ",".join("?" for _ in codes)
         stems = [s.casefold() for s in _word_part_stems(query, codes)] if len(query) >= TAXON_SEARCH_PART_MIN_CHARS else []
-        for taxon_id, vernacular, canonical_name, rank in conn.execute(
-            "SELECT v.taxon_id, v.vernacular_name, t.canonical_scientific_name, t.taxon_rank "
+        for taxon_id, code, vernacular, canonical_name, rank in conn.execute(
+            "SELECT v.taxon_id, v.language_code, v.vernacular_name, t.canonical_scientific_name, t.taxon_rank "
             "FROM vernacular_min v JOIN taxon_min t ON t.taxon_id = v.taxon_id "
             f"WHERE v.language_code IN ({code_marks}) AND v.taxon_id IN ({placeholders})",
             (*codes, *ids),
@@ -516,6 +522,7 @@ def _boosted_hits(conn, query: str, codes: tuple[str, ...], taxon_ids: Iterable[
             else:
                 hit = None
             if hit is not None:
+                hit.lang_rank = codes.index(code) if code in codes else len(codes)
                 hits.append(hit)
     return hits
 
@@ -539,7 +546,7 @@ def _row_key(hit: _Hit, canonical_names: dict[int, str]) -> tuple:
 
 
 def _hit_order(hit: _Hit) -> tuple:
-    return (hit.tier, hit.sort_text)
+    return (hit.tier, hit.lang_rank, hit.sort_text)
 
 
 def _concept_details(conn, ids: list[int], codes: tuple[str, ...], national_expr: str) -> dict[int, dict]:
