@@ -247,6 +247,9 @@ def test_artsorakel_worker_batches_selected_images_and_flattens_combined_respons
     tmp_path: Path,
 ) -> None:
     reference_path = Path(__file__).resolve().parents[1] / "database" / "reference_data" / "sources" / "artsorakel_3images.txt"
+    if not reference_path.is_file():
+        # A recorded response kept under the git-ignored reference sources.
+        pytest.skip(f"needs the local recording {reference_path.name}")
     reference_text = reference_path.read_text()
     reference_payload = json.loads(reference_text[reference_text.index("{"):])
 
