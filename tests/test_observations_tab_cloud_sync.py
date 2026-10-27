@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from contextlib import closing
 from types import MethodType, SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -2173,8 +2174,8 @@ def test_external_publish_cell_widget_combines_labels_for_multiple_ids():
     assert item.text() == ""
 
 
-def test_observation_table_map_cell_widget_has_visible_minimum_height(qapp):
-    obs = _real_profile_observation_451()
+def test_observation_table_map_cell_widget_has_visible_minimum_height(qapp, observation_451):
+    obs = observation_451
     fake_tab, table = _make_observation_table_render_tab()
 
     row_cache = observations_tab.ObservationsTab._build_observation_table_rows_cache(
@@ -2214,8 +2215,8 @@ def test_observation_table_map_cell_widget_has_visible_minimum_height(qapp):
     assert table.item(0, 9).text() == ""
 
 
-def test_observation_table_row_cache_includes_local_publication_and_coordinate_fields_for_451():
-    obs = _real_profile_observation_451()
+def test_observation_table_row_cache_includes_local_publication_and_coordinate_fields_for_451(observation_451):
+    obs = observation_451
     fake_tab = SimpleNamespace(
         _build_common_name_map=lambda observations: {},
         _lookup_common_name=lambda obs, name_map: None,
@@ -2246,15 +2247,16 @@ def test_observation_table_row_cache_includes_local_publication_and_coordinate_f
     assert row["mushroomobserver_id"] is None
 
 
+@pytest.mark.usefixtures("observation_451")
 def test_cloud_row_cache_merges_linked_local_publication_and_coordinate_fields():
-    _real_profile_observation_451()
     fake_tab = SimpleNamespace(
         _observation_publish_target=lambda obs: obs.get("publish_target"),
     )
     remote_rows = [
         {
             "id": 747,
-            "desktop_id": 451,
+            # Rows link by local_id; desktop_id stopped being identity in S5.
+            "local_id": 451,
             "genus": "Parasola",
             "species": "plicatilis",
             "common_name": "hjulsopp",
@@ -2356,8 +2358,8 @@ def test_cloud_row_cache_falls_back_to_ai_selected_scientific_name():
     assert row["common_name"] == "- (Panaeolus acuminatus)"
 
 
-def test_observation_table_renders_map_and_external_for_local_row_451(qapp):
-    obs = _real_profile_observation_451()
+def test_observation_table_renders_map_and_external_for_local_row_451(qapp, observation_451):
+    obs = observation_451
     fake_tab, table = _make_observation_table_render_tab()
 
     row_cache = observations_tab.ObservationsTab._build_observation_table_rows_cache(
@@ -2390,8 +2392,8 @@ def test_observation_table_renders_map_and_external_for_local_row_451(qapp):
     assert ">Ao<" not in table.cellWidget(0, 9).text()
 
 
-def test_observation_table_rerender_keeps_map_and_external_widgets(qapp):
-    obs = _real_profile_observation_451()
+def test_observation_table_rerender_keeps_map_and_external_widgets(qapp, observation_451):
+    obs = observation_451
     builder_tab = SimpleNamespace(
         _build_common_name_map=lambda observations: {},
         _lookup_common_name=lambda obs, name_map: None,
@@ -2623,16 +2625,28 @@ def test_cloud_sync_finished_appends_reference_capability_hold_notice():
     assert record_kwargs["status"] == "ok"
 
 
-def _real_profile_observation_451():
-    """These tests were written against the developer's real database.
+@pytest.fixture
+def observation_451(monkeypatch, tmp_path):
+    """A linked, published local observation in a database of its own.
 
-    The suite now runs in an isolated app-data dir (tests/conftest.py), where
-    observation 451 does not exist; skip until they get a seeded fixture.
+    These tests were written against observation 451 in the developer's
+    database; this seeds the fields they read.
     """
-    obs = observations_tab.ObservationDB.get_observation(451)
-    if obs is None:
-        pytest.skip("needs real-profile observation 451; requires a seeded fixture")
-    return obs
+    from database import schema
+
+    monkeypatch.setattr(schema, "_app_dir", tmp_path)
+    monkeypatch.setattr(schema, "DATABASE_PATH", tmp_path / "mushrooms.db")
+    monkeypatch.setattr(schema, "REFERENCE_DATABASE_PATH", tmp_path / "reference_values.db")
+    monkeypatch.setattr(schema, "SETTINGS_PATH", tmp_path / "app_settings.json")
+    schema.init_database()
+    with closing(schema.get_connection()) as connection, connection:
+        connection.execute(
+            "INSERT INTO observations (id, date, genus, species, location, cloud_id, "
+            "gps_latitude, gps_longitude, artsdata_id, inaturalist_id) "
+            "VALUES (451, '2026-06-25 07:41:23', 'Parasola', 'plicatilis', 'Bakke kirke', "
+            "747, 63.431969, 10.411153, 40992445, 375341010)"
+        )
+    return observations_tab.ObservationDB.get_observation(451)
 
 
 @pytest.mark.parametrize(
