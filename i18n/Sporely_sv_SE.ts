@@ -7466,7 +7466,7 @@ Säkerhetskopia: {path}</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="15620"/>
-        <location filename="../ui/observations_tab.py" line="21093"/>
+        <location filename="../ui/observations_tab.py" line="21109"/>
         <source>e.g., velutipes</source>
         <translation>t.ex. velutipes</translation>
     </message>
@@ -7590,7 +7590,7 @@ Säkerhetskopia: {path}</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="15820"/>
-        <location filename="../ui/observations_tab.py" line="20898"/>
+        <location filename="../ui/observations_tab.py" line="20914"/>
         <source>e.g., pendula</source>
         <translation>t.ex. pendula</translation>
     </message>
@@ -8174,34 +8174,34 @@ De lokala filerna stannar på den här datorn. Molnkopiorna kommer att tas bort 
         <translation>Språk för folknamn: {lang}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="20463"/>
+        <location filename="../ui/observations_tab.py" line="20479"/>
         <source>Accepted concept: {name}</source>
         <translation>Accepterat koncept: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="20466"/>
+        <location filename="../ui/observations_tab.py" line="20482"/>
         <source>Linked concept: {name}</source>
         <translation>Länkat koncept: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="20676"/>
+        <location filename="../ui/observations_tab.py" line="20692"/>
         <source>Multiple assessments</source>
         <translation>Flera bedömningar</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="21507"/>
-        <location filename="../ui/observations_tab.py" line="21536"/>
-        <location filename="../ui/observations_tab.py" line="21720"/>
+        <location filename="../ui/observations_tab.py" line="21523"/>
+        <location filename="../ui/observations_tab.py" line="21552"/>
+        <location filename="../ui/observations_tab.py" line="21736"/>
         <source>Select...</source>
         <translation>Välj...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="21736"/>
+        <location filename="../ui/observations_tab.py" line="21752"/>
         <source>Clear selection</source>
         <translation>Ta bort valg</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="21749"/>
+        <location filename="../ui/observations_tab.py" line="21765"/>
         <source>Level {n}:</source>
         <translation>Nivå {n}:</translation>
     </message>
@@ -11914,47 +11914,47 @@ max</translation>
 <context>
     <name>RenameObservationDialog</name>
     <message>
-        <location filename="../ui/observations_tab.py" line="22219"/>
+        <location filename="../ui/observations_tab.py" line="22235"/>
         <source>Rename Observation</source>
         <translation>Gi observation nytt navn</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="22228"/>
+        <location filename="../ui/observations_tab.py" line="22244"/>
         <source>Unknown</source>
         <translation>Okänd</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="22232"/>
+        <location filename="../ui/observations_tab.py" line="22248"/>
         <source>Working title (e.g., Unknown 1)</source>
         <translation>Arbetstitel (t.ex. Okänd 1)</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="22241"/>
+        <location filename="../ui/observations_tab.py" line="22257"/>
         <source>Working title:</source>
         <translation>Arbeidstittel:</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="22247"/>
+        <location filename="../ui/observations_tab.py" line="22263"/>
         <source>e.g., Flammulina</source>
         <translation>t.ex. Flammulina</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="22252"/>
+        <location filename="../ui/observations_tab.py" line="22268"/>
         <source>e.g., velutipes</source>
         <translation>t.ex. velutipes</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="22256"/>
+        <location filename="../ui/observations_tab.py" line="22272"/>
         <source>Uncertain identification</source>
         <translation>Usikker identifikasjon</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="22261"/>
+        <location filename="../ui/observations_tab.py" line="22277"/>
         <source>Save</source>
         <translation>Spara</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="22264"/>
+        <location filename="../ui/observations_tab.py" line="22280"/>
         <source>Cancel</source>
         <translation>Avbryt</translation>
     </message>
@@ -13094,6 +13094,201 @@ Detta kommer att skriva över molnets metadatafält som anges nedan.
         <location filename="../ui/reference_entry_editor.py" line="127"/>
         <source>Width (μm)</source>
         <translation>Bredde (μm)</translation>
+    </message>
+</context>
+<context>
+    <name>TaxonPicker</name>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="499"/>
+        <source>Search scientific or common name, genus or epithet</source>
+        <translation>Sök vetenskapligt eller svenskt namn, släkte eller epitet</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="501"/>
+        <source>Change</source>
+        <translation>Ändra</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="502"/>
+        <source>Remove the identification</source>
+        <translation>Ta bort bestämningen</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="503"/>
+        <source>Source:</source>
+        <translation>Källa:</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="504"/>
+        <source>Artsorakel:</source>
+        <translation>Artsorakel:</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="505"/>
+        <source>Several entries for one name</source>
+        <translation>Flera artposter för samma namn</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="507"/>
+        <source>Some names exist both in NorTaxa and in the Catalogue of Life (COL). They are separate entries and can differ in family and identifiers. The highlighted source is the one that is chosen; click the other one to switch.</source>
+        <translation>Vissa namn finns både i NorTaxa och i Catalogue of Life (COL). De är separata poster och kan skilja sig i familj och identifierare. Den markerade källan är den som väljs; klicka på den andra för att byta.</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="511"/>
+        <source>Don&apos;t show again</source>
+        <translation>Visa inte igen</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="541"/>
+        <source>Model probability, not a determination. Click to choose this name.</source>
+        <translation>Modellens sannolikhet, inte en bestämning. Klicka för att välja namnet.</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="543"/>
+        <source>No database identifier: click to search for the name and choose the entry yourself.</source>
+        <translation>Ingen identifierare i databasen: klicka för att söka på namnet och välja posten själv.</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="622"/>
+        <source>synonym</source>
+        <translation>synonym</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="624"/>
+        <source>genus</source>
+        <translation>släkte</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="625"/>
+        <source>species</source>
+        <translation>art</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="626"/>
+        <source>group</source>
+        <translation>grupp</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="627"/>
+        <source>subsp.</source>
+        <translation>subsp.</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="628"/>
+        <source>var.</source>
+        <translation>var.</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="629"/>
+        <source>f.</source>
+        <translation>f.</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="634"/>
+        <source>Genus</source>
+        <translation>Släkte</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="635"/>
+        <source>Species</source>
+        <translation>Art</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="636"/>
+        <source>Species group</source>
+        <translation>Artgrupp</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="637"/>
+        <source>Subspecies</source>
+        <translation>Underart</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="638"/>
+        <source>Variety</source>
+        <translation>Varietet</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="639"/>
+        <source>Form</source>
+        <translation>Form</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="656"/>
+        <source>synonym of {0}</source>
+        <translation>synonym till {0}</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="662"/>
+        <location filename="../ui/taxon_picker.py" line="678"/>
+        <source>no family</source>
+        <translation>ingen familj</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="672"/>
+        <source>current: {0}</source>
+        <translation>nuvarande: {0}</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="674"/>
+        <source>Artsorakel identifier points to {0}</source>
+        <translation>Artsorakel-ID pekar på {0}</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="681"/>
+        <location filename="../ui/taxon_picker.py" line="965"/>
+        <source>Artsdatabanken {0}</source>
+        <translation>Artsdatabanken {0}</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="683"/>
+        <source>No Artsdatabanken identifier</source>
+        <translation>Inget Artsdatabanken-ID</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="685"/>
+        <source>The Artsorakel identifier points to this entry</source>
+        <translation>Artsorakel-ID:t pekar på den här posten</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="733"/>
+        <source>Show more</source>
+        <translation>Visa fler</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="735"/>
+        <source>Use “{0}” as a name without a taxon</source>
+        <translation>Använd ”{0}” som namn utan taxon</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="967"/>
+        <source>uncertain determination</source>
+        <translation>osäker bestämning</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="972"/>
+        <source>You chose the synonym {0}; it is stored on the entry {1}.</source>
+        <translation>Du valde synonymen {0}; den sparas på posten {1}.</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="975"/>
+        <source>The Artsorakel identifier points to this {0} entry.</source>
+        <translation>Artsorakel-ID:t pekar på den här {0}-posten.</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="998"/>
+        <source>Not linked to a confirmed taxon</source>
+        <translation>Inte kopplat till ett bekräftat taxon</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="999"/>
+        <source>Nothing changes until you choose an entry.</source>
+        <translation>Inget ändras förrän du väljer en post.</translation>
+    </message>
+    <message>
+        <location filename="../ui/taxon_picker.py" line="1003"/>
+        <source>Name without a taxon: not linked to the taxonomy</source>
+        <translation>Namn utan taxon: inte kopplat till taxonomin</translation>
     </message>
 </context>
 <context>

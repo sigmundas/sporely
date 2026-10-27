@@ -1,7 +1,9 @@
 # Unified taxon picker in the observation editor
 
-Status: layout A and Stage 1 approved by the owner on 2026-10-27. Stage 1 is
-implemented on `feature/taxon-picker-search`. Stages 2 and 3 are not started.
+Status: layout A and Stage 1 approved by the owner on 2026-10-27. Stage 1
+(search) is accepted, and Stage 2 (standalone widget) is built, both on
+`feature/taxon-picker-search` (draft PR #47). Stage 2 awaits the owner's UI
+review. Stage 3 is not started.
 Design proposal with renders: https://claude.ai/artifact/FNhyYdKkGVSipUSLshp5mb
 
 This plan replaces the old `feature/unified-taxon-search` plan
@@ -60,11 +62,48 @@ Tests: `tests/test_taxon_search.py` (fixture) and
 `tests/test_taxon_search_release.py` (bundled `tax-2026.10.23-11`:
 representative results and the warm timing of 16 broad queries).
 
-## Stage 2 — picker widget (not started)
+Owner decisions on Stage 1 (2026-10-27): keep same-name COL/NorTaxa concepts
+in one row even when their families disagree, and show each source's own
+family. Keep the Norwegian plural stem in the lowest tier. Keep alphabetical
+order within tiers after the current/evidence boost. Keep species-name and
+synonym rows separate when they lead to different concepts.
 
-`ui/taxon_picker.py`: the field, a popup with a two-line delegate and source
-chips, the first-time note, the card with Kilde, and AI chips. It emits
-picks; it never writes identity. Add review-renderer scenarios and translations.
+Data review item: *Cantharellus* is Cantharellaceae in NorTaxa (626242) and
+Hydnaceae in COL (129742) in `tax-2026.10.23-11`. In that release, 1,829 of
+4,831 same-name groups disagree on family.
+
+## Stage 2 — picker widget (built, awaiting UI review)
+
+`ui/taxon_picker.py` (`TaxonPicker`). It emits `concept_picked(row, concept)`,
+`free_text_committed(text)` and `cleared()`, and writes nothing.
+
+- Results appear in an overlay inside the window, never a separate window,
+  so the overlay cannot take focus. Keys stay in the field: ↑/↓ and
+  PgUp/PgDn move, Enter and Tab pick, and Esc closes the results, or after
+  Endre restores the card. ←/→ switch the source once the user has
+  navigated the list; Alt/Option+←/→ switch it at any time.
+- Rows show the scientific name (bold italic) first, then the vernacular.
+  Rank is a pill. A row with several concepts shows one chip per source;
+  the chip that Enter or a click on the row picks is filled before
+  anything is committed.
+- A first-time note ("Flere artsoppføringer") has an "Ikke vis igjen"
+  button. The setting is `taxon_picker_source_note_dismissed`.
+- The card shows the name (a genus as "Russula sp."), the vernacular, rank,
+  family, source, Artsdatabanken id and the Uncertain flag, plus Kilde
+  buttons (with each family when the families differ). It also notes a
+  chosen synonym and its stored entry.
+- Artsorakel chips: a chip with a resolved identifier picks that concept
+  on click. A chip without one fills the search. A chip never applies itself.
+- Translations: nb/sv/de for the `TaxonPicker` context.
+
+Evidence: `tests/test_taxon_picker.py` (offscreen Qt: picking, keyboard,
+focus, chips, card, note, Show more, AI, and the database left
+unchanged). Renderer group `taxon-picker` (9 scenarios built on
+`tools/review_ui/taxon_picker_sample.json`, a real extract of the release).
+`python -m tools.review_ui.taxon_picker_demo` runs it interactively.
+
+Not proven offscreen: native macOS mouse, focus and scroll behaviour of the
+overlay. It belongs to the Stage 3 human gate.
 
 ## Stage 3 — Edit Observation integration (not started, human-gated)
 

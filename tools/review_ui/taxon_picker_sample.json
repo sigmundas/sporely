@@ -1,0 +1,14705 @@
+{
+"release": "tax-2026.10.23-11",
+"taxon_columns": [
+"taxon_id",
+"genus",
+"specific_epithet",
+"family",
+"canonical_scientific_name",
+"taxon_rank",
+"taxonomic_status",
+"canonical_source_system",
+"canonical_external_id"
+],
+"taxa": [
+[
+980,
+"Aschersonia",
+"",
+"Clavicipitaceae",
+"Aschersonia",
+"genus",
+"accepted",
+"col_xr",
+"33N7"
+],
+[
+16796,
+"Hygrophorus",
+"russula",
+"Hygrophoraceae",
+"Hygrophorus russula",
+"species",
+"accepted",
+"col_xr",
+"3NC85"
+],
+[
+50109,
+"Flammulina",
+"",
+"Physalacriaceae",
+"Flammulina",
+"genus",
+"accepted",
+"col_xr",
+"4KCN"
+],
+[
+61655,
+"Russula",
+"abbotensis",
+"Russulaceae",
+"Russula abbotensis",
+"species",
+"accepted",
+"col_xr",
+"4TRH6"
+],
+[
+61656,
+"Russula",
+"abbottabadensis",
+"Russulaceae",
+"Russula abbottabadensis",
+"species",
+"accepted",
+"col_xr",
+"4TRH7"
+],
+[
+61657,
+"Russula",
+"abietiphila",
+"Russulaceae",
+"Russula abietiphila",
+"species",
+"accepted",
+"col_xr",
+"4TRH9"
+],
+[
+61658,
+"Russula",
+"absphaerocellaris",
+"Russulaceae",
+"Russula absphaerocellaris",
+"species",
+"accepted",
+"col_xr",
+"4TRHB"
+],
+[
+61659,
+"Russula",
+"acerba",
+"Russulaceae",
+"Russula acerba",
+"species",
+"accepted",
+"col_xr",
+"4TRHC"
+],
+[
+61660,
+"Russula",
+"acriannulata",
+"Russulaceae",
+"Russula acriannulata",
+"species",
+"accepted",
+"col_xr",
+"4TRHF"
+],
+[
+61661,
+"Russula",
+"acrifolia",
+"Russulaceae",
+"Russula acrifolia",
+"species",
+"accepted",
+"col_xr",
+"4TRHG"
+],
+[
+61662,
+"Russula",
+"acriuscula",
+"Russulaceae",
+"Russula acriuscula",
+"species",
+"accepted",
+"col_xr",
+"4TRHH"
+],
+[
+61663,
+"Russula",
+"acrolamellata",
+"Russulaceae",
+"Russula acrolamellata",
+"species",
+"accepted",
+"col_xr",
+"4TRHJ"
+],
+[
+61664,
+"Russula",
+"acuminata",
+"Russulaceae",
+"Russula acuminata",
+"species",
+"accepted",
+"col_xr",
+"4TRHK"
+],
+[
+61665,
+"Russula",
+"acutispora",
+"Russulaceae",
+"Russula acutispora",
+"species",
+"accepted",
+"col_xr",
+"4TRHL"
+],
+[
+61666,
+"Russula",
+"adalbertii",
+"Russulaceae",
+"Russula adalbertii",
+"species",
+"accepted",
+"col_xr",
+"4TRHM"
+],
+[
+61667,
+"Russula",
+"adelae",
+"Russulaceae",
+"Russula adelae",
+"species",
+"accepted",
+"col_xr",
+"4TRHN"
+],
+[
+61668,
+"Russula",
+"admirabilis",
+"Russulaceae",
+"Russula admirabilis",
+"species",
+"accepted",
+"col_xr",
+"4TRHP"
+],
+[
+61669,
+"Russula",
+"adusta",
+"Russulaceae",
+"Russula adusta",
+"species",
+"accepted",
+"col_xr",
+"4TRHR"
+],
+[
+61670,
+"Russula",
+"adusto-densifolia",
+"Russulaceae",
+"Russula adusto-densifolia",
+"species",
+"accepted",
+"col_xr",
+"4TRHS"
+],
+[
+61671,
+"Russula",
+"adustoides",
+"Russulaceae",
+"Russula adustoides",
+"species",
+"accepted",
+"col_xr",
+"4TRHT"
+],
+[
+61672,
+"Russula",
+"aeruginascens",
+"Russulaceae",
+"Russula aeruginascens",
+"species",
+"accepted",
+"col_xr",
+"4TRHV"
+],
+[
+61673,
+"Russula",
+"aeruginea",
+"Russulaceae",
+"Russula aeruginea",
+"species",
+"accepted",
+"col_xr",
+"4TRHW"
+],
+[
+61674,
+"Russula",
+"affinis",
+"Russulaceae",
+"Russula affinis",
+"species",
+"accepted",
+"col_xr",
+"4TRHZ"
+],
+[
+61675,
+"Russula",
+"africana",
+"Russulaceae",
+"Russula africana",
+"species",
+"accepted",
+"col_xr",
+"4TRJ2"
+],
+[
+61676,
+"Russula",
+"afrodelica",
+"Russulaceae",
+"Russula afrodelica",
+"species",
+"accepted",
+"col_xr",
+"4TRJ3"
+],
+[
+61677,
+"Russula",
+"afronigricans",
+"Russulaceae",
+"Russula afronigricans",
+"species",
+"accepted",
+"col_xr",
+"4TRJ4"
+],
+[
+61678,
+"Russula",
+"agaricina",
+"Russulaceae",
+"Russula agaricina",
+"species",
+"accepted",
+"col_xr",
+"4TRJ5"
+],
+[
+61679,
+"Russula",
+"ahmadii",
+"Russulaceae",
+"Russula ahmadii",
+"species",
+"accepted",
+"col_xr",
+"4TRJ6"
+],
+[
+61680,
+"Russula",
+"alachuana",
+"Russulaceae",
+"Russula alachuana",
+"species",
+"accepted",
+"col_xr",
+"4TRJ7"
+],
+[
+61681,
+"Russula",
+"alatoreticula",
+"Russulaceae",
+"Russula alatoreticula",
+"species",
+"accepted",
+"col_xr",
+"4TRJ8"
+],
+[
+61682,
+"Russula",
+"albidicremea",
+"Russulaceae",
+"Russula albidicremea",
+"species",
+"accepted",
+"col_xr",
+"4TRJB"
+],
+[
+61683,
+"Russula",
+"albidigleba",
+"Russulaceae",
+"Russula albidigleba",
+"species",
+"accepted",
+"col_xr",
+"4TRJC"
+],
+[
+61684,
+"Russula",
+"albidoflava",
+"Russulaceae",
+"Russula albidoflava",
+"species",
+"accepted",
+"col_xr",
+"4TRJD"
+],
+[
+61685,
+"Russula",
+"albiduliformis",
+"Russulaceae",
+"Russula albiduliformis",
+"species",
+"accepted",
+"col_xr",
+"4TRJF"
+],
+[
+61686,
+"Russula",
+"albiflavescens",
+"Russulaceae",
+"Russula albiflavescens",
+"species",
+"accepted",
+"col_xr",
+"4TRJG"
+],
+[
+61687,
+"Russula",
+"albimarginata",
+"Russulaceae",
+"Russula albimarginata",
+"species",
+"accepted",
+"col_xr",
+"4TRJH"
+],
+[
+61688,
+"Russula",
+"alboareolata",
+"Russulaceae",
+"Russula alboareolata",
+"species",
+"accepted",
+"col_xr",
+"4TRJJ"
+],
+[
+61689,
+"Russula",
+"albobrunnea",
+"Russulaceae",
+"Russula albobrunnea",
+"species",
+"accepted",
+"col_xr",
+"4TRJK"
+],
+[
+61690,
+"Russula",
+"albofloccosa",
+"Russulaceae",
+"Russula albofloccosa",
+"species",
+"accepted",
+"col_xr",
+"4TRJL"
+],
+[
+61691,
+"Russula",
+"albolutescens",
+"Russulaceae",
+"Russula albolutescens",
+"species",
+"accepted",
+"col_xr",
+"4TRJM"
+],
+[
+61692,
+"Russula",
+"albonigra",
+"Russulaceae",
+"Russula albonigra",
+"species",
+"accepted",
+"col_xr",
+"4TRJN"
+],
+[
+61693,
+"Russula",
+"albonigroides",
+"Russulaceae",
+"Russula albonigroides",
+"species",
+"accepted",
+"col_xr",
+"4TRJP"
+],
+[
+61694,
+"Russula",
+"alborosea",
+"Russulaceae",
+"Russula alborosea",
+"species",
+"accepted",
+"col_xr",
+"4TRJQ"
+],
+[
+61695,
+"Russula",
+"albospissa",
+"Russulaceae",
+"Russula albospissa",
+"species",
+"accepted",
+"col_xr",
+"4TRJR"
+],
+[
+61696,
+"Russula",
+"alcalinicola",
+"Russulaceae",
+"Russula alcalinicola",
+"species",
+"accepted",
+"col_xr",
+"4TRJS"
+],
+[
+61697,
+"Russula",
+"alleinstanleyae",
+"Russulaceae",
+"Russula alleinstanleyae",
+"species",
+"accepted",
+"col_xr",
+"4TRJT"
+],
+[
+61698,
+"Russula",
+"allochroa",
+"Russulaceae",
+"Russula allochroa",
+"species",
+"accepted",
+"col_xr",
+"4TRJV"
+],
+[
+61699,
+"Russula",
+"alnetorum",
+"Russulaceae",
+"Russula alnetorum",
+"species",
+"accepted",
+"col_xr",
+"4TRJW"
+],
+[
+61704,
+"Russula",
+"alutacea",
+"Russulaceae",
+"Russula alutacea",
+"species",
+"accepted",
+"col_xr",
+"4TRK7"
+],
+[
+61710,
+"Russula",
+"amethystina",
+"Russulaceae",
+"Russula amethystina",
+"species",
+"accepted",
+"col_xr",
+"4TRKF"
+],
+[
+61718,
+"Russula",
+"amoenolens",
+"Russulaceae",
+"Russula amoenolens",
+"species",
+"accepted",
+"col_xr",
+"4TRKP"
+],
+[
+61729,
+"Russula",
+"anthracina",
+"Russulaceae",
+"Russula anthracina",
+"species",
+"accepted",
+"col_xr",
+"4TRL4"
+],
+[
+61733,
+"Russula",
+"aquosa",
+"Russulaceae",
+"Russula aquosa",
+"species",
+"accepted",
+"col_xr",
+"4TRL8"
+],
+[
+61749,
+"Russula",
+"atroglauca",
+"Russulaceae",
+"Russula atroglauca",
+"species",
+"accepted",
+"col_xr",
+"4TRLX"
+],
+[
+61751,
+"Russula",
+"atrorubens",
+"Russulaceae",
+"Russula atrorubens",
+"species",
+"accepted",
+"col_xr",
+"4TRM3"
+],
+[
+61765,
+"Russula",
+"aurea",
+"Russulaceae",
+"Russula aurea",
+"species",
+"accepted",
+"col_xr",
+"4TRMP"
+],
+[
+61776,
+"Russula",
+"azurea",
+"Russulaceae",
+"Russula azurea",
+"species",
+"accepted",
+"col_xr",
+"4TRN3"
+],
+[
+61778,
+"Russula",
+"badia",
+"Russulaceae",
+"Russula badia",
+"species",
+"accepted",
+"col_xr",
+"4TRN5"
+],
+[
+61787,
+"Russula",
+"betulae",
+"Russulaceae",
+"Russula betulae",
+"species",
+"accepted",
+"col_xr",
+"4TRNJ"
+],
+[
+61788,
+"Russula",
+"betularum",
+"Russulaceae",
+"Russula betularum",
+"species",
+"accepted",
+"col_xr",
+"4TRNK"
+],
+[
+61819,
+"Russula",
+"brunneoviolacea",
+"Russulaceae",
+"Russula brunneoviolacea",
+"species",
+"accepted",
+"col_xr",
+"4TRPP"
+],
+[
+61827,
+"Russula",
+"caerulea",
+"Russulaceae",
+"Russula caerulea",
+"species",
+"accepted",
+"col_xr",
+"4TRPY"
+],
+[
+61856,
+"Russula",
+"cessans",
+"Russulaceae",
+"Russula cessans",
+"species",
+"accepted",
+"col_xr",
+"4TRR3"
+],
+[
+61863,
+"Russula",
+"chloroides",
+"Russulaceae",
+"Russula chloroides",
+"species",
+"accepted",
+"col_xr",
+"4TRRF"
+],
+[
+61875,
+"Russula",
+"citrinochlora",
+"Russulaceae",
+"Russula citrinochlora",
+"species",
+"accepted",
+"col_xr",
+"4TRRY"
+],
+[
+61880,
+"Russula",
+"claroflava",
+"Russulaceae",
+"Russula claroflava",
+"species",
+"accepted",
+"col_xr",
+"4TRS5"
+],
+[
+61903,
+"Russula",
+"consobrina",
+"Russulaceae",
+"Russula consobrina",
+"species",
+"accepted",
+"col_xr",
+"4TRSY"
+],
+[
+61915,
+"Russula",
+"cremeoavellanea",
+"Russulaceae",
+"Russula cremeoavellanea",
+"species",
+"accepted",
+"col_xr",
+"4TRTG"
+],
+[
+61926,
+"Russula",
+"cuprea",
+"Russulaceae",
+"Russula cuprea",
+"species",
+"accepted",
+"col_xr",
+"4TRTT"
+],
+[
+61929,
+"Russula",
+"curtipes",
+"Russulaceae",
+"Russula curtipes",
+"species",
+"accepted",
+"col_xr",
+"4TRTX"
+],
+[
+61951,
+"Russula",
+"emetica",
+"Russulaceae",
+"Russula emetica",
+"species",
+"accepted",
+"col_xr",
+"4TRVW"
+],
+[
+61961,
+"Russula",
+"faginea",
+"Russulaceae",
+"Russula faginea",
+"species",
+"accepted",
+"col_xr",
+"4TRWG"
+],
+[
+61962,
+"Russula",
+"farinipes",
+"Russulaceae",
+"Russula farinipes",
+"species",
+"accepted",
+"col_xr",
+"4TRWJ"
+],
+[
+61966,
+"Russula",
+"favrei",
+"Russulaceae",
+"Russula favrei",
+"species",
+"accepted",
+"col_xr",
+"4TRWN"
+],
+[
+61967,
+"Russula",
+"fellea",
+"Russulaceae",
+"Russula fellea",
+"species",
+"accepted",
+"col_xr",
+"4TRWP"
+],
+[
+61973,
+"Russula",
+"firmula",
+"Russulaceae",
+"Russula firmula",
+"species",
+"accepted",
+"col_xr",
+"4TRWX"
+],
+[
+61989,
+"Russula",
+"foetens",
+"Russulaceae",
+"Russula foetens",
+"species",
+"accepted",
+"col_xr",
+"4TRXM"
+],
+[
+61993,
+"Russula",
+"fontqueri",
+"Russulaceae",
+"Russula fontqueri",
+"species",
+"accepted",
+"col_xr",
+"4TRXR"
+],
+[
+61997,
+"Russula",
+"fragilis",
+"Russulaceae",
+"Russula fragilis",
+"species",
+"accepted",
+"col_xr",
+"4TRXX"
+],
+[
+62007,
+"Russula",
+"fulvograminea",
+"Russulaceae",
+"Russula fulvograminea",
+"species",
+"accepted",
+"col_xr",
+"4TRYB"
+],
+[
+62018,
+"Russula",
+"fuscorubroides",
+"Russulaceae",
+"Russula fuscorubroides",
+"species",
+"accepted",
+"col_xr",
+"4TRYQ"
+],
+[
+62042,
+"Russula",
+"gracillima",
+"Russulaceae",
+"Russula gracillima",
+"species",
+"accepted",
+"col_xr",
+"4TRZM"
+],
+[
+62043,
+"Russula",
+"graminea",
+"Russulaceae",
+"Russula graminea",
+"species",
+"accepted",
+"col_xr",
+"4TRZN"
+],
+[
+62047,
+"Russula",
+"grata",
+"Russulaceae",
+"Russula grata",
+"species",
+"accepted",
+"col_xr",
+"4TRZT"
+],
+[
+62048,
+"Russula",
+"grisea",
+"Russulaceae",
+"Russula grisea",
+"species",
+"accepted",
+"col_xr",
+"4TRZW"
+],
+[
+62055,
+"Russula",
+"groenlandica",
+"Russulaceae",
+"Russula groenlandica",
+"species",
+"accepted",
+"col_xr",
+"4TS27"
+],
+[
+62069,
+"Russula",
+"helodes",
+"Russulaceae",
+"Russula helodes",
+"species",
+"accepted",
+"col_xr",
+"4TS2P"
+],
+[
+62072,
+"Russula",
+"heterochroa",
+"Russulaceae",
+"Russula heterochroa",
+"species",
+"accepted",
+"col_xr",
+"4TS2S"
+],
+[
+62096,
+"Russula",
+"illota",
+"Russulaceae",
+"Russula illota",
+"species",
+"accepted",
+"col_xr",
+"4TS3N"
+],
+[
+62116,
+"Russula",
+"integra",
+"Russulaceae",
+"Russula integra",
+"species",
+"accepted",
+"col_xr",
+"4TS4H"
+],
+[
+62118,
+"Russula",
+"intermedia",
+"Russulaceae",
+"Russula intermedia",
+"species",
+"accepted",
+"col_xr",
+"4TS4K"
+],
+[
+62122,
+"Russula",
+"ionochlora",
+"Russulaceae",
+"Russula ionochlora",
+"species",
+"accepted",
+"col_xr",
+"4TS4P"
+],
+[
+62142,
+"Russula",
+"laccata",
+"Russulaceae",
+"Russula laccata",
+"species",
+"accepted",
+"col_xr",
+"4TS5H"
+],
+[
+62144,
+"Russula",
+"laevis",
+"Russulaceae",
+"Russula laevis",
+"species",
+"accepted",
+"col_xr",
+"4TS5L"
+],
+[
+62165,
+"Russula",
+"lilacea",
+"Russulaceae",
+"Russula lilacea",
+"species",
+"accepted",
+"col_xr",
+"4TS6F"
+],
+[
+62186,
+"Russula",
+"luteotacta",
+"Russulaceae",
+"Russula luteotacta",
+"species",
+"accepted",
+"col_xr",
+"4TS7C"
+],
+[
+62194,
+"Russula",
+"maculata",
+"Russulaceae",
+"Russula maculata",
+"species",
+"accepted",
+"col_xr",
+"4TS7M"
+],
+[
+62210,
+"Russula",
+"mattiroloana",
+"Russulaceae",
+"Russula mattiroloana",
+"species",
+"accepted",
+"col_xr",
+"4TS88"
+],
+[
+62216,
+"Russula",
+"medullata",
+"Russulaceae",
+"Russula medullata",
+"species",
+"accepted",
+"col_xr",
+"4TS8G"
+],
+[
+62221,
+"Russula",
+"melliolens",
+"Russulaceae",
+"Russula melliolens",
+"species",
+"accepted",
+"col_xr",
+"4TS8M"
+],
+[
+62234,
+"Russula",
+"minutula",
+"Russulaceae",
+"Russula minutula",
+"species",
+"accepted",
+"col_xr",
+"4TS97"
+],
+[
+62255,
+"Russula",
+"mustelina",
+"Russulaceae",
+"Russula mustelina",
+"species",
+"accepted",
+"col_xr",
+"4TS9Y"
+],
+[
+62259,
+"Russula",
+"nuoljae",
+"Russulaceae",
+"Russula nuoljae",
+"species",
+"accepted",
+"col_xr",
+"4TSB4"
+],
+[
+62272,
+"Russula",
+"ochroleuca",
+"Russulaceae",
+"Russula ochroleuca",
+"species",
+"accepted",
+"col_xr",
+"4TSBQ"
+],
+[
+62279,
+"Russula",
+"odorata",
+"Russulaceae",
+"Russula odorata",
+"species",
+"accepted",
+"col_xr",
+"4TSBY"
+],
+[
+62285,
+"Russula",
+"olivacea",
+"Russulaceae",
+"Russula olivacea",
+"species",
+"accepted",
+"col_xr",
+"4TSC6"
+],
+[
+62289,
+"Russula",
+"olivina",
+"Russulaceae",
+"Russula olivina",
+"species",
+"accepted",
+"col_xr",
+"4TSCB"
+],
+[
+62290,
+"Russula",
+"olivobrunnea",
+"Russulaceae",
+"Russula olivobrunnea",
+"species",
+"accepted",
+"col_xr",
+"4TSCC"
+],
+[
+62303,
+"Russula",
+"pallescens",
+"Russulaceae",
+"Russula pallescens",
+"species",
+"accepted",
+"col_xr",
+"4TSCS"
+],
+[
+62307,
+"Russula",
+"paludosa",
+"Russulaceae",
+"Russula paludosa",
+"species",
+"accepted",
+"col_xr",
+"4TSCX"
+],
+[
+62320,
+"Russula",
+"parazurea",
+"Russulaceae",
+"Russula parazurea",
+"species",
+"accepted",
+"col_xr",
+"4TSDF"
+],
+[
+62332,
+"Russula",
+"pascua",
+"Russulaceae",
+"Russula pascua",
+"species",
+"accepted",
+"col_xr",
+"4TSDT"
+],
+[
+62386,
+"Russula",
+"pseudointegra",
+"Russulaceae",
+"Russula pseudointegra",
+"species",
+"accepted",
+"col_xr",
+"4TSGP"
+],
+[
+62408,
+"Russula",
+"puellaris",
+"Russulaceae",
+"Russula puellaris",
+"species",
+"accepted",
+"col_xr",
+"4TSHH"
+],
+[
+62409,
+"Russula",
+"puellula",
+"Russulaceae",
+"Russula puellula",
+"species",
+"accepted",
+"col_xr",
+"4TSHJ"
+],
+[
+62433,
+"Russula",
+"queletii",
+"Russulaceae",
+"Russula queletii",
+"species",
+"accepted",
+"col_xr",
+"4TSJQ"
+],
+[
+62441,
+"Russula",
+"raoultii",
+"Russulaceae",
+"Russula raoultii",
+"species",
+"accepted",
+"col_xr",
+"4TSJZ"
+],
+[
+62447,
+"Russula",
+"renidens",
+"Russulaceae",
+"Russula renidens",
+"species",
+"accepted",
+"col_xr",
+"4TSK7"
+],
+[
+62457,
+"Russula",
+"risigallina",
+"Russulaceae",
+"Russula risigallina",
+"species",
+"accepted",
+"col_xr",
+"4TSKN"
+],
+[
+62458,
+"Russula",
+"rivulicola",
+"Russulaceae",
+"Russula rivulicola",
+"species",
+"accepted",
+"col_xr",
+"4TSKP"
+],
+[
+62467,
+"Russula",
+"romellii",
+"Russulaceae",
+"Russula romellii",
+"species",
+"accepted",
+"col_xr",
+"4TSKZ"
+],
+[
+62471,
+"Russula",
+"roseipes",
+"Russulaceae",
+"Russula roseipes",
+"species",
+"accepted",
+"col_xr",
+"4TSL7"
+],
+[
+62474,
+"Russula",
+"roseoaurantia",
+"Russulaceae",
+"Russula roseoaurantia",
+"species",
+"accepted",
+"col_xr",
+"4TSLB"
+],
+[
+62503,
+"Russula",
+"saliceticola",
+"Russulaceae",
+"Russula saliceticola",
+"species",
+"accepted",
+"col_xr",
+"4TSMG"
+],
+[
+62510,
+"Russula",
+"sanguinea",
+"Russulaceae",
+"Russula sanguinea",
+"species",
+"accepted",
+"col_xr",
+"4TSMP"
+],
+[
+62513,
+"Russula",
+"sardonia",
+"Russulaceae",
+"Russula sardonia",
+"species",
+"accepted",
+"col_xr",
+"4TSMS"
+],
+[
+62553,
+"Russula",
+"solaris",
+"Russulaceae",
+"Russula solaris",
+"species",
+"accepted",
+"col_xr",
+"4TSPB"
+],
+[
+62556,
+"Russula",
+"sororia",
+"Russulaceae",
+"Russula sororia",
+"species",
+"accepted",
+"col_xr",
+"4TSPF"
+],
+[
+62563,
+"Russula",
+"sphagnophila",
+"Russulaceae",
+"Russula sphagnophila",
+"species",
+"accepted",
+"col_xr",
+"4TSPN"
+],
+[
+62600,
+"Russula",
+"subfoetens",
+"Russulaceae",
+"Russula subfoetens",
+"species",
+"accepted",
+"col_xr",
+"4TSQY"
+],
+[
+62626,
+"Russula",
+"subrubens",
+"Russulaceae",
+"Russula subrubens",
+"species",
+"accepted",
+"col_xr",
+"4TSRZ"
+],
+[
+62646,
+"Russula",
+"suecica",
+"Russulaceae",
+"Russula suecica",
+"species",
+"accepted",
+"col_xr",
+"4TSSR"
+],
+[
+62651,
+"Russula",
+"taigarum",
+"Russulaceae",
+"Russula taigarum",
+"species",
+"accepted",
+"col_xr",
+"4TSSX"
+],
+[
+62677,
+"Russula",
+"torulosa",
+"Russulaceae",
+"Russula torulosa",
+"species",
+"accepted",
+"col_xr",
+"4TSTT"
+],
+[
+62690,
+"Russula",
+"versicolor",
+"Russulaceae",
+"Russula versicolor",
+"species",
+"accepted",
+"col_xr",
+"4TSVC"
+],
+[
+62691,
+"Russula",
+"vesca",
+"Russulaceae",
+"Russula vesca",
+"species",
+"accepted",
+"col_xr",
+"4TSVD"
+],
+[
+62701,
+"Russula",
+"vinosa",
+"Russulaceae",
+"Russula vinosa",
+"species",
+"accepted",
+"col_xr",
+"4TSVQ"
+],
+[
+62706,
+"Russula",
+"vinososordida",
+"Russulaceae",
+"Russula vinososordida",
+"species",
+"accepted",
+"col_xr",
+"4TSVW"
+],
+[
+62707,
+"Russula",
+"violacea",
+"Russulaceae",
+"Russula violacea",
+"species",
+"accepted",
+"col_xr",
+"4TSVX"
+],
+[
+62710,
+"Russula",
+"violaceoincarnata",
+"Russulaceae",
+"Russula violaceoincarnata",
+"species",
+"accepted",
+"col_xr",
+"4TSW2"
+],
+[
+62712,
+"Russula",
+"violeipes",
+"Russulaceae",
+"Russula violeipes",
+"species",
+"accepted",
+"col_xr",
+"4TSW4"
+],
+[
+62714,
+"Russula",
+"virescens",
+"Russulaceae",
+"Russula virescens",
+"species",
+"accepted",
+"col_xr",
+"4TSW6"
+],
+[
+62739,
+"Russula",
+"xerampelina",
+"Russulaceae",
+"Russula xerampelina",
+"species",
+"accepted",
+"col_xr",
+"4TSX8"
+],
+[
+62749,
+"Russula",
+"zvarae",
+"Russulaceae",
+"Russula zvarae",
+"species",
+"accepted",
+"col_xr",
+"4TSXM"
+],
+[
+78915,
+"Amanita",
+"muscaria",
+"Amanitaceae",
+"Amanita muscaria",
+"species",
+"accepted",
+"col_xr",
+"5TYZ9"
+],
+[
+79684,
+"Aschersonia",
+"intermedia",
+"Clavicipitaceae",
+"Aschersonia intermedia",
+"species",
+"accepted",
+"col_xr",
+"5VRX6"
+],
+[
+79721,
+"Aschersonia",
+"juruensis",
+"Clavicipitaceae",
+"Aschersonia juruensis",
+"species",
+"accepted",
+"col_xr",
+"5VS96"
+],
+[
+80048,
+"Aschersonia",
+"paraensis",
+"Clavicipitaceae",
+"Aschersonia paraensis",
+"species",
+"accepted",
+"col_xr",
+"5W3X6"
+],
+[
+80098,
+"Aschersonia",
+"tamurae",
+"Clavicipitaceae",
+"Aschersonia tamurae",
+"species",
+"accepted",
+"col_xr",
+"5W496"
+],
+[
+80115,
+"Arrhenia",
+"velutipes",
+"Hygrophoraceae",
+"Arrhenia velutipes",
+"species",
+"accepted",
+"col_xr",
+"5W4GJ"
+],
+[
+80960,
+"Cantharellus",
+"eyssartieri",
+"Hydnaceae",
+"Cantharellus eyssartieri",
+"species",
+"accepted",
+"col_xr",
+"5WXV4"
+],
+[
+80961,
+"Cantharellus",
+"albomarginatus",
+"Hydnaceae",
+"Cantharellus albomarginatus",
+"species",
+"accepted",
+"col_xr",
+"5WXV5"
+],
+[
+80973,
+"Cantharellus",
+"applanatus",
+"Hydnaceae",
+"Cantharellus applanatus",
+"species",
+"accepted",
+"col_xr",
+"5WY6T"
+],
+[
+80974,
+"Cantharellus",
+"pseudomiomboensis",
+"Hydnaceae",
+"Cantharellus pseudomiomboensis",
+"species",
+"accepted",
+"col_xr",
+"5WY6X"
+],
+[
+80975,
+"Cantharellus",
+"novoguineensis",
+"Hydnaceae",
+"Cantharellus novoguineensis",
+"species",
+"accepted",
+"col_xr",
+"5WY6Y"
+],
+[
+80976,
+"Cantharellus",
+"borealis",
+"Hydnaceae",
+"Cantharellus borealis",
+"species",
+"accepted",
+"col_xr",
+"5WY75"
+],
+[
+80977,
+"Cantharellus",
+"romagnesianus",
+"Hydnaceae",
+"Cantharellus romagnesianus",
+"species",
+"accepted",
+"col_xr",
+"5WY79"
+],
+[
+81243,
+"Cantharellus",
+"brunneopallidus",
+"Hydnaceae",
+"Cantharellus brunneopallidus",
+"species",
+"accepted",
+"col_xr",
+"5X9V5"
+],
+[
+81244,
+"Cantharellus",
+"sikkimensis",
+"Hydnaceae",
+"Cantharellus sikkimensis",
+"species",
+"accepted",
+"col_xr",
+"5X9V9"
+],
+[
+90183,
+"Aschersonia",
+"viridula",
+"Clavicipitaceae",
+"Aschersonia viridula",
+"species",
+"accepted",
+"col_xr",
+"67RX6"
+],
+[
+90503,
+"Aschersonia",
+"aleyrodis",
+"Clavicipitaceae",
+"Aschersonia aleyrodis",
+"species",
+"accepted",
+"col_xr",
+"683WN"
+],
+[
+90550,
+"Aschersonia",
+"crenulata",
+"Clavicipitaceae",
+"Aschersonia crenulata",
+"species",
+"accepted",
+"col_xr",
+"6848N"
+],
+[
+91343,
+"Cantharellus",
+"hydnoides",
+"Hydnaceae",
+"Cantharellus hydnoides",
+"species",
+"accepted",
+"col_xr",
+"68XV4"
+],
+[
+91344,
+"Cantharellus",
+"caucasicus",
+"Hydnaceae",
+"Cantharellus caucasicus",
+"species",
+"accepted",
+"col_xr",
+"68XV5"
+],
+[
+91369,
+"Cantharellus",
+"paucifurcatus",
+"Hydnaceae",
+"Cantharellus paucifurcatus",
+"species",
+"accepted",
+"col_xr",
+"68Y6Y"
+],
+[
+91370,
+"Cantharellus",
+"nigrescens",
+"Hydnaceae",
+"Cantharellus nigrescens",
+"species",
+"accepted",
+"col_xr",
+"68Y6Z"
+],
+[
+91371,
+"Cantharellus",
+"lateritius",
+"Hydnaceae",
+"Cantharellus lateritius",
+"species",
+"accepted",
+"col_xr",
+"68Y74"
+],
+[
+91630,
+"Cantharellus",
+"decolorans",
+"Hydnaceae",
+"Cantharellus decolorans",
+"species",
+"accepted",
+"col_xr",
+"699V5"
+],
+[
+91631,
+"Cantharellus",
+"variabilicolor",
+"Hydnaceae",
+"Cantharellus variabilicolor",
+"species",
+"accepted",
+"col_xr",
+"699V9"
+],
+[
+92473,
+"Cortinarius",
+"albo-ochraceus",
+"Cortinariaceae",
+"Cortinarius albo-ochraceus",
+"species",
+"accepted",
+"col_xr",
+"6B3Z4"
+],
+[
+98252,
+"Flammulina",
+"callistosporioides",
+"Physalacriaceae",
+"Flammulina callistosporioides",
+"species",
+"accepted",
+"col_xr",
+"6J7PR"
+],
+[
+98255,
+"Flammulina",
+"cephalariae",
+"Physalacriaceae",
+"Flammulina cephalariae",
+"species",
+"accepted",
+"col_xr",
+"6J7Q3"
+],
+[
+98267,
+"Flammulina",
+"yunnanensis",
+"Physalacriaceae",
+"Flammulina yunnanensis",
+"species",
+"accepted",
+"col_xr",
+"6J7R9"
+],
+[
+98268,
+"Flammulina",
+"ononidis",
+"Physalacriaceae",
+"Flammulina ononidis",
+"species",
+"accepted",
+"col_xr",
+"6J7RB"
+],
+[
+98269,
+"Flammulina",
+"similis",
+"Physalacriaceae",
+"Flammulina similis",
+"species",
+"accepted",
+"col_xr",
+"6J7RC"
+],
+[
+98270,
+"Flammulina",
+"ferrugineolutea",
+"Physalacriaceae",
+"Flammulina ferrugineolutea",
+"species",
+"accepted",
+"col_xr",
+"6J7RG"
+],
+[
+98271,
+"Flammulina",
+"fennae",
+"Physalacriaceae",
+"Flammulina fennae",
+"species",
+"accepted",
+"col_xr",
+"6J7RH"
+],
+[
+98272,
+"Flammulina",
+"elastica",
+"Physalacriaceae",
+"Flammulina elastica",
+"species",
+"accepted",
+"col_xr",
+"6J7RJ"
+],
+[
+98273,
+"Flammulina",
+"mexicana",
+"Physalacriaceae",
+"Flammulina mexicana",
+"species",
+"accepted",
+"col_xr",
+"6J7RK"
+],
+[
+98274,
+"Flammulina",
+"lupinicola",
+"Physalacriaceae",
+"Flammulina lupinicola",
+"species",
+"accepted",
+"col_xr",
+"6J7RL"
+],
+[
+98275,
+"Flammulina",
+"finlandica",
+"Physalacriaceae",
+"Flammulina finlandica",
+"species",
+"accepted",
+"col_xr",
+"6J7RN"
+],
+[
+98288,
+"Flammulina",
+"velutipes",
+"Physalacriaceae",
+"Flammulina velutipes",
+"species",
+"accepted",
+"col_xr",
+"6J82Y"
+],
+[
+98290,
+"Flammulina",
+"stratosa",
+"Physalacriaceae",
+"Flammulina stratosa",
+"species",
+"accepted",
+"col_xr",
+"6J83C"
+],
+[
+98291,
+"Flammulina",
+"rossica",
+"Physalacriaceae",
+"Flammulina rossica",
+"species",
+"accepted",
+"col_xr",
+"6J83D"
+],
+[
+98292,
+"Flammulina",
+"populicola",
+"Physalacriaceae",
+"Flammulina populicola",
+"species",
+"accepted",
+"col_xr",
+"6J83F"
+],
+[
+98293,
+"Flammulina",
+"filiformis",
+"Physalacriaceae",
+"Flammulina filiformis",
+"species",
+"accepted",
+"col_xr",
+"6J83G"
+],
+[
+98294,
+"Flammulina",
+"glutinosa",
+"Physalacriaceae",
+"Flammulina glutinosa",
+"species",
+"accepted",
+"col_xr",
+"6J83N"
+],
+[
+111746,
+"Russula",
+"albidogrisea",
+"Russulaceae",
+"Russula albidogrisea",
+"species",
+"accepted",
+"col_xr",
+"6WXHW"
+],
+[
+111747,
+"Russula",
+"abietum",
+"Russulaceae",
+"Russula abietum",
+"species",
+"accepted",
+"col_xr",
+"6WXHX"
+],
+[
+111869,
+"Russula",
+"pectinatoides",
+"Russulaceae",
+"Russula pectinatoides",
+"species",
+"accepted",
+"col_xr",
+"6WZBN"
+],
+[
+111878,
+"Russula",
+"pubescens",
+"Russulaceae",
+"Russula pubescens",
+"species",
+"accepted",
+"col_xr",
+"6WZBY"
+],
+[
+111888,
+"Russula",
+"rhodopus",
+"Russulaceae",
+"Russula rhodopus",
+"species",
+"accepted",
+"col_xr",
+"6WZCD"
+],
+[
+111890,
+"Russula",
+"rutila",
+"Russulaceae",
+"Russula rutila",
+"species",
+"accepted",
+"col_xr",
+"6WZCH"
+],
+[
+112151,
+"Russula",
+"densifolia",
+"Russulaceae",
+"Russula densifolia",
+"species",
+"accepted",
+"col_xr",
+"6X9GT"
+],
+[
+112154,
+"Russula",
+"heterophylla",
+"Russulaceae",
+"Russula heterophylla",
+"species",
+"accepted",
+"col_xr",
+"6X9GX"
+],
+[
+112159,
+"Russula",
+"cyanoxantha",
+"Russulaceae",
+"Russula cyanoxantha",
+"species",
+"accepted",
+"col_xr",
+"6X9H4"
+],
+[
+112161,
+"Russula",
+"delica",
+"Russulaceae",
+"Russula delica",
+"species",
+"accepted",
+"col_xr",
+"6X9H6"
+],
+[
+112168,
+"Russula",
+"nauseosa",
+"Russulaceae",
+"Russula nauseosa",
+"species",
+"accepted",
+"col_xr",
+"6X9HG"
+],
+[
+112173,
+"Russula",
+"allescheri",
+"Russulaceae",
+"Russula allescheri",
+"species",
+"accepted",
+"col_xr",
+"6X9HW"
+],
+[
+112174,
+"Russula",
+"aciculocystis",
+"Russulaceae",
+"Russula aciculocystis",
+"species",
+"accepted",
+"col_xr",
+"6X9HX"
+],
+[
+112175,
+"Russula",
+"aurantioflammans",
+"Russulaceae",
+"Russula aurantioflammans",
+"species",
+"accepted",
+"col_xr",
+"6X9HY"
+],
+[
+122155,
+"Russula",
+"decipiens",
+"Russulaceae",
+"Russula decipiens",
+"species",
+"accepted",
+"col_xr",
+"78XH3"
+],
+[
+122170,
+"Russula",
+"aerina",
+"Russulaceae",
+"Russula aerina",
+"species",
+"accepted",
+"col_xr",
+"78XHX"
+],
+[
+122309,
+"Russula",
+"turci",
+"Russulaceae",
+"Russula turci",
+"species",
+"accepted",
+"col_xr",
+"78ZBF"
+],
+[
+122313,
+"Russula",
+"pectinata",
+"Russulaceae",
+"Russula pectinata",
+"species",
+"accepted",
+"col_xr",
+"78ZBK"
+],
+[
+122315,
+"Russula",
+"pelargonia",
+"Russulaceae",
+"Russula pelargonia",
+"species",
+"accepted",
+"col_xr",
+"78ZBN"
+],
+[
+122318,
+"Russula",
+"persicina",
+"Russulaceae",
+"Russula persicina",
+"species",
+"accepted",
+"col_xr",
+"78ZBR"
+],
+[
+122345,
+"Russula",
+"velenovskyi",
+"Russulaceae",
+"Russula velenovskyi",
+"species",
+"accepted",
+"col_xr",
+"78ZDV"
+],
+[
+122642,
+"Russula",
+"innocua",
+"Russulaceae",
+"Russula innocua",
+"species",
+"accepted",
+"col_xr",
+"799GX"
+],
+[
+122643,
+"Russula",
+"graveolens",
+"Russulaceae",
+"Russula graveolens",
+"species",
+"accepted",
+"col_xr",
+"799GY"
+],
+[
+122645,
+"Russula",
+"clavipes",
+"Russulaceae",
+"Russula clavipes",
+"species",
+"accepted",
+"col_xr",
+"799H2"
+],
+[
+122646,
+"Russula",
+"decolorans",
+"Russulaceae",
+"Russula decolorans",
+"species",
+"accepted",
+"col_xr",
+"799H3"
+],
+[
+122655,
+"Russula",
+"nana",
+"Russulaceae",
+"Russula nana",
+"species",
+"accepted",
+"col_xr",
+"799HF"
+],
+[
+122659,
+"Russula",
+"nitida",
+"Russulaceae",
+"Russula nitida",
+"species",
+"accepted",
+"col_xr",
+"799HK"
+],
+[
+122662,
+"Russula",
+"nobilis",
+"Russulaceae",
+"Russula nobilis",
+"species",
+"accepted",
+"col_xr",
+"799HN"
+],
+[
+122664,
+"Russula",
+"albiclavipes",
+"Russulaceae",
+"Russula albiclavipes",
+"species",
+"accepted",
+"col_xr",
+"799HX"
+],
+[
+123322,
+"Russula",
+"",
+"Russulaceae",
+"Russula",
+"genus",
+"accepted",
+"col_xr",
+"7B7X"
+],
+[
+129742,
+"Cantharellus",
+"",
+"Hydnaceae",
+"Cantharellus",
+"genus",
+"accepted",
+"col_xr",
+"7NRT6"
+],
+[
+131914,
+"Aschersonia",
+"",
+"Phanerochaetaceae",
+"Aschersonia",
+"genus",
+"provisionally accepted",
+"col_xr",
+"9XCM6"
+],
+[
+133349,
+"Cantharellus",
+"albidosquamosus",
+"Hydnaceae",
+"Cantharellus albidosquamosus",
+"species",
+"accepted",
+"col_xr",
+"9Z2GM"
+],
+[
+133350,
+"Cantharellus",
+"albus",
+"Hydnaceae",
+"Cantharellus albus",
+"species",
+"accepted",
+"col_xr",
+"9Z2GN"
+],
+[
+133351,
+"Cantharellus",
+"anzutake",
+"Hydnaceae",
+"Cantharellus anzutake",
+"species",
+"accepted",
+"col_xr",
+"9Z2GP"
+],
+[
+133352,
+"Cantharellus",
+"aurantinus",
+"Hydnaceae",
+"Cantharellus aurantinus",
+"species",
+"accepted",
+"col_xr",
+"9Z2GQ"
+],
+[
+133353,
+"Cantharellus",
+"austrosinensis",
+"Hydnaceae",
+"Cantharellus austrosinensis",
+"species",
+"accepted",
+"col_xr",
+"9Z2GR"
+],
+[
+133354,
+"Cantharellus",
+"betularum",
+"Hydnaceae",
+"Cantharellus betularum",
+"species",
+"accepted",
+"col_xr",
+"9Z2GS"
+],
+[
+133355,
+"Cantharellus",
+"citrinus",
+"Hydnaceae",
+"Cantharellus citrinus",
+"species",
+"accepted",
+"col_xr",
+"9Z2GT"
+],
+[
+133356,
+"Cantharellus",
+"curvatus",
+"Hydnaceae",
+"Cantharellus curvatus",
+"species",
+"accepted",
+"col_xr",
+"9Z2GV"
+],
+[
+133357,
+"Cantharellus",
+"furcatus",
+"Hydnaceae",
+"Cantharellus furcatus",
+"species",
+"accepted",
+"col_xr",
+"9Z2GW"
+],
+[
+133358,
+"Cantharellus",
+"galbanus",
+"Hydnaceae",
+"Cantharellus galbanus",
+"species",
+"accepted",
+"col_xr",
+"9Z2GY"
+],
+[
+133360,
+"Cantharellus",
+"luteovirens",
+"Hydnaceae",
+"Cantharellus luteovirens",
+"species",
+"accepted",
+"col_xr",
+"9Z2H2"
+],
+[
+133361,
+"Cantharellus",
+"macrocarpus",
+"Hydnaceae",
+"Cantharellus macrocarpus",
+"species",
+"accepted",
+"col_xr",
+"9Z2H3"
+],
+[
+133362,
+"Cantharellus",
+"magnus",
+"Hydnaceae",
+"Cantharellus magnus",
+"species",
+"accepted",
+"col_xr",
+"9Z2H4"
+],
+[
+133363,
+"Cantharellus",
+"minioalbus",
+"Hydnaceae",
+"Cantharellus minioalbus",
+"species",
+"accepted",
+"col_xr",
+"9Z2H5"
+],
+[
+133364,
+"Cantharellus",
+"parvoflavus",
+"Hydnaceae",
+"Cantharellus parvoflavus",
+"species",
+"accepted",
+"col_xr",
+"9Z2H6"
+],
+[
+133365,
+"Cantharellus",
+"sinominor",
+"Hydnaceae",
+"Cantharellus sinominor",
+"species",
+"accepted",
+"col_xr",
+"9Z2H7"
+],
+[
+133366,
+"Cantharellus",
+"subminor",
+"Hydnaceae",
+"Cantharellus subminor",
+"species",
+"accepted",
+"col_xr",
+"9Z2H8"
+],
+[
+133367,
+"Cantharellus",
+"verae-crucis",
+"Hydnaceae",
+"Cantharellus verae-crucis",
+"species",
+"accepted",
+"col_xr",
+"9Z2H9"
+],
+[
+133368,
+"Cantharellus",
+"versicolor",
+"Hydnaceae",
+"Cantharellus versicolor",
+"species",
+"accepted",
+"col_xr",
+"9Z2HB"
+],
+[
+133369,
+"Cantharellus",
+"violaceoflavescens",
+"Hydnaceae",
+"Cantharellus violaceoflavescens",
+"species",
+"accepted",
+"col_xr",
+"9Z2HC"
+],
+[
+133370,
+"Cantharellus",
+"xanthocyaneus",
+"Hydnaceae",
+"Cantharellus xanthocyaneus",
+"species",
+"accepted",
+"col_xr",
+"9Z2HD"
+],
+[
+138338,
+"Russula",
+"adwanitekae",
+"Russulaceae",
+"Russula adwanitekae",
+"species",
+"accepted",
+"col_xr",
+"B2MBB"
+],
+[
+138889,
+"Cantharellus",
+"hongneungensis",
+"Hydnaceae",
+"Cantharellus hongneungensis",
+"species",
+"accepted",
+"col_xr",
+"B2N9N"
+],
+[
+139982,
+"Cantharellus",
+"sinocinnabarinus",
+"Hydnaceae",
+"Cantharellus sinocinnabarinus",
+"species",
+"accepted",
+"col_xr",
+"B2Q4H"
+],
+[
+139989,
+"Cantharellus",
+"chrysanthus",
+"Hydnaceae",
+"Cantharellus chrysanthus",
+"species",
+"accepted",
+"col_xr",
+"B2Q4Q"
+],
+[
+139992,
+"Cantharellus",
+"neopersicinus",
+"Hydnaceae",
+"Cantharellus neopersicinus",
+"species",
+"accepted",
+"col_xr",
+"B2Q4T"
+],
+[
+140031,
+"Cantharellus",
+"convexus",
+"Hydnaceae",
+"Cantharellus convexus",
+"species",
+"accepted",
+"col_xr",
+"B2Q67"
+],
+[
+140687,
+"Cantharellus",
+"ravus",
+"Hydnaceae",
+"Cantharellus ravus",
+"species",
+"accepted",
+"col_xr",
+"B2RWQ"
+],
+[
+140796,
+"Cantharellus",
+"albopileatus",
+"Hydnaceae",
+"Cantharellus albopileatus",
+"species",
+"accepted",
+"col_xr",
+"B2S2R"
+],
+[
+140854,
+"Russula",
+"albolutea",
+"Russulaceae",
+"Russula albolutea",
+"species",
+"accepted",
+"col_xr",
+"B2S4Y"
+],
+[
+140996,
+"Cantharellus",
+"pinetorum",
+"Hydnaceae",
+"Cantharellus pinetorum",
+"species",
+"accepted",
+"col_xr",
+"B2SB9"
+],
+[
+141898,
+"Cantharellus",
+"chuiweifanii",
+"Hydnaceae",
+"Cantharellus chuiweifanii",
+"species",
+"accepted",
+"col_xr",
+"B2WPG"
+],
+[
+144143,
+"Cantharellus",
+"laevihymeninus",
+"Hydnaceae",
+"Cantharellus laevihymeninus",
+"species",
+"accepted",
+"col_xr",
+"B357J"
+],
+[
+147285,
+"Aschersonia",
+"cheesemaniae",
+"Clavicipitaceae",
+"Aschersonia cheesemaniae",
+"species",
+"accepted",
+"col_xr",
+"C93B5"
+],
+[
+147286,
+"Aschersonia",
+"isabelladestae",
+"Clavicipitaceae",
+"Aschersonia isabelladestae",
+"species",
+"accepted",
+"col_xr",
+"C93B6"
+],
+[
+147287,
+"Aschersonia",
+"tanyunxianiae",
+"Clavicipitaceae",
+"Aschersonia tanyunxianiae",
+"species",
+"accepted",
+"col_xr",
+"C93BC"
+],
+[
+147335,
+"Cantharellus",
+"intensissimus",
+"Hydnaceae",
+"Cantharellus intensissimus",
+"species",
+"accepted",
+"col_xr",
+"C95FB"
+],
+[
+147336,
+"Cantharellus",
+"rubrosalmoneus",
+"Hydnaceae",
+"Cantharellus rubrosalmoneus",
+"species",
+"accepted",
+"col_xr",
+"C95FT"
+],
+[
+147337,
+"Cantharellus",
+"vicinus",
+"Hydnaceae",
+"Cantharellus vicinus",
+"species",
+"accepted",
+"col_xr",
+"C95G2"
+],
+[
+150931,
+"Cantharellus",
+"cibarius",
+"Hydnaceae",
+"Cantharellus cibarius var. monstrosus",
+"variety",
+"accepted",
+"col_xr",
+"DKC3M"
+],
+[
+151406,
+"Flammulina",
+"velutipes",
+"Physalacriaceae",
+"Flammulina velutipes f. velutipes",
+"form",
+"accepted",
+"col_xr",
+"DRWYY"
+],
+[
+153787,
+"Aschersonia",
+"abnormis",
+"Clavicipitaceae",
+"Aschersonia abnormis",
+"species",
+"accepted",
+"col_xr",
+"H5KC"
+],
+[
+153788,
+"Aschersonia",
+"acutispora",
+"Clavicipitaceae",
+"Aschersonia acutispora",
+"species",
+"accepted",
+"col_xr",
+"H5KD"
+],
+[
+153789,
+"Aschersonia",
+"amazonica",
+"Clavicipitaceae",
+"Aschersonia amazonica",
+"species",
+"accepted",
+"col_xr",
+"H5KF"
+],
+[
+153790,
+"Aschersonia",
+"aurantiaca",
+"Clavicipitaceae",
+"Aschersonia aurantiaca",
+"species",
+"accepted",
+"col_xr",
+"H5KH"
+],
+[
+153791,
+"Aschersonia",
+"australiensis",
+"Clavicipitaceae",
+"Aschersonia australiensis",
+"species",
+"accepted",
+"col_xr",
+"H5KJ"
+],
+[
+153792,
+"Aschersonia",
+"blumenaviensis",
+"Clavicipitaceae",
+"Aschersonia blumenaviensis",
+"species",
+"accepted",
+"col_xr",
+"H5KK"
+],
+[
+153793,
+"Aschersonia",
+"brunnea",
+"Clavicipitaceae",
+"Aschersonia brunnea",
+"species",
+"accepted",
+"col_xr",
+"H5KL"
+],
+[
+153794,
+"Aschersonia",
+"caapi",
+"Clavicipitaceae",
+"Aschersonia caapi",
+"species",
+"accepted",
+"col_xr",
+"H5KM"
+],
+[
+153795,
+"Aschersonia",
+"caespiticia",
+"Clavicipitaceae",
+"Aschersonia caespiticia",
+"species",
+"accepted",
+"col_xr",
+"H5KN"
+],
+[
+153796,
+"Aschersonia",
+"coffeae",
+"Clavicipitaceae",
+"Aschersonia coffeae",
+"species",
+"accepted",
+"col_xr",
+"H5KQ"
+],
+[
+153797,
+"Aschersonia",
+"columnifera",
+"Clavicipitaceae",
+"Aschersonia columnifera",
+"species",
+"accepted",
+"col_xr",
+"H5KR"
+],
+[
+153798,
+"Aschersonia",
+"conica",
+"Clavicipitaceae",
+"Aschersonia conica",
+"species",
+"accepted",
+"col_xr",
+"H5KS"
+],
+[
+153799,
+"Aschersonia",
+"consociata",
+"Clavicipitaceae",
+"Aschersonia consociata",
+"species",
+"accepted",
+"col_xr",
+"H5KT"
+],
+[
+153800,
+"Aschersonia",
+"cubensis",
+"Clavicipitaceae",
+"Aschersonia cubensis",
+"species",
+"accepted",
+"col_xr",
+"H5KX"
+],
+[
+153801,
+"Aschersonia",
+"eugeniae",
+"Clavicipitaceae",
+"Aschersonia eugeniae",
+"species",
+"accepted",
+"col_xr",
+"H5KY"
+],
+[
+153802,
+"Aschersonia",
+"fimbriata",
+"Clavicipitaceae",
+"Aschersonia fimbriata",
+"species",
+"accepted",
+"col_xr",
+"H5KZ"
+],
+[
+153803,
+"Aschersonia",
+"flava",
+"Clavicipitaceae",
+"Aschersonia flava",
+"species",
+"accepted",
+"col_xr",
+"H5L2"
+],
+[
+153804,
+"Aschersonia",
+"flavescens",
+"Clavicipitaceae",
+"Aschersonia flavescens",
+"species",
+"accepted",
+"col_xr",
+"H5L3"
+],
+[
+153805,
+"Aschersonia",
+"flavocitrina",
+"Clavicipitaceae",
+"Aschersonia flavocitrina",
+"species",
+"accepted",
+"col_xr",
+"H5L4"
+],
+[
+153806,
+"Aschersonia",
+"fusispora",
+"Clavicipitaceae",
+"Aschersonia fusispora",
+"species",
+"accepted",
+"col_xr",
+"H5L5"
+],
+[
+153807,
+"Aschersonia",
+"hypocreoidea",
+"Clavicipitaceae",
+"Aschersonia hypocreoidea",
+"species",
+"accepted",
+"col_xr",
+"H5L7"
+],
+[
+153808,
+"Aschersonia",
+"incrassata",
+"Clavicipitaceae",
+"Aschersonia incrassata",
+"species",
+"accepted",
+"col_xr",
+"H5L8"
+],
+[
+153809,
+"Aschersonia",
+"insperata",
+"Clavicipitaceae",
+"Aschersonia insperata",
+"species",
+"accepted",
+"col_xr",
+"H5L9"
+],
+[
+153810,
+"Aschersonia",
+"jacarandae",
+"Clavicipitaceae",
+"Aschersonia jacarandae",
+"species",
+"accepted",
+"col_xr",
+"H5LB"
+],
+[
+153811,
+"Aschersonia",
+"javanica",
+"Clavicipitaceae",
+"Aschersonia javanica",
+"species",
+"accepted",
+"col_xr",
+"H5LC"
+],
+[
+153812,
+"Aschersonia",
+"lauricola",
+"Clavicipitaceae",
+"Aschersonia lauricola",
+"species",
+"accepted",
+"col_xr",
+"H5LF"
+],
+[
+153813,
+"Aschersonia",
+"lecanii",
+"Clavicipitaceae",
+"Aschersonia lecanii",
+"species",
+"accepted",
+"col_xr",
+"H5LG"
+],
+[
+153814,
+"Aschersonia",
+"lecanioides",
+"Clavicipitaceae",
+"Aschersonia lecanioides",
+"species",
+"accepted",
+"col_xr",
+"H5LH"
+],
+[
+153815,
+"Aschersonia",
+"luteola",
+"Clavicipitaceae",
+"Aschersonia luteola",
+"species",
+"accepted",
+"col_xr",
+"H5LJ"
+],
+[
+153816,
+"Aschersonia",
+"macrostromatica",
+"Clavicipitaceae",
+"Aschersonia macrostromatica",
+"species",
+"accepted",
+"col_xr",
+"H5LK"
+],
+[
+153817,
+"Aschersonia",
+"macularis",
+"Clavicipitaceae",
+"Aschersonia macularis",
+"species",
+"accepted",
+"col_xr",
+"H5LL"
+],
+[
+153818,
+"Aschersonia",
+"microspora",
+"Clavicipitaceae",
+"Aschersonia microspora",
+"species",
+"accepted",
+"col_xr",
+"H5LN"
+],
+[
+153819,
+"Aschersonia",
+"minutispora",
+"Clavicipitaceae",
+"Aschersonia minutispora",
+"species",
+"accepted",
+"col_xr",
+"H5LP"
+],
+[
+153820,
+"Aschersonia",
+"murrayae",
+"Clavicipitaceae",
+"Aschersonia murrayae",
+"species",
+"accepted",
+"col_xr",
+"H5LQ"
+],
+[
+153821,
+"Aschersonia",
+"napoleonae",
+"Clavicipitaceae",
+"Aschersonia napoleonae",
+"species",
+"accepted",
+"col_xr",
+"H5LR"
+],
+[
+153822,
+"Aschersonia",
+"narathiwatensis",
+"Clavicipitaceae",
+"Aschersonia narathiwatensis",
+"species",
+"accepted",
+"col_xr",
+"H5LS"
+],
+[
+153823,
+"Aschersonia",
+"papillata",
+"Clavicipitaceae",
+"Aschersonia papillata",
+"species",
+"accepted",
+"col_xr",
+"H5LT"
+],
+[
+153824,
+"Aschersonia",
+"parasitica",
+"Clavicipitaceae",
+"Aschersonia parasitica",
+"species",
+"accepted",
+"col_xr",
+"H5LV"
+],
+[
+153825,
+"Aschersonia",
+"pediculoides",
+"Clavicipitaceae",
+"Aschersonia pediculoides",
+"species",
+"accepted",
+"col_xr",
+"H5LW"
+],
+[
+153826,
+"Aschersonia",
+"philippinensis",
+"Clavicipitaceae",
+"Aschersonia philippinensis",
+"species",
+"accepted",
+"col_xr",
+"H5LX"
+],
+[
+153827,
+"Aschersonia",
+"phthiurioides",
+"Clavicipitaceae",
+"Aschersonia phthiurioides",
+"species",
+"accepted",
+"col_xr",
+"H5LY"
+],
+[
+153828,
+"Aschersonia",
+"pisiformis",
+"Clavicipitaceae",
+"Aschersonia pisiformis",
+"species",
+"accepted",
+"col_xr",
+"H5LZ"
+],
+[
+153829,
+"Aschersonia",
+"pittieri",
+"Clavicipitaceae",
+"Aschersonia pittieri",
+"species",
+"accepted",
+"col_xr",
+"H5M2"
+],
+[
+153830,
+"Aschersonia",
+"placenta",
+"Clavicipitaceae",
+"Aschersonia placenta",
+"species",
+"accepted",
+"col_xr",
+"H5M3"
+],
+[
+153831,
+"Aschersonia",
+"scutelliformis",
+"Clavicipitaceae",
+"Aschersonia scutelliformis",
+"species",
+"accepted",
+"col_xr",
+"H5M6"
+],
+[
+153832,
+"Aschersonia",
+"simplex",
+"Clavicipitaceae",
+"Aschersonia simplex",
+"species",
+"accepted",
+"col_xr",
+"H5M7"
+],
+[
+153833,
+"Aschersonia",
+"suzukii",
+"Clavicipitaceae",
+"Aschersonia suzukii",
+"species",
+"accepted",
+"col_xr",
+"H5M9"
+],
+[
+153834,
+"Aschersonia",
+"tephrosiicola",
+"Clavicipitaceae",
+"Aschersonia tephrosiicola",
+"species",
+"accepted",
+"col_xr",
+"H5MB"
+],
+[
+153835,
+"Aschersonia",
+"turbinata",
+"Clavicipitaceae",
+"Aschersonia turbinata",
+"species",
+"accepted",
+"col_xr",
+"H5MC"
+],
+[
+157025,
+"Aureoboletus",
+"velutipes",
+"Boletaceae",
+"Aureoboletus velutipes",
+"species",
+"accepted",
+"col_xr",
+"JTH5"
+],
+[
+158780,
+"Aschersonia",
+"andropogonis",
+"Phanerochaetaceae",
+"Aschersonia andropogonis",
+"species",
+"accepted",
+"col_xr",
+"LMTVM"
+],
+[
+158781,
+"Aschersonia",
+"badia",
+"Clavicipitaceae",
+"Aschersonia badia",
+"species",
+"accepted",
+"col_xr",
+"LMTWD"
+],
+[
+158782,
+"Aschersonia",
+"basicystis",
+"Clavicipitaceae",
+"Aschersonia basicystis",
+"species",
+"provisionally accepted",
+"col_xr",
+"LMTWP"
+],
+[
+158783,
+"Aschersonia",
+"basicystis",
+"Phanerochaetaceae",
+"Aschersonia basicystis",
+"species",
+"accepted",
+"col_xr",
+"LMTWQ"
+],
+[
+158784,
+"Aschersonia",
+"brunnea",
+"Phanerochaetaceae",
+"Aschersonia brunnea",
+"species",
+"provisionally accepted",
+"col_xr",
+"LMTWY"
+],
+[
+158785,
+"Aschersonia",
+"confluens",
+"Clavicipitaceae",
+"Aschersonia confluens",
+"species",
+"accepted",
+"col_xr",
+"LMTYX"
+],
+[
+158787,
+"Aschersonia",
+"cubensis",
+"Phanerochaetaceae",
+"Aschersonia cubensis",
+"species",
+"provisionally accepted",
+"col_xr",
+"LMV26"
+],
+[
+158788,
+"Aschersonia",
+"duplex",
+"Clavicipitaceae",
+"Aschersonia duplex",
+"species",
+"accepted",
+"col_xr",
+"LMV28"
+],
+[
+158789,
+"Aschersonia",
+"formosensis",
+"Phanerochaetaceae",
+"Aschersonia formosensis",
+"species",
+"accepted",
+"col_xr",
+"LMV38"
+],
+[
+158790,
+"Aschersonia",
+"goldiana",
+"Clavicipitaceae",
+"Aschersonia goldiana",
+"species",
+"accepted",
+"col_xr",
+"LMV3F"
+],
+[
+158791,
+"Aschersonia",
+"goldiana",
+"Phanerochaetaceae",
+"Aschersonia goldiana",
+"species",
+"provisionally accepted",
+"col_xr",
+"LMV3G"
+],
+[
+158792,
+"Aschersonia",
+"kawakamii",
+"Phanerochaetaceae",
+"Aschersonia kawakamii",
+"species",
+"accepted",
+"col_xr",
+"LMV5B"
+],
+[
+158793,
+"Aschersonia",
+"mackerrasiae",
+"Clavicipitaceae",
+"Aschersonia mackerrasiae",
+"species",
+"accepted",
+"col_xr",
+"LMV67"
+],
+[
+158794,
+"Aschersonia",
+"marginata",
+"Clavicipitaceae",
+"Aschersonia marginata",
+"species",
+"accepted",
+"col_xr",
+"LMV6S"
+],
+[
+158795,
+"Aschersonia",
+"marginata",
+"Phanerochaetaceae",
+"Aschersonia marginata",
+"species",
+"provisionally accepted",
+"col_xr",
+"LMV6T"
+],
+[
+158796,
+"Aschersonia",
+"oxystoma",
+"Clavicipitaceae",
+"Aschersonia oxystoma",
+"species",
+"accepted",
+"col_xr",
+"LMV8G"
+],
+[
+159978,
+"Cantharellus",
+"acicularis",
+"Hydnaceae",
+"Cantharellus acicularis",
+"species",
+"accepted",
+"col_xr",
+"M6HDS"
+],
+[
+159979,
+"Cantharellus",
+"applicatus",
+"Hydnaceae",
+"Cantharellus applicatus",
+"species",
+"accepted",
+"col_xr",
+"M6HLC"
+],
+[
+159980,
+"Cantharellus",
+"avellaneus",
+"Hydnaceae",
+"Cantharellus avellaneus",
+"species",
+"accepted",
+"col_xr",
+"M6HPT"
+],
+[
+159981,
+"Cantharellus",
+"brasiliensis",
+"Hydnaceae",
+"Cantharellus brasiliensis",
+"species",
+"accepted",
+"col_xr",
+"M6HR8"
+],
+[
+159982,
+"Cantharellus",
+"canalipes",
+"Hydnaceae",
+"Cantharellus canalipes",
+"species",
+"accepted",
+"col_xr",
+"M6HTQ"
+],
+[
+159983,
+"Cantharellus",
+"candidissimus",
+"Hydnaceae",
+"Cantharellus candidissimus",
+"species",
+"accepted",
+"col_xr",
+"M6HV5"
+],
+[
+159984,
+"Cantharellus",
+"candidus",
+"Hydnaceae",
+"Cantharellus candidus",
+"species",
+"accepted",
+"col_xr",
+"M6HV6"
+],
+[
+159985,
+"Cantharellus",
+"castaneus",
+"Hydnaceae",
+"Cantharellus castaneus",
+"species",
+"accepted",
+"col_xr",
+"M6HWP"
+],
+[
+159986,
+"Cantharellus",
+"cavinae",
+"Hydnaceae",
+"Cantharellus cavinae",
+"species",
+"accepted",
+"col_xr",
+"M6HX2"
+],
+[
+159987,
+"Cantharellus",
+"cibarius",
+"Hydnaceae",
+"Cantharellus cibarius var. carneoalbus",
+"variety",
+"accepted",
+"col_xr",
+"M6HZL"
+],
+[
+159989,
+"Cantharellus",
+"clitocybeformis",
+"Hydnaceae",
+"Cantharellus clitocybeformis",
+"species",
+"accepted",
+"col_xr",
+"M6JF6"
+],
+[
+159990,
+"Cantharellus",
+"collivagus",
+"Hydnaceae",
+"Cantharellus collivagus",
+"species",
+"accepted",
+"col_xr",
+"M6JFR"
+],
+[
+159991,
+"Cantharellus",
+"confertus",
+"Hydnaceae",
+"Cantharellus confertus",
+"species",
+"accepted",
+"col_xr",
+"M6JG7"
+],
+[
+159992,
+"Cantharellus",
+"connatus",
+"Hydnaceae",
+"Cantharellus connatus",
+"species",
+"accepted",
+"col_xr",
+"M6JH9"
+],
+[
+159993,
+"Cantharellus",
+"corconticus",
+"Hydnaceae",
+"Cantharellus corconticus",
+"species",
+"accepted",
+"col_xr",
+"M6JHZ"
+],
+[
+159994,
+"Cantharellus",
+"coriaceus",
+"Hydnaceae",
+"Cantharellus coriaceus",
+"species",
+"accepted",
+"col_xr",
+"M6JJ7"
+],
+[
+159995,
+"Cantharellus",
+"crassinervius",
+"Hydnaceae",
+"Cantharellus crassinervius",
+"species",
+"accepted",
+"col_xr",
+"M6JJS"
+],
+[
+159996,
+"Cantharellus",
+"cucullatus",
+"Hydnaceae",
+"Cantharellus cucullatus",
+"species",
+"accepted",
+"col_xr",
+"M6JLF"
+],
+[
+159997,
+"Cantharellus",
+"cuneiformis",
+"Hydnaceae",
+"Cantharellus cuneiformis",
+"species",
+"accepted",
+"col_xr",
+"M6JLN"
+],
+[
+159998,
+"Cantharellus",
+"cyatheus",
+"Hydnaceae",
+"Cantharellus cyatheus",
+"species",
+"accepted",
+"col_xr",
+"M6JN7"
+],
+[
+159999,
+"Cantharellus",
+"discolor",
+"Hydnaceae",
+"Cantharellus discolor",
+"species",
+"accepted",
+"col_xr",
+"M6JRL"
+],
+[
+160000,
+"Cantharellus",
+"dutrochetii",
+"Hydnaceae",
+"Cantharellus dutrochetii",
+"species",
+"accepted",
+"col_xr",
+"M6JS2"
+],
+[
+160001,
+"Cantharellus",
+"echinosporus",
+"Hydnaceae",
+"Cantharellus echinosporus",
+"species",
+"accepted",
+"col_xr",
+"M6JSF"
+],
+[
+160002,
+"Cantharellus",
+"fascicularis",
+"Hydnaceae",
+"Cantharellus fascicularis",
+"species",
+"accepted",
+"col_xr",
+"M6JV5"
+],
+[
+160003,
+"Cantharellus",
+"fechtneri",
+"Hydnaceae",
+"Cantharellus fechtneri",
+"species",
+"accepted",
+"col_xr",
+"M6JVG"
+],
+[
+160004,
+"Cantharellus",
+"feltgenii",
+"Hydnaceae",
+"Cantharellus feltgenii",
+"species",
+"accepted",
+"col_xr",
+"M6JVM"
+],
+[
+160005,
+"Cantharellus",
+"fissilis",
+"Hydnaceae",
+"Cantharellus fissilis",
+"species",
+"accepted",
+"col_xr",
+"M6JWH"
+],
+[
+160006,
+"Cantharellus",
+"gintlii",
+"Hydnaceae",
+"Cantharellus gintlii",
+"species",
+"accepted",
+"col_xr",
+"M6K2V"
+],
+[
+160007,
+"Cantharellus",
+"graminum",
+"Hydnaceae",
+"Cantharellus graminum",
+"species",
+"accepted",
+"col_xr",
+"M6K45"
+],
+[
+160008,
+"Cantharellus",
+"granulosus",
+"Hydnaceae",
+"Cantharellus granulosus",
+"species",
+"accepted",
+"col_xr",
+"M6K4G"
+],
+[
+160009,
+"Cantharellus",
+"haplorutis",
+"Hydnaceae",
+"Cantharellus haplorutis",
+"species",
+"accepted",
+"col_xr",
+"M6K5T"
+],
+[
+160010,
+"Cantharellus",
+"helvelloideus",
+"Hydnaceae",
+"Cantharellus helvelloideus",
+"species",
+"accepted",
+"col_xr",
+"M6K6P"
+],
+[
+160011,
+"Cantharellus",
+"hiemalis",
+"Hydnaceae",
+"Cantharellus hiemalis",
+"species",
+"accepted",
+"col_xr",
+"M6K75"
+],
+[
+160012,
+"Cantharellus",
+"hygrophanus",
+"Hydnaceae",
+"Cantharellus hygrophanus",
+"species",
+"accepted",
+"col_xr",
+"M6K94"
+],
+[
+160013,
+"Cantharellus",
+"juranus",
+"Hydnaceae",
+"Cantharellus juranus",
+"species",
+"accepted",
+"col_xr",
+"M6KKZ"
+],
+[
+160014,
+"Cantharellus",
+"lacunosus",
+"Hydnaceae",
+"Cantharellus lacunosus",
+"species",
+"accepted",
+"col_xr",
+"M6KM8"
+],
+[
+160015,
+"Cantharellus",
+"limbatus",
+"Hydnaceae",
+"Cantharellus limbatus",
+"species",
+"accepted",
+"col_xr",
+"M6KQ6"
+],
+[
+160016,
+"Cantharellus",
+"ludmilae",
+"Hydnaceae",
+"Cantharellus ludmilae",
+"species",
+"accepted",
+"col_xr",
+"M6KRP"
+],
+[
+160017,
+"Cantharellus",
+"mamillatus",
+"Hydnaceae",
+"Cantharellus mamillatus",
+"species",
+"accepted",
+"col_xr",
+"M6KWY"
+],
+[
+160018,
+"Cantharellus",
+"melanoceras",
+"Hydnaceae",
+"Cantharellus melanoceras",
+"species",
+"accepted",
+"col_xr",
+"M6KX6"
+],
+[
+160019,
+"Cantharellus",
+"minutus",
+"Hydnaceae",
+"Cantharellus minutus",
+"species",
+"accepted",
+"col_xr",
+"M6L2F"
+],
+[
+160020,
+"Cantharellus",
+"morchellocephalus",
+"Hydnaceae",
+"Cantharellus morchellocephalus",
+"species",
+"accepted",
+"col_xr",
+"M6L2M"
+],
+[
+160021,
+"Cantharellus",
+"muscorum",
+"Hydnaceae",
+"Cantharellus muscorum",
+"species",
+"accepted",
+"col_xr",
+"M6L3L"
+],
+[
+160022,
+"Cantharellus",
+"nivosus",
+"Hydnaceae",
+"Cantharellus nivosus",
+"species",
+"accepted",
+"col_xr",
+"M6L5W"
+],
+[
+160023,
+"Cantharellus",
+"partitus",
+"Hydnaceae",
+"Cantharellus partitus",
+"species",
+"accepted",
+"col_xr",
+"M6LBS"
+],
+[
+160024,
+"Cantharellus",
+"ramealis",
+"Hydnaceae",
+"Cantharellus ramealis",
+"species",
+"accepted",
+"col_xr",
+"M6LNX"
+],
+[
+160025,
+"Cantharellus",
+"replexus",
+"Hydnaceae",
+"Cantharellus replexus",
+"species",
+"accepted",
+"col_xr",
+"M6LPS"
+],
+[
+160026,
+"Cantharellus",
+"replexus",
+"Hydnaceae",
+"Cantharellus replexus var. devexus",
+"variety",
+"accepted",
+"col_xr",
+"M6LPY"
+],
+[
+160028,
+"Cantharellus",
+"spathuliformis",
+"Hydnaceae",
+"Cantharellus spathuliformis",
+"species",
+"accepted",
+"col_xr",
+"M6M58"
+],
+[
+160029,
+"Cantharellus",
+"stolonifer",
+"Hydnaceae",
+"Cantharellus stolonifer",
+"species",
+"accepted",
+"col_xr",
+"M6M67"
+],
+[
+160030,
+"Cantharellus",
+"valentinii",
+"Hydnaceae",
+"Cantharellus valentinii",
+"species",
+"accepted",
+"col_xr",
+"M6MPJ"
+],
+[
+160031,
+"Cantharellus",
+"viscosus",
+"Hydnaceae",
+"Cantharellus viscosus",
+"species",
+"accepted",
+"col_xr",
+"M6MT6"
+],
+[
+161596,
+"Cordyceps",
+"velutipes",
+"Cordycipitaceae",
+"Cordyceps velutipes",
+"species",
+"accepted",
+"col_xr",
+"ML3VP"
+],
+[
+162818,
+"Conocybe",
+"velutipes",
+"Bolbitiaceae",
+"Conocybe velutipes var. velutipes",
+"variety",
+"accepted",
+"col_xr",
+"MYHQ2"
+],
+[
+164835,
+"Flammulina",
+"velutipes",
+"Physalacriaceae",
+"Flammulina velutipes var. velutipes",
+"variety",
+"accepted",
+"col_xr",
+"P4H96"
+],
+[
+168850,
+"Cantharellus",
+"afrocibarius",
+"Hydnaceae",
+"Cantharellus afrocibarius",
+"species",
+"accepted",
+"col_xr",
+"QMJB"
+],
+[
+168851,
+"Cantharellus",
+"albidolutescens",
+"Hydnaceae",
+"Cantharellus albidolutescens",
+"species",
+"accepted",
+"col_xr",
+"QMJC"
+],
+[
+168852,
+"Cantharellus",
+"alboroseus",
+"Hydnaceae",
+"Cantharellus alboroseus",
+"species",
+"accepted",
+"col_xr",
+"QMJF"
+],
+[
+168853,
+"Cantharellus",
+"alborufescens",
+"Hydnaceae",
+"Cantharellus alborufescens",
+"species",
+"accepted",
+"col_xr",
+"QMJG"
+],
+[
+168854,
+"Cantharellus",
+"albovenosus",
+"Hydnaceae",
+"Cantharellus albovenosus",
+"species",
+"accepted",
+"col_xr",
+"QMJH"
+],
+[
+168855,
+"Cantharellus",
+"alpinus",
+"Hydnaceae",
+"Cantharellus alpinus",
+"species",
+"accepted",
+"col_xr",
+"QMJK"
+],
+[
+168856,
+"Cantharellus",
+"altipes",
+"Hydnaceae",
+"Cantharellus altipes",
+"species",
+"accepted",
+"col_xr",
+"QMJL"
+],
+[
+168857,
+"Cantharellus",
+"amazonensis",
+"Hydnaceae",
+"Cantharellus amazonensis",
+"species",
+"accepted",
+"col_xr",
+"QMJN"
+],
+[
+168858,
+"Cantharellus",
+"ambohitantelyensis",
+"Hydnaceae",
+"Cantharellus ambohitantelyensis",
+"species",
+"accepted",
+"col_xr",
+"QMJP"
+],
+[
+168859,
+"Cantharellus",
+"amethysteus",
+"Hydnaceae",
+"Cantharellus amethysteus",
+"species",
+"accepted",
+"col_xr",
+"QMJQ"
+],
+[
+168860,
+"Cantharellus",
+"appalachiensis",
+"Hydnaceae",
+"Cantharellus appalachiensis",
+"species",
+"accepted",
+"col_xr",
+"QMJT"
+],
+[
+168861,
+"Cantharellus",
+"atlanticus",
+"Hydnaceae",
+"Cantharellus atlanticus",
+"species",
+"accepted",
+"col_xr",
+"QMJV"
+],
+[
+168862,
+"Cantharellus",
+"atrofuscus",
+"Hydnaceae",
+"Cantharellus atrofuscus",
+"species",
+"accepted",
+"col_xr",
+"QMJX"
+],
+[
+168863,
+"Cantharellus",
+"atrolilacinus",
+"Hydnaceae",
+"Cantharellus atrolilacinus",
+"species",
+"accepted",
+"col_xr",
+"QMJY"
+],
+[
+168864,
+"Cantharellus",
+"attenuatus",
+"Hydnaceae",
+"Cantharellus attenuatus",
+"species",
+"accepted",
+"col_xr",
+"QMJZ"
+],
+[
+168865,
+"Cantharellus",
+"aurantioconspicuus",
+"Hydnaceae",
+"Cantharellus aurantioconspicuus",
+"species",
+"accepted",
+"col_xr",
+"QMK4"
+],
+[
+168866,
+"Cantharellus",
+"californicus",
+"Hydnaceae",
+"Cantharellus californicus",
+"species",
+"accepted",
+"col_xr",
+"QMKK"
+],
+[
+168867,
+"Cantharellus",
+"camphoratus",
+"Hydnaceae",
+"Cantharellus camphoratus",
+"species",
+"accepted",
+"col_xr",
+"QMKL"
+],
+[
+168868,
+"Cantharellus",
+"carneoflavus",
+"Hydnaceae",
+"Cantharellus carneoflavus",
+"species",
+"accepted",
+"col_xr",
+"QMKS"
+],
+[
+168869,
+"Cantharellus",
+"cascadensis",
+"Hydnaceae",
+"Cantharellus cascadensis",
+"species",
+"accepted",
+"col_xr",
+"QMKT"
+],
+[
+168870,
+"Cantharellus",
+"cerinoalbus",
+"Hydnaceae",
+"Cantharellus cerinoalbus",
+"species",
+"accepted",
+"col_xr",
+"QMKV"
+],
+[
+168871,
+"Cantharellus",
+"chicagoensis",
+"Hydnaceae",
+"Cantharellus chicagoensis",
+"species",
+"accepted",
+"col_xr",
+"QMKW"
+],
+[
+168872,
+"Cantharellus",
+"cibarioides",
+"Hydnaceae",
+"Cantharellus cibarioides",
+"species",
+"accepted",
+"col_xr",
+"QMKX"
+],
+[
+168873,
+"Cantharellus",
+"cibarius",
+"Hydnaceae",
+"Cantharellus cibarius",
+"species",
+"accepted",
+"col_xr",
+"QMKY"
+],
+[
+168874,
+"Cantharellus",
+"ciliatus",
+"Hydnaceae",
+"Cantharellus ciliatus",
+"species",
+"accepted",
+"col_xr",
+"QMKZ"
+],
+[
+168875,
+"Cantharellus",
+"cinereus",
+"Hydnaceae",
+"Cantharellus cinereus",
+"species",
+"accepted",
+"col_xr",
+"QML2"
+],
+[
+168876,
+"Cantharellus",
+"cinnabarinus",
+"Hydnaceae",
+"Cantharellus cinnabarinus",
+"species",
+"accepted",
+"col_xr",
+"QML3"
+],
+[
+168877,
+"Cantharellus",
+"coccolobae",
+"Hydnaceae",
+"Cantharellus coccolobae",
+"species",
+"accepted",
+"col_xr",
+"QML5"
+],
+[
+168878,
+"Cantharellus",
+"congolensis",
+"Hydnaceae",
+"Cantharellus congolensis",
+"species",
+"accepted",
+"col_xr",
+"QML8"
+],
+[
+168879,
+"Cantharellus",
+"conspicuus",
+"Hydnaceae",
+"Cantharellus conspicuus",
+"species",
+"accepted",
+"col_xr",
+"QML9"
+],
+[
+168880,
+"Cantharellus",
+"corallinus",
+"Hydnaceae",
+"Cantharellus corallinus",
+"species",
+"accepted",
+"col_xr",
+"QMLB"
+],
+[
+168881,
+"Cantharellus",
+"croceifolius",
+"Hydnaceae",
+"Cantharellus croceifolius",
+"species",
+"accepted",
+"col_xr",
+"QMLH"
+],
+[
+168882,
+"Cantharellus",
+"cuticulatus",
+"Hydnaceae",
+"Cantharellus cuticulatus",
+"species",
+"accepted",
+"col_xr",
+"QMLM"
+],
+[
+168883,
+"Cantharellus",
+"cyanoxanthus",
+"Hydnaceae",
+"Cantharellus cyanoxanthus",
+"species",
+"accepted",
+"col_xr",
+"QMLP"
+],
+[
+168884,
+"Cantharellus",
+"cyphelloides",
+"Hydnaceae",
+"Cantharellus cyphelloides",
+"species",
+"accepted",
+"col_xr",
+"QMLQ"
+],
+[
+168885,
+"Cantharellus",
+"deceptivus",
+"Hydnaceae",
+"Cantharellus deceptivus",
+"species",
+"accepted",
+"col_xr",
+"QMLS"
+],
+[
+168886,
+"Cantharellus",
+"decipiens",
+"Hydnaceae",
+"Cantharellus decipiens",
+"species",
+"accepted",
+"col_xr",
+"QMLT"
+],
+[
+168887,
+"Cantharellus",
+"defibulatus",
+"Hydnaceae",
+"Cantharellus defibulatus",
+"species",
+"accepted",
+"col_xr",
+"QMLV"
+],
+[
+168888,
+"Cantharellus",
+"delitescens",
+"Hydnaceae",
+"Cantharellus delitescens",
+"species",
+"accepted",
+"col_xr",
+"QMLW"
+],
+[
+168889,
+"Cantharellus",
+"densifolius",
+"Hydnaceae",
+"Cantharellus densifolius",
+"species",
+"accepted",
+"col_xr",
+"QMLX"
+],
+[
+168890,
+"Cantharellus",
+"densilamellatus",
+"Hydnaceae",
+"Cantharellus densilamellatus",
+"species",
+"accepted",
+"col_xr",
+"QMLY"
+],
+[
+168891,
+"Cantharellus",
+"diminutivus",
+"Hydnaceae",
+"Cantharellus diminutivus",
+"species",
+"accepted",
+"col_xr",
+"QMM2"
+],
+[
+168892,
+"Cantharellus",
+"eccentricus",
+"Hydnaceae",
+"Cantharellus eccentricus",
+"species",
+"accepted",
+"col_xr",
+"QMM4"
+],
+[
+168893,
+"Cantharellus",
+"elongatipes",
+"Hydnaceae",
+"Cantharellus elongatipes",
+"species",
+"accepted",
+"col_xr",
+"QMM6"
+],
+[
+168894,
+"Cantharellus",
+"elsae",
+"Hydnaceae",
+"Cantharellus elsae",
+"species",
+"accepted",
+"col_xr",
+"QMM7"
+],
+[
+168895,
+"Cantharellus",
+"enelensis",
+"Hydnaceae",
+"Cantharellus enelensis",
+"species",
+"accepted",
+"col_xr",
+"QMM8"
+],
+[
+168896,
+"Cantharellus",
+"eucalyptorum",
+"Hydnaceae",
+"Cantharellus eucalyptorum",
+"species",
+"accepted",
+"col_xr",
+"QMM9"
+],
+[
+168897,
+"Cantharellus",
+"ferruginascens",
+"Hydnaceae",
+"Cantharellus ferruginascens",
+"species",
+"accepted",
+"col_xr",
+"QMMC"
+],
+[
+168898,
+"Cantharellus",
+"fibrillosus",
+"Hydnaceae",
+"Cantharellus fibrillosus",
+"species",
+"accepted",
+"col_xr",
+"QMMD"
+],
+[
+168899,
+"Cantharellus",
+"flavolateritius",
+"Hydnaceae",
+"Cantharellus flavolateritius",
+"species",
+"accepted",
+"col_xr",
+"QMMK"
+],
+[
+168900,
+"Cantharellus",
+"flavus",
+"Hydnaceae",
+"Cantharellus flavus",
+"species",
+"accepted",
+"col_xr",
+"QMML"
+],
+[
+168901,
+"Cantharellus",
+"floridulus",
+"Hydnaceae",
+"Cantharellus floridulus",
+"species",
+"accepted",
+"col_xr",
+"QMMN"
+],
+[
+168902,
+"Cantharellus",
+"formosus",
+"Hydnaceae",
+"Cantharellus formosus",
+"species",
+"accepted",
+"col_xr",
+"QMMP"
+],
+[
+168903,
+"Cantharellus",
+"friesii",
+"Hydnaceae",
+"Cantharellus friesii",
+"species",
+"accepted",
+"col_xr",
+"QMMQ"
+],
+[
+168904,
+"Cantharellus",
+"fuligineus",
+"Hydnaceae",
+"Cantharellus fuligineus",
+"species",
+"accepted",
+"col_xr",
+"QMMS"
+],
+[
+168905,
+"Cantharellus",
+"gallaecicus",
+"Hydnaceae",
+"Cantharellus gallaecicus",
+"species",
+"accepted",
+"col_xr",
+"QMMV"
+],
+[
+168906,
+"Cantharellus",
+"garnierii",
+"Hydnaceae",
+"Cantharellus garnierii",
+"species",
+"accepted",
+"col_xr",
+"QMMW"
+],
+[
+168907,
+"Cantharellus",
+"goossensiae",
+"Hydnaceae",
+"Cantharellus goossensiae",
+"species",
+"accepted",
+"col_xr",
+"QMMY"
+],
+[
+168909,
+"Cantharellus",
+"gracilis",
+"Hydnaceae",
+"Cantharellus gracilis",
+"species",
+"accepted",
+"col_xr",
+"QMMZ"
+],
+[
+168910,
+"Cantharellus",
+"griseoisabellinus",
+"Hydnaceae",
+"Cantharellus griseoisabellinus",
+"species",
+"accepted",
+"col_xr",
+"QMN2"
+],
+[
+168913,
+"Cantharellus",
+"griseotinctus",
+"Hydnaceae",
+"Cantharellus griseotinctus",
+"species",
+"accepted",
+"col_xr",
+"QMN3"
+],
+[
+168914,
+"Cantharellus",
+"guineensis",
+"Hydnaceae",
+"Cantharellus guineensis",
+"species",
+"accepted",
+"col_xr",
+"QMN4"
+],
+[
+168915,
+"Cantharellus",
+"guyanensis",
+"Hydnaceae",
+"Cantharellus guyanensis",
+"species",
+"accepted",
+"col_xr",
+"QMN5"
+],
+[
+168916,
+"Cantharellus",
+"hainanensis",
+"Hydnaceae",
+"Cantharellus hainanensis",
+"species",
+"accepted",
+"col_xr",
+"QMN6"
+],
+[
+168917,
+"Cantharellus",
+"heinemannianus",
+"Hydnaceae",
+"Cantharellus heinemannianus",
+"species",
+"accepted",
+"col_xr",
+"QMN7"
+],
+[
+168919,
+"Cantharellus",
+"henrici",
+"Hydnaceae",
+"Cantharellus henrici",
+"species",
+"accepted",
+"col_xr",
+"QMN8"
+],
+[
+168920,
+"Cantharellus",
+"himalayensis",
+"Hydnaceae",
+"Cantharellus himalayensis",
+"species",
+"accepted",
+"col_xr",
+"QMN9"
+],
+[
+168921,
+"Cantharellus",
+"humidicola",
+"Hydnaceae",
+"Cantharellus humidicola",
+"species",
+"accepted",
+"col_xr",
+"QMNC"
+],
+[
+168922,
+"Cantharellus",
+"hygrophoroides",
+"Hydnaceae",
+"Cantharellus hygrophoroides",
+"species",
+"accepted",
+"col_xr",
+"QMNG"
+],
+[
+168923,
+"Cantharellus",
+"hystrix",
+"Hydnaceae",
+"Cantharellus hystrix",
+"species",
+"accepted",
+"col_xr",
+"QMNJ"
+],
+[
+168924,
+"Cantharellus",
+"ianthinoxanthus",
+"Hydnaceae",
+"Cantharellus ianthinoxanthus",
+"species",
+"accepted",
+"col_xr",
+"QMNK"
+],
+[
+168925,
+"Cantharellus",
+"ianthinus",
+"Hydnaceae",
+"Cantharellus ianthinus",
+"species",
+"accepted",
+"col_xr",
+"QMNL"
+],
+[
+168926,
+"Cantharellus",
+"ibityensis",
+"Hydnaceae",
+"Cantharellus ibityensis",
+"species",
+"accepted",
+"col_xr",
+"QMNM"
+],
+[
+168927,
+"Cantharellus",
+"imperatae",
+"Hydnaceae",
+"Cantharellus imperatae",
+"species",
+"accepted",
+"col_xr",
+"QMNR"
+],
+[
+168928,
+"Cantharellus",
+"inconspicuus",
+"Hydnaceae",
+"Cantharellus inconspicuus",
+"species",
+"accepted",
+"col_xr",
+"QMNV"
+],
+[
+168929,
+"Cantharellus",
+"incrassatus",
+"Hydnaceae",
+"Cantharellus incrassatus",
+"species",
+"accepted",
+"col_xr",
+"QMNW"
+],
+[
+168930,
+"Cantharellus",
+"indicus",
+"Hydnaceae",
+"Cantharellus indicus",
+"species",
+"accepted",
+"col_xr",
+"QMNX"
+],
+[
+168931,
+"Cantharellus",
+"isabellinus",
+"Hydnaceae",
+"Cantharellus isabellinus",
+"species",
+"accepted",
+"col_xr",
+"QMP2"
+],
+[
+168932,
+"Cantharellus",
+"iuventateviridis",
+"Hydnaceae",
+"Cantharellus iuventateviridis",
+"species",
+"accepted",
+"col_xr",
+"QMP3"
+],
+[
+168933,
+"Cantharellus",
+"koreanus",
+"Hydnaceae",
+"Cantharellus koreanus",
+"species",
+"accepted",
+"col_xr",
+"QMP8"
+],
+[
+168934,
+"Cantharellus",
+"lewisii",
+"Hydnaceae",
+"Cantharellus lewisii",
+"species",
+"accepted",
+"col_xr",
+"QMPC"
+],
+[
+168935,
+"Cantharellus",
+"longisporus",
+"Hydnaceae",
+"Cantharellus longisporus",
+"species",
+"accepted",
+"col_xr",
+"QMPG"
+],
+[
+168936,
+"Cantharellus",
+"lourizanianus",
+"Hydnaceae",
+"Cantharellus lourizanianus",
+"species",
+"accepted",
+"col_xr",
+"QMPH"
+],
+[
+168937,
+"Cantharellus",
+"luteopunctatus",
+"Hydnaceae",
+"Cantharellus luteopunctatus",
+"species",
+"accepted",
+"col_xr",
+"QMPL"
+],
+[
+168938,
+"Cantharellus",
+"luteostipitatus",
+"Hydnaceae",
+"Cantharellus luteostipitatus",
+"species",
+"accepted",
+"col_xr",
+"QMPM"
+],
+[
+168939,
+"Cantharellus",
+"melanoxeros",
+"Hydnaceae",
+"Cantharellus melanoxeros",
+"species",
+"accepted",
+"col_xr",
+"QMPP"
+],
+[
+168940,
+"Cantharellus",
+"merrillii",
+"Hydnaceae",
+"Cantharellus merrillii",
+"species",
+"accepted",
+"col_xr",
+"QMPQ"
+],
+[
+168941,
+"Cantharellus",
+"microcibarius",
+"Hydnaceae",
+"Cantharellus microcibarius",
+"species",
+"accepted",
+"col_xr",
+"QMPR"
+],
+[
+168942,
+"Cantharellus",
+"mikemboensis",
+"Hydnaceae",
+"Cantharellus mikemboensis",
+"species",
+"accepted",
+"col_xr",
+"QMPS"
+],
+[
+168943,
+"Cantharellus",
+"miniatescens",
+"Hydnaceae",
+"Cantharellus miniatescens",
+"species",
+"accepted",
+"col_xr",
+"QMPT"
+],
+[
+168944,
+"Cantharellus",
+"minor",
+"Hydnaceae",
+"Cantharellus minor",
+"species",
+"accepted",
+"col_xr",
+"QMPW"
+],
+[
+168945,
+"Cantharellus",
+"minutissimus",
+"Hydnaceae",
+"Cantharellus minutissimus",
+"species",
+"accepted",
+"col_xr",
+"QMPX"
+],
+[
+168946,
+"Cantharellus",
+"miomboensis",
+"Hydnaceae",
+"Cantharellus miomboensis",
+"species",
+"accepted",
+"col_xr",
+"QMPY"
+],
+[
+168947,
+"Cantharellus",
+"natarajanii",
+"Hydnaceae",
+"Cantharellus natarajanii",
+"species",
+"accepted",
+"col_xr",
+"QMQ7"
+],
+[
+168948,
+"Cantharellus",
+"neocaledoniensis",
+"Hydnaceae",
+"Cantharellus neocaledoniensis",
+"species",
+"accepted",
+"col_xr",
+"QMQ9"
+],
+[
+168949,
+"Cantharellus",
+"nigripedes",
+"Hydnaceae",
+"Cantharellus nigripedes",
+"species",
+"accepted",
+"col_xr",
+"QMQB"
+],
+[
+168950,
+"Cantharellus",
+"nothofagorum",
+"Hydnaceae",
+"Cantharellus nothofagorum",
+"species",
+"accepted",
+"col_xr",
+"QMQC"
+],
+[
+168951,
+"Cantharellus",
+"ochraceoravus",
+"Hydnaceae",
+"Cantharellus ochraceoravus",
+"species",
+"accepted",
+"col_xr",
+"QMQF"
+],
+[
+168952,
+"Cantharellus",
+"odoratus",
+"Hydnaceae",
+"Cantharellus odoratus",
+"species",
+"accepted",
+"col_xr",
+"QMQJ"
+],
+[
+168953,
+"Cantharellus",
+"omphalinoides",
+"Hydnaceae",
+"Cantharellus omphalinoides",
+"species",
+"accepted",
+"col_xr",
+"QMQM"
+],
+[
+168954,
+"Cantharellus",
+"pallens",
+"Hydnaceae",
+"Cantharellus pallens",
+"species",
+"accepted",
+"col_xr",
+"QMQN"
+],
+[
+168955,
+"Cantharellus",
+"parviluteus",
+"Hydnaceae",
+"Cantharellus parviluteus",
+"species",
+"accepted",
+"col_xr",
+"QMQR"
+],
+[
+168956,
+"Cantharellus",
+"parvisporus",
+"Hydnaceae",
+"Cantharellus parvisporus",
+"species",
+"accepted",
+"col_xr",
+"QMQS"
+],
+[
+168957,
+"Cantharellus",
+"pellucidus",
+"Hydnaceae",
+"Cantharellus pellucidus",
+"species",
+"accepted",
+"col_xr",
+"QMQV"
+],
+[
+168958,
+"Cantharellus",
+"persicinus",
+"Hydnaceae",
+"Cantharellus persicinus",
+"species",
+"accepted",
+"col_xr",
+"QMQX"
+],
+[
+168959,
+"Cantharellus",
+"phasmatis",
+"Hydnaceae",
+"Cantharellus phasmatis",
+"species",
+"accepted",
+"col_xr",
+"QMQY"
+],
+[
+168960,
+"Cantharellus",
+"phloginus",
+"Hydnaceae",
+"Cantharellus phloginus",
+"species",
+"accepted",
+"col_xr",
+"QMQZ"
+],
+[
+168961,
+"Cantharellus",
+"plicatulus",
+"Hydnaceae",
+"Cantharellus plicatulus",
+"species",
+"accepted",
+"col_xr",
+"QMR4"
+],
+[
+168962,
+"Cantharellus",
+"protectus",
+"Hydnaceae",
+"Cantharellus protectus",
+"species",
+"accepted",
+"col_xr",
+"QMR8"
+],
+[
+168963,
+"Cantharellus",
+"pseudocibarius",
+"Hydnaceae",
+"Cantharellus pseudocibarius",
+"species",
+"accepted",
+"col_xr",
+"QMR9"
+],
+[
+168964,
+"Cantharellus",
+"pseudoformosus",
+"Hydnaceae",
+"Cantharellus pseudoformosus",
+"species",
+"accepted",
+"col_xr",
+"QMRB"
+],
+[
+168965,
+"Cantharellus",
+"pseudofriesii",
+"Hydnaceae",
+"Cantharellus pseudofriesii",
+"species",
+"accepted",
+"col_xr",
+"QMRC"
+],
+[
+168966,
+"Cantharellus",
+"pseudominimus",
+"Hydnaceae",
+"Cantharellus pseudominimus",
+"species",
+"accepted",
+"col_xr",
+"QMRD"
+],
+[
+168967,
+"Cantharellus",
+"pudorinus",
+"Hydnaceae",
+"Cantharellus pudorinus",
+"species",
+"accepted",
+"col_xr",
+"QMRF"
+],
+[
+168968,
+"Cantharellus",
+"purpuraceus",
+"Hydnaceae",
+"Cantharellus purpuraceus",
+"species",
+"accepted",
+"col_xr",
+"QMRG"
+],
+[
+168969,
+"Cantharellus",
+"pusio",
+"Hydnaceae",
+"Cantharellus pusio",
+"species",
+"accepted",
+"col_xr",
+"QMRK"
+],
+[
+168970,
+"Cantharellus",
+"queletii",
+"Hydnaceae",
+"Cantharellus queletii",
+"species",
+"accepted",
+"col_xr",
+"QMRL"
+],
+[
+168971,
+"Cantharellus",
+"quercophilus",
+"Hydnaceae",
+"Cantharellus quercophilus",
+"species",
+"accepted",
+"col_xr",
+"QMRM"
+],
+[
+168972,
+"Cantharellus",
+"reniformis",
+"Hydnaceae",
+"Cantharellus reniformis",
+"species",
+"accepted",
+"col_xr",
+"QMRR"
+],
+[
+168973,
+"Cantharellus",
+"rhodophyllus",
+"Hydnaceae",
+"Cantharellus rhodophyllus",
+"species",
+"accepted",
+"col_xr",
+"QMRT"
+],
+[
+168974,
+"Cantharellus",
+"roseocanus",
+"Hydnaceae",
+"Cantharellus roseocanus",
+"species",
+"accepted",
+"col_xr",
+"QMRW"
+],
+[
+168975,
+"Cantharellus",
+"roseofagetorum",
+"Hydnaceae",
+"Cantharellus roseofagetorum",
+"species",
+"accepted",
+"col_xr",
+"QMRX"
+],
+[
+168976,
+"Cantharellus",
+"ruber",
+"Hydnaceae",
+"Cantharellus ruber",
+"species",
+"accepted",
+"col_xr",
+"QMRY"
+],
+[
+168977,
+"Cantharellus",
+"rubescens",
+"Hydnaceae",
+"Cantharellus rubescens",
+"species",
+"accepted",
+"col_xr",
+"QMRZ"
+],
+[
+168978,
+"Cantharellus",
+"rufopunctatus",
+"Hydnaceae",
+"Cantharellus rufopunctatus",
+"species",
+"accepted",
+"col_xr",
+"QMS5"
+],
+[
+168979,
+"Cantharellus",
+"schmitzii",
+"Hydnaceae",
+"Cantharellus schmitzii",
+"species",
+"accepted",
+"col_xr",
+"QMS7"
+],
+[
+168980,
+"Cantharellus",
+"sebosus",
+"Hydnaceae",
+"Cantharellus sebosus",
+"species",
+"accepted",
+"col_xr",
+"QMS8"
+],
+[
+168981,
+"Cantharellus",
+"septentrionalis",
+"Hydnaceae",
+"Cantharellus septentrionalis",
+"species",
+"accepted",
+"col_xr",
+"QMS9"
+],
+[
+168982,
+"Cantharellus",
+"solidus",
+"Hydnaceae",
+"Cantharellus solidus",
+"species",
+"accepted",
+"col_xr",
+"QMSC"
+],
+[
+168983,
+"Cantharellus",
+"sordidus",
+"Hydnaceae",
+"Cantharellus sordidus",
+"species",
+"accepted",
+"col_xr",
+"QMSD"
+],
+[
+168984,
+"Cantharellus",
+"spectaculus",
+"Hydnaceae",
+"Cantharellus spectaculus",
+"species",
+"accepted",
+"col_xr",
+"QMSG"
+],
+[
+168985,
+"Cantharellus",
+"stramineus",
+"Hydnaceae",
+"Cantharellus stramineus",
+"species",
+"accepted",
+"col_xr",
+"QMSK"
+],
+[
+168986,
+"Cantharellus",
+"subalbidus",
+"Hydnaceae",
+"Cantharellus subalbidus",
+"species",
+"accepted",
+"col_xr",
+"QMSL"
+],
+[
+168987,
+"Cantharellus",
+"subamethysteus",
+"Hydnaceae",
+"Cantharellus subamethysteus",
+"species",
+"accepted",
+"col_xr",
+"QMSM"
+],
+[
+168988,
+"Cantharellus",
+"subcibarius",
+"Hydnaceae",
+"Cantharellus subcibarius",
+"species",
+"accepted",
+"col_xr",
+"QMSN"
+],
+[
+168989,
+"Cantharellus",
+"subcyanoxanthus",
+"Hydnaceae",
+"Cantharellus subcyanoxanthus",
+"species",
+"accepted",
+"col_xr",
+"QMSP"
+],
+[
+168990,
+"Cantharellus",
+"subdenticulatus",
+"Hydnaceae",
+"Cantharellus subdenticulatus",
+"species",
+"accepted",
+"col_xr",
+"QMSQ"
+],
+[
+168991,
+"Cantharellus",
+"subfloridulus",
+"Hydnaceae",
+"Cantharellus subfloridulus",
+"species",
+"accepted",
+"col_xr",
+"QMSR"
+],
+[
+168992,
+"Cantharellus",
+"subincarnatus",
+"Hydnaceae",
+"Cantharellus subincarnatus",
+"species",
+"accepted",
+"col_xr",
+"QMSS"
+],
+[
+168993,
+"Cantharellus",
+"sublaevis",
+"Hydnaceae",
+"Cantharellus sublaevis",
+"species",
+"accepted",
+"col_xr",
+"QMST"
+],
+[
+168994,
+"Cantharellus",
+"subvaginatus",
+"Hydnaceae",
+"Cantharellus subvaginatus",
+"species",
+"accepted",
+"col_xr",
+"QMSW"
+],
+[
+168995,
+"Cantharellus",
+"tabernensis",
+"Hydnaceae",
+"Cantharellus tabernensis",
+"species",
+"accepted",
+"col_xr",
+"QMSY"
+],
+[
+168996,
+"Cantharellus",
+"tanzanicus",
+"Hydnaceae",
+"Cantharellus tanzanicus",
+"species",
+"accepted",
+"col_xr",
+"QMSZ"
+],
+[
+168997,
+"Cantharellus",
+"tenuis",
+"Hydnaceae",
+"Cantharellus tenuis",
+"species",
+"accepted",
+"col_xr",
+"QMT2"
+],
+[
+168998,
+"Cantharellus",
+"tenuithrix",
+"Hydnaceae",
+"Cantharellus tenuithrix",
+"species",
+"accepted",
+"col_xr",
+"QMT3"
+],
+[
+168999,
+"Cantharellus",
+"texensis",
+"Hydnaceae",
+"Cantharellus texensis",
+"species",
+"accepted",
+"col_xr",
+"QMT4"
+],
+[
+169000,
+"Cantharellus",
+"tomentosoides",
+"Hydnaceae",
+"Cantharellus tomentosoides",
+"species",
+"accepted",
+"col_xr",
+"QMT5"
+],
+[
+169001,
+"Cantharellus",
+"tomentosus",
+"Hydnaceae",
+"Cantharellus tomentosus",
+"species",
+"accepted",
+"col_xr",
+"QMT6"
+],
+[
+169002,
+"Cantharellus",
+"tricolor",
+"Hydnaceae",
+"Cantharellus tricolor",
+"species",
+"accepted",
+"col_xr",
+"QMT7"
+],
+[
+169003,
+"Cantharellus",
+"tuberculosporus",
+"Hydnaceae",
+"Cantharellus tuberculosporus",
+"species",
+"accepted",
+"col_xr",
+"QMT9"
+],
+[
+169004,
+"Cantharellus",
+"umbriceps",
+"Hydnaceae",
+"Cantharellus umbriceps",
+"species",
+"accepted",
+"col_xr",
+"QMTB"
+],
+[
+169005,
+"Cantharellus",
+"vaginatus",
+"Hydnaceae",
+"Cantharellus vaginatus",
+"species",
+"accepted",
+"col_xr",
+"QMTD"
+],
+[
+169006,
+"Cantharellus",
+"velutinus",
+"Hydnaceae",
+"Cantharellus velutinus",
+"species",
+"accepted",
+"col_xr",
+"QMTF"
+],
+[
+169007,
+"Cantharellus",
+"violaceovinosus",
+"Hydnaceae",
+"Cantharellus violaceovinosus",
+"species",
+"accepted",
+"col_xr",
+"QMTH"
+],
+[
+169008,
+"Cantharellus",
+"violicolor",
+"Hydnaceae",
+"Cantharellus violicolor",
+"species",
+"accepted",
+"col_xr",
+"QMTJ"
+],
+[
+169009,
+"Cantharellus",
+"wellingtonensis",
+"Hydnaceae",
+"Cantharellus wellingtonensis",
+"species",
+"accepted",
+"col_xr",
+"QMTN"
+],
+[
+169010,
+"Cantharellus",
+"xanthoscyphus",
+"Hydnaceae",
+"Cantharellus xanthoscyphus",
+"species",
+"accepted",
+"col_xr",
+"QMTR"
+],
+[
+169011,
+"Cantharellus",
+"yunnanensis",
+"Hydnaceae",
+"Cantharellus yunnanensis",
+"species",
+"accepted",
+"col_xr",
+"QMTS"
+],
+[
+169012,
+"Cantharellus",
+"zangii",
+"Hydnaceae",
+"Cantharellus zangii",
+"species",
+"accepted",
+"col_xr",
+"QMTT"
+],
+[
+604019,
+"Russula",
+"acris",
+"Russulaceae",
+"Russula acris",
+"species",
+"accepted",
+"col_xr",
+"SLLNY"
+],
+[
+604020,
+"Russula",
+"albidula",
+"Russulaceae",
+"Russula albidula",
+"species",
+"accepted",
+"col_xr",
+"SLLZ3"
+],
+[
+604033,
+"Russula",
+"crassipes",
+"Russulaceae",
+"Russula crassipes",
+"species",
+"accepted",
+"col_xr",
+"SLQGD"
+],
+[
+604036,
+"Russula",
+"depallens",
+"Russulaceae",
+"Russula depallens",
+"species",
+"accepted",
+"col_xr",
+"SLRBR"
+],
+[
+604039,
+"Russula",
+"fennoscandica",
+"Russulaceae",
+"Russula fennoscandica",
+"species",
+"accepted",
+"col_xr",
+"SLSBW"
+],
+[
+604050,
+"Russula",
+"lapponica",
+"Russulaceae",
+"Russula lapponica",
+"species",
+"accepted",
+"col_xr",
+"SLVDQ"
+],
+[
+608830,
+"Russula",
+"acrialbida",
+"Russulaceae",
+"Russula acrialbida",
+"species",
+"accepted",
+"col_xr",
+"V2MPN"
+],
+[
+609565,
+"Russula",
+"abscondita",
+"Russulaceae",
+"Russula abscondita",
+"species",
+"accepted",
+"col_xr",
+"V538D"
+],
+[
+609793,
+"Cantharellus",
+"fuscipes",
+"Hydnaceae",
+"Cantharellus fuscipes",
+"species",
+"accepted",
+"col_xr",
+"V5S7J"
+],
+[
+611464,
+"Cantharellus",
+"elegans",
+"Hydnaceae",
+"Cantharellus elegans",
+"species",
+"accepted",
+"col_xr",
+"V8SDB"
+],
+[
+611465,
+"Cantharellus",
+"lignatilis",
+"Hydnaceae",
+"Cantharellus lignatilis",
+"species",
+"accepted",
+"col_xr",
+"V8SDC"
+],
+[
+611466,
+"Cantharellus",
+"longipes",
+"Hydnaceae",
+"Cantharellus longipes",
+"species",
+"accepted",
+"col_xr",
+"V8SDD"
+],
+[
+611467,
+"Cantharellus",
+"subcarneus",
+"Hydnaceae",
+"Cantharellus subcarneus",
+"species",
+"accepted",
+"col_xr",
+"V8SDG"
+],
+[
+611468,
+"Cantharellus",
+"candicans",
+"Hydnaceae",
+"Cantharellus candicans",
+"species",
+"accepted",
+"col_xr",
+"V8SDH"
+],
+[
+611469,
+"Cantharellus",
+"niveus",
+"Hydnaceae",
+"Cantharellus niveus",
+"species",
+"accepted",
+"col_xr",
+"V8SDK"
+],
+[
+611470,
+"Cantharellus",
+"papyraceus",
+"Hydnaceae",
+"Cantharellus papyraceus",
+"species",
+"accepted",
+"col_xr",
+"V8SDL"
+],
+[
+611471,
+"Cantharellus",
+"profundus",
+"Hydnaceae",
+"Cantharellus profundus",
+"species",
+"accepted",
+"col_xr",
+"V8SDM"
+],
+[
+611472,
+"Cantharellus",
+"violaceus",
+"Hydnaceae",
+"Cantharellus violaceus",
+"species",
+"accepted",
+"col_xr",
+"V8SDN"
+],
+[
+611473,
+"Cantharellus",
+"salmoneus",
+"Hydnaceae",
+"Cantharellus salmoneus",
+"species",
+"accepted",
+"col_xr",
+"V8SDP"
+],
+[
+611474,
+"Cantharellus",
+"pulcher",
+"Hydnaceae",
+"Cantharellus pulcher",
+"species",
+"accepted",
+"col_xr",
+"V8SDQ"
+],
+[
+611475,
+"Cantharellus",
+"thymiphilus",
+"Hydnaceae",
+"Cantharellus thymiphilus",
+"species",
+"accepted",
+"col_xr",
+"V8SDS"
+],
+[
+611476,
+"Cantharellus",
+"suavissimus",
+"Hydnaceae",
+"Cantharellus suavissimus",
+"species",
+"accepted",
+"col_xr",
+"V8SDT"
+],
+[
+611477,
+"Cantharellus",
+"mexicanus",
+"Hydnaceae",
+"Cantharellus mexicanus",
+"species",
+"accepted",
+"col_xr",
+"V8SDV"
+],
+[
+611478,
+"Cantharellus",
+"perpusillus",
+"Hydnaceae",
+"Cantharellus perpusillus",
+"species",
+"accepted",
+"col_xr",
+"V8SDW"
+],
+[
+611479,
+"Cantharellus",
+"petersii",
+"Hydnaceae",
+"Cantharellus petersii",
+"species",
+"accepted",
+"col_xr",
+"V8SDX"
+],
+[
+611480,
+"Cantharellus",
+"erythraeus",
+"Hydnaceae",
+"Cantharellus erythraeus",
+"species",
+"accepted",
+"col_xr",
+"V8SDZ"
+],
+[
+611481,
+"Cantharellus",
+"simplex",
+"Hydnaceae",
+"Cantharellus simplex",
+"species",
+"accepted",
+"col_xr",
+"V8SF2"
+],
+[
+611482,
+"Cantharellus",
+"chrysosporius",
+"Hydnaceae",
+"Cantharellus chrysosporius",
+"species",
+"accepted",
+"col_xr",
+"V8SF3"
+],
+[
+611483,
+"Cantharellus",
+"sphaerosporus",
+"Hydnaceae",
+"Cantharellus sphaerosporus",
+"species",
+"accepted",
+"col_xr",
+"V8SF4"
+],
+[
+611484,
+"Cantharellus",
+"pedicellatus",
+"Hydnaceae",
+"Cantharellus pedicellatus",
+"species",
+"accepted",
+"col_xr",
+"V8SF5"
+],
+[
+611485,
+"Cantharellus",
+"madagascariensis",
+"Hydnaceae",
+"Cantharellus madagascariensis",
+"species",
+"accepted",
+"col_xr",
+"V8SF7"
+],
+[
+611486,
+"Cantharellus",
+"tenuissimus",
+"Hydnaceae",
+"Cantharellus tenuissimus",
+"species",
+"accepted",
+"col_xr",
+"V8SF8"
+],
+[
+611487,
+"Cantharellus",
+"transiens",
+"Hydnaceae",
+"Cantharellus transiens",
+"species",
+"accepted",
+"col_xr",
+"V8SF9"
+],
+[
+611488,
+"Cantharellus",
+"turrisii",
+"Hydnaceae",
+"Cantharellus turrisii",
+"species",
+"accepted",
+"col_xr",
+"V8SFB"
+],
+[
+611489,
+"Cantharellus",
+"pulcrifolius",
+"Hydnaceae",
+"Cantharellus pulcrifolius",
+"species",
+"accepted",
+"col_xr",
+"V8SFC"
+],
+[
+611490,
+"Cantharellus",
+"preslii",
+"Hydnaceae",
+"Cantharellus preslii",
+"species",
+"accepted",
+"col_xr",
+"V8SFD"
+],
+[
+611491,
+"Cantharellus",
+"odorus",
+"Hydnaceae",
+"Cantharellus odorus",
+"species",
+"accepted",
+"col_xr",
+"V8SFF"
+],
+[
+611492,
+"Cantharellus",
+"membranaceus",
+"Hydnaceae",
+"Cantharellus membranaceus",
+"species",
+"accepted",
+"col_xr",
+"V8SFG"
+],
+[
+611493,
+"Cantharellus",
+"helotioides",
+"Hydnaceae",
+"Cantharellus helotioides",
+"species",
+"accepted",
+"col_xr",
+"V8SFH"
+],
+[
+611494,
+"Cantharellus",
+"concinnus",
+"Hydnaceae",
+"Cantharellus concinnus",
+"species",
+"accepted",
+"col_xr",
+"V8SFJ"
+],
+[
+611495,
+"Cantharellus",
+"odoratissimus",
+"Hydnaceae",
+"Cantharellus odoratissimus",
+"species",
+"accepted",
+"col_xr",
+"V8SFK"
+],
+[
+611496,
+"Cantharellus",
+"parvus",
+"Hydnaceae",
+"Cantharellus parvus",
+"species",
+"accepted",
+"col_xr",
+"V8SFL"
+],
+[
+611497,
+"Cantharellus",
+"pruinosus",
+"Hydnaceae",
+"Cantharellus pruinosus",
+"species",
+"accepted",
+"col_xr",
+"V8SFM"
+],
+[
+611498,
+"Cantharellus",
+"radiatus",
+"Hydnaceae",
+"Cantharellus radiatus",
+"species",
+"accepted",
+"col_xr",
+"V8SFN"
+],
+[
+611499,
+"Cantharellus",
+"stejskalii",
+"Hydnaceae",
+"Cantharellus stejskalii",
+"species",
+"accepted",
+"col_xr",
+"V8SFP"
+],
+[
+611500,
+"Cantharellus",
+"foliolum",
+"Hydnaceae",
+"Cantharellus foliolum",
+"species",
+"accepted",
+"col_xr",
+"V8SFQ"
+],
+[
+611501,
+"Cantharellus",
+"fulvocaerulescens",
+"Hydnaceae",
+"Cantharellus fulvocaerulescens",
+"species",
+"accepted",
+"col_xr",
+"V8SFR"
+],
+[
+611502,
+"Cantharellus",
+"gotzenii",
+"Hydnaceae",
+"Cantharellus gotzenii",
+"species",
+"accepted",
+"col_xr",
+"V8SFT"
+],
+[
+617023,
+"Conocybe",
+"velutipes",
+"Bolbitiaceae",
+"Conocybe velutipes",
+"species",
+"accepted",
+"col_xr",
+"XQZ3"
+],
+[
+617892,
+"Cortinarius",
+"albonigrellus",
+"Cortinariaceae",
+"Cortinarius albonigrellus",
+"species",
+"accepted",
+"col_xr",
+"YJVN"
+],
+[
+619323,
+"Cortinarius",
+"pulchripes",
+"Cortinariaceae",
+"Cortinarius pulchripes",
+"species",
+"accepted",
+"col_xr",
+"YM6N"
+],
+[
+620306,
+"Craterellus",
+"tubaeformis",
+"Hydnaceae",
+"Craterellus tubaeformis",
+"species",
+"accepted",
+"col_xr",
+"Z8TV"
+],
+[
+621622,
+"Conocybe",
+"nitrophila",
+"Bolbitiaceae",
+"Conocybe velutipes var. nitrophila",
+"variety",
+"valid",
+"nortaxa",
+"131411"
+],
+[
+625410,
+"Hygrophorus",
+"russula",
+"Hygrophoraceae",
+"Hygrophorus russula",
+"species",
+"valid",
+"nortaxa",
+"54082"
+],
+[
+625619,
+"Flammulina",
+"Flammulina",
+"Physalacriaceae",
+"Flammulina",
+"genus",
+"valid",
+"nortaxa",
+"54695"
+],
+[
+625621,
+"Flammulina",
+"velutipes",
+"Physalacriaceae",
+"Flammulina velutipes",
+"species",
+"valid",
+"nortaxa",
+"54701"
+],
+[
+625622,
+"Flammulina",
+"lactea",
+"Physalacriaceae",
+"Flammulina velutipes var. lactea",
+"variety",
+"valid",
+"nortaxa",
+"54702"
+],
+[
+625623,
+"Flammulina",
+"velutipes",
+"Physalacriaceae",
+"Flammulina velutipes var. velutipes",
+"variety",
+"valid",
+"nortaxa",
+"54703"
+],
+[
+626242,
+"Cantharellus",
+"Cantharellus",
+"Cantharellaceae",
+"Cantharellus",
+"genus",
+"valid",
+"nortaxa",
+"56208"
+],
+[
+626819,
+"Russula",
+"Russula",
+"Russulaceae",
+"Russula",
+"section",
+"valid",
+"nortaxa",
+"57672"
+],
+[
+626820,
+"Russula",
+"adulterina",
+"Russulaceae",
+"Russula adulterina",
+"species",
+"valid",
+"nortaxa",
+"57675"
+],
+[
+626821,
+"Russula",
+"adusta",
+"Russulaceae",
+"Russula adusta",
+"species",
+"valid",
+"nortaxa",
+"57676"
+],
+[
+626822,
+"Russula",
+"aeruginea",
+"Russulaceae",
+"Russula aeruginea",
+"species",
+"valid",
+"nortaxa",
+"57677"
+],
+[
+626823,
+"Russula",
+"alutacea",
+"Russulaceae",
+"Russula alutacea",
+"species",
+"valid",
+"nortaxa",
+"57681"
+],
+[
+626828,
+"Russula",
+"cuprea",
+"Russulaceae",
+"Russula cuprea",
+"species",
+"valid",
+"nortaxa",
+"57719"
+],
+[
+626830,
+"Russula",
+"curtipes",
+"Russulaceae",
+"Russula curtipes",
+"species",
+"valid",
+"nortaxa",
+"57721"
+],
+[
+626831,
+"Russula",
+"decipiens",
+"Russulaceae",
+"Russula decipiens",
+"species",
+"valid",
+"nortaxa",
+"57724"
+],
+[
+626832,
+"Russula",
+"decolorans",
+"Russulaceae",
+"Russula decolorans",
+"species",
+"valid",
+"nortaxa",
+"57725"
+],
+[
+626833,
+"Russula",
+"densifolia",
+"Russulaceae",
+"Russula densifolia",
+"species",
+"valid",
+"nortaxa",
+"57728"
+],
+[
+626834,
+"Russula",
+"depallens",
+"Russulaceae",
+"Russula depallens",
+"species",
+"valid",
+"nortaxa",
+"57729"
+],
+[
+626835,
+"Russula",
+"emetica",
+"Russulaceae",
+"Russula emetica",
+"species",
+"valid",
+"nortaxa",
+"57730"
+],
+[
+626839,
+"Russula",
+"foetens",
+"Russulaceae",
+"Russula foetens",
+"species",
+"valid",
+"nortaxa",
+"57742"
+],
+[
+626840,
+"Russula",
+"font-queri",
+"Russulaceae",
+"Russula font-queri",
+"species",
+"valid",
+"nortaxa",
+"57743"
+],
+[
+626843,
+"Russula",
+"galochroa",
+"Russulaceae",
+"Russula galochroa",
+"species",
+"valid",
+"nortaxa",
+"57753"
+],
+[
+626844,
+"Russula",
+"globispora",
+"Russulaceae",
+"Russula globispora",
+"species",
+"valid",
+"nortaxa",
+"57755"
+],
+[
+626845,
+"Russula",
+"grisea",
+"Russulaceae",
+"Russula grisea",
+"species",
+"valid",
+"nortaxa",
+"57761"
+],
+[
+626846,
+"Russula",
+"grisescens",
+"Russulaceae",
+"Russula grisescens",
+"species",
+"valid",
+"nortaxa",
+"57762"
+],
+[
+626848,
+"Russula",
+"innocua",
+"Russulaceae",
+"Russula innocua",
+"species",
+"valid",
+"nortaxa",
+"57770"
+],
+[
+626849,
+"Russula",
+"integra",
+"Russulaceae",
+"Russula integra",
+"species",
+"valid",
+"nortaxa",
+"57772"
+],
+[
+626853,
+"Russula",
+"mairei",
+"Russulaceae",
+"Russula mairei",
+"species",
+"valid",
+"nortaxa",
+"57789"
+],
+[
+626855,
+"Russula",
+"nigricans",
+"Russulaceae",
+"Russula nigricans",
+"species",
+"valid",
+"nortaxa",
+"57799"
+],
+[
+626857,
+"Russula",
+"ochroleuca",
+"Russulaceae",
+"Russula ochroleuca",
+"species",
+"valid",
+"nortaxa",
+"57802"
+],
+[
+626858,
+"Russula",
+"olivacea",
+"Russulaceae",
+"Russula olivacea",
+"species",
+"valid",
+"nortaxa",
+"57804"
+],
+[
+626859,
+"Russula",
+"olivascens",
+"Russulaceae",
+"Russula olivascens",
+"species",
+"valid",
+"nortaxa",
+"57805"
+],
+[
+626862,
+"Russula",
+"pectinata",
+"Russulaceae",
+"Russula pectinata",
+"species",
+"valid",
+"nortaxa",
+"57813"
+],
+[
+626865,
+"Russula",
+"queletii coll.",
+"Russulaceae",
+"Russula queletii coll.",
+"species",
+"valid",
+"nortaxa",
+"57827"
+],
+[
+626867,
+"Russula",
+"roseipes",
+"Russulaceae",
+"Russula roseipes",
+"species",
+"valid",
+"nortaxa",
+"57838"
+],
+[
+626868,
+"Russula",
+"rubra",
+"Russulaceae",
+"Russula rubra",
+"species",
+"valid",
+"nortaxa",
+"57840"
+],
+[
+626869,
+"Russula",
+"saliceticola",
+"Russulaceae",
+"Russula saliceticola",
+"species",
+"valid",
+"nortaxa",
+"57842"
+],
+[
+626870,
+"Russula",
+"sanguinea",
+"Russulaceae",
+"Russula sanguinea",
+"species",
+"valid",
+"nortaxa",
+"57843"
+],
+[
+626873,
+"Russula",
+"turci",
+"Russulaceae",
+"Russula turci",
+"species",
+"valid",
+"nortaxa",
+"57863"
+],
+[
+626874,
+"Russula",
+"undulata",
+"Russulaceae",
+"Russula undulata",
+"species",
+"valid",
+"nortaxa",
+"57864"
+],
+[
+626875,
+"Russula",
+"velutipes",
+"Russulaceae",
+"Russula velutipes",
+"species",
+"valid",
+"nortaxa",
+"57868"
+],
+[
+626876,
+"Russula",
+"violacea",
+"Russulaceae",
+"Russula violacea",
+"species",
+"valid",
+"nortaxa",
+"57877"
+],
+[
+626877,
+"Russula",
+"vitellina",
+"Russulaceae",
+"Russula vitellina",
+"species",
+"valid",
+"nortaxa",
+"57883"
+],
+[
+627156,
+"Russula",
+"lepida",
+"Russulaceae",
+"Russula lepida",
+"species",
+"valid",
+"nortaxa",
+"64622"
+],
+[
+636240,
+"Flammulina",
+"",
+"Physalacriaceae",
+"BOLD:AEG6437",
+"unranked",
+"accepted",
+"col_xr",
+"BOLD.AEG6437"
+]
+],
+"scientific_names": [
+[
+980,
+"Aschersonia",
+1
+],
+[
+16796,
+"Hygrophorus russula",
+1
+],
+[
+50109,
+"Flammulina",
+1
+],
+[
+61655,
+"Russula abbotensis",
+1
+],
+[
+61656,
+"Russula abbottabadensis",
+1
+],
+[
+61657,
+"Russula abietiphila",
+1
+],
+[
+61658,
+"Russula absphaerocellaris",
+1
+],
+[
+61659,
+"Russula acerba",
+1
+],
+[
+61660,
+"Russula acriannulata",
+1
+],
+[
+61661,
+"Russula acrifolia",
+1
+],
+[
+61662,
+"Russula acriuscula",
+1
+],
+[
+61663,
+"Russula acrolamellata",
+1
+],
+[
+61664,
+"Russula acuminata",
+1
+],
+[
+61665,
+"Russula acutispora",
+1
+],
+[
+61666,
+"Russula adalbertii",
+1
+],
+[
+61667,
+"Russula adelae",
+1
+],
+[
+61668,
+"Russula admirabilis",
+1
+],
+[
+61669,
+"Russula adusta",
+1
+],
+[
+61670,
+"Russula adusto-densifolia",
+1
+],
+[
+61671,
+"Russula adustoides",
+1
+],
+[
+61672,
+"Russula aeruginascens",
+1
+],
+[
+61673,
+"Russula aeruginea",
+1
+],
+[
+61674,
+"Russula affinis",
+1
+],
+[
+61675,
+"Russula africana",
+1
+],
+[
+61676,
+"Russula afrodelica",
+1
+],
+[
+61677,
+"Russula afronigricans",
+1
+],
+[
+61678,
+"Russula agaricina",
+1
+],
+[
+61679,
+"Russula ahmadii",
+1
+],
+[
+61680,
+"Russula alachuana",
+1
+],
+[
+61681,
+"Russula alatoreticula",
+1
+],
+[
+61682,
+"Russula albidicremea",
+1
+],
+[
+61683,
+"Russula albidigleba",
+1
+],
+[
+61684,
+"Russula albidoflava",
+1
+],
+[
+61685,
+"Russula albiduliformis",
+1
+],
+[
+61686,
+"Russula albiflavescens",
+1
+],
+[
+61687,
+"Russula albimarginata",
+1
+],
+[
+61688,
+"Russula alboareolata",
+1
+],
+[
+61689,
+"Russula albobrunnea",
+1
+],
+[
+61690,
+"Russula albofloccosa",
+1
+],
+[
+61691,
+"Russula albolutescens",
+1
+],
+[
+61692,
+"Russula albonigra",
+1
+],
+[
+61693,
+"Russula albonigroides",
+1
+],
+[
+61694,
+"Russula alborosea",
+1
+],
+[
+61695,
+"Russula albospissa",
+1
+],
+[
+61696,
+"Russula alcalinicola",
+1
+],
+[
+61697,
+"Russula alleinstanleyae",
+1
+],
+[
+61698,
+"Russula allochroa",
+1
+],
+[
+61699,
+"Russula alnetorum",
+1
+],
+[
+61699,
+"Russula pumila",
+0
+],
+[
+61704,
+"Russula alutacea",
+1
+],
+[
+61710,
+"Russula amethystina",
+1
+],
+[
+61710,
+"Russula ametysthina",
+0
+],
+[
+61718,
+"Russula amoenolens",
+1
+],
+[
+61729,
+"Russula anthracina",
+1
+],
+[
+61733,
+"Russula aquosa",
+1
+],
+[
+61733,
+"Russula carminea",
+0
+],
+[
+61733,
+"Russula fragilis var. carminea",
+0
+],
+[
+61749,
+"Russula atroglauca",
+1
+],
+[
+61751,
+"Russula atrorubens",
+1
+],
+[
+61751,
+"Russula olivaceoviolascens",
+0
+],
+[
+61751,
+"Russula subaffinis",
+0
+],
+[
+61765,
+"Russula aurata",
+0
+],
+[
+61765,
+"Russula aurea",
+1
+],
+[
+61776,
+"Russula azurea",
+1
+],
+[
+61778,
+"Russula badia",
+1
+],
+[
+61787,
+"Russula betulae",
+1
+],
+[
+61788,
+"Russula betularum",
+1
+],
+[
+61788,
+"Russula emetica var. betularum",
+0
+],
+[
+61788,
+"Russula emeticella",
+0
+],
+[
+61819,
+"Russula brunneoviolacea",
+1
+],
+[
+61827,
+"Russula amara",
+0
+],
+[
+61827,
+"Russula caerulea",
+1
+],
+[
+61827,
+"Russula coerulea",
+0
+],
+[
+61856,
+"Russula cessans",
+1
+],
+[
+61863,
+"Russula chloroides",
+1
+],
+[
+61863,
+"Russula chloroides var. trachyspora",
+0
+],
+[
+61863,
+"Russula delica var. trachyspora",
+0
+],
+[
+61875,
+"Russula citrinochlora",
+1
+],
+[
+61880,
+"Russula claroflava",
+1
+],
+[
+61880,
+"Russula constans",
+0
+],
+[
+61880,
+"Russula flava",
+0
+],
+[
+61880,
+"Russula flaviceps",
+0
+],
+[
+61903,
+"Russula consobrina",
+1
+],
+[
+61915,
+"Russula cremeoavellanea",
+1
+],
+[
+61926,
+"Russula cuprea",
+1
+],
+[
+61929,
+"Russula curtipes",
+1
+],
+[
+61951,
+"Russula emetica",
+1
+],
+[
+61961,
+"Russula faginea",
+1
+],
+[
+61962,
+"Russula farinipes",
+1
+],
+[
+61966,
+"Russula favrei",
+1
+],
+[
+61967,
+"Russula fellea",
+1
+],
+[
+61967,
+"Russula ochracea",
+0
+],
+[
+61973,
+"Russula firmula",
+1
+],
+[
+61973,
+"Russula transiens",
+0
+],
+[
+61989,
+"Russula foetens",
+1
+],
+[
+61993,
+"Russula fontqueri",
+1
+],
+[
+61997,
+"Russula fragilis",
+1
+],
+[
+61997,
+"Russula fragilis var. fragilis",
+0
+],
+[
+61997,
+"Russula fragilis var. gilva",
+0
+],
+[
+61997,
+"Russula fragilis var. knauthii",
+0
+],
+[
+62007,
+"Russula fulvograminea",
+1
+],
+[
+62018,
+"Russula fuscorubroides",
+1
+],
+[
+62042,
+"Russula altaica",
+0
+],
+[
+62042,
+"Russula gracilis",
+0
+],
+[
+62042,
+"Russula gracilis subsp. gracillima",
+0
+],
+[
+62042,
+"Russula gracilis var. altaica",
+0
+],
+[
+62042,
+"Russula gracillima",
+1
+],
+[
+62043,
+"Russula graminea",
+1
+],
+[
+62047,
+"Russula fragrans",
+0
+],
+[
+62047,
+"Russula grata",
+1
+],
+[
+62047,
+"Russula laurocerasi",
+0
+],
+[
+62047,
+"Russula laurocerasi var. fragrans",
+0
+],
+[
+62048,
+"Russula grisea",
+1
+],
+[
+62055,
+"Russula claroflava var. viridis",
+0
+],
+[
+62055,
+"Russula groenlandica",
+1
+],
+[
+62069,
+"Russula helodes",
+1
+],
+[
+62072,
+"Russula dryadicola",
+0
+],
+[
+62072,
+"Russula heterochroa",
+1
+],
+[
+62072,
+"Russula maculata subsp. alpina",
+0
+],
+[
+62072,
+"Russula maculata var. alpina",
+0
+],
+[
+62096,
+"Russula illota",
+1
+],
+[
+62116,
+"Agaricus integer",
+0
+],
+[
+62116,
+"Russula integra",
+1
+],
+[
+62116,
+"Russula polychroma",
+0
+],
+[
+62118,
+"Russula intermedia",
+1
+],
+[
+62118,
+"Russula lundellii",
+0
+],
+[
+62118,
+"Russula mesospora",
+0
+],
+[
+62118,
+"Russula pulcherrima",
+0
+],
+[
+62122,
+"Russula ionochlora",
+1
+],
+[
+62142,
+"Russula laccata",
+1
+],
+[
+62142,
+"Russula norvegica",
+0
+],
+[
+62142,
+"Russula norvegica var. rubromarginata",
+0
+],
+[
+62144,
+"Russula laevis",
+1
+],
+[
+62165,
+"Russula carnicolor",
+0
+],
+[
+62165,
+"Russula lilacea",
+1
+],
+[
+62165,
+"Russula lilacea var. carnicolor",
+0
+],
+[
+62186,
+"Russula luteotacta",
+1
+],
+[
+62194,
+"Russula maculata",
+1
+],
+[
+62210,
+"Elasmomyces mattirolianus",
+0
+],
+[
+62210,
+"Elasmomyces mattiroloanus",
+0
+],
+[
+62210,
+"Macowanites mattirolanus",
+0
+],
+[
+62210,
+"Macowanites mattirolianus",
+0
+],
+[
+62210,
+"Macowanites mattiroloanus",
+0
+],
+[
+62210,
+"Russula mattiroloana",
+1
+],
+[
+62216,
+"Russula medullata",
+1
+],
+[
+62221,
+"Russula melliolens",
+1
+],
+[
+62234,
+"Russula minutula",
+1
+],
+[
+62255,
+"Russula mustelina",
+1
+],
+[
+62259,
+"Russula nuoljae",
+1
+],
+[
+62272,
+"Russula ochroleuca",
+1
+],
+[
+62279,
+"Russula odorata",
+1
+],
+[
+62285,
+"Russula olivacea",
+1
+],
+[
+62289,
+"Russula olivina",
+1
+],
+[
+62290,
+"Russula olivobrunnea",
+1
+],
+[
+62303,
+"Russula pallescens",
+1
+],
+[
+62307,
+"Russula elatior",
+0
+],
+[
+62307,
+"Russula paludosa",
+1
+],
+[
+62320,
+"Russula parazurea",
+1
+],
+[
+62332,
+"Russula oreina",
+0
+],
+[
+62332,
+"Russula pascua",
+1
+],
+[
+62332,
+"Russula xerampelina var. pascua",
+0
+],
+[
+62386,
+"Russula pseudointegra",
+1
+],
+[
+62386,
+"Russula rubicunda",
+0
+],
+[
+62408,
+"Russula leprosa",
+0
+],
+[
+62408,
+"Russula puellaris",
+1
+],
+[
+62408,
+"Russula puellaris var. leprosa",
+0
+],
+[
+62409,
+"Russula puellula",
+1
+],
+[
+62433,
+"Russula queletii",
+1
+],
+[
+62441,
+"Russula raoultii",
+1
+],
+[
+62447,
+"Russula intactior",
+0
+],
+[
+62447,
+"Russula persicina",
+0
+],
+[
+62447,
+"Russula persicina var. intactior",
+0
+],
+[
+62447,
+"Russula renidens",
+1
+],
+[
+62457,
+"Russula chamaeleontina",
+0
+],
+[
+62457,
+"Russula risigallina",
+1
+],
+[
+62458,
+"Russula rivulicola",
+1
+],
+[
+62467,
+"Russula romellii",
+1
+],
+[
+62471,
+"Russula roseipes",
+1
+],
+[
+62474,
+"Russula incarnata",
+0
+],
+[
+62474,
+"Russula roseoaurantia",
+1
+],
+[
+62503,
+"Russula saliceticola",
+1
+],
+[
+62510,
+"Russula sanguinea",
+1
+],
+[
+62513,
+"Russula drimeia",
+0
+],
+[
+62513,
+"Russula sardonia",
+1
+],
+[
+62553,
+"Russula solaris",
+1
+],
+[
+62556,
+"Russula consobrina var. sororia",
+0
+],
+[
+62556,
+"Russula sororia",
+1
+],
+[
+62563,
+"Russula robertii",
+0
+],
+[
+62563,
+"Russula sphagnophila",
+1
+],
+[
+62563,
+"Russula venosa var. pallida",
+0
+],
+[
+62600,
+"Russula subfoetens",
+1
+],
+[
+62626,
+"Russula chamiteae",
+0
+],
+[
+62626,
+"Russula subrubens",
+1
+],
+[
+62646,
+"Russula suecica",
+1
+],
+[
+62651,
+"Russula taigarum",
+1
+],
+[
+62677,
+"Russula torulosa",
+1
+],
+[
+62690,
+"Russula blackfordiae",
+0
+],
+[
+62690,
+"Russula versicolor",
+1
+],
+[
+62691,
+"Russula vesca",
+1
+],
+[
+62701,
+"Russula decolorans var. obscura",
+0
+],
+[
+62701,
+"Russula obscura",
+0
+],
+[
+62701,
+"Russula vinosa",
+1
+],
+[
+62706,
+"Russula vinososordida",
+1
+],
+[
+62707,
+"Russula violacea",
+1
+],
+[
+62710,
+"Russula violaceoincarnata",
+1
+],
+[
+62712,
+"Russula violeipes",
+1
+],
+[
+62712,
+"Russula violeipes var. citrina",
+0
+],
+[
+62714,
+"Russula virescens",
+1
+],
+[
+62739,
+"Russula erythropus",
+0
+],
+[
+62739,
+"Russula xerampelina",
+1
+],
+[
+62739,
+"Russula xerampelina var. erythropus",
+0
+],
+[
+62749,
+"Russula zvarae",
+1
+],
+[
+78915,
+"Amanita muscaria",
+1
+],
+[
+78915,
+"Amanita muscaria var. formosa",
+0
+],
+[
+78915,
+"Amanita muscaria var. muscaria",
+0
+],
+[
+79684,
+"Aschersonia intermedia",
+1
+],
+[
+79721,
+"Aschersonia juruensis",
+1
+],
+[
+80048,
+"Aschersonia paraensis",
+1
+],
+[
+80098,
+"Aschersonia tamurae",
+1
+],
+[
+80115,
+"Arrhenia velutipes",
+1
+],
+[
+80115,
+"Omphalina velutipes",
+0
+],
+[
+80960,
+"Cantharellus eyssartieri",
+1
+],
+[
+80961,
+"Cantharellus albomarginatus",
+1
+],
+[
+80973,
+"Cantharellus applanatus",
+1
+],
+[
+80974,
+"Cantharellus pseudomiomboensis",
+1
+],
+[
+80975,
+"Cantharellus novoguineensis",
+1
+],
+[
+80976,
+"Cantharellus borealis",
+1
+],
+[
+80976,
+"Craterellus ryvardenii",
+0
+],
+[
+80977,
+"Cantharellus romagnesianus",
+1
+],
+[
+81243,
+"Cantharellus brunneopallidus",
+1
+],
+[
+81244,
+"Cantharellus sikkimensis",
+1
+],
+[
+90183,
+"Aschersonia viridula",
+1
+],
+[
+90503,
+"Aschersonia aleyrodis",
+1
+],
+[
+90550,
+"Aschersonia crenulata",
+1
+],
+[
+91343,
+"Cantharellus hydnoides",
+1
+],
+[
+91344,
+"Cantharellus caucasicus",
+1
+],
+[
+91369,
+"Cantharellus paucifurcatus",
+1
+],
+[
+91370,
+"Cantharellus nigrescens",
+1
+],
+[
+91371,
+"Cantharellus lateritius",
+1
+],
+[
+91630,
+"Cantharellus decolorans",
+1
+],
+[
+91631,
+"Cantharellus variabilicolor",
+1
+],
+[
+92473,
+"Cortinarius albo-ochraceus",
+1
+],
+[
+98252,
+"Flammulina callistosporioides",
+1
+],
+[
+98255,
+"Flammulina cephalariae",
+1
+],
+[
+98267,
+"Flammulina yunnanensis",
+1
+],
+[
+98268,
+"Flammulina ononidis",
+1
+],
+[
+98269,
+"Flammulina similis",
+1
+],
+[
+98270,
+"Flammulina ferrugineolutea",
+1
+],
+[
+98271,
+"Flammulina fennae",
+1
+],
+[
+98272,
+"Flammulina elastica",
+1
+],
+[
+98272,
+"Flammulina velutipes f. longispora",
+0
+],
+[
+98273,
+"Flammulina mexicana",
+1
+],
+[
+98274,
+"Flammulina lupinicola",
+1
+],
+[
+98275,
+"Flammulina finlandica",
+1
+],
+[
+98288,
+"Flammulina velutipes",
+1
+],
+[
+98290,
+"Flammulina stratosa",
+1
+],
+[
+98291,
+"Flammulina rossica",
+1
+],
+[
+98292,
+"Flammulina populicola",
+1
+],
+[
+98293,
+"Flammulina filiformis",
+1
+],
+[
+98294,
+"Flammulina glutinosa",
+1
+],
+[
+111746,
+"Russula albidogrisea",
+1
+],
+[
+111747,
+"Russula abietum",
+1
+],
+[
+111869,
+"Russula pectinatoides",
+1
+],
+[
+111878,
+"Russula pubescens",
+1
+],
+[
+111878,
+"Russula subalpina",
+0
+],
+[
+111888,
+"Russula rhodopoda",
+0
+],
+[
+111888,
+"Russula rhodopoda var. pseudohelodes",
+0
+],
+[
+111888,
+"Russula rhodopus",
+1
+],
+[
+111890,
+"Russula rutila",
+1
+],
+[
+112151,
+"Russula densifolia",
+1
+],
+[
+112154,
+"Russula furcata",
+0
+],
+[
+112154,
+"Russula heterophylla",
+1
+],
+[
+112159,
+"Agaricus cyanoxanthus",
+0
+],
+[
+112159,
+"Russula cyanoxantha",
+1
+],
+[
+112159,
+"Russula cyanoxantha var. peltereaui",
+0
+],
+[
+112161,
+"Russula delica",
+1
+],
+[
+112168,
+"Russula nauseosa",
+1
+],
+[
+112173,
+"Russula allescheri",
+1
+],
+[
+112174,
+"Russula aciculocystis",
+1
+],
+[
+112175,
+"Russula aurantioflammans",
+1
+],
+[
+122155,
+"Russula decipiens",
+1
+],
+[
+122170,
+"Russula aerina",
+1
+],
+[
+122309,
+"Russula turci",
+1
+],
+[
+122313,
+"Russula pectinata",
+1
+],
+[
+122315,
+"Russula clariana",
+0
+],
+[
+122315,
+"Russula pelargonia",
+1
+],
+[
+122318,
+"Russula persicina",
+1
+],
+[
+122345,
+"Russula velenovskyi",
+1
+],
+[
+122642,
+"Russula innocua",
+1
+],
+[
+122643,
+"Russula cicatricata",
+0
+],
+[
+122643,
+"Russula graveolens",
+1
+],
+[
+122643,
+"Russula graveolens f. purpurata",
+0
+],
+[
+122643,
+"Russula purpurata",
+0
+],
+[
+122643,
+"Russula xerampelina var. purpurata",
+0
+],
+[
+122645,
+"Russula clavipes",
+1
+],
+[
+122645,
+"Russula elaeodes",
+0
+],
+[
+122645,
+"Russula xerampelina var. olivacea",
+0
+],
+[
+122646,
+"Russula decolorans",
+1
+],
+[
+122655,
+"Russula alpina",
+0
+],
+[
+122655,
+"Russula emetica var. alpestris",
+0
+],
+[
+122655,
+"Russula nana",
+1
+],
+[
+122659,
+"Russula nitida",
+1
+],
+[
+122659,
+"Russula sphagnophila var. heterosperma",
+0
+],
+[
+122659,
+"Russula venosa",
+0
+],
+[
+122662,
+"Russula fageticola",
+0
+],
+[
+122662,
+"Russula nobilis",
+1
+],
+[
+122664,
+"Russula albiclavipes",
+1
+],
+[
+123322,
+"Russula",
+1
+],
+[
+129742,
+"Cantharellus",
+1
+],
+[
+131914,
+"Aschersonia",
+1
+],
+[
+133349,
+"Cantharellus albidosquamosus",
+1
+],
+[
+133350,
+"Cantharellus albus",
+1
+],
+[
+133351,
+"Cantharellus anzutake",
+1
+],
+[
+133352,
+"Cantharellus aurantinus",
+1
+],
+[
+133353,
+"Cantharellus austrosinensis",
+1
+],
+[
+133354,
+"Cantharellus betularum",
+1
+],
+[
+133355,
+"Cantharellus citrinus",
+1
+],
+[
+133356,
+"Cantharellus curvatus",
+1
+],
+[
+133357,
+"Cantharellus furcatus",
+1
+],
+[
+133358,
+"Cantharellus galbanus",
+1
+],
+[
+133360,
+"Cantharellus luteovirens",
+1
+],
+[
+133361,
+"Cantharellus macrocarpus",
+1
+],
+[
+133362,
+"Cantharellus magnus",
+1
+],
+[
+133363,
+"Cantharellus minioalbus",
+1
+],
+[
+133364,
+"Cantharellus parvoflavus",
+1
+],
+[
+133365,
+"Cantharellus sinominor",
+1
+],
+[
+133366,
+"Cantharellus subminor",
+1
+],
+[
+133367,
+"Cantharellus verae-crucis",
+1
+],
+[
+133368,
+"Cantharellus versicolor",
+1
+],
+[
+133369,
+"Cantharellus violaceoflavescens",
+1
+],
+[
+133370,
+"Cantharellus xanthocyaneus",
+1
+],
+[
+138338,
+"Russula adwanitekae",
+1
+],
+[
+138889,
+"Cantharellus hongneungensis",
+1
+],
+[
+139982,
+"Cantharellus sinocinnabarinus",
+1
+],
+[
+139989,
+"Cantharellus chrysanthus",
+1
+],
+[
+139992,
+"Cantharellus neopersicinus",
+1
+],
+[
+140031,
+"Cantharellus convexus",
+1
+],
+[
+140687,
+"Cantharellus ravus",
+1
+],
+[
+140796,
+"Cantharellus albopileatus",
+1
+],
+[
+140854,
+"Russula albolutea",
+1
+],
+[
+140996,
+"Cantharellus pinetorum",
+1
+],
+[
+141898,
+"Cantharellus chuiweifanii",
+1
+],
+[
+144143,
+"Cantharellus laevihymeninus",
+1
+],
+[
+147285,
+"Aschersonia cheesemaniae",
+1
+],
+[
+147286,
+"Aschersonia isabelladestae",
+1
+],
+[
+147287,
+"Aschersonia tanyunxianiae",
+1
+],
+[
+147335,
+"Cantharellus intensissimus",
+1
+],
+[
+147336,
+"Cantharellus rubrosalmoneus",
+1
+],
+[
+147337,
+"Cantharellus vicinus",
+1
+],
+[
+150931,
+"Cantharellus cibarius var. monstrosus",
+1
+],
+[
+151406,
+"Flammulina velutipes f. velutipes",
+1
+],
+[
+153787,
+"Aschersonia abnormis",
+1
+],
+[
+153788,
+"Aschersonia acutispora",
+1
+],
+[
+153789,
+"Aschersonia amazonica",
+1
+],
+[
+153790,
+"Aschersonia aurantiaca",
+1
+],
+[
+153791,
+"Aschersonia australiensis",
+1
+],
+[
+153792,
+"Aschersonia blumenaviensis",
+1
+],
+[
+153793,
+"Aschersonia brunnea",
+1
+],
+[
+153794,
+"Aschersonia caapi",
+1
+],
+[
+153795,
+"Aschersonia caespiticia",
+1
+],
+[
+153796,
+"Aschersonia coffeae",
+1
+],
+[
+153797,
+"Aschersonia columnifera",
+1
+],
+[
+153798,
+"Aschersonia conica",
+1
+],
+[
+153799,
+"Aschersonia consociata",
+1
+],
+[
+153800,
+"Aschersonia cubensis",
+1
+],
+[
+153801,
+"Aschersonia eugeniae",
+1
+],
+[
+153802,
+"Aschersonia fimbriata",
+1
+],
+[
+153803,
+"Aschersonia flava",
+1
+],
+[
+153804,
+"Aschersonia flavescens",
+1
+],
+[
+153805,
+"Aschersonia flavocitrina",
+1
+],
+[
+153806,
+"Aschersonia fusispora",
+1
+],
+[
+153807,
+"Aschersonia hypocreoidea",
+1
+],
+[
+153808,
+"Aschersonia incrassata",
+1
+],
+[
+153809,
+"Aschersonia insperata",
+1
+],
+[
+153810,
+"Aschersonia jacarandae",
+1
+],
+[
+153811,
+"Aschersonia javanica",
+1
+],
+[
+153812,
+"Aschersonia lauricola",
+1
+],
+[
+153813,
+"Aschersonia lecanii",
+1
+],
+[
+153814,
+"Aschersonia lecanioides",
+1
+],
+[
+153815,
+"Aschersonia luteola",
+1
+],
+[
+153816,
+"Aschersonia macrostromatica",
+1
+],
+[
+153817,
+"Aschersonia macularis",
+1
+],
+[
+153818,
+"Aschersonia microspora",
+1
+],
+[
+153819,
+"Aschersonia minutispora",
+1
+],
+[
+153820,
+"Aschersonia murrayae",
+1
+],
+[
+153821,
+"Aschersonia napoleonae",
+1
+],
+[
+153822,
+"Aschersonia narathiwatensis",
+1
+],
+[
+153823,
+"Aschersonia papillata",
+1
+],
+[
+153824,
+"Aschersonia parasitica",
+1
+],
+[
+153825,
+"Aschersonia pediculoides",
+1
+],
+[
+153826,
+"Aschersonia philippinensis",
+1
+],
+[
+153827,
+"Aschersonia phthiurioides",
+1
+],
+[
+153828,
+"Aschersonia pisiformis",
+1
+],
+[
+153829,
+"Aschersonia pittieri",
+1
+],
+[
+153830,
+"Aschersonia placenta",
+1
+],
+[
+153831,
+"Aschersonia scutelliformis",
+1
+],
+[
+153832,
+"Aschersonia simplex",
+1
+],
+[
+153833,
+"Aschersonia suzukii",
+1
+],
+[
+153834,
+"Aschersonia tephrosiicola",
+1
+],
+[
+153835,
+"Aschersonia turbinata",
+1
+],
+[
+157025,
+"Aureoboletus velutipes",
+1
+],
+[
+158780,
+"Aschersonia andropogonis",
+1
+],
+[
+158781,
+"Aschersonia badia",
+1
+],
+[
+158782,
+"Aschersonia basicystis",
+1
+],
+[
+158783,
+"Aschersonia basicystis",
+1
+],
+[
+158784,
+"Aschersonia brunnea",
+1
+],
+[
+158785,
+"Aschersonia confluens",
+1
+],
+[
+158787,
+"Aschersonia cubensis",
+1
+],
+[
+158788,
+"Aschersonia duplex",
+1
+],
+[
+158789,
+"Aschersonia formosensis",
+1
+],
+[
+158790,
+"Aschersonia goldiana",
+1
+],
+[
+158791,
+"Aschersonia goldiana",
+1
+],
+[
+158792,
+"Aschersonia kawakamii",
+1
+],
+[
+158793,
+"Aschersonia mackerrasiae",
+1
+],
+[
+158794,
+"Aschersonia marginata",
+1
+],
+[
+158795,
+"Aschersonia marginata",
+1
+],
+[
+158796,
+"Aschersonia oxystoma",
+1
+],
+[
+159978,
+"Cantharellus acicularis",
+1
+],
+[
+159979,
+"Cantharellus applicatus",
+1
+],
+[
+159980,
+"Cantharellus avellaneus",
+1
+],
+[
+159981,
+"Cantharellus brasiliensis",
+1
+],
+[
+159982,
+"Cantharellus canalipes",
+1
+],
+[
+159983,
+"Cantharellus candidissimus",
+1
+],
+[
+159984,
+"Cantharellus candidus",
+1
+],
+[
+159985,
+"Cantharellus castaneus",
+1
+],
+[
+159986,
+"Cantharellus cavinae",
+1
+],
+[
+159987,
+"Cantharellus cibarius var. carneoalbus",
+1
+],
+[
+159989,
+"Cantharellus clitocybeformis",
+1
+],
+[
+159990,
+"Cantharellus collivagus",
+1
+],
+[
+159991,
+"Cantharellus confertus",
+1
+],
+[
+159992,
+"Cantharellus connatus",
+1
+],
+[
+159993,
+"Cantharellus corconticus",
+1
+],
+[
+159994,
+"Cantharellus coriaceus",
+1
+],
+[
+159995,
+"Cantharellus crassinervius",
+1
+],
+[
+159996,
+"Cantharellus cucullatus",
+1
+],
+[
+159997,
+"Cantharellus cuneiformis",
+1
+],
+[
+159998,
+"Cantharellus cyatheus",
+1
+],
+[
+159999,
+"Cantharellus discolor",
+1
+],
+[
+160000,
+"Cantharellus dutrochetii",
+1
+],
+[
+160001,
+"Cantharellus echinosporus",
+1
+],
+[
+160002,
+"Cantharellus fascicularis",
+1
+],
+[
+160003,
+"Cantharellus fechtneri",
+1
+],
+[
+160004,
+"Cantharellus feltgenii",
+1
+],
+[
+160005,
+"Cantharellus fissilis",
+1
+],
+[
+160006,
+"Cantharellus gintlii",
+1
+],
+[
+160007,
+"Cantharellus graminum",
+1
+],
+[
+160008,
+"Cantharellus granulosus",
+1
+],
+[
+160009,
+"Cantharellus haplorutis",
+1
+],
+[
+160010,
+"Cantharellus helvelloideus",
+1
+],
+[
+160011,
+"Cantharellus hiemalis",
+1
+],
+[
+160012,
+"Cantharellus hygrophanus",
+1
+],
+[
+160013,
+"Cantharellus juranus",
+1
+],
+[
+160014,
+"Cantharellus lacunosus",
+1
+],
+[
+160015,
+"Cantharellus limbatus",
+1
+],
+[
+160016,
+"Cantharellus ludmilae",
+1
+],
+[
+160017,
+"Cantharellus mamillatus",
+1
+],
+[
+160018,
+"Cantharellus melanoceras",
+1
+],
+[
+160019,
+"Cantharellus minutus",
+1
+],
+[
+160020,
+"Cantharellus morchellocephalus",
+1
+],
+[
+160021,
+"Cantharellus muscorum",
+1
+],
+[
+160022,
+"Cantharellus nivosus",
+1
+],
+[
+160023,
+"Cantharellus partitus",
+1
+],
+[
+160024,
+"Cantharellus ramealis",
+1
+],
+[
+160025,
+"Cantharellus replexus",
+1
+],
+[
+160026,
+"Cantharellus replexus var. devexus",
+1
+],
+[
+160028,
+"Cantharellus spathuliformis",
+1
+],
+[
+160029,
+"Cantharellus stolonifer",
+1
+],
+[
+160030,
+"Cantharellus valentinii",
+1
+],
+[
+160031,
+"Cantharellus viscosus",
+1
+],
+[
+161596,
+"Cordyceps velutipes",
+1
+],
+[
+162818,
+"Conocybe velutipes var. velutipes",
+1
+],
+[
+164835,
+"Flammulina velutipes var. velutipes",
+1
+],
+[
+168850,
+"Cantharellus afrocibarius",
+1
+],
+[
+168851,
+"Cantharellus albidolutescens",
+1
+],
+[
+168852,
+"Cantharellus alboroseus",
+1
+],
+[
+168853,
+"Cantharellus alborufescens",
+1
+],
+[
+168854,
+"Cantharellus albovenosus",
+1
+],
+[
+168855,
+"Cantharellus alpinus",
+1
+],
+[
+168856,
+"Cantharellus altipes",
+1
+],
+[
+168857,
+"Cantharellus amazonensis",
+1
+],
+[
+168858,
+"Cantharellus ambohitantelyensis",
+1
+],
+[
+168859,
+"Cantharellus amethysteus",
+1
+],
+[
+168859,
+"Cantharellus ametysteus",
+0
+],
+[
+168859,
+"Cantharellus cibarius var. amethysteus",
+0
+],
+[
+168859,
+"Cantharellus rufipes",
+0
+],
+[
+168860,
+"Cantharellus appalachiensis",
+1
+],
+[
+168861,
+"Cantharellus atlanticus",
+1
+],
+[
+168862,
+"Cantharellus atrofuscus",
+1
+],
+[
+168863,
+"Cantharellus atrolilacinus",
+1
+],
+[
+168864,
+"Cantharellus attenuatus",
+1
+],
+[
+168865,
+"Cantharellus aurantioconspicuus",
+1
+],
+[
+168866,
+"Cantharellus californicus",
+1
+],
+[
+168867,
+"Cantharellus camphoratus",
+1
+],
+[
+168868,
+"Cantharellus carneoflavus",
+1
+],
+[
+168869,
+"Cantharellus cascadensis",
+1
+],
+[
+168870,
+"Cantharellus cerinoalbus",
+1
+],
+[
+168871,
+"Cantharellus chicagoensis",
+1
+],
+[
+168872,
+"Cantharellus cibarioides",
+1
+],
+[
+168873,
+"Cantharellus cibarius",
+1
+],
+[
+168873,
+"Cantharellus cibarius var. cibarius",
+0
+],
+[
+168873,
+"Cantharellus edulis",
+0
+],
+[
+168873,
+"Cantharellus vulgaris",
+0
+],
+[
+168874,
+"Cantharellus ciliatus",
+1
+],
+[
+168875,
+"Cantharellus cinereus",
+1
+],
+[
+168876,
+"Cantharellus cinnabarinus",
+1
+],
+[
+168877,
+"Cantharellus coccolobae",
+1
+],
+[
+168878,
+"Cantharellus congolensis",
+1
+],
+[
+168879,
+"Cantharellus conspicuus",
+1
+],
+[
+168880,
+"Cantharellus corallinus",
+1
+],
+[
+168881,
+"Cantharellus croceifolius",
+1
+],
+[
+168882,
+"Cantharellus cuticulatus",
+1
+],
+[
+168883,
+"Cantharellus cyanoxanthus",
+1
+],
+[
+168884,
+"Cantharellus cyphelloides",
+1
+],
+[
+168885,
+"Cantharellus deceptivus",
+1
+],
+[
+168886,
+"Cantharellus decipiens",
+1
+],
+[
+168887,
+"Cantharellus defibulatus",
+1
+],
+[
+168888,
+"Cantharellus delitescens",
+1
+],
+[
+168889,
+"Cantharellus densifolius",
+1
+],
+[
+168890,
+"Cantharellus densilamellatus",
+1
+],
+[
+168891,
+"Cantharellus diminutivus",
+1
+],
+[
+168892,
+"Cantharellus eccentricus",
+1
+],
+[
+168893,
+"Cantharellus elongatipes",
+1
+],
+[
+168894,
+"Cantharellus elsae",
+1
+],
+[
+168895,
+"Cantharellus enelensis",
+1
+],
+[
+168896,
+"Cantharellus eucalyptorum",
+1
+],
+[
+168897,
+"Cantharellus ferruginascens",
+1
+],
+[
+168898,
+"Cantharellus fibrillosus",
+1
+],
+[
+168899,
+"Cantharellus flavolateritius",
+1
+],
+[
+168900,
+"Cantharellus flavus",
+1
+],
+[
+168901,
+"Cantharellus floridulus",
+1
+],
+[
+168902,
+"Cantharellus formosus",
+1
+],
+[
+168903,
+"Cantharellus friesii",
+1
+],
+[
+168903,
+"Cantharellus miniatus",
+0
+],
+[
+168904,
+"Cantharellus fuligineus",
+1
+],
+[
+168905,
+"Cantharellus gallaecicus",
+1
+],
+[
+168906,
+"Cantharellus garnierii",
+1
+],
+[
+168907,
+"Cantharellus goossensiae",
+1
+],
+[
+168909,
+"Cantharellus gracilis",
+1
+],
+[
+168910,
+"Cantharellus griseoisabellinus",
+1
+],
+[
+168913,
+"Cantharellus griseotinctus",
+1
+],
+[
+168914,
+"Cantharellus guineensis",
+1
+],
+[
+168915,
+"Cantharellus guyanensis",
+1
+],
+[
+168916,
+"Cantharellus hainanensis",
+1
+],
+[
+168917,
+"Cantharellus heinemannianus",
+1
+],
+[
+168919,
+"Cantharellus henrici",
+1
+],
+[
+168920,
+"Cantharellus himalayensis",
+1
+],
+[
+168921,
+"Cantharellus humidicola",
+1
+],
+[
+168922,
+"Cantharellus hygrophoroides",
+1
+],
+[
+168923,
+"Cantharellus hystrix",
+1
+],
+[
+168924,
+"Cantharellus ianthinoxanthus",
+1
+],
+[
+168925,
+"Cantharellus ianthinus",
+1
+],
+[
+168926,
+"Cantharellus ibityensis",
+1
+],
+[
+168927,
+"Cantharellus imperatae",
+1
+],
+[
+168928,
+"Cantharellus inconspicuus",
+1
+],
+[
+168929,
+"Cantharellus incrassatus",
+1
+],
+[
+168930,
+"Cantharellus indicus",
+1
+],
+[
+168931,
+"Cantharellus isabellinus",
+1
+],
+[
+168932,
+"Cantharellus iuventateviridis",
+1
+],
+[
+168933,
+"Cantharellus koreanus",
+1
+],
+[
+168934,
+"Cantharellus lewisii",
+1
+],
+[
+168935,
+"Cantharellus longisporus",
+1
+],
+[
+168936,
+"Cantharellus lourizanianus",
+1
+],
+[
+168937,
+"Cantharellus luteopunctatus",
+1
+],
+[
+168938,
+"Cantharellus luteostipitatus",
+1
+],
+[
+168939,
+"Cantharellus ciliatus",
+0
+],
+[
+168939,
+"Cantharellus ianthinoxanthus",
+0
+],
+[
+168939,
+"Cantharellus melanoxeros",
+1
+],
+[
+168939,
+"Craterellus incarnatus",
+0
+],
+[
+168939,
+"Craterellus melanoxeros",
+0
+],
+[
+168940,
+"Cantharellus merrillii",
+1
+],
+[
+168941,
+"Cantharellus microcibarius",
+1
+],
+[
+168942,
+"Cantharellus mikemboensis",
+1
+],
+[
+168943,
+"Cantharellus miniatescens",
+1
+],
+[
+168944,
+"Cantharellus minor",
+1
+],
+[
+168945,
+"Cantharellus minutissimus",
+1
+],
+[
+168946,
+"Cantharellus miomboensis",
+1
+],
+[
+168947,
+"Cantharellus natarajanii",
+1
+],
+[
+168948,
+"Cantharellus neocaledoniensis",
+1
+],
+[
+168949,
+"Cantharellus nigripedes",
+1
+],
+[
+168950,
+"Cantharellus nothofagorum",
+1
+],
+[
+168951,
+"Cantharellus ochraceoravus",
+1
+],
+[
+168952,
+"Cantharellus odoratus",
+1
+],
+[
+168953,
+"Cantharellus omphalinoides",
+1
+],
+[
+168954,
+"Cantharellus cibarius var. albus",
+0
+],
+[
+168954,
+"Cantharellus cibarius var. pallens",
+0
+],
+[
+168954,
+"Cantharellus cibarius var. pallidus",
+0
+],
+[
+168954,
+"Cantharellus pallens",
+1
+],
+[
+168954,
+"Cantharellus pallidus",
+0
+],
+[
+168955,
+"Cantharellus parviluteus",
+1
+],
+[
+168956,
+"Cantharellus parvisporus",
+1
+],
+[
+168957,
+"Cantharellus pellucidus",
+1
+],
+[
+168958,
+"Cantharellus persicinus",
+1
+],
+[
+168959,
+"Cantharellus phasmatis",
+1
+],
+[
+168960,
+"Cantharellus phloginus",
+1
+],
+[
+168961,
+"Cantharellus plicatulus",
+1
+],
+[
+168962,
+"Cantharellus protectus",
+1
+],
+[
+168963,
+"Cantharellus pseudocibarius",
+1
+],
+[
+168964,
+"Cantharellus pseudoformosus",
+1
+],
+[
+168965,
+"Cantharellus pseudofriesii",
+1
+],
+[
+168966,
+"Cantharellus pseudominimus",
+1
+],
+[
+168967,
+"Cantharellus pudorinus",
+1
+],
+[
+168968,
+"Cantharellus purpuraceus",
+1
+],
+[
+168969,
+"Cantharellus pusio",
+1
+],
+[
+168970,
+"Cantharellus queletii",
+1
+],
+[
+168971,
+"Cantharellus quercophilus",
+1
+],
+[
+168972,
+"Cantharellus reniformis",
+1
+],
+[
+168973,
+"Cantharellus rhodophyllus",
+1
+],
+[
+168974,
+"Cantharellus roseocanus",
+1
+],
+[
+168975,
+"Cantharellus roseofagetorum",
+1
+],
+[
+168976,
+"Cantharellus ruber",
+1
+],
+[
+168977,
+"Cantharellus rubescens",
+1
+],
+[
+168978,
+"Cantharellus rufopunctatus",
+1
+],
+[
+168979,
+"Cantharellus schmitzii",
+1
+],
+[
+168980,
+"Cantharellus sebosus",
+1
+],
+[
+168981,
+"Cantharellus septentrionalis",
+1
+],
+[
+168982,
+"Cantharellus solidus",
+1
+],
+[
+168983,
+"Cantharellus sordidus",
+1
+],
+[
+168984,
+"Cantharellus spectaculus",
+1
+],
+[
+168985,
+"Cantharellus stramineus",
+1
+],
+[
+168986,
+"Cantharellus subalbidus",
+1
+],
+[
+168987,
+"Cantharellus subamethysteus",
+1
+],
+[
+168988,
+"Cantharellus subcibarius",
+1
+],
+[
+168989,
+"Cantharellus subcyanoxanthus",
+1
+],
+[
+168990,
+"Cantharellus subdenticulatus",
+1
+],
+[
+168991,
+"Cantharellus subfloridulus",
+1
+],
+[
+168992,
+"Cantharellus subincarnatus",
+1
+],
+[
+168993,
+"Cantharellus sublaevis",
+1
+],
+[
+168994,
+"Cantharellus subvaginatus",
+1
+],
+[
+168995,
+"Cantharellus tabernensis",
+1
+],
+[
+168996,
+"Cantharellus tanzanicus",
+1
+],
+[
+168997,
+"Cantharellus tenuis",
+1
+],
+[
+168998,
+"Cantharellus tenuithrix",
+1
+],
+[
+168999,
+"Cantharellus texensis",
+1
+],
+[
+169000,
+"Cantharellus tomentosoides",
+1
+],
+[
+169001,
+"Cantharellus tomentosus",
+1
+],
+[
+169002,
+"Cantharellus tricolor",
+1
+],
+[
+169003,
+"Cantharellus tuberculosporus",
+1
+],
+[
+169004,
+"Cantharellus umbriceps",
+1
+],
+[
+169005,
+"Cantharellus vaginatus",
+1
+],
+[
+169006,
+"Cantharellus velutinus",
+1
+],
+[
+169007,
+"Cantharellus violaceovinosus",
+1
+],
+[
+169008,
+"Cantharellus violicolor",
+1
+],
+[
+169009,
+"Cantharellus wellingtonensis",
+1
+],
+[
+169010,
+"Cantharellus xanthoscyphus",
+1
+],
+[
+169011,
+"Cantharellus yunnanensis",
+1
+],
+[
+169012,
+"Cantharellus zangii",
+1
+],
+[
+604019,
+"Russula acris",
+1
+],
+[
+604020,
+"Russula albidula",
+1
+],
+[
+604033,
+"Russula crassipes",
+1
+],
+[
+604036,
+"Russula depallens",
+1
+],
+[
+604039,
+"Russula fennoscandica",
+1
+],
+[
+604050,
+"Russula lapponica",
+1
+],
+[
+608830,
+"Russula acrialbida",
+1
+],
+[
+609565,
+"Russula abscondita",
+1
+],
+[
+609793,
+"Cantharellus fuscipes",
+1
+],
+[
+611464,
+"Cantharellus elegans",
+1
+],
+[
+611465,
+"Cantharellus lignatilis",
+1
+],
+[
+611466,
+"Cantharellus longipes",
+1
+],
+[
+611467,
+"Cantharellus subcarneus",
+1
+],
+[
+611468,
+"Cantharellus candicans",
+1
+],
+[
+611469,
+"Cantharellus niveus",
+1
+],
+[
+611470,
+"Cantharellus papyraceus",
+1
+],
+[
+611471,
+"Cantharellus profundus",
+1
+],
+[
+611472,
+"Cantharellus violaceus",
+1
+],
+[
+611473,
+"Cantharellus salmoneus",
+1
+],
+[
+611474,
+"Cantharellus pulcher",
+1
+],
+[
+611475,
+"Cantharellus thymiphilus",
+1
+],
+[
+611476,
+"Cantharellus suavissimus",
+1
+],
+[
+611477,
+"Cantharellus mexicanus",
+1
+],
+[
+611478,
+"Cantharellus perpusillus",
+1
+],
+[
+611479,
+"Cantharellus petersii",
+1
+],
+[
+611480,
+"Cantharellus erythraeus",
+1
+],
+[
+611481,
+"Cantharellus simplex",
+1
+],
+[
+611482,
+"Cantharellus chrysosporius",
+1
+],
+[
+611483,
+"Cantharellus sphaerosporus",
+1
+],
+[
+611484,
+"Cantharellus pedicellatus",
+1
+],
+[
+611485,
+"Cantharellus madagascariensis",
+1
+],
+[
+611486,
+"Cantharellus tenuissimus",
+1
+],
+[
+611487,
+"Cantharellus transiens",
+1
+],
+[
+611488,
+"Cantharellus turrisii",
+1
+],
+[
+611489,
+"Cantharellus pulcrifolius",
+1
+],
+[
+611490,
+"Cantharellus preslii",
+1
+],
+[
+611491,
+"Cantharellus odorus",
+1
+],
+[
+611492,
+"Cantharellus membranaceus",
+1
+],
+[
+611493,
+"Cantharellus helotioides",
+1
+],
+[
+611494,
+"Cantharellus concinnus",
+1
+],
+[
+611495,
+"Cantharellus odoratissimus",
+1
+],
+[
+611496,
+"Cantharellus parvus",
+1
+],
+[
+611497,
+"Cantharellus pruinosus",
+1
+],
+[
+611498,
+"Cantharellus radiatus",
+1
+],
+[
+611499,
+"Cantharellus stejskalii",
+1
+],
+[
+611500,
+"Cantharellus foliolum",
+1
+],
+[
+611501,
+"Cantharellus fulvocaerulescens",
+1
+],
+[
+611502,
+"Cantharellus gotzenii",
+1
+],
+[
+617023,
+"Conocybe kuehneriana",
+0
+],
+[
+617023,
+"Conocybe velutipes",
+1
+],
+[
+617023,
+"Galera velutipes",
+0
+],
+[
+617892,
+"Cortinarius albonigrellus",
+1
+],
+[
+619323,
+"Cortinarius albonigrellus",
+0
+],
+[
+619323,
+"Cortinarius pulchripes",
+1
+],
+[
+620306,
+"Cantharellus infundibuliformis",
+0
+],
+[
+620306,
+"Cantharellus infundibuliformis var. tubaeformis",
+0
+],
+[
+620306,
+"Cantharellus tubaeformis",
+0
+],
+[
+620306,
+"Cantharellus tubaeformis var. lutescens",
+0
+],
+[
+620306,
+"Cantharellus tubaeformis var. tubaeformis",
+0
+],
+[
+620306,
+"Craterellus tubaeformis",
+1
+],
+[
+620306,
+"Merulius cantharelloides",
+0
+],
+[
+620306,
+"Merulius infundibularis",
+0
+],
+[
+621622,
+"Conocybe velutipes var. nitrophila",
+1
+],
+[
+625410,
+"Hygrophorus russula",
+1
+],
+[
+625410,
+"Limacium russula",
+0
+],
+[
+625410,
+"Tricholoma russula",
+0
+],
+[
+625619,
+"Flammulina",
+1
+],
+[
+625621,
+"Collybia velutipes",
+0
+],
+[
+625621,
+"Flammulina velutipes",
+1
+],
+[
+625622,
+"Flammulina velutipes var. lactea",
+1
+],
+[
+625623,
+"Flammulina velutipes var. velutipes",
+1
+],
+[
+626242,
+"Cantharellus",
+1
+],
+[
+626819,
+"Russula",
+1
+],
+[
+626820,
+"Russula adulterina",
+1
+],
+[
+626820,
+"Russula piceetorum",
+0
+],
+[
+626821,
+"Russula adusta",
+1
+],
+[
+626822,
+"Russula aeruginea",
+1
+],
+[
+626823,
+"Russula alutacea",
+1
+],
+[
+626828,
+"Russula cinnamomicolor",
+0
+],
+[
+626828,
+"Russula cuprea",
+1
+],
+[
+626828,
+"Russula luteoviridans",
+0
+],
+[
+626828,
+"Russula urens",
+0
+],
+[
+626830,
+"Russula curtipes",
+1
+],
+[
+626831,
+"Russula decipiens",
+1
+],
+[
+626832,
+"Russula decolorans",
+1
+],
+[
+626833,
+"Russula densifolia",
+1
+],
+[
+626834,
+"Russula depallens",
+1
+],
+[
+626834,
+"Russula exalbicans",
+0
+],
+[
+626834,
+"Russula pulchella",
+0
+],
+[
+626835,
+"Russula emetica",
+1
+],
+[
+626839,
+"Russula foetens",
+1
+],
+[
+626840,
+"Russula aurantiaca",
+0
+],
+[
+626840,
+"Russula font-queri",
+1
+],
+[
+626843,
+"Russula anatina",
+0
+],
+[
+626843,
+"Russula basifurcata",
+0
+],
+[
+626843,
+"Russula galochroa",
+1
+],
+[
+626844,
+"Russula globispora",
+1
+],
+[
+626844,
+"Russula maculata var. globispora",
+0
+],
+[
+626845,
+"Russula grisea",
+1
+],
+[
+626846,
+"Russula emetica var. griseascens",
+0
+],
+[
+626846,
+"Russula griseascens",
+0
+],
+[
+626846,
+"Russula grisescens",
+1
+],
+[
+626846,
+"Russula hydrophila",
+0
+],
+[
+626848,
+"Russula innocua",
+1
+],
+[
+626849,
+"Russula integra",
+1
+],
+[
+626849,
+"Russula polychroma",
+0
+],
+[
+626853,
+"Russula mairei",
+1
+],
+[
+626855,
+"Russula nigricans",
+1
+],
+[
+626857,
+"Russula ochroleuca",
+1
+],
+[
+626858,
+"Russula olivacea",
+1
+],
+[
+626859,
+"Russula olivascens",
+1
+],
+[
+626859,
+"Russula postiana",
+0
+],
+[
+626859,
+"Russula xerampelina var. olivascens",
+0
+],
+[
+626862,
+"Russula pectinata",
+1
+],
+[
+626865,
+"Russula queletii coll.",
+1
+],
+[
+626867,
+"Russula lutea var. roseipes",
+0
+],
+[
+626867,
+"Russula roseipes",
+1
+],
+[
+626868,
+"Russula kavinae",
+0
+],
+[
+626868,
+"Russula pungens",
+0
+],
+[
+626868,
+"Russula rubra",
+1
+],
+[
+626868,
+"Russula rubra subsp. kavinae",
+0
+],
+[
+626869,
+"Russula saliceticola",
+1
+],
+[
+626870,
+"Russula sanguinea",
+1
+],
+[
+626873,
+"Russula turci",
+1
+],
+[
+626874,
+"Russula atropurpurea",
+0
+],
+[
+626874,
+"Russula krombholzii",
+0
+],
+[
+626874,
+"Russula undulata",
+1
+],
+[
+626875,
+"Russula aurora",
+0
+],
+[
+626875,
+"Russula rosea",
+0
+],
+[
+626875,
+"Russula velutipes",
+1
+],
+[
+626876,
+"Russula fallax",
+0
+],
+[
+626876,
+"Russula violacea",
+1
+],
+[
+626877,
+"Russula lutea",
+0
+],
+[
+626877,
+"Russula vitellina",
+1
+],
+[
+627156,
+"Russula lepida",
+1
+],
+[
+627156,
+"Russula lepida var. lactea",
+0
+],
+[
+627156,
+"Russula rosacea",
+0
+],
+[
+636240,
+"BOLD:AEG6437",
+1
+]
+],
+"vernaculars": [
+[
+16796,
+"nb",
+"kremlevokssopp",
+1
+],
+[
+16796,
+"nn",
+"kremlevokssopp",
+1
+],
+[
+50109,
+"nb",
+"vintersopper",
+1
+],
+[
+50109,
+"nn",
+"vintersoppar",
+1
+],
+[
+50109,
+"sv",
+"vinterskivlingar",
+0
+],
+[
+61661,
+"nb",
+"skarp røykkremle",
+1
+],
+[
+61661,
+"nn",
+"skarp røykkremle",
+1
+],
+[
+61661,
+"sv",
+"skarp svedkremla",
+0
+],
+[
+61669,
+"nb",
+"røykkremle",
+1
+],
+[
+61669,
+"nn",
+"røykkremle",
+1
+],
+[
+61669,
+"sv",
+"svedkremla",
+0
+],
+[
+61673,
+"nb",
+"grønnkremle",
+1
+],
+[
+61673,
+"nn",
+"grønkremle",
+1
+],
+[
+61673,
+"sv",
+"björkkremla",
+0
+],
+[
+61673,
+"sv",
+"grönkremla",
+0
+],
+[
+61692,
+"nb",
+"gråsvart kremle",
+1
+],
+[
+61692,
+"nn",
+"gråsvart kremle",
+1
+],
+[
+61692,
+"sv",
+"gråsvart kremla",
+0
+],
+[
+61699,
+"nb",
+"skarp orekremle",
+1
+],
+[
+61699,
+"nn",
+"skarp orekremle",
+1
+],
+[
+61699,
+"sv",
+"alkremla",
+1
+],
+[
+61704,
+"nb",
+"lærkremle",
+1
+],
+[
+61704,
+"nn",
+"lêrkremle",
+1
+],
+[
+61704,
+"sv",
+"vitfotad läderkremla",
+0
+],
+[
+61710,
+"nb",
+"ametystkremle",
+1
+],
+[
+61710,
+"nn",
+"ametystkremle",
+1
+],
+[
+61718,
+"nb",
+"camembertkremle",
+1
+],
+[
+61718,
+"sv",
+"ostkremla",
+0
+],
+[
+61729,
+"nb",
+"kokskremle",
+1
+],
+[
+61729,
+"nn",
+"kokskremle",
+1
+],
+[
+61729,
+"sv",
+"sotkremla",
+0
+],
+[
+61733,
+"nb",
+"sumpkremle",
+1
+],
+[
+61733,
+"nn",
+"sumpkremle",
+1
+],
+[
+61733,
+"sv",
+"sumpkremla",
+1
+],
+[
+61749,
+"nb",
+"svartgrønn kremle",
+1
+],
+[
+61749,
+"nn",
+"svartgrøn kremle",
+1
+],
+[
+61751,
+"nb",
+"svartrød kremle",
+1
+],
+[
+61751,
+"nn",
+"svartraud kremle",
+1
+],
+[
+61751,
+"sv",
+"svartröd kremla",
+0
+],
+[
+61765,
+"nb",
+"gullkremle",
+1
+],
+[
+61765,
+"nn",
+"gullkremle",
+1
+],
+[
+61765,
+"sv",
+"guldkremla",
+0
+],
+[
+61765,
+"sv",
+"gullkremla",
+0
+],
+[
+61776,
+"nb",
+"drueblå kremle",
+1
+],
+[
+61776,
+"nn",
+"drueblå kremle",
+1
+],
+[
+61776,
+"sv",
+"azurkremla",
+0
+],
+[
+61778,
+"nb",
+"pepperkremle",
+1
+],
+[
+61778,
+"nn",
+"peparkremle",
+1
+],
+[
+61778,
+"sv",
+"pepparkremla",
+0
+],
+[
+61787,
+"nb",
+"blek giftkremle",
+0
+],
+[
+61787,
+"sv",
+"blek giftkremla",
+0
+],
+[
+61788,
+"nb",
+"blek giftkremle",
+0
+],
+[
+61788,
+"nb",
+"blek rødkremle",
+1
+],
+[
+61788,
+"nn",
+"bleik giftkremle",
+0
+],
+[
+61788,
+"nn",
+"bleik raudkremle",
+1
+],
+[
+61788,
+"sv",
+"blek giftkremla",
+0
+],
+[
+61819,
+"nb",
+"brunfiolett kremle",
+1
+],
+[
+61819,
+"nn",
+"brunfiolett kremle",
+1
+],
+[
+61819,
+"sv",
+"brunviolett kremla",
+0
+],
+[
+61827,
+"nb",
+"pukkelkremle",
+1
+],
+[
+61827,
+"nn",
+"pukkelkremle",
+1
+],
+[
+61827,
+"sv",
+"puckelkremla",
+0
+],
+[
+61856,
+"nb",
+"furukremle",
+1
+],
+[
+61856,
+"nn",
+"furukremle",
+1
+],
+[
+61856,
+"sv",
+"tallkremla",
+0
+],
+[
+61863,
+"nb",
+"turkistraktkremle",
+1
+],
+[
+61863,
+"nn",
+"turkistrektkremle",
+1
+],
+[
+61863,
+"sv",
+"tätskivig trattkremla",
+0
+],
+[
+61875,
+"nb",
+"sitronkremle",
+1
+],
+[
+61875,
+"nn",
+"sitronkremle",
+1
+],
+[
+61880,
+"nb",
+"mild gulkremle",
+1
+],
+[
+61880,
+"nn",
+"mild gulkremle",
+1
+],
+[
+61880,
+"sv",
+"gul björkkremla",
+0
+],
+[
+61880,
+"sv",
+"gulkremla",
+1
+],
+[
+61880,
+"sv",
+"mild gulkremla",
+0
+],
+[
+61903,
+"nb",
+"neslekremle",
+1
+],
+[
+61903,
+"nn",
+"neslekremle",
+1
+],
+[
+61903,
+"sv",
+"brännkremla",
+0
+],
+[
+61903,
+"sv",
+"nässelkremla",
+0
+],
+[
+61915,
+"nb",
+"gul mandelkremle",
+1
+],
+[
+61915,
+"nn",
+"gul mandelkremle",
+1
+],
+[
+61915,
+"sv",
+"gul mandelkremla",
+0
+],
+[
+61926,
+"nb",
+"kopperkremle",
+1
+],
+[
+61926,
+"nn",
+"koparkremle",
+1
+],
+[
+61926,
+"sv",
+"kanelkremla",
+0
+],
+[
+61929,
+"nb",
+"kortstilket lærkremle",
+1
+],
+[
+61929,
+"nn",
+"kortstilka lêrkremle",
+1
+],
+[
+61929,
+"sv",
+"kortfotad kremla",
+0
+],
+[
+61929,
+"sv",
+"kortfotkremla",
+0
+],
+[
+61929,
+"sv",
+"kortfotskremla",
+0
+],
+[
+61951,
+"nb",
+"giftkremle",
+0
+],
+[
+61951,
+"nb",
+"rødkremle",
+1
+],
+[
+61951,
+"nn",
+"giftkremle",
+0
+],
+[
+61951,
+"nn",
+"raudkremle",
+1
+],
+[
+61951,
+"sv",
+"giftkremla",
+0
+],
+[
+61961,
+"nb",
+"bøkesildekremle",
+1
+],
+[
+61961,
+"nn",
+"bøkesildekremle",
+1
+],
+[
+61961,
+"sv",
+"bok-sillkremla",
+0
+],
+[
+61961,
+"sv",
+"boksillkremla",
+0
+],
+[
+61962,
+"nb",
+"melfotkremle",
+1
+],
+[
+61962,
+"nb",
+"støvkremle",
+0
+],
+[
+61962,
+"nn",
+"mjølfotkremle",
+1
+],
+[
+61962,
+"sv",
+"mjölfotskremla",
+0
+],
+[
+61966,
+"nb",
+"brun sildekremle",
+1
+],
+[
+61966,
+"nn",
+"brun sildekremle",
+1
+],
+[
+61966,
+"sv",
+"gransillkremla",
+0
+],
+[
+61967,
+"nb",
+"bøkekremle",
+1
+],
+[
+61967,
+"nn",
+"bøkekremle",
+1
+],
+[
+61967,
+"sv",
+"gallkremla",
+0
+],
+[
+61973,
+"nb",
+"blåfiolett kremle",
+1
+],
+[
+61973,
+"nn",
+"blåfiolett kremle",
+1
+],
+[
+61973,
+"sv",
+"glanskremla",
+0
+],
+[
+61989,
+"nb",
+"stankkremle",
+1
+],
+[
+61989,
+"nn",
+"stankkremle",
+1
+],
+[
+61989,
+"sv",
+"stinkkremla",
+0
+],
+[
+61993,
+"nb",
+"gyllenkremle",
+0
+],
+[
+61993,
+"nb",
+"rosafotkremle",
+0
+],
+[
+61993,
+"sv",
+"gyllenkremla",
+0
+],
+[
+61997,
+"nb",
+"skjørkremle",
+1
+],
+[
+61997,
+"nn",
+"skøyrkremle",
+1
+],
+[
+61997,
+"sv",
+"skörkremla",
+0
+],
+[
+62007,
+"nb",
+"rødbrun bjørkekremle",
+1
+],
+[
+62007,
+"sv",
+"kompottkremla",
+0
+],
+[
+62018,
+"nb",
+"mørk tårekremle",
+1
+],
+[
+62042,
+"nb",
+"bjørketårekremle",
+1
+],
+[
+62042,
+"nb",
+"fjelltårekremle",
+0
+],
+[
+62042,
+"nn",
+"bjørketårekremle",
+1
+],
+[
+62042,
+"sv",
+"spädkremla",
+0
+],
+[
+62043,
+"nb",
+"gressgrønn kremle",
+1
+],
+[
+62047,
+"nb",
+"marsipankremle",
+1
+],
+[
+62047,
+"nn",
+"marsipankremle",
+1
+],
+[
+62047,
+"sv",
+"bittermandelkremla",
+0
+],
+[
+62047,
+"sv",
+"marsipankremla",
+1
+],
+[
+62048,
+"nb",
+"falsk broket kremle",
+0
+],
+[
+62048,
+"nb",
+"gråfiolett kremle",
+1
+],
+[
+62048,
+"nn",
+"falsk broket kremle",
+0
+],
+[
+62048,
+"nn",
+"gråfiolett kremle",
+1
+],
+[
+62048,
+"sv",
+"duvkremla",
+0
+],
+[
+62055,
+"nb",
+"gulgrønn kremle",
+1
+],
+[
+62055,
+"nn",
+"gulgrøn kremle",
+1
+],
+[
+62069,
+"nb",
+"grånende lakkremle",
+1
+],
+[
+62069,
+"nn",
+"grånande lakkremle",
+1
+],
+[
+62069,
+"sv",
+"myrkremla",
+0
+],
+[
+62072,
+"nb",
+"høstgul kremle",
+1
+],
+[
+62096,
+"nb",
+"kantstankkremle",
+1
+],
+[
+62096,
+"nn",
+"kantstankkremle",
+1
+],
+[
+62096,
+"sv",
+"mörkeggad stinkkremla",
+0
+],
+[
+62116,
+"nb",
+"mandelkremle",
+1
+],
+[
+62116,
+"nn",
+"mandelkremle",
+1
+],
+[
+62116,
+"sv",
+"mandelkremla",
+1
+],
+[
+62118,
+"nb",
+"stor bjørkekremle",
+1
+],
+[
+62118,
+"nn",
+"stor bjørkekremle",
+1
+],
+[
+62118,
+"sv",
+"praktkremla",
+1
+],
+[
+62122,
+"nb",
+"iriskremle",
+1
+],
+[
+62122,
+"nn",
+"iriskremle",
+1
+],
+[
+62122,
+"sv",
+"iriskremla",
+0
+],
+[
+62142,
+"nb",
+"skarp vierkremle",
+1
+],
+[
+62142,
+"nn",
+"skarp vierkremle",
+1
+],
+[
+62142,
+"sv",
+"nordkremla",
+0
+],
+[
+62144,
+"nb",
+"fjelltraktkremle",
+1
+],
+[
+62165,
+"nb",
+"lillakremle",
+1
+],
+[
+62165,
+"nn",
+"lillakremle",
+1
+],
+[
+62165,
+"sv",
+"lilakremla",
+0
+],
+[
+62186,
+"nb",
+"gulflekket giftkremle",
+0
+],
+[
+62186,
+"nb",
+"gulflekket rødkremle",
+1
+],
+[
+62186,
+"nn",
+"gulflekket giftkremle",
+0
+],
+[
+62186,
+"nn",
+"gulflekket raudkremle",
+1
+],
+[
+62186,
+"sv",
+"gulnande blodkremla",
+0
+],
+[
+62194,
+"nb",
+"flekkremle",
+1
+],
+[
+62194,
+"nn",
+"flekkremle",
+1
+],
+[
+62194,
+"sv",
+"fläckkremla",
+0
+],
+[
+62210,
+"nb",
+"kremletrøffel",
+1
+],
+[
+62210,
+"nn",
+"kremletrøffel",
+1
+],
+[
+62216,
+"nb",
+"grågrønn kremle",
+1
+],
+[
+62216,
+"nn",
+"grågrøn kremle",
+1
+],
+[
+62221,
+"nb",
+"honningkremle",
+1
+],
+[
+62221,
+"nn",
+"honningkremle",
+1
+],
+[
+62221,
+"sv",
+"honungskremla",
+0
+],
+[
+62234,
+"nb",
+"rosenkremle",
+1
+],
+[
+62234,
+"sv",
+"liten rosenkremla",
+0
+],
+[
+62255,
+"nb",
+"røyskattkremle",
+1
+],
+[
+62255,
+"nn",
+"røyskattkremle",
+1
+],
+[
+62255,
+"sv",
+"brunkremla",
+0
+],
+[
+62259,
+"nb",
+"abiskosildekremle",
+1
+],
+[
+62259,
+"sv",
+"lappsillkremla",
+0
+],
+[
+62272,
+"nb",
+"skarp gulkremle",
+1
+],
+[
+62272,
+"nn",
+"skarp gulkremle",
+1
+],
+[
+62272,
+"sv",
+"senapskremla",
+0
+],
+[
+62279,
+"nb",
+"duftkremle",
+1
+],
+[
+62279,
+"nn",
+"duftkremle",
+1
+],
+[
+62279,
+"sv",
+"doftkremla",
+0
+],
+[
+62285,
+"nb",
+"olivenkremle",
+1
+],
+[
+62285,
+"nn",
+"olivenkremle",
+1
+],
+[
+62289,
+"nb",
+"olivengrønn kremle",
+1
+],
+[
+62289,
+"nn",
+"olivengrøn kremle",
+1
+],
+[
+62289,
+"sv",
+"olivinkremla",
+0
+],
+[
+62290,
+"nb",
+"olivenbrun kremle",
+1
+],
+[
+62290,
+"nn",
+"olivenbrun kremle",
+1
+],
+[
+62290,
+"sv",
+"olivbrun kremla",
+0
+],
+[
+62303,
+"nb",
+"støvkremle",
+1
+],
+[
+62303,
+"nn",
+"støvkremle",
+1
+],
+[
+62307,
+"nb",
+"storkremle",
+1
+],
+[
+62307,
+"nn",
+"storkremle",
+1
+],
+[
+62307,
+"sv",
+"storkremla",
+0
+],
+[
+62320,
+"nb",
+"blågrønn kremle",
+1
+],
+[
+62320,
+"nn",
+"blågrøn kremle",
+1
+],
+[
+62320,
+"sv",
+"blågrön kremla",
+0
+],
+[
+62332,
+"nb",
+"fjellsildekremle",
+1
+],
+[
+62332,
+"nn",
+"fjellsildekremle",
+1
+],
+[
+62332,
+"sv",
+"rensillkremla",
+0
+],
+[
+62386,
+"nb",
+"rød eikekremle",
+1
+],
+[
+62386,
+"nn",
+"raud eikekremle",
+1
+],
+[
+62386,
+"sv",
+"röd ekkremla",
+0
+],
+[
+62408,
+"nb",
+"frøkenkremle",
+1
+],
+[
+62408,
+"nn",
+"frøkenkremle",
+1
+],
+[
+62408,
+"sv",
+"sienakremla",
+0
+],
+[
+62409,
+"nb",
+"gulnende bøkekremle",
+1
+],
+[
+62409,
+"nn",
+"gulnande bøkekremle",
+1
+],
+[
+62409,
+"sv",
+"småkremla",
+0
+],
+[
+62433,
+"nb",
+"grantårekremle",
+1
+],
+[
+62433,
+"sv",
+"krusbärskremla",
+0
+],
+[
+62441,
+"nb",
+"blekgul kremle",
+1
+],
+[
+62441,
+"nn",
+"bleikgul kremle",
+1
+],
+[
+62441,
+"sv",
+"citronkremla",
+0
+],
+[
+62447,
+"nb",
+"tomatkremle",
+1
+],
+[
+62447,
+"nn",
+"tomatkremle",
+1
+],
+[
+62447,
+"sv",
+"falsk krusbärskremla",
+0
+],
+[
+62457,
+"nb",
+"kameleonkremle",
+1
+],
+[
+62457,
+"nn",
+"kameleonkremle",
+1
+],
+[
+62457,
+"sv",
+"aprikoskremla",
+0
+],
+[
+62457,
+"sv",
+"äggkremla",
+0
+],
+[
+62458,
+"nb",
+"sumpbjørkekremle",
+1
+],
+[
+62458,
+"nn",
+"sumpbjørkekremle",
+1
+],
+[
+62458,
+"sv",
+"sumpbjörkkremla",
+0
+],
+[
+62467,
+"nb",
+"hvitfotlærkremle",
+1
+],
+[
+62467,
+"nb",
+"hvitstilket lærkremle",
+0
+],
+[
+62467,
+"nn",
+"kvitfotlêrkremle",
+1
+],
+[
+62467,
+"nn",
+"kvitstilka lêrkremle",
+0
+],
+[
+62467,
+"sv",
+"mångfärgad kremla",
+0
+],
+[
+62467,
+"sv",
+"småsporig läderkremla",
+0
+],
+[
+62471,
+"nb",
+"rosenfotkremle",
+1
+],
+[
+62471,
+"nn",
+"rosenfotkremle",
+1
+],
+[
+62471,
+"sv",
+"rosenfotskremla",
+0
+],
+[
+62474,
+"nb",
+"blekrosa kremle",
+1
+],
+[
+62474,
+"nn",
+"bleikrosa kremle",
+1
+],
+[
+62474,
+"sv",
+"laxkremla",
+0
+],
+[
+62503,
+"nb",
+"mild vierkremle",
+1
+],
+[
+62503,
+"nn",
+"mild vierkremle",
+1
+],
+[
+62503,
+"sv",
+"videkremla",
+0
+],
+[
+62510,
+"nb",
+"blodkremle",
+1
+],
+[
+62510,
+"nn",
+"blodkremle",
+1
+],
+[
+62510,
+"sv",
+"blodkremla",
+0
+],
+[
+62513,
+"nb",
+"furutårekremle",
+1
+],
+[
+62513,
+"nn",
+"furutårekremle",
+1
+],
+[
+62513,
+"sv",
+"tårkremla",
+1
+],
+[
+62553,
+"nb",
+"solkremle",
+1
+],
+[
+62553,
+"nn",
+"solkremle",
+1
+],
+[
+62553,
+"sv",
+"solkremla",
+0
+],
+[
+62556,
+"nb",
+"brun stankkremle",
+1
+],
+[
+62556,
+"nn",
+"brun stankkremle",
+1
+],
+[
+62563,
+"nb",
+"torvmosekremle",
+1
+],
+[
+62563,
+"nn",
+"torvmosekremle",
+1
+],
+[
+62563,
+"sv",
+"vitmosskremla",
+0
+],
+[
+62600,
+"nb",
+"gulnende stankkremle",
+1
+],
+[
+62600,
+"nn",
+"gulnande stankkremle",
+1
+],
+[
+62600,
+"sv",
+"gulnande stinkkremla",
+0
+],
+[
+62626,
+"nb",
+"mild orekremle",
+0
+],
+[
+62626,
+"nb",
+"viersildekremle",
+1
+],
+[
+62626,
+"nn",
+"viersildekremle",
+1
+],
+[
+62626,
+"sv",
+"videsillkremla",
+0
+],
+[
+62646,
+"nb",
+"Stordals kremle",
+1
+],
+[
+62651,
+"nb",
+"falsk sildekremle",
+1
+],
+[
+62651,
+"nn",
+"falsk sildekremle",
+1
+],
+[
+62651,
+"sv",
+"taigakremla",
+0
+],
+[
+62651,
+"sv",
+"tajgakremla",
+0
+],
+[
+62677,
+"nb",
+"sandtårekremle",
+1
+],
+[
+62677,
+"nn",
+"sandtårekremle",
+1
+],
+[
+62677,
+"sv",
+"sandkremla",
+0
+],
+[
+62690,
+"nb",
+"skarp frøkenkremle",
+1
+],
+[
+62690,
+"nn",
+"skarp frøkenkremle",
+1
+],
+[
+62690,
+"sv",
+"skarp sienakremla",
+0
+],
+[
+62691,
+"nb",
+"nøttekremle",
+1
+],
+[
+62691,
+"nn",
+"nøttekremle",
+1
+],
+[
+62691,
+"sv",
+"kantkremla",
+0
+],
+[
+62701,
+"nb",
+"vinrød kremle",
+1
+],
+[
+62701,
+"nn",
+"vinraud kremle",
+1
+],
+[
+62701,
+"sv",
+"vinkremla",
+1
+],
+[
+62706,
+"nb",
+"narrevinkremle",
+1
+],
+[
+62706,
+"nn",
+"narrevinkremle",
+1
+],
+[
+62706,
+"sv",
+"falsk vinkremla",
+0
+],
+[
+62707,
+"nb",
+"fiolett kremle",
+1
+],
+[
+62707,
+"nn",
+"fiolett kremle",
+1
+],
+[
+62707,
+"sv",
+"violkremla",
+0
+],
+[
+62710,
+"nb",
+"stikremle",
+1
+],
+[
+62710,
+"nn",
+"stigkremle",
+1
+],
+[
+62712,
+"nb",
+"ferskenkremle",
+1
+],
+[
+62712,
+"nn",
+"ferskenkremle",
+1
+],
+[
+62712,
+"sv",
+"citrongul kremla",
+0
+],
+[
+62712,
+"sv",
+"violfotskremla",
+0
+],
+[
+62714,
+"nb",
+"rutekremle",
+1
+],
+[
+62714,
+"nn",
+"rutekremle",
+1
+],
+[
+62714,
+"sv",
+"rutkremla",
+0
+],
+[
+62739,
+"nb",
+"rød sildekremle",
+1
+],
+[
+62739,
+"nn",
+"raud sildekremle",
+1
+],
+[
+62739,
+"sv",
+"sillkremla",
+0
+],
+[
+62739,
+"sv",
+"sillkremla s. str.",
+0
+],
+[
+62739,
+"sv",
+"tallsillkremla",
+0
+],
+[
+62749,
+"nb",
+"rubinkremle",
+1
+],
+[
+78915,
+"nb",
+"rød fluesopp",
+1
+],
+[
+78915,
+"nn",
+"raud flugesopp",
+1
+],
+[
+78915,
+"sv",
+"röd flugsvamp",
+0
+],
+[
+80115,
+"nb",
+"dunnavlesopp",
+1
+],
+[
+80115,
+"nn",
+"dunnavlesopp",
+1
+],
+[
+80976,
+"nb",
+"nordlig kantarell",
+1
+],
+[
+80976,
+"nb",
+"nordlig trompetsopp",
+0
+],
+[
+80976,
+"nn",
+"nordleg kantarell",
+1
+],
+[
+80976,
+"nn",
+"nordleg trompetsopp",
+0
+],
+[
+98271,
+"nb",
+"blek vintersopp",
+1
+],
+[
+98271,
+"nn",
+"bleik vintersopp",
+1
+],
+[
+98271,
+"sv",
+"blek vinterskivling",
+0
+],
+[
+98272,
+"nb",
+"langsporet vintersopp",
+1
+],
+[
+98272,
+"nn",
+"langspora vintersopp",
+1
+],
+[
+98288,
+"nb",
+"vintersopp",
+1
+],
+[
+98288,
+"nn",
+"vintersopp",
+1
+],
+[
+111869,
+"nb",
+"mild kamkremle",
+1
+],
+[
+111869,
+"nn",
+"mild kamkremle",
+1
+],
+[
+111869,
+"sv",
+"mild kamkremla",
+0
+],
+[
+111878,
+"nb",
+"bjørkevinkremle",
+1
+],
+[
+111878,
+"nn",
+"bjørkevinkremle",
+1
+],
+[
+111878,
+"sv",
+"lundvinkremla",
+0
+],
+[
+111888,
+"nb",
+"lakkremle",
+1
+],
+[
+111888,
+"nn",
+"lakkremle",
+1
+],
+[
+111888,
+"sv",
+"lackkremla",
+0
+],
+[
+111890,
+"nb",
+"liten eikekremle",
+1
+],
+[
+111890,
+"nn",
+"lita eikekremle",
+1
+],
+[
+111890,
+"sv",
+"liten ekkremla",
+0
+],
+[
+112151,
+"nb",
+"tettkremle",
+1
+],
+[
+112151,
+"nn",
+"tettkremle",
+1
+],
+[
+112151,
+"sv",
+"tätskivig svedkremla",
+0
+],
+[
+112154,
+"nb",
+"gaffelkremle",
+1
+],
+[
+112154,
+"nn",
+"gaffelkremle",
+1
+],
+[
+112154,
+"sv",
+"gaffelkremla",
+0
+],
+[
+112159,
+"nb",
+"broket kremle",
+1
+],
+[
+112159,
+"nn",
+"broket kremle",
+1
+],
+[
+112159,
+"sv",
+"brokkremla",
+1
+],
+[
+112159,
+"sv",
+"mellankremla",
+0
+],
+[
+112161,
+"nb",
+"traktkremle",
+1
+],
+[
+112161,
+"nn",
+"trektkremle",
+1
+],
+[
+112161,
+"sv",
+"trattkremla",
+0
+],
+[
+112168,
+"nb",
+"vrangkremle",
+1
+],
+[
+112168,
+"nn",
+"vrangkremle",
+1
+],
+[
+112168,
+"sv",
+"föränderlig kremla",
+0
+],
+[
+112168,
+"sv",
+"strimkremla",
+0
+],
+[
+112175,
+"nb",
+"ildkremle",
+1
+],
+[
+112175,
+"nn",
+"eldkremle",
+1
+],
+[
+122155,
+"nb",
+"grånende eikekremle",
+1
+],
+[
+122309,
+"nb",
+"jodoformkremle",
+1
+],
+[
+122309,
+"nn",
+"jodoformkremle",
+1
+],
+[
+122309,
+"sv",
+"jodoformkremla",
+0
+],
+[
+122313,
+"nb",
+"skarp kamkremle",
+1
+],
+[
+122313,
+"nn",
+"skarp kamkremle",
+1
+],
+[
+122313,
+"sv",
+"kamkremla",
+0
+],
+[
+122315,
+"nb",
+"pelargoniumkremle",
+1
+],
+[
+122315,
+"nn",
+"pelargoniumkremle",
+1
+],
+[
+122315,
+"sv",
+"pelargonkremla",
+0
+],
+[
+122315,
+"sv",
+"poppelkremla",
+0
+],
+[
+122318,
+"nb",
+"aprikoskremle",
+1
+],
+[
+122318,
+"nn",
+"aprikoskremle",
+1
+],
+[
+122318,
+"sv",
+"persikekremla",
+0
+],
+[
+122345,
+"nb",
+"stor teglkremle",
+1
+],
+[
+122345,
+"nn",
+"stor teglkremle",
+1
+],
+[
+122345,
+"sv",
+"gulröd kremla",
+0
+],
+[
+122642,
+"nb",
+"liten pelargoniumkremle",
+1
+],
+[
+122642,
+"nn",
+"lita pelargoniumkremle",
+1
+],
+[
+122643,
+"nb",
+"lundsildekremle",
+1
+],
+[
+122643,
+"nn",
+"lundsildekremle",
+1
+],
+[
+122643,
+"sv",
+"brokig sillkremla",
+0
+],
+[
+122643,
+"sv",
+"eksillkremla",
+1
+],
+[
+122645,
+"nb",
+"olivengrønn sildekremle",
+1
+],
+[
+122645,
+"nn",
+"olivengrøn sildekremle",
+1
+],
+[
+122645,
+"sv",
+"olivsillkremla",
+0
+],
+[
+122646,
+"nb",
+"gulrød kremle",
+1
+],
+[
+122646,
+"nn",
+"gulraud kremle",
+1
+],
+[
+122646,
+"sv",
+"tegelkremla",
+0
+],
+[
+122655,
+"nb",
+"fjellkremle",
+1
+],
+[
+122655,
+"nn",
+"fjellkremle",
+1
+],
+[
+122655,
+"sv",
+"fjällkremla",
+0
+],
+[
+122659,
+"nb",
+"liten bjørkekremle",
+1
+],
+[
+122659,
+"nb",
+"rosenfotkremle",
+0
+],
+[
+122659,
+"nn",
+"lita bjørkekremle",
+1
+],
+[
+122659,
+"sv",
+"rosenfotskremla",
+0
+],
+[
+122659,
+"sv",
+"åderkremla",
+0
+],
+[
+122662,
+"nb",
+"rød bøkekremle",
+0
+],
+[
+122662,
+"sv",
+"bokkremla",
+0
+],
+[
+123322,
+"nb",
+"kremler",
+1
+],
+[
+123322,
+"nn",
+"kremler",
+1
+],
+[
+123322,
+"sv",
+"kremlor",
+0
+],
+[
+123322,
+"sv",
+"naveltryfflar",
+0
+],
+[
+129742,
+"nb",
+"kantareller",
+1
+],
+[
+129742,
+"nn",
+"Kantarell",
+0
+],
+[
+129742,
+"nn",
+"kantareller",
+0
+],
+[
+168859,
+"nb",
+"ametystkantarell",
+1
+],
+[
+168859,
+"nn",
+"ametystkantarell",
+1
+],
+[
+168859,
+"sv",
+"ametistkantarell",
+1
+],
+[
+168873,
+"nb",
+"kantarell",
+1
+],
+[
+168873,
+"nn",
+"kantarell",
+1
+],
+[
+168873,
+"sv",
+"kantarell",
+0
+],
+[
+168903,
+"nb",
+"oransjekantarell",
+1
+],
+[
+168903,
+"nn",
+"oransjekantarell",
+1
+],
+[
+168903,
+"sv",
+"orange kantarell",
+0
+],
+[
+168939,
+"nb",
+"svartnende kantarell",
+1
+],
+[
+168939,
+"nb",
+"svartnende trompetsopp",
+0
+],
+[
+168939,
+"nn",
+"svartnande kantarell",
+1
+],
+[
+168939,
+"nn",
+"svartnande trompetsopp",
+0
+],
+[
+168954,
+"nb",
+"blek kantarell",
+1
+],
+[
+168954,
+"nn",
+"bleik kantarell",
+1
+],
+[
+168954,
+"sv",
+"blek kantarell",
+0
+],
+[
+604033,
+"nb",
+"staut grantårekremle",
+1
+],
+[
+604036,
+"nb",
+"bleknende kremle",
+1
+],
+[
+604036,
+"nn",
+"bleiknande kremle",
+1
+],
+[
+604039,
+"nb",
+"okerfotkremle",
+1
+],
+[
+604050,
+"nb",
+"blekskivet sildekremle",
+1
+],
+[
+620306,
+"nb",
+"traktkantarell",
+1
+],
+[
+620306,
+"nn",
+"trektkantarell",
+1
+],
+[
+620306,
+"sv",
+"trattkantarell",
+0
+],
+[
+625410,
+"nb",
+"kremlevokssopp",
+1
+],
+[
+625410,
+"nn",
+"kremlevokssopp",
+1
+],
+[
+625619,
+"nb",
+"vintersopper",
+1
+],
+[
+625619,
+"nn",
+"vintersoppar",
+1
+],
+[
+625621,
+"nb",
+"vintersopp",
+1
+],
+[
+625621,
+"nn",
+"vintersopp",
+1
+],
+[
+626242,
+"nb",
+"kantareller",
+1
+],
+[
+626242,
+"nn",
+"kantareller",
+1
+],
+[
+626820,
+"nb",
+"skarp mandelkremle",
+1
+],
+[
+626820,
+"nn",
+"skarp mandelkremle",
+1
+],
+[
+626821,
+"nb",
+"røykkremle",
+1
+],
+[
+626821,
+"nn",
+"røykkremle",
+1
+],
+[
+626822,
+"nb",
+"grønnkremle",
+1
+],
+[
+626822,
+"nn",
+"grønkremle",
+1
+],
+[
+626823,
+"nb",
+"lærkremle",
+1
+],
+[
+626823,
+"nn",
+"lêrkremle",
+1
+],
+[
+626828,
+"nb",
+"kopperkremle",
+1
+],
+[
+626828,
+"nn",
+"koparkremle",
+1
+],
+[
+626830,
+"nb",
+"kortstilket lærkremle",
+1
+],
+[
+626830,
+"nn",
+"kortstilka lêrkremle",
+1
+],
+[
+626831,
+"nb",
+"grånende eikekremle",
+1
+],
+[
+626832,
+"nb",
+"gulrød kremle",
+1
+],
+[
+626832,
+"nn",
+"gulraud kremle",
+1
+],
+[
+626833,
+"nb",
+"tettkremle",
+1
+],
+[
+626833,
+"nn",
+"tettkremle",
+1
+],
+[
+626834,
+"nb",
+"bleknende kremle",
+1
+],
+[
+626834,
+"nn",
+"bleiknande kremle",
+1
+],
+[
+626835,
+"nb",
+"giftkremle",
+0
+],
+[
+626835,
+"nb",
+"rødkremle",
+1
+],
+[
+626835,
+"nn",
+"giftkremle",
+0
+],
+[
+626835,
+"nn",
+"raudkremle",
+1
+],
+[
+626839,
+"nb",
+"stankkremle",
+1
+],
+[
+626839,
+"nn",
+"stankkremle",
+1
+],
+[
+626840,
+"nb",
+"gyllenkremle",
+1
+],
+[
+626840,
+"nb",
+"rosafotkremle",
+0
+],
+[
+626840,
+"nn",
+"gyllenkremle",
+1
+],
+[
+626843,
+"nb",
+"parkkremle",
+1
+],
+[
+626843,
+"nn",
+"parkkremle",
+1
+],
+[
+626844,
+"nb",
+"oransje flekkremle",
+1
+],
+[
+626844,
+"nn",
+"oransje flekkremle",
+1
+],
+[
+626845,
+"nb",
+"falsk broket kremle",
+0
+],
+[
+626845,
+"nb",
+"gråfiolett kremle",
+1
+],
+[
+626845,
+"nn",
+"falsk broket kremle",
+0
+],
+[
+626845,
+"nn",
+"gråfiolett kremle",
+1
+],
+[
+626846,
+"nb",
+"gråfotgiftkremle",
+0
+],
+[
+626846,
+"nb",
+"grånende rødkremle",
+1
+],
+[
+626846,
+"nb",
+"gråstilket giftkremle",
+0
+],
+[
+626846,
+"nn",
+"gråfotgiftkremle",
+0
+],
+[
+626846,
+"nn",
+"gråstilka giftkremle",
+0
+],
+[
+626848,
+"nb",
+"liten pelargoniumkremle",
+1
+],
+[
+626848,
+"nn",
+"lita pelargoniumkremle",
+1
+],
+[
+626849,
+"nb",
+"mandelkremle",
+1
+],
+[
+626849,
+"nn",
+"mandelkremle",
+1
+],
+[
+626853,
+"nb",
+"rød bøkekremle",
+1
+],
+[
+626853,
+"nn",
+"raud bøkekremle",
+1
+],
+[
+626855,
+"nb",
+"svartkremle",
+1
+],
+[
+626855,
+"nn",
+"svartkremle",
+1
+],
+[
+626857,
+"nb",
+"skarp gulkremle",
+1
+],
+[
+626857,
+"nn",
+"skarp gulkremle",
+1
+],
+[
+626858,
+"nb",
+"olivenkremle",
+1
+],
+[
+626858,
+"nn",
+"olivenkremle",
+1
+],
+[
+626859,
+"nb",
+"sprø olivenkremle",
+1
+],
+[
+626859,
+"nn",
+"sprø olivenkremle",
+1
+],
+[
+626862,
+"nb",
+"skarp kamkremle",
+1
+],
+[
+626862,
+"nn",
+"skarp kamkremle",
+1
+],
+[
+626865,
+"nb",
+"grantårekremle-gruppen",
+1
+],
+[
+626865,
+"nn",
+"grantårekremle-gruppa",
+1
+],
+[
+626867,
+"nb",
+"rosenfotkremle",
+1
+],
+[
+626867,
+"nn",
+"rosenfotkremle",
+1
+],
+[
+626868,
+"nb",
+"falsk fagerkremle",
+1
+],
+[
+626868,
+"nn",
+"falsk fagerkremle",
+1
+],
+[
+626869,
+"nb",
+"mild vierkremle",
+1
+],
+[
+626869,
+"nn",
+"mild vierkremle",
+1
+],
+[
+626870,
+"nb",
+"blodkremle",
+1
+],
+[
+626870,
+"nn",
+"blodkremle",
+1
+],
+[
+626873,
+"nb",
+"jodoformkremle",
+1
+],
+[
+626873,
+"nn",
+"jodoformkremle",
+1
+],
+[
+626874,
+"nb",
+"mørkerød eikekremle",
+1
+],
+[
+626874,
+"nn",
+"mørkeraud eikekremle",
+1
+],
+[
+626875,
+"nb",
+"morgenrødekremle",
+1
+],
+[
+626875,
+"nn",
+"morgonròdekremle",
+1
+],
+[
+626876,
+"nb",
+"fiolett kremle",
+1
+],
+[
+626876,
+"nn",
+"fiolett kremle",
+1
+],
+[
+626877,
+"nb",
+"smørkremle",
+1
+],
+[
+626877,
+"nn",
+"smørkremle",
+1
+],
+[
+627156,
+"nb",
+"fagerkremle",
+1
+],
+[
+627156,
+"nn",
+"fagerkremle",
+1
+]
+],
+"artsdatabanken_ids": [
+[
+61661,
+57673
+],
+[
+61692,
+57678
+],
+[
+61699,
+57679
+],
+[
+61710,
+57682
+],
+[
+61718,
+57685
+],
+[
+61729,
+57686
+],
+[
+61733,
+57689
+],
+[
+61749,
+57690
+],
+[
+61751,
+57691
+],
+[
+61765,
+57693
+],
+[
+61776,
+57694
+],
+[
+61778,
+57695
+],
+[
+61788,
+57696
+],
+[
+61819,
+57698
+],
+[
+61827,
+64588
+],
+[
+61856,
+57703
+],
+[
+61863,
+57705
+],
+[
+61875,
+57708
+],
+[
+61880,
+57709
+],
+[
+61903,
+57715
+],
+[
+61915,
+57717
+],
+[
+61961,
+57734
+],
+[
+61962,
+57735
+],
+[
+61966,
+57737
+],
+[
+61967,
+57738
+],
+[
+61973,
+57741
+],
+[
+61997,
+57744
+],
+[
+62007,
+57749
+],
+[
+62018,
+298133
+],
+[
+62042,
+57757
+],
+[
+62043,
+57758
+],
+[
+62047,
+57759
+],
+[
+62055,
+57763
+],
+[
+62069,
+57764
+],
+[
+62072,
+57765
+],
+[
+62096,
+57768
+],
+[
+62118,
+57774
+],
+[
+62122,
+57775
+],
+[
+62142,
+57776
+],
+[
+62144,
+213184
+],
+[
+62165,
+57783
+],
+[
+62186,
+57785
+],
+[
+62194,
+57786
+],
+[
+62210,
+296632
+],
+[
+62216,
+57790
+],
+[
+62221,
+57792
+],
+[
+62234,
+57794
+],
+[
+62255,
+57795
+],
+[
+62259,
+57801
+],
+[
+62279,
+57803
+],
+[
+62289,
+57806
+],
+[
+62290,
+57807
+],
+[
+62303,
+57808
+],
+[
+62307,
+57810
+],
+[
+62320,
+57811
+],
+[
+62332,
+57812
+],
+[
+62386,
+57820
+],
+[
+62408,
+57822
+],
+[
+62409,
+57824
+],
+[
+62433,
+298198
+],
+[
+62441,
+57828
+],
+[
+62447,
+57829
+],
+[
+62457,
+57833
+],
+[
+62458,
+57836
+],
+[
+62467,
+57837
+],
+[
+62474,
+57839
+],
+[
+62513,
+57845
+],
+[
+62553,
+57850
+],
+[
+62556,
+57851
+],
+[
+62563,
+57852
+],
+[
+62600,
+57855
+],
+[
+62626,
+57857
+],
+[
+62646,
+169666
+],
+[
+62651,
+57859
+],
+[
+62677,
+57862
+],
+[
+62690,
+57870
+],
+[
+62691,
+57871
+],
+[
+62701,
+57873
+],
+[
+62706,
+57876
+],
+[
+62710,
+57878
+],
+[
+62712,
+57879
+],
+[
+62714,
+57881
+],
+[
+62739,
+57884
+],
+[
+62749,
+57886
+],
+[
+78915,
+52147
+],
+[
+80115,
+55656
+],
+[
+80976,
+62374
+],
+[
+98268,
+54698
+],
+[
+98271,
+54697
+],
+[
+98272,
+54696
+],
+[
+98275,
+215448
+],
+[
+98291,
+54700
+],
+[
+98292,
+54699
+],
+[
+111869,
+57814
+],
+[
+111878,
+57821
+],
+[
+111888,
+57832
+],
+[
+111890,
+57841
+],
+[
+112154,
+57766
+],
+[
+112159,
+57722
+],
+[
+112161,
+57726
+],
+[
+112168,
+57797
+],
+[
+112175,
+57692
+],
+[
+122315,
+57815
+],
+[
+122318,
+227311
+],
+[
+122345,
+57867
+],
+[
+122643,
+57760
+],
+[
+122645,
+57712
+],
+[
+122655,
+57796
+],
+[
+122659,
+57800
+],
+[
+122662,
+293872
+],
+[
+123322,
+57666
+],
+[
+162818,
+131412
+],
+[
+168859,
+56209
+],
+[
+168873,
+56210
+],
+[
+168876,
+220330
+],
+[
+168897,
+56214
+],
+[
+168903,
+56215
+],
+[
+168939,
+62396
+],
+[
+168943,
+171011
+],
+[
+168954,
+56216
+],
+[
+604019,
+57674
+],
+[
+604033,
+57716
+],
+[
+604039,
+57739
+],
+[
+604050,
+295389
+],
+[
+617023,
+52324
+],
+[
+619323,
+186601
+],
+[
+620306,
+56227
+],
+[
+621622,
+131411
+],
+[
+625410,
+54082
+],
+[
+625619,
+54695
+],
+[
+625621,
+54701
+],
+[
+625622,
+54702
+],
+[
+625623,
+54703
+],
+[
+626242,
+56208
+],
+[
+626819,
+57672
+],
+[
+626820,
+57675
+],
+[
+626821,
+57676
+],
+[
+626822,
+57677
+],
+[
+626823,
+57681
+],
+[
+626828,
+57719
+],
+[
+626830,
+57721
+],
+[
+626831,
+57724
+],
+[
+626832,
+57725
+],
+[
+626833,
+57728
+],
+[
+626834,
+57729
+],
+[
+626835,
+57730
+],
+[
+626839,
+57742
+],
+[
+626840,
+57743
+],
+[
+626843,
+57753
+],
+[
+626844,
+57755
+],
+[
+626845,
+57761
+],
+[
+626846,
+57762
+],
+[
+626848,
+57770
+],
+[
+626849,
+57772
+],
+[
+626853,
+57789
+],
+[
+626855,
+57799
+],
+[
+626857,
+57802
+],
+[
+626858,
+57804
+],
+[
+626859,
+57805
+],
+[
+626862,
+57813
+],
+[
+626865,
+57827
+],
+[
+626867,
+57838
+],
+[
+626868,
+57840
+],
+[
+626869,
+57842
+],
+[
+626870,
+57843
+],
+[
+626873,
+57863
+],
+[
+626874,
+57864
+],
+[
+626875,
+57868
+],
+[
+626876,
+57877
+],
+[
+626877,
+57883
+],
+[
+627156,
+64622
+]
+]
+}
