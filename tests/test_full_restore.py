@@ -947,7 +947,7 @@ def test_rejected_restore_opens_the_live_database_read_only_and_closes_it(
     to_live = [
         (database, connection)
         for database, connection in opened
-        if str(live) in database or database == str(schema.get_database_path())
+        if database.startswith(live.as_uri()) or Path(database).resolve() == live
     ]
     assert to_live
     for database, connection in to_live:
