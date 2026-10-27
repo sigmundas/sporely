@@ -19688,7 +19688,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         order = np.argsort(eigvals)[::-1]
         eigvals = eigvals[order]
         eigvecs = eigvecs[:, order]
-        axis_lengths = np.sqrt(eigvals * chi2_val)
+        axis_lengths = np.sqrt(np.maximum(eigvals, 0) * chi2_val)
 
         t = np.linspace(0, 2 * math.pi, n_points)
         circle = np.vstack((np.cos(t), np.sin(t)))

@@ -550,6 +550,23 @@ def test_translated_legacy_row_keeps_q_histogram_and_parmasto_overlays(monkeypat
     assert any("Q" in text for text in translated[0][3])  # mean-Q legend label kept
 
 
+def test_confidence_ellipse_of_collinear_measurements_is_finite(monkeypatch):
+    """Collinear spores have a singular covariance. Its smallest eigenvalue
+    can come out a rounding error below zero (OpenBLAS does), which must
+    give a flat ellipse, not NaN."""
+    import numpy as np
+
+    eigh = np.linalg.eigh
+
+    def slightly_negative(cov):
+        values, vectors = eigh(cov)
+        return np.array([-1e-17, values[1]]), vectors
+
+    monkeypatch.setattr(main_window.np.linalg, "eigh", slightly_negative)
+    x = [12.0 + i * 0.3 for i in range(1, 6)]
+    y = [7.5 + i * 0.1 for i in range(1, 6)]
+    xs, ys = main_window.MainWindow._confidence_ellipse_points(None, x, y)
+    assert np.isfinite(xs).all() and np.isfinite(ys).all()
 
 
 def test_normalized_reference_draws_q_typical_and_extreme_guidelines(monkeypatch, qapp):
