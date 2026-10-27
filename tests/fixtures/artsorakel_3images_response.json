@@ -1,0 +1,215 @@
+{
+ "api_implementation": {
+  "tag": "api-v2:2.2.0-20243010",
+  "version": ""
+ },
+ "generated_by": {
+  "datetime": "2026-07-03T11:33:06.548742",
+  "parameters": {},
+  "tag": "algorithm=msm24-eur:1.0.0-20241030,api=api-v2:2.2.0-20243010",
+  "version": "algorithm=4ad010966459f0c0415a088d2453d8b2fbf08c91,api="
+ },
+ "identification": {
+  "image": {
+   "confidence": "uncertain"
+  }
+ },
+ "links": {
+  "taxa": {
+   "url": "v2/taxa/main_order"
+  },
+  "taxa_with_filter": {
+   "url": "v2/taxa/main_order?id={taxon_id}"
+  }
+ },
+ "media": [
+  {
+   "filename": "1783078386136",
+   "id": "image0"
+  },
+  {
+   "filename": "1783078386136",
+   "id": "image1"
+  },
+  {
+   "filename": "1783078386136",
+   "id": "image2"
+  }
+ ],
+ "model_implementation": {
+  "algorithm_tag": "msm24-eur:1.0.0-20241030",
+  "tag": "main_order",
+  "version": "4ad010966459f0c0415a088d2453d8b2fbf08c91"
+ },
+ "predictions": [
+  {
+   "region_group_id": "individual0",
+   "taxa": {
+    "items": [
+     {
+      "probability": 0.870754,
+      "scientific_name": "Entoloma",
+      "scientific_name_id": "NBIC:53377",
+      "scientific_name_id_shared": "GBIF:2530002",
+      "scientific_name_shared": "Entoloma",
+      "vernacularName": "rødsporesopper",
+      "vernacularNames": {
+       "nb": "rødsporesopper",
+       "nn": "raudsporesoppar",
+       "sv": "rödskivlingar",
+       "nl": "Satijnzwam",
+       "en": "Pinkgills"
+      },
+      "groupName": "Sopper",
+      "groupNames": {
+       "nb": "Sopper",
+       "nn": "Soppar",
+       "en": "Fungi",
+       "sv": "Svampar",
+       "se": "Guobbarat",
+       "nl": "Paddenstoelen en schimmels",
+       "es": "Hongos"
+      },
+      "scientificName": "Entoloma",
+      "infoUrl": "https://artsdatabanken.no/Taxon/141082",
+      "name": "Entoloma",
+      "picture": null
+     },
+     {
+      "probability": 0.067852,
+      "scientific_name": "Entoloma asprellum",
+      "scientific_name_id": "NBIC:53442",
+      "scientific_name_id_shared": "GBIF:2539669",
+      "scientific_name_shared": "Entoloma asprellum",
+      "vernacularName": "blåstilket rødspore",
+      "vernacularNames": {
+       "nb": "blåstilket rødspore",
+       "nn": "blåstilka raudspore",
+       "sv": "strimnopping",
+       "nl": "Schubbig staalsteeltje",
+       "en": "roughened pinkgill"
+      },
+      "groupName": "Sopper",
+      "groupNames": {
+       "nb": "Sopper",
+       "nn": "Soppar",
+       "en": "Fungi",
+       "sv": "Svampar",
+       "se": "Guobbarat",
+       "nl": "Paddenstoelen en schimmels",
+       "es": "Hongos"
+      },
+      "scientificName": "Entoloma asprellum",
+      "redListCategories": {
+       "NO": "LC"
+      },
+      "redListCategory": "LC",
+      "infoUrl": "https://artsdatabanken.no/Taxon/218782",
+      "name": "Entoloma asprellum",
+      "picture": null
+     },
+     {
+      "probability": 0.032976,
+      "scientific_name": "Entoloma sericeum",
+      "scientific_name_id": "NBIC:53669",
+      "scientific_name_id_shared": "GBIF:3345972",
+      "scientific_name_shared": "Entoloma sericeum",
+      "vernacularName": "beiterødspore",
+      "vernacularNames": {
+       "nb": "beiterødspore",
+       "nn": "beiteraudspore",
+       "sv": "silkesrödhätting",
+       "nl": "Bruine satijnzwam",
+       "en": "Silky Pinkgill"
+      },
+      "groupName": "Sopper",
+      "groupNames": {
+       "nb": "Sopper",
+       "nn": "Soppar",
+       "en": "Fungi",
+       "sv": "Svampar",
+       "se": "Guobbarat",
+       "nl": "Paddenstoelen en schimmels",
+       "es": "Hongos"
+      },
+      "scientificName": "Entoloma sericeum",
+      "redListCategories": {
+       "NO": "LC"
+      },
+      "redListCategory": "LC",
+      "infoUrl": "https://artsdatabanken.no/Taxon/161038",
+      "name": "Entoloma sericeum",
+      "picture": null
+     }
+    ],
+    "type": "multiclass"
+   },
+   "probability": 1,
+   "taxon": {
+    "vernacularName": "*** Utdatert versjon ***",
+    "name": "Vennligst oppdater Artsorakel via app store, eller Ctrl-Shift-R på pc"
+   }
+  }
+ ],
+ "region_groups": [
+  {
+   "id": "individual0",
+   "individual_id": "individual0",
+   "regions": [
+    {
+     "box": {
+      "x1": 0,
+      "x2": 1,
+      "y1": 0,
+      "y2": 1
+     },
+     "id": "image0?region=full",
+     "media_id": "image0"
+    },
+    {
+     "box": {
+      "x1": 0,
+      "x2": 1,
+      "y1": 0,
+      "y2": 1
+     },
+     "id": "image1?region=full",
+     "media_id": "image1"
+    },
+    {
+     "box": {
+      "x1": 0,
+      "x2": 1,
+      "y1": 0,
+      "y2": 1
+     },
+     "id": "image2?region=full",
+     "media_id": "image2"
+    }
+   ]
+  }
+ ],
+ "application": "Artsorakel Web",
+ "modelInfo": {
+  "model": "Norwegian",
+  "country": "Unknown",
+  "locationSource": "unknown",
+  "detectedIP": "192.0.2.1"
+ },
+ "warnings": {
+  "general": [
+   {
+    "category": "info",
+    "message": {
+     "nb": "Aldri spis noe basert på forslagene - de kan være feil!",
+     "nn": "Aldri et noko basert på forslaga - dei kan vere feil!",
+     "en": "Never eat anything based on the suggestions - they may be wrong!",
+     "sv": "Ät aldrig något baserat på förslagen - de kan vara fel!",
+     "nl": "Eet nooit iets op basis van de suggesties - ze kunnen fout zijn!",
+     "es": "Nunca comas nada basándote en las sugerencias - ¡pueden estar equivocadas!"
+    }
+   }
+  ],
+  "predictions": {}
+ }
+}
