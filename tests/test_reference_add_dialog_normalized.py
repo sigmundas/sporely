@@ -18,6 +18,7 @@ from PySide6.QtWidgets import QApplication, QTableWidgetItem, QWidget
 
 from database import schema as _schema
 from references.measurement_content import MeasurementContentError
+from references import measurement_content_gates as gates
 from database.reference_library import (
     MeasurementSetRepository,
     ReferenceWork,
@@ -60,6 +61,16 @@ def _seed_work(short_label: str = "Petersen 1990") -> ReferenceWork:
             year=1990,
         )
     )
+
+
+@pytest.fixture()
+def historical_closed_policy(monkeypatch):
+    """Pin the retired closed-gate policy for a loss-refusal fixture.
+
+    Full reported statistics are stored since 2026-10-26; the contract
+    keeps the closed-policy refusals as regression fixtures.
+    """
+    monkeypatch.setattr(gates, "enhanced_attachments_enabled", lambda: False)
 
 
 def _new_dialog(qapp, **kwargs):
@@ -178,6 +189,7 @@ def test_normalized_payload_preserves_verbatim_measurement_expression(qapp, libs
         parent.deleteLater()
 
 
+@pytest.mark.usefixtures("historical_closed_policy")
 def test_parsed_q_range_is_refused_rather_than_silently_dropped(qapp, libs):
     """F-004 asked that a parsed ``Q = 1.2-1.3, Qm = 1.25`` not be dropped.
 
@@ -213,6 +225,27 @@ def test_parsed_q_range_is_refused_rather_than_silently_dropped(qapp, libs):
         parent.deleteLater()
 
 
+
+def test_parsed_q_range_and_qm_are_stored_in_the_q_core_columns(qapp, libs):
+    """F-004: ``Q = 1.2-1.3, Qm = 1.25`` is kept as the typical range it is."""
+    parent, dialog = _new_dialog(qapp, sporely_taxon_id=7)
+    try:
+        dialog.measurement_paste_input.setText(
+            "9.8-11.3 x 8.0-9.4 µm, Q = 1.2-1.3, Qm = 1.25"
+        )
+        dialog._on_parse_measurement_clicked()
+
+        assert dialog.is_ready_to_submit() is True
+        payload = dialog.normalized_measurement_set_payload()
+        assert (payload.q_core_min, payload.q_core_max) == (
+            pytest.approx(1.2), pytest.approx(1.3)
+        )
+        assert payload.q_mean == pytest.approx(1.25)
+        assert payload.q_min is None and payload.q_max is None
+    finally:
+        dialog.deleteLater()
+        parent.deleteLater()
+
 def test_explicit_q_cells_win_over_the_parmasto_fallback(qapp, libs):
     """The Q Mean cell beats the Parmasto species-mean field."""
     parent, dialog = _new_dialog(qapp, sporely_taxon_id=7)
@@ -236,6 +269,7 @@ def test_explicit_q_cells_win_over_the_parmasto_fallback(qapp, libs):
         parent.deleteLater()
 
 
+@pytest.mark.usefixtures("historical_closed_policy")
 def test_q_typical_cells_entered_beside_q_extremes_are_refused(qapp, libs):
     """Hand-typed values reach the same boundary as parsed ones.
 
@@ -258,6 +292,29 @@ def test_q_typical_cells_entered_beside_q_extremes_are_refused(qapp, libs):
         assert dialog.is_ready_to_submit() is False
         with pytest.raises(MeasurementContentError):
             dialog.normalized_measurement_set_payload()
+    finally:
+        dialog.deleteLater()
+        parent.deleteLater()
+
+
+def test_q_typical_cells_beside_q_extremes_keep_both_pairs(qapp, libs):
+    parent, dialog = _new_dialog(qapp, sporely_taxon_id=7)
+    try:
+        _fill_minmax_cell(dialog, 0, 1, 9.8)
+        _fill_minmax_cell(dialog, 0, 3, 11.3)
+        _fill_minmax_cell(dialog, 1, 1, 8.0)
+        _fill_minmax_cell(dialog, 1, 3, 9.4)
+        _fill_minmax_cell(dialog, 2, 0, 1.1)
+        _fill_minmax_cell(dialog, 2, 4, 1.4)
+        _fill_minmax_cell(dialog, 2, 1, 1.2)
+        _fill_minmax_cell(dialog, 2, 3, 1.3)
+
+        assert dialog.is_ready_to_submit() is True
+        payload = dialog.normalized_measurement_set_payload()
+        assert (payload.q_min, payload.q_max) == (pytest.approx(1.1), pytest.approx(1.4))
+        assert (payload.q_core_min, payload.q_core_max) == (
+            pytest.approx(1.2), pytest.approx(1.3)
+        )
     finally:
         dialog.deleteLater()
         parent.deleteLater()
