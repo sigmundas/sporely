@@ -562,7 +562,17 @@ class TaxonInputController(QObject):
                 continue
             seen.add(key)
             concepts.append(hit)
-        concepts = self._settle_concept_suggestions(concepts)[: self.max_suggestions]
+        concepts = self._settle_concept_suggestions(concepts)
+        # When the concept rows stop short (the row limit), installed-taxonomy
+        # names past the last one are concepts too, just not listed yet.
+        # Listing them as name rows would offer a pick that binds nothing;
+        # typing more of the epithet brings their concept rows instead.
+        truncated = len(concepts) > self.max_suggestions or len(hits) >= self.max_suggestions * 2
+        concepts = concepts[: self.max_suggestions]
+        window_end = (
+            parse_scientific_name_snapshot(concepts[-1]["scientific_name"])[1].casefold()
+            if truncated and concepts else None
+        )
         rows: list[tuple[str, str, object]] = []
         epithets: set[str] = set()
         for hit in concepts:
@@ -581,6 +591,9 @@ class TaxonInputController(QObject):
             names = []
         for choice in names:
             epithet = self._clean_species_text(choice.species)
+            if window_end is not None and epithet.casefold() > window_end \
+                    and choice.source in ("taxonomy", "both"):
+                continue
             if epithet and epithet.casefold() not in epithets:
                 epithets.add(epithet.casefold())
                 rows.append((self._species_display_formatter(choice), epithet, choice))

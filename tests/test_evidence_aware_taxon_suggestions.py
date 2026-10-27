@@ -923,6 +923,32 @@ def test_hyphenated_epithets_are_concepts_in_both_pickers(editor, picker):
         "Cortinarius", "albo-ochraceus", "Cortinarius albo-ochraceus")
 
 
+@pytest.mark.parametrize("genus", ["Russula", "Cortinarius"])
+def test_species_names_past_the_row_limit_are_not_offered_as_name_only_rows(editor, genus):
+    dialog = editor(**_observation(genus="", species="", **_NO_AI))
+    controller = dialog._taxon_controller
+    dialog.genus_input.setText(genus)
+    controller.refresh_species_suggestions()
+    model = controller.species_model
+    name_rows = [model.item(r).data(ROLE_TAXON_CHOICE) for r in range(model.rowCount())
+                 if not isinstance(model.item(r).data(ROLE_TAXON_CHOICE), dict)]
+    concept_rows = [model.item(r) for r in range(model.rowCount())
+                    if isinstance(model.item(r).data(ROLE_TAXON_CHOICE), dict)]
+    assert len(concept_rows) == controller.max_suggestions    # the window is full
+    lookup = controller.lookup
+    for choice in name_rows:
+        name = f"{genus} {choice.species}"
+        hits = lookup.suggest_scientific_names(name, limit=5)
+        assert not any(h["scientific_name"] == name and h["taxon_rank_snapshot"] == "species" for h in hits), (
+            f"{name} is a database species but is listed as a name-only row")
+    # Typing more brings such a species in as a concept row.
+    dialog.species_input.setText("boe")
+    controller.refresh_species_suggestions()
+    rows = [model.item(r).data(ROLE_TAXON_CHOICE) for r in range(model.rowCount())]
+    if genus == "Russula":
+        assert any(isinstance(r, dict) and r["scientific_name"] == "Russula boedijnii" for r in rows)
+
+
 
 class _MacPopupFocusReturn:
     """Reproduce macOS: a completer popup that hides hands focus back to its
