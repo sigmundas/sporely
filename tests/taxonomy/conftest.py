@@ -51,6 +51,10 @@ def rule_set():
 @pytest.fixture(scope="session")
 def release():
     """Load the pinned macrofungi release once per test session."""
+    if not RELEASE_DIR.is_dir():
+        # A locally generated, git-ignored release: absent from a fresh
+        # checkout such as CI.
+        pytest.skip(f"needs the locally generated release {RELEASE_DIR.name}")
     return PinnedRelease.load(RELEASE_DIR)
 
 

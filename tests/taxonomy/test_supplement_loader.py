@@ -25,6 +25,13 @@ BASE_RELEASE = (
     / "database/reference_data/generated/taxonomy_v2/global_macrofungi_tax-2026.08.01-01"
 )
 
+# Every test builds on the locally generated, git-ignored base release; a
+# fresh checkout such as CI does not have it.
+pytestmark = pytest.mark.skipif(
+    not (BASE_RELEASE / "taxonomy_export_manifest.json").is_file(),
+    reason=f"needs the locally generated base release {BASE_RELEASE.name}",
+)
+
 
 def _sha256(path: Path) -> str:
     h = hashlib.sha256()
