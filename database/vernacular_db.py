@@ -757,15 +757,18 @@ _SCIENTIFIC_PICKER_RANKS = frozenset(
 )
 # Aliases that appear in `scientific_name_min` but never make it into
 # `taxon_min.taxon_rank` — we parse them out of the name string.
+# An epithet may be hyphenated (ICN Art. 23.1: *Cortinarius albo-ochraceus*,
+# *Russula amici-mei*): lower-case letter runs joined by single hyphens.
+_EPITHET = r"[a-z]+(?:-[a-z]+)*"
 _ALIAS_MARKERS: tuple[tuple[re.Pattern, str], ...] = (
     (re.compile(r"^([A-Z][a-z]+)$"),                                                 "genus"),
-    (re.compile(r"^([A-Z][a-z]+) ([a-z]+)$"),                                        "species"),
-    (re.compile(r"^([A-Z][a-z]+) ([a-z]+) subsp\. ([a-z]+)$"),                       "subspecies"),
-    (re.compile(r"^([A-Z][a-z]+) ([a-z]+) ssp\. ([a-z]+)$"),                         "subspecies"),
-    (re.compile(r"^([A-Z][a-z]+) ([a-z]+) var\. ([a-z]+)$"),                         "variety"),
-    (re.compile(r"^([A-Z][a-z]+) ([a-z]+) f\. ([a-z]+)$"),                           "form"),
-    (re.compile(r"^([A-Z][a-z]+) ([a-z]+) coll\.$"),                                 "aggregate"),
-    (re.compile(r"^([A-Z][a-z]+) ([a-z]+) agg\.$"),                                  "aggregate"),
+    (re.compile(rf"^([A-Z][a-z]+) ({_EPITHET})$"),                                   "species"),
+    (re.compile(rf"^([A-Z][a-z]+) ({_EPITHET}) subsp\. ({_EPITHET})$"),              "subspecies"),
+    (re.compile(rf"^([A-Z][a-z]+) ({_EPITHET}) ssp\. ({_EPITHET})$"),                "subspecies"),
+    (re.compile(rf"^([A-Z][a-z]+) ({_EPITHET}) var\. ({_EPITHET})$"),                "variety"),
+    (re.compile(rf"^([A-Z][a-z]+) ({_EPITHET}) f\. ({_EPITHET})$"),                  "form"),
+    (re.compile(rf"^([A-Z][a-z]+) ({_EPITHET}) coll\.$"),                            "aggregate"),
+    (re.compile(rf"^([A-Z][a-z]+) ({_EPITHET}) agg\.$"),                             "aggregate"),
 )
 
 # Names that are placeholder / curatorial and MUST NOT appear in the picker.

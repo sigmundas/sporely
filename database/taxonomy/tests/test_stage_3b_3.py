@@ -124,6 +124,18 @@ def test_parser_rejects_unsafe(tmp_path: Path) -> None:
     assert parse_scientific_name_snapshot("   ") is None
     # Digits (rare taxonomic conventions we don't currently support)
     assert parse_scientific_name_snapshot("Hygrocybe sp.-2") is None
+    # A hyphen joins epithet letters; it never stands alone or doubles.
+    assert parse_scientific_name_snapshot("Cortinarius albo-") is None
+    assert parse_scientific_name_snapshot("Cortinarius -ochraceus") is None
+    assert parse_scientific_name_snapshot("Cortinarius albo--ochraceus") is None
+
+
+def test_parse_scientific_name_snapshot_accepts_hyphenated_epithets():
+    from database.vernacular_db import parse_scientific_name_snapshot
+    assert parse_scientific_name_snapshot("Cortinarius albo-ochraceus") == \
+        ("Cortinarius", "albo-ochraceus", "species")
+    assert parse_scientific_name_snapshot("Russula amici-mei") == ("Russula", "amici-mei", "species")
+    assert parse_scientific_name_snapshot("Inocybe nana var. sub-nana") == ("Inocybe", "nana", "variety")
 
 
 # -------------------------- suggestion source ----------------------------
