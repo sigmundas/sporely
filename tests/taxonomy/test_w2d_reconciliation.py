@@ -617,6 +617,8 @@ def test_cli_end_to_end_is_byte_deterministic(tmp_path, fixtures_dir):
         / "taxonomy_v2"
         / "global_macrofungi_tax-2026.08.01-01"
     )
+    if not release_dir.is_dir():
+        pytest.skip(f"needs the locally generated release {release_dir.name}")
     policy_path = (
         repo_root
         / "database"
