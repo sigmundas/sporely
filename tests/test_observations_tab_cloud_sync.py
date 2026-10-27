@@ -2235,10 +2235,10 @@ def test_observation_table_row_cache_includes_local_publication_and_coordinate_f
     assert row["observation_id"] == 451
     assert row["local_id"] == 451
     assert row["cloud_id"] == 747
-    assert row["gps_latitude"] == pytest.approx(63.431969)
-    assert row["gps_longitude"] == pytest.approx(10.411153)
-    assert row["lat"] == pytest.approx(63.431969)
-    assert row["lon"] == pytest.approx(10.411153)
+    assert row["gps_latitude"] == pytest.approx(63.4)
+    assert row["gps_longitude"] == pytest.approx(10.4)
+    assert row["lat"] == pytest.approx(63.4)
+    assert row["lon"] == pytest.approx(10.4)
     assert row["has_coords"] is True
     assert row["artsdata_id"] == 40992445
     assert row["arts_id"] == 40992445
@@ -2281,8 +2281,8 @@ def test_cloud_row_cache_merges_linked_local_publication_and_coordinate_fields()
     assert row["observation_id"] == 451
     assert row["artsdata_id"] == 40992445
     assert row["inaturalist_id"] == 375341010
-    assert row["gps_latitude"] == pytest.approx(63.431969)
-    assert row["gps_longitude"] == pytest.approx(10.411153)
+    assert row["gps_latitude"] == pytest.approx(63.4)
+    assert row["gps_longitude"] == pytest.approx(10.4)
     assert row["has_coords"] is True
 
 
@@ -2644,7 +2644,7 @@ def observation_451(monkeypatch, tmp_path):
             "INSERT INTO observations (id, date, genus, species, location, cloud_id, "
             "gps_latitude, gps_longitude, artsdata_id, inaturalist_id) "
             "VALUES (451, '2026-06-25 07:41:23', 'Parasola', 'plicatilis', 'Bakke kirke', "
-            "747, 63.431969, 10.411153, 40992445, 375341010)"
+            "747, 63.4, 10.4, 40992445, 375341010)"
         )
     return observations_tab.ObservationDB.get_observation(451)
 
