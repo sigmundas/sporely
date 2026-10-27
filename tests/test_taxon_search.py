@@ -40,6 +40,8 @@ TAXA = [
     (62433, "Russula", "queletii", "Russulaceae", "Russula queletii", "species", "accepted", "col_xr"),
     (626865, "Russula", "queletii", "Russulaceae", "Russula queletii coll.", "species", "valid", "nortaxa"),
     (78915, "Amanita", "muscaria", "Amanitaceae", "Amanita muscaria", "species", "accepted", "col_xr"),
+    (700020, "Russula", "variata", "Russulaceae", "Russula variata", "species", "accepted", "col_xr"),
+    (700021, "Hygrocybe", "conica", "Hygrophoraceae", "Hygrocybe conica subsp. subconica", "subspecies", "accepted", "col_xr"),
     (92473, "Cortinarius", "albo-ochraceus", "Cortinariaceae", "Cortinarius albo-ochraceus", "species", "accepted", "col_xr"),
     # Same-source homonyms: two COL genera called Aschersonia.
     (980, "Aschersonia", "", "Clavicipitaceae", "Aschersonia", "genus", "accepted", "col_xr"),
@@ -267,6 +269,20 @@ def test_epithet_matches_across_genera_and_infraspecific_names(conn):
     assert "Collybia velutipes" in names
     assert all(r.match_kind == MATCH_EPITHET for r in page.rows)
     assert ids(row_named(page, "Flammulina velutipes")) == [625621, 98288]
+
+
+def test_rank_markers_are_not_epithets(conn):
+    # "var" must not match every variety through its "var." marker.
+    assert [r.name for r in run(conn, "var").rows] == ["Russula variata"]
+    assert [r.name for r in run(conn, "subsp").rows] == []
+    assert [r.name for r in run(conn, "sub").rows] == ["Hygrocybe conica subsp. subconica"]
+    assert [r.name for r in run(conn, "lactea").rows] == ["Flammulina velutipes var. lactea"]
+
+
+def test_evidence_never_lowers_the_epithet_threshold(conn):
+    # Two letters do not search epithets, with or without evidence.
+    assert run(conn, "mu", evidence_taxon_ids=[78915]).rows == run(conn, "mu").rows
+    assert run(conn, "var", evidence_taxon_ids=[625622]).rows == run(conn, "var").rows
 
 
 def test_hyphenated_epithet_matches_as_typed(conn):

@@ -62,6 +62,7 @@ _ROW_RANKS = _PICKER_TAXON_RANKS | {"genus", "aggregate"}
 _RANK_ORDER = {"genus": 0, "species": 1, "aggregate": 2, "subspecies": 3, "variety": 4, "form": 5}
 _SOURCE_NAMES = {"nortaxa": "NorTaxa", "col_xr": "COL", "col": "COL", "dyntaxa": "Dyntaxa"}
 _EPITHET_QUERY = re.compile(r"^[a-z]+(?:-[a-z]*)*$")
+_RANK_MARKER_WORDS = ("var.", "subsp.", "ssp.", "coll.", "agg.", "f.")
 # Norwegian plural endings of group names (``kremler``, ``vintersopper``,
 # ``vintersoppar``): the singular stem finds the member species by word part.
 _PLURAL_ENDINGS = ("er", "ar")
@@ -308,24 +309,64 @@ def _alias_hit(taxon_id, name, canonical_name, structured_rank, query, base_tier
     )
 
 
+def _epithet_token(query: str) -> str | None:
+    """The lower-case epithet a query can stand for, or ``None``."""
+    token = query.strip().lower()
+    if " " in token or len(token) < TAXON_SEARCH_PART_MIN_CHARS or not _EPITHET_QUERY.match(token):
+        return None
+    return token
+
+
+def _epithet_matches(name: str, token: str) -> bool:
+    """Whether a word after the genus starts with ``token`` and is not a rank
+    marker (``var``, ``subsp`` would otherwise match every variety)."""
+    return any(
+        word.lower().startswith(token) and word not in _RANK_MARKER_WORDS
+        for word in name.split()[1:]
+    )
+
+
+def _epithet_clause(token: str) -> tuple[str, list[str]]:
+    """``GLOB`` filter for names with a word starting with ``token``. When the
+    token begins a rank marker, a name matching only through that marker is
+    excluded in SQL, so the marker cannot fill the scan's cap."""
+    clauses = ["s.scientific_name GLOB ?"]
+    params = [f"* {token}*"]
+    for marker in _RANK_MARKER_WORDS:
+        if not marker.startswith(token):
+            continue
+        # A real word starting with the token departs from the marker at
+        # some character at or after the token's end.
+        real = [f"* {marker[:i]}[!{marker[i]}]*" for i in range(len(token), len(marker))]
+        clauses.append(
+            "(s.scientific_name NOT GLOB ? OR "
+            + " OR ".join("s.scientific_name GLOB ?" for _ in real) + ")"
+        )
+        params += [f"* {marker}*", *real]
+    return " AND ".join(clauses), params
+
+
 def _epithet_source(conn, query: str, cap: int) -> _Source | None:
     """Names with a word starting with ``query`` after the genus: the species
     epithet across genera, and infraspecific epithets. Scans
     ``scientific_name_min``, which holds every canonical name too."""
-    token = query.strip().lower()
-    if " " in token or len(token) < TAXON_SEARCH_PART_MIN_CHARS or not _EPITHET_QUERY.match(token):
+    token = _epithet_token(query)
+    if token is None:
         return None
     source = _Source(TIER_EPITHET)
+    clause, params = _epithet_clause(token)
     rows = conn.execute(
         "SELECT s.taxon_id, s.scientific_name, s.is_preferred_name, "
         "       t.canonical_scientific_name, t.taxon_rank "
         "FROM scientific_name_min s JOIN taxon_min t ON t.taxon_id = s.taxon_id "
-        "WHERE s.language_code = 'sci' AND s.scientific_name GLOB ? "
+        f"WHERE s.language_code = 'sci' AND {clause} "
         "ORDER BY s.scientific_name LIMIT ?",
-        (f"* {token}*", cap),
+        (*params, cap),
     ).fetchall()
     for taxon_id, name, is_preferred, canonical_name, rank in rows:
         name = _norm(name)
+        if not _epithet_matches(name, token):
+            continue
         if name == _norm(canonical_name):
             snapshot = _rank_snapshot(name, rank)
             if snapshot is None or snapshot == "genus":
@@ -429,6 +470,7 @@ def _boosted_hits(conn, query: str, codes: tuple[str, ...], taxon_ids: Iterable[
         return []
     placeholders = ",".join("?" for _ in ids)
     folded = query.casefold()
+    token = _epithet_token(query)
     hits: list[_Hit] = []
     for taxon_id, name, rank in conn.execute(
         f"SELECT taxon_id, canonical_scientific_name, taxon_rank FROM taxon_min WHERE taxon_id IN ({placeholders})",
@@ -438,11 +480,10 @@ def _boosted_hits(conn, query: str, codes: tuple[str, ...], taxon_ids: Iterable[
         snapshot = _rank_snapshot(name, rank)
         if snapshot is None:
             continue
-        words = name.split()
         if name.casefold().startswith(folded):
             hits.append(_Hit(int(taxon_id), name, snapshot, KIND_TAXON, "canonical", MATCH_SCIENTIFIC,
                              name, _tier(name, query, TIER_SCIENTIFIC), name))
-        elif any(w.casefold().startswith(folded) for w in words[1:]) and " " not in query:
+        elif token is not None and _epithet_matches(name, token):
             hits.append(_Hit(int(taxon_id), name, snapshot, KIND_TAXON, "canonical", MATCH_EPITHET,
                              name, TIER_EPITHET, name))
     for taxon_id, alias, canonical_name, rank in conn.execute(
