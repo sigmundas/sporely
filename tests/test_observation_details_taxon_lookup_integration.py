@@ -9,6 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QFocusEvent
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QLineEdit, QLabel
 
 import database.models as models
@@ -373,8 +374,8 @@ def test_host_taxon_focus_populates_blank_prefix_species_and_common_name_models(
     complete_calls: list[str] = []
 
     def _suggest_species(genus: str, prefix: str, limit: int = 200) -> list[TaxonChoice]:
+        # Leaving the species field refreshes with its completed text.
         species_calls.append((genus, prefix, limit))
-        assert prefix in ("", "bi")
         return [TaxonChoice(genus="Agaricus", species="bisporus", common_name="Button mushroom")]
 
     def _suggest_common_names(
@@ -401,25 +402,25 @@ def test_host_taxon_focus_populates_blank_prefix_species_and_common_name_models(
     monkeypatch.setattr(dialog._host_species_completer, "complete", lambda: complete_calls.append("host_species"))
     monkeypatch.setattr(dialog._host_vernacular_completer, "complete", lambda: complete_calls.append("host_vernacular"))
 
-    dialog.show()
-    qapp.processEvents()
-
+    # Real focus changes on every platform. An inactive window gets no focus
+    # events, and whether a new window becomes active depends on the
+    # platform, so activate it explicitly, focused on the host genus.
     dialog.host_genus_input.blockSignals(True)
     dialog.host_genus_input.setText("Agaricus")
     dialog.host_genus_input.blockSignals(False)
     dialog.host_genus_input.setFocus()
-    qapp.processEvents()
-    qapp.processEvents()
-    ObservationDetailsDialog.eventFilter(dialog, dialog.host_genus_input, QEvent(QEvent.FocusIn))
-    qapp.processEvents()
+    dialog.show()
+    dialog.activateWindow()
+    assert QTest.qWaitForWindowActive(dialog)
+    assert QApplication.focusWidget() is dialog.host_genus_input
 
     dialog.host_species_input.blockSignals(True)
     dialog.host_species_input.setText("bi")
     dialog.host_species_input.blockSignals(False)
+    species_calls.clear()
     dialog.host_species_input.setFocus()
     qapp.processEvents()
-    ObservationDetailsDialog.eventFilter(dialog, dialog.host_species_input, QEvent(QEvent.FocusIn))
-    qapp.processEvents()
+    assert QApplication.focusWidget() is dialog.host_species_input
     assert species_calls == [("Agaricus", "bi", 200)]
     assert dialog._host_species_model.stringList() == ["bisporus"]
     assert "host_species" in complete_calls
@@ -434,9 +435,10 @@ def test_host_taxon_focus_populates_blank_prefix_species_and_common_name_models(
     dialog.host_vernacular_input.blockSignals(False)
     dialog.host_vernacular_input.setFocus()
     qapp.processEvents()
-
-    ObservationDetailsDialog.eventFilter(dialog, dialog.host_vernacular_input, QEvent(QEvent.FocusIn))
-    assert common_calls == [("", "Agaricus", "bisporus", 200)]
+    assert QApplication.focusWidget() is dialog.host_vernacular_input
+    # Leaving the species field and entering this one both ask; either way
+    # it is the blank-prefix lookup scoped to the host taxon.
+    assert set(common_calls) == {("", "Agaricus", "bisporus", 200)}
     assert dialog._host_vernacular_model.stringList() == [
         "Cultivated mushroom",
         "Button mushroom",
@@ -444,9 +446,9 @@ def test_host_taxon_focus_populates_blank_prefix_species_and_common_name_models(
     dialog.host_vernacular_input.blockSignals(True)
     dialog.host_vernacular_input.setText("Button mushroom")
     dialog.host_vernacular_input.blockSignals(False)
-    dialog.host_vernacular_input.setFocus()
+    dialog.host_genus_input.setFocus()
     qapp.processEvents()
-    ObservationDetailsDialog.eventFilter(dialog, dialog.host_vernacular_input, QEvent(QEvent.FocusIn))
+    dialog.host_vernacular_input.setFocus()
     qapp.processEvents()
     assert dialog.host_vernacular_input.selectedText() == "Button mushroom"
 
