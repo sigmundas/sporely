@@ -7,6 +7,7 @@ import json
 import shutil
 import sqlite3
 import tempfile
+from contextlib import closing
 from pathlib import Path
 from zipfile import BadZipFile, ZipFile
 
@@ -22,7 +23,7 @@ class ArchiveValidationError(ValueError):
 def verify_sqlite_integrity(path: str | Path) -> None:
     """Require SQLite's full integrity check to return exactly ``ok``."""
     try:
-        with sqlite3.connect(f"{Path(path).resolve().as_uri()}?mode=ro", uri=True) as connection:
+        with closing(sqlite3.connect(f"{Path(path).resolve().as_uri()}?mode=ro", uri=True)) as connection:
             rows = [str(row[0]) for row in connection.execute("PRAGMA integrity_check")]
     except sqlite3.Error as exc:
         raise ArchiveValidationError(f"SQLite integrity check failed for {Path(path).name}") from exc

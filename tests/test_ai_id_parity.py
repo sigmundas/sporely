@@ -246,12 +246,10 @@ def test_artsorakel_worker_batches_selected_images_and_flattens_combined_respons
     qapp,
     tmp_path: Path,
 ) -> None:
-    reference_path = Path(__file__).resolve().parents[1] / "database" / "reference_data" / "sources" / "artsorakel_3images.txt"
-    if not reference_path.is_file():
-        # A recorded response kept under the git-ignored reference sources.
-        pytest.skip(f"needs the local recording {reference_path.name}")
-    reference_text = reference_path.read_text()
-    reference_payload = json.loads(reference_text[reference_text.index("{"):])
+    # A recorded three-image Artsorakel response; the caller's detected IP
+    # is replaced by a documentation address.
+    reference_path = Path(__file__).resolve().parent / "fixtures" / "artsorakel_3images_response.json"
+    reference_payload = json.loads(reference_path.read_text(encoding="utf-8"))
 
     source_paths = [tmp_path / f"source-{idx}.jpg" for idx in range(3)]
     for path in source_paths:

@@ -3290,14 +3290,20 @@ def test_live_lab_review_keyboard_shortcuts_navigate_save_and_skip_text_focus(tm
     live_lab_tab.LiveLabTab._handle_raw_review_shortcut(state, "next")
     assert state._selected_pending_raw_index == 1
 
-    focus_guard = QLineEdit()
-    focus_guard.show()
+    # Only a text field inside the tab blocks the shortcut; foreign focus
+    # does not (see the foreign-button test below).
+    tab = QWidget()
+    state.isAncestorOf = tab.isAncestorOf
+    focus_guard = QLineEdit(tab)
+    tab.show()
     focus_guard.setFocus()
     qapp.processEvents()
+    assert QApplication.focusWidget() is focus_guard
     live_lab_tab.LiveLabTab._handle_raw_review_shortcut(state, "previous")
     assert state._selected_pending_raw_index == 1
 
     focus_guard.clearFocus()
+    tab.close()
     qapp.processEvents()
     live_lab_tab.LiveLabTab._handle_raw_review_shortcut(state, "save")
 

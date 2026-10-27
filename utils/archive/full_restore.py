@@ -10,6 +10,7 @@ import shutil
 import sqlite3
 import tempfile
 import uuid
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -69,10 +70,20 @@ def _extract_verified(archive_path: Path, staging: Path, manifest: ArchiveManife
         raise ArchiveValidationError(f"archive extraction failed: {exc}") from exc
 
 
+def _read_only(path: Path) -> closing[sqlite3.Connection]:
+    """Open a database for inspection only, closed on exit.
+
+    Validation must not write the live database: a writable connection that
+    is the last one to close checkpoints its WAL into the main file, and an
+    unclosed one keeps a handle open across the swap.
+    """
+    return closing(sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True))
+
+
 def _require_tables(path: Path, required: set[str]) -> None:
     verify_sqlite_integrity(path)
     try:
-        with sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True) as connection:
+        with _read_only(path) as connection:
             actual = {str(row[0]) for row in connection.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
             )}
@@ -91,7 +102,7 @@ def _require_current_columns(
 ) -> None:
     """Fail closed when a v1 snapshot cannot satisfy the installed schema."""
     try:
-        with sqlite3.connect(candidate) as staged, sqlite3.connect(current) as live:
+        with _read_only(candidate) as staged, _read_only(current) as live:
             for table in sorted(required_tables):
                 staged_columns = {
                     str(row[1]) for row in staged.execute(f'PRAGMA table_info("{table}")')
@@ -123,7 +134,7 @@ def _migrate_staged_databases(main_database: Path, reference_database: Path) -> 
                 set(REFERENCE_DATABASE_TABLES),
             ),
         ):
-            with sqlite3.connect(candidate) as staged, sqlite3.connect(current) as live:
+            with _read_only(candidate) as staged, _read_only(current) as live:
                 staged_tables = {
                     str(row[0]) for row in staged.execute(
                         "SELECT name FROM sqlite_master WHERE type='table' "
@@ -181,7 +192,7 @@ def _asset_path(staging: Path, statuses: dict[str, str], prefix: str, row_id: in
 def _rebase_and_validate_assets(database: Path, staging: Path, images_root: Path, manifest: ArchiveManifest) -> None:
     """Rebase path-bearing rows and require every archived authoritative byte."""
     statuses = {item.path: item.status for item in manifest.files}
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.row_factory = sqlite3.Row
         for observation_id, folder_path in connection.execute(
             "SELECT id, folder_path FROM observations"
@@ -543,7 +554,7 @@ def prepare_full_restore(
         qsettings = _load_qsettings(extracted)
         images_root = Path(schema.get_images_dir())
         _rebase_and_validate_assets(main_db, extracted, images_root, manifest)
-        with sqlite3.connect(main_db) as connection:
+        with _read_only(main_db) as connection:
             counts = {
                 "observations": connection.execute("SELECT COUNT(*) FROM observations").fetchone()[0],
                 "images": connection.execute("SELECT COUNT(*) FROM images").fetchone()[0],

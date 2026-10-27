@@ -16,6 +16,7 @@ monkeypatched to empty results, matching ``tests/test_reference_entry_editor``.
 """
 from __future__ import annotations
 
+import json
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -23,6 +24,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtWidgets import QApplication, QGroupBox, QMessageBox, QTabWidget
 
+from references import measurement_content_gates as gates
 from ui.reference_entry_editor import ReferenceEntryEditor
 from ui.reference_preview_pane import ReferencePreviewPane
 
@@ -70,6 +72,16 @@ def isolated_editor_repositories(monkeypatch):
     )
     monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+
+
+@pytest.fixture()
+def historical_closed_policy(monkeypatch):
+    """Pin the retired closed-gate policy for a loss-refusal fixture.
+
+    Full reported statistics are stored since 2026-10-26; the contract
+    keeps the closed-policy refusals below as regression fixtures.
+    """
+    monkeypatch.setattr(gates, "enhanced_attachments_enabled", lambda: False)
 
 
 @pytest.fixture()
@@ -338,6 +350,7 @@ def test_the_raw_spores_tab_never_invents_rows_for_a_range(editor):
 # --- The Stage 3 semantic boundary -------------------------------------------
 
 
+@pytest.mark.usefixtures("historical_closed_policy")
 def test_the_footer_will_not_offer_to_add_an_entry_that_cannot_be_stored(editor):
     """The picker's Add-to-plot must not invite an unstorable save.
 
@@ -352,6 +365,7 @@ def test_the_footer_will_not_offer_to_add_an_entry_that_cannot_be_stored(editor)
     assert editor._blocked_projection_losses()
 
 
+@pytest.mark.usefixtures("historical_closed_policy")
 def test_the_preview_and_the_refusal_describe_the_same_entry(editor):
     """The picture and the block must not disagree.
 
@@ -379,6 +393,7 @@ def test_an_ordinary_pasted_length_and_width_range_is_not_blocked(editor):
     assert editor.is_ready_to_submit() is True
 
 
+@pytest.mark.usefixtures("historical_closed_policy")
 def test_a_q_typical_range_blocks_because_v1_has_no_q_core_columns(editor):
     """Q is the one metric whose inner pair has nowhere to go.
 
@@ -394,6 +409,7 @@ def test_a_q_typical_range_blocks_because_v1_has_no_q_core_columns(editor):
     assert editor.is_ready_to_submit() is False
 
 
+@pytest.mark.usefixtures("historical_closed_policy")
 def test_q_extremes_plus_a_q_typical_range_block_on_real_numeric_loss(editor):
     """Both Q ranges stated: the inner one would vanish, not be relabelled.
 
@@ -409,6 +425,41 @@ def test_q_extremes_plus_a_q_typical_range_block_on_real_numeric_loss(editor):
     assert "q_core_pair" in kinds
     assert editor.is_ready_to_submit() is False
 
+
+
+def test_an_explicit_percentile_interval_is_stored_with_its_meaning(editor):
+    """The stored entry says what the preview shows: a 5-95% interval."""
+    _parse(editor, EXPLICIT_5_95)
+
+    assert editor._blocked_projection_losses() == []
+    assert editor.is_ready_to_submit() is True
+    assert _source(editor, "length").core.meaning == "percentile_interval"
+    payload = editor.normalized_measurement_set_payload()
+    assert (payload.length_core_min, payload.length_core_max) == (8.4, 13.0)
+    length = json.loads(payload.measurement_details_json)["metrics"]["length"]
+    assert length["core_range"] == {
+        "kind": "percentile_interval", "percentile_bounds": [5, 95],
+    }
+
+
+def test_a_q_typical_range_is_stored_in_its_own_columns(editor):
+    _parse(editor, OUTER_AND_CORE + ", Q = 1.2-1.3")
+
+    assert editor.is_ready_to_submit() is True
+    payload = editor.normalized_measurement_set_payload()
+    assert (payload.q_core_min, payload.q_core_max) == (1.2, 1.3)
+    assert payload.q_min is None and payload.q_max is None
+
+
+def test_q_extremes_and_a_q_typical_range_are_both_stored(editor):
+    _parse(editor, "10-12 x 5-6, Q = (1.1-)1.2-1.8(-1.9), Qm = 1.5")
+
+    assert editor.is_ready_to_submit() is True
+    payload = editor.normalized_measurement_set_payload()
+    assert (payload.q_min, payload.q_core_min, payload.q_core_max, payload.q_max) == (
+        1.1, 1.2, 1.8, 1.9,
+    )
+    assert payload.q_mean == 1.5
 
 def test_a_bare_published_range_is_not_blocked(editor):
     _parse(editor, PUBLISHED_RANGE)

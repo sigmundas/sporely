@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import json
 import hashlib
 import os
@@ -38,6 +39,17 @@ def installation(monkeypatch, tmp_path):
 def _observation_names() -> list[str]:
     with sqlite3.connect(schema.get_database_path()) as connection:
         return [str(row[0]) for row in connection.execute("SELECT genus FROM observations ORDER BY id")]
+
+
+def _settled_bytes(path: Path) -> bytes:
+    """Read a database file once this test's own helper connections are gone.
+
+    ``with sqlite3.connect(...)`` commits but does not close. Whenever the
+    last such connection is collected, SQLite checkpoints its WAL into the
+    main file, so collect them before comparing bytes.
+    """
+    gc.collect()
+    return path.read_bytes()
 
 
 def _make_backup(tmp_path: Path, *, image: bool = False) -> Path:
@@ -716,8 +728,8 @@ def test_failed_post_swap_sanity_restores_databases_and_settings(installation, t
         connection.execute("DELETE FROM observations")
         connection.execute("INSERT INTO observations (date, genus) VALUES ('2026-08-27', 'Current')")
         connection.commit()
-    main_before = schema.get_database_path().read_bytes()
-    reference_before = schema.get_reference_database_path().read_bytes()
+    main_before = _settled_bytes(schema.get_database_path())
+    reference_before = _settled_bytes(schema.get_reference_database_path())
     calls = []
 
     with pytest.raises(FullRestoreError, match="sanity failed"):
@@ -729,8 +741,8 @@ def test_failed_post_swap_sanity_restores_databases_and_settings(installation, t
             reopen_live=lambda: calls.append("reopen"),
             sanity_check=lambda: (_ for _ in ()).throw(RuntimeError("sanity failed")),
         )
-    assert schema.get_database_path().read_bytes() == main_before
-    assert schema.get_reference_database_path().read_bytes() == reference_before
+    assert _settled_bytes(schema.get_database_path()) == main_before
+    assert _settled_bytes(schema.get_reference_database_path()) == reference_before
     assert schema.get_app_settings() == {"ui_theme": "light"}
     assert calls == ["close", "reopen", "close", "reopen"]
 
@@ -857,15 +869,13 @@ def test_malformed_database_is_rejected_before_live_state_changes(installation, 
         target.writestr("manifest.json", json.dumps(value).encode())
         for name, payload in files.items():
             target.writestr(name, payload)
-    before = schema.get_database_path().read_bytes()
+    before = _settled_bytes(schema.get_database_path())
     with pytest.raises(FullRestoreError):
         _restore_full_backup(broken, app_version="test", safety_backup_path=tmp_path / "safety.sporely")
-    assert schema.get_database_path().read_bytes() == before
+    assert _settled_bytes(schema.get_database_path()) == before
 
 
-def test_restore_rejects_database_missing_required_current_column(
-    installation, tmp_path
-):
+def _missing_column_archive(tmp_path: Path) -> Path:
     archive = _make_backup(tmp_path)
     broken = tmp_path / "missing-column.sporely"
     with ZipFile(archive) as source:
@@ -891,15 +901,59 @@ def test_restore_rejects_database_missing_required_current_column(
         target.writestr("manifest.json", json.dumps(value).encode("utf-8"))
         for name, payload in members.items():
             target.writestr(name, payload)
+    return broken
 
-    before = schema.get_database_path().read_bytes()
+
+def test_restore_rejects_database_missing_required_current_column(
+    installation, tmp_path
+):
+    broken = _missing_column_archive(tmp_path)
+
+    before = _settled_bytes(schema.get_database_path())
     with pytest.raises(FullRestoreError, match="required columns missing.*date"):
         _restore_full_backup(
             broken,
             app_version="test",
             safety_backup_path=tmp_path / "safety.sporely",
         )
-    assert schema.get_database_path().read_bytes() == before
+    assert _settled_bytes(schema.get_database_path()) == before
+
+
+def test_rejected_restore_opens_the_live_database_read_only_and_closes_it(
+    installation, tmp_path, monkeypatch
+):
+    # A writable connection to the live database checkpoints its WAL into the
+    # main file when it is the last to close, and one left open keeps a
+    # handle on the file the swap replaces.
+    broken = _missing_column_archive(tmp_path)
+    live = schema.get_database_path().resolve()
+    opened = []
+    connect = sqlite3.connect
+
+    def recording_connect(database, *args, **kwargs):
+        connection = connect(database, *args, **kwargs)
+        opened.append((str(database), connection))
+        return connection
+
+    monkeypatch.setattr(sqlite3, "connect", recording_connect)
+    with pytest.raises(FullRestoreError, match="required columns missing.*date"):
+        _restore_full_backup(
+            broken,
+            app_version="test",
+            safety_backup_path=tmp_path / "safety.sporely",
+        )
+    monkeypatch.undo()
+
+    to_live = [
+        (database, connection)
+        for database, connection in opened
+        if database.startswith(live.as_uri()) or Path(database).resolve() == live
+    ]
+    assert to_live
+    for database, connection in to_live:
+        assert database.endswith("?mode=ro"), database
+        with pytest.raises(sqlite3.ProgrammingError):
+            connection.execute("SELECT 1")
 
 
 def test_restore_migrates_supported_older_staged_schema(installation, tmp_path):

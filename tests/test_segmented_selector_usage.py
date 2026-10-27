@@ -43,8 +43,12 @@ def test_segmented_selector_compact_and_tall_modes(qapp) -> None:
     assert [button.text() for button in compact.buttons()] == ["Private", "Public"]
     assert compact.sizePolicy().horizontalPolicy() == QSizePolicy.Fixed
     compact.show()
+    tall.show()
     qapp.processEvents()
-    assert compact.height() == 28
+    # Text height plus the stylesheet padding: 28 px with the macOS font,
+    # 27 px with DejaVu on Linux.
+    assert 26 <= compact.height() <= 30
+    assert compact.height() < tall.height()
     assert tall_field.objectName() == "segmentedButton"
     assert tall_micro.objectName() == "segmentedButton"
     assert tall.selected_value() == "field"
