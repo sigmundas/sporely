@@ -1,10 +1,9 @@
 # Unified taxon picker in the observation editor
 
-Status: layout A and Stages 1 and 2 approved by the owner on 2026-10-27, on
-`feature/taxon-picker-search` (draft PR #47). Stage 3 (Edit Observation
-integration), the floating results list and the review fixes are committed
-on draft PR #47 at the owner's request (2026-10-28). The PR stays unmerged
-until the final review and the owner's desktop acceptance check below.
+Status: completed. Layout A and Stages 1 and 2 approved by the owner on
+2026-10-27; Stage 3 (Edit Observation integration), the floating results
+list and the review fixes passed the final review and the owner's desktop
+acceptance check on 2026-10-28, and landed on `main` via PR #47.
 Design proposal with renders: https://claude.ai/artifact/FNhyYdKkGVSipUSLshp5mb
 
 This plan replaces the old `feature/unified-taxon-search` plan
@@ -227,5 +226,12 @@ Human checklist (the owner, on the desktop) before the PR is merged:
    dialog, switch to another app, and close the dialog with the list open;
    it closes each time. Scroll the Species tab with the list open; it moves
    with the field or closes.
-8. Open an observation published to iNaturalist, switch its concept or ✕ it,
-   save and publish; the new name is used, not the old taxon.
+8. iNaturalist publishing is verified with mocked tests only, never a live
+   publication. Publishing an observation that already exists on
+   iNaturalist appends its media and does not update the taxon there, so
+   the cleared publishing taxon ID matters only when the observation is
+   published as a new iNaturalist observation. The regressions in
+   `tests/test_observation_details_taxon_picker.py` check the stored
+   `inaturalist_taxon_id` (kept for the same concept, cleared on another
+   concept, a name without a taxon and ✕; `inaturalist_id` untouched), and
+   the existing publish tests cover resolving the name when no ID is stored.
