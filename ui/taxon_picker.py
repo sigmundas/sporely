@@ -545,6 +545,7 @@ class TaxonPicker(QWidget):
         self.floating_popup = _floating_popup_supported()
         self._watching_app = False
         self._watched_ancestors: list[QWidget] = []
+        self._popup_rows_height = 0  # the list's wanted height before any clipping
         self._outside_clicks = _OutsideClickWatcher(self)
         self.model = QStandardItemModel(self)
         self.popup.view.setModel(self.model)
@@ -915,6 +916,7 @@ class TaxonPicker(QWidget):
             self._overlay_host = host
         self._watch_app(True)
         self._watch_ancestors(True)
+        self._popup_rows_height = rows
         self._place_popup(rows)
         self.popup.show()
         self.popup.raise_()
@@ -928,7 +930,9 @@ class TaxonPicker(QWidget):
         if host is None:
             return
         if rows_height is None:
-            rows_height = self.popup.view.height() - 2
+            # Re-placing (a move, a scroll, a new screen) aims for the wanted
+            # height again, not the height an earlier placement clipped to.
+            rows_height = self._popup_rows_height or self.popup.view.height() - 2
         field = self.search_input
         if self.popup.isWindow():
             origin = field.mapToGlobal(QPoint(0, 0))
@@ -1253,7 +1257,7 @@ class TaxonPicker(QWidget):
     def _wants_key(self, event) -> bool:
         key = event.key()
         if key in (Qt.Key_Return, Qt.Key_Enter):
-            return self.popup.isVisible() or bool(self.search_input.text().strip())
+            return True  # Enter in the search never reaches the dialog's Save
         if key == Qt.Key_Escape:
             return self.popup.isVisible() or self._editing
         return False
@@ -1274,9 +1278,9 @@ class TaxonPicker(QWidget):
             if key == Qt.Key_Down and searchable:
                 self._run_search()
                 return True
-            if key in (Qt.Key_Return, Qt.Key_Enter) and self.search_input.text().strip():
-                # Typed text is never a dialog's default action: Enter shows
-                # its results again instead of reaching the Save button.
+            if key in (Qt.Key_Return, Qt.Key_Enter):
+                # Enter in the search is never a dialog's default action: it
+                # shows typed text's results again, and otherwise does nothing.
                 if searchable:
                     self._run_search()
                 return True

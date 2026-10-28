@@ -390,6 +390,20 @@ def test_floating_list_flips_up_only_when_the_screen_runs_out(qtbot, setup, monk
     assert placed.bottom() <= field.bottom() + 200
 
 
+def test_a_clipped_list_grows_back_when_room_returns(qtbot, setup, monkeypatch):
+    picker, _other, _picked, _free, _cleared = setup
+    field = _field_rect(picker)
+    # Little room either way: the list is clipped.
+    _float(picker, monkeypatch, QRect(0, field.top() - 60, 1600, 60 + field.height() + 120))
+    _placed(picker, "Russula")
+    clipped = picker.popup.view.height()
+    assert clipped < 7 * 30
+    # The dialog moves to a tall screen: re-placing restores the wanted height.
+    monkeypatch.setattr(picker, "_screen_bounds", lambda _point: QRect(0, 0, 1600, 3000))
+    picker._place_popup()
+    assert picker.popup.view.height() > clipped + 200
+
+
 def test_floating_list_uses_the_fields_screen(qtbot, setup, monkeypatch):
     picker, _other, _picked, _free, _cleared = setup
 

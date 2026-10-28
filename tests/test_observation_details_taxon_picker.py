@@ -389,8 +389,9 @@ def _fresh_db(tmp_path, monkeypatch):
 def _save(db, obs_id: int, dialog) -> None:
     """Save as the observations tab's edit accept does: its own column
     mapping, then a clear first for Unidentified."""
+    ai_state_json = observations_tab.ObservationsTab._serialize_ai_state(None, dialog.get_ai_state())
     updates = observations_tab.ObservationsTab._edit_observation_updates(
-        dialog.get_data(), ai_state_json=None, unidentified=dialog.is_unidentified())
+        dialog.get_data(), ai_state_json=ai_state_json, unidentified=dialog.is_unidentified())
     if dialog.is_unidentified():
         db.clear_observation_identification(obs_id)
     db.update_observation(obs_id, **updates)
@@ -549,6 +550,9 @@ def test_clear_drops_the_chosen_ai_determination_but_not_the_predictions(editor,
     _save(db, obs_id, dialog)
     assert _column(path, obs_id, "genus", "species", "sporely_taxon_id", "ai_selected_service",
                    "ai_selected_scientific_name") == (None, None, None, None, None)
+    import json
+    stored_ai = json.loads(_column(path, obs_id, "ai_state_json")[0])
+    assert stored_ai["predictions"] == {"0": [prediction]} and stored_ai["selected"] == {}
     reopened = _reopen(editor, db, obs_id)
     data = reopened.get_data()
     assert (data["genus"], data["species"], data["sporely_taxon_id"]) == (None, None, None)
@@ -598,3 +602,64 @@ def test_the_main_gallery_edit_photo_opens_prepare_images():
 
     observations_tab.ObservationsTab._on_gallery_edit_requested(Tab(), 3, " /x/photo.jpg ")
     assert opened == ["/x/photo.jpg"]
+
+
+# --- final review fixes ------------------------------------------------------
+
+
+def test_an_artsorakel_chip_for_the_same_concept_keeps_the_publishing_taxon_id(editor, tmp_path, monkeypatch):
+    db, path = _fresh_db(tmp_path, monkeypatch)
+    obs_id = _stored_bound(editor, db, path)  # NorTaxa, the concept NBIC:54701 resolves to
+    dialog = _reopen(editor, db, obs_id)
+    _artsorakel(dialog, [_VINTERSOPP])
+    dialog.taxon_picker.ai_buttons[0].click()
+    assert dialog.get_data()["taxon_identity_proof"] == PROOF_EXTERNAL_ID_RESOLUTION
+    _save(db, obs_id, dialog)
+    assert _column(path, obs_id, "sporely_taxon_id", "inaturalist_taxon_id") == (NORTAXA, 48701)
+
+
+def test_an_artsorakel_chip_for_another_concept_drops_the_publishing_taxon_id(editor, tmp_path, monkeypatch):
+    db, path = _fresh_db(tmp_path, monkeypatch)
+    obs_id = _stored_bound(editor, db, path)
+    switched = _reopen(editor, db, obs_id)
+    next(b for b in switched.taxon_picker.card.source_buttons if b.text().startswith("COL")).click()
+    _save(db, obs_id, switched)
+    db.update_observation(obs_id, inaturalist_taxon_id=48701)
+    dialog = _reopen(editor, db, obs_id)
+    _artsorakel(dialog, [_VINTERSOPP])
+    dialog.taxon_picker.ai_buttons[0].click()
+    _save(db, obs_id, dialog)
+    assert _column(path, obs_id, "sporely_taxon_id", "inaturalist_taxon_id", "inaturalist_id") == (
+        NORTAXA, None, 777)
+
+
+def test_changing_the_name_language_keeps_unfinished_search_text(editor):
+    data = _bound(editor)
+    dialog = editor(**data)
+    dialog.taxon_picker.begin_edit()
+    _type(dialog, "Gymnopus dryo")
+    dialog.apply_vernacular_language_change()
+    QTest.qWait(250)
+    assert dialog.taxon_picker.unfinished_text() == "Gymnopus dryo"
+    assert _taxon(dialog.get_data()) == _taxon(data)
+
+
+@pytest.mark.parametrize("state", ["new", "after clear", "emptied during Endre"])
+def test_enter_in_an_empty_search_never_saves(editor, state):
+    if state == "new":
+        dialog = editor()
+    else:
+        dialog = editor(**_bound(editor))
+        if state == "after clear":
+            dialog.taxon_picker.card.clear_button.click()
+        else:
+            dialog.taxon_picker.begin_edit()
+            dialog.taxon_picker.search_input.clear()
+    accepted = []
+    dialog.accepted.connect(lambda: accepted.append(True))
+    field = dialog.taxon_picker.search_input
+    field.setFocus()
+    assert field.text() == ""
+    QTest.keyClick(field, Qt.Key_Return)
+    QTest.keyClick(field, Qt.Key_Enter)
+    assert accepted == [] and dialog.isVisible()

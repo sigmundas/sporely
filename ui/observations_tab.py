@@ -17058,6 +17058,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
     def _on_ai_copy_to_taxonomy(self, source: str | None = None, prediction: dict | None = None) -> None:
         source = source or self._ai_source_key()
+        concept_before = self._committed_sporely_taxon_id()
         index = self._current_ai_index()
         # A prediction chosen elsewhere (an Artsorakel chip in the species
         # picker), else the row selected in the AI table.
@@ -17143,7 +17144,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 self._set_inaturalist_taxon_id(taxon.get("id"))
                 self._set_red_list_category(None, None)
             else:
-                self._set_inaturalist_taxon_id(None)
+                # The publishing taxon ID stays only with the concept it was
+                # stored for (see _committed_sporely_taxon_id).
+                if concept_before is None or self._committed_sporely_taxon_id() != concept_before:
+                    self._set_inaturalist_taxon_id(None)
                 if species:
                     self._set_red_list_category(
                         self._read_red_list_code(taxon) or self._read_red_list_code(selected_pred),
@@ -20029,8 +20033,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         lookup = self._ensure_taxon_lookup()
         if hasattr(self, "taxon_picker"):
             self.taxon_picker.set_lookup(lookup)
-            # The card's common name follows the new language.
+            # The card's common name follows the new language. Search text
+            # still being typed is kept and searched again in that language.
+            unfinished = self.taxon_picker.unfinished_text()
             self._sync_taxon_picker(force=True)
+            if unfinished and not self.taxon_picker.unfinished_text():
+                self.taxon_picker.search_for(unfinished)
         if not db_path:
             return
         self._refresh_vernacular_for_current_taxon()

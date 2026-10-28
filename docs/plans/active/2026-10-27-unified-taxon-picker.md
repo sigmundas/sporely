@@ -194,6 +194,19 @@ Review fixes (Codex review of the integrated diff, 2026-10-28):
   shared by the edit accept and the tests, which reopen saved rows in edit
   mode.
 
+Final review of the integrated diff (Codex, 2026-10-28) found four more,
+fixed with regression tests:
+
+- Copy to taxonomy from Artsorakel (and an Artsorakel chip) keeps the
+  publishing taxon ID when the concept does not change; it cleared it
+  unconditionally before.
+- Changing the name language keeps unfinished search text and searches it
+  again in the new language.
+- Enter in an empty search field (new, after ✕, or emptied during Endre)
+  no longer reaches Save.
+- A list clipped by a small screen grows back to its wanted height when it
+  is placed again with more room.
+
 Human checklist (the owner, on the desktop) before the PR is merged:
 
 1. Run `tools/review_ui/taxon_picker_mac_check.py` with the screen unlocked;
