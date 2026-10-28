@@ -101,8 +101,10 @@ from database.taxon_suggestions import (
     ai_prediction_external_id,
     evidence_concept_ids,
     observation_identity_offer,
+    resolve_provider_concept,
 )
 from .taxon_input_controller import TaxonInputController
+from .taxon_picker import AiSuggestion, TaxonPicker
 from database.reverse_location_lookup import (
     LocationLookupResult,
     lookup_location_suggestions,
@@ -12389,6 +12391,84 @@ class ObservationsTab(QWidget):
         # callers must not report this as a clean success.
         return True, obs_id, final_media_warning
 
+    @staticmethod
+    def _edit_observation_updates(data: dict, *, ai_state_json, unidentified: bool) -> dict:
+        """The observation columns an edit in the details dialog saves.
+        Unidentified leaves the identification columns to
+        ``ObservationDB.clear_observation_identification``."""
+        observation_updates = dict(
+            genus=data.get('genus'),
+            species=data.get('species'),
+            common_name=data.get('common_name'),
+            inaturalist_taxon_id=data.get('inaturalist_taxon_id'),
+            ai_selected_service=data.get('ai_selected_service'),
+            ai_selected_taxon_id=data.get('ai_selected_taxon_id'),
+            ai_selected_scientific_name=data.get('ai_selected_scientific_name'),
+            ai_selected_probability=data.get('ai_selected_probability'),
+            ai_selected_at=data.get('ai_selected_at'),
+            red_list_category=data.get('red_list_category'),
+            red_list_categories_json=data.get('red_list_categories_json'),
+            publish_target=data.get('publish_target'),
+            is_draft=data.get('is_draft'),
+            sharing_scope=data.get('sharing_scope'),
+            location_public=data.get('location_public'),
+            location_precision=data.get('location_precision'),
+            species_guess=data.get('species_guess'),
+            uncertain=1 if data.get('uncertain') else 0,
+            unspontaneous=1 if data.get('unspontaneous') else 0,
+            determination_method=data.get('determination_method'),
+            date=data.get('date'),
+            location=data.get('location'),
+            habitat=data.get('habitat'),
+            habitat_nin2_path=data.get('habitat_nin2_path'),
+            habitat_substrate_path=data.get('habitat_substrate_path'),
+            habitat_host_genus=data.get('habitat_host_genus'),
+            habitat_host_species=data.get('habitat_host_species'),
+            habitat_host_common_name=data.get('habitat_host_common_name'),
+            habitat_nin2_note=data.get('habitat_nin2_note'),
+            habitat_substrate_note=data.get('habitat_substrate_note'),
+            habitat_grows_on_note=data.get('habitat_grows_on_note'),
+            notes=None,
+            open_comment=data.get('open_comment'),
+            private_comment=data.get('private_comment'),
+            interesting_comment=1 if data.get('interesting_comment') else 0,
+            ai_state_json=ai_state_json,
+            gps_latitude=data.get('gps_latitude'),
+            gps_longitude=data.get('gps_longitude'),
+            country_code=data.get('country_code'),
+            region_id=data.get('region_id'),
+            scientific_name_snapshot=data.get('scientific_name_snapshot'),
+            taxon_rank_snapshot=data.get('taxon_rank_snapshot'),
+            sporely_taxon_id=data.get('sporely_taxon_id'),
+            # Taxonomy-v2 closeout Stage 2: identity provenance saves
+            # with the identity it describes, so the two can never
+            # drift apart across a restart.
+            **{key: data.get(key) for key in IDENTITY_COLUMNS},
+            # Only an attributed coordinate edit carries a pair; any
+            # other coordinate change invalidates it in the DB layer.
+            **{key: data[key] for key in LOCATION_PROVENANCE_FIELDS if key in data},
+            allow_nulls=True
+        )
+        if unidentified:
+            for field in (
+                'genus',
+                'species',
+                'common_name',
+                'inaturalist_taxon_id',
+                'ai_selected_service',
+                'ai_selected_taxon_id',
+                'ai_selected_scientific_name',
+                'ai_selected_probability',
+                'ai_selected_at',
+                'red_list_category',
+                'red_list_categories_json',
+                'species_guess',
+                'uncertain',
+                'determination_method',
+            ):
+                observation_updates.pop(field, None)
+        return observation_updates
+
     def edit_observation(self):
         """Edit the selected observation."""
         selected_rows = self.table.selectionModel().selectedRows()
@@ -12441,77 +12521,12 @@ class ObservationsTab(QWidget):
                     or str(data.get("species") or "").strip() != str(observation.get("species") or "").strip()
                 )
                 self._observation_edit_draft_cache.pop(obs_id, None)
-                observation_updates = dict(
-                    genus=data.get('genus'),
-                    species=data.get('species'),
-                    common_name=data.get('common_name'),
-                    inaturalist_taxon_id=data.get('inaturalist_taxon_id'),
-                    ai_selected_service=data.get('ai_selected_service'),
-                    ai_selected_taxon_id=data.get('ai_selected_taxon_id'),
-                    ai_selected_scientific_name=data.get('ai_selected_scientific_name'),
-                    ai_selected_probability=data.get('ai_selected_probability'),
-                    ai_selected_at=data.get('ai_selected_at'),
-                    red_list_category=data.get('red_list_category'),
-                    red_list_categories_json=data.get('red_list_categories_json'),
-                    publish_target=data.get('publish_target'),
-                    is_draft=data.get('is_draft'),
-                    sharing_scope=data.get('sharing_scope'),
-                    location_public=data.get('location_public'),
-                    location_precision=data.get('location_precision'),
-                    species_guess=data.get('species_guess'),
-                    uncertain=1 if data.get('uncertain') else 0,
-                    unspontaneous=1 if data.get('unspontaneous') else 0,
-                    determination_method=data.get('determination_method'),
-                    date=data.get('date'),
-                    location=data.get('location'),
-                    habitat=data.get('habitat'),
-                    habitat_nin2_path=data.get('habitat_nin2_path'),
-                    habitat_substrate_path=data.get('habitat_substrate_path'),
-                    habitat_host_genus=data.get('habitat_host_genus'),
-                    habitat_host_species=data.get('habitat_host_species'),
-                    habitat_host_common_name=data.get('habitat_host_common_name'),
-                    habitat_nin2_note=data.get('habitat_nin2_note'),
-                    habitat_substrate_note=data.get('habitat_substrate_note'),
-                    habitat_grows_on_note=data.get('habitat_grows_on_note'),
-                    notes=None,
-                    open_comment=data.get('open_comment'),
-                    private_comment=data.get('private_comment'),
-                    interesting_comment=1 if data.get('interesting_comment') else 0,
+                observation_updates = self._edit_observation_updates(
+                    data,
                     ai_state_json=self._serialize_ai_state(ai_state),
-                    gps_latitude=data.get('gps_latitude'),
-                    gps_longitude=data.get('gps_longitude'),
-                    country_code=data.get('country_code'),
-                    region_id=data.get('region_id'),
-                    scientific_name_snapshot=data.get('scientific_name_snapshot'),
-                    taxon_rank_snapshot=data.get('taxon_rank_snapshot'),
-                    sporely_taxon_id=data.get('sporely_taxon_id'),
-                    # Taxonomy-v2 closeout Stage 2: identity provenance saves
-                    # with the identity it describes, so the two can never
-                    # drift apart across a restart.
-                    **{key: data.get(key) for key in IDENTITY_COLUMNS},
-                    # Only an attributed coordinate edit carries a pair; any
-                    # other coordinate change invalidates it in the DB layer.
-                    **{key: data[key] for key in LOCATION_PROVENANCE_FIELDS if key in data},
-                    allow_nulls=True
+                    unidentified=dialog.is_unidentified(),
                 )
                 if dialog.is_unidentified():
-                    for field in (
-                        'genus',
-                        'species',
-                        'common_name',
-                        'inaturalist_taxon_id',
-                        'ai_selected_service',
-                        'ai_selected_taxon_id',
-                        'ai_selected_scientific_name',
-                        'ai_selected_probability',
-                        'ai_selected_at',
-                        'red_list_category',
-                        'red_list_categories_json',
-                        'species_guess',
-                        'uncertain',
-                        'determination_method',
-                    ):
-                        observation_updates.pop(field, None)
                     ObservationDB.clear_observation_identification(
                         obs_id,
                     )
@@ -15069,6 +15084,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._update_cloud_privacy_slots_label()
         self._loading_form = False
         self._refresh_identity_offer()
+        self._sync_taxon_picker(force=True)
         # Coordinates as opened: what get_data() compares against to decide
         # whether the user changed the location in this dialog.
         if self.edit_mode:
@@ -15564,7 +15580,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         # Tab 1: Identified (vernacular + genus/species)
         identified_tab = QWidget()
         identified_tab.setObjectName("taxonomyPage")
-        self.species_tab = identified_tab
         identified_layout = QVBoxLayout(identified_tab)
         identified_layout.setContentsMargins(8, 8, 8, 8)
         identified_layout.setSpacing(4)
@@ -15572,89 +15587,83 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._taxonomy_label_width = 96
         taxonomy_label_width = self._taxonomy_label_width
 
-        vern_row = QHBoxLayout()
-        vern_row.setContentsMargins(0, 0, 0, 0)
-        vern_row.setSpacing(4)
-        self.vernacular_label = QLabel(self._vernacular_label())
-        self.vernacular_label.setMinimumWidth(taxonomy_label_width)
-        self.vernacular_label.setMaximumWidth(taxonomy_label_width)
-        vern_row.addWidget(self.vernacular_label)
-        vern_field_container = QWidget()
-        vern_field_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        vern_field_layout = QHBoxLayout(vern_field_container)
-        vern_field_layout.setContentsMargins(0, 0, 0, 0)
-        vern_field_layout.setSpacing(4)
-        self.vernacular_input = QLineEdit()
+        # The unified taxon picker is what the user sees. The vernacular,
+        # genus, species and scientific inputs stay as hidden backing state:
+        # the taxon controller, the save path and the Artsorakel copy read
+        # and write them as before.
+        self._taxon_backing = QWidget(identified_tab)
+        self._taxon_backing.setVisible(False)
+        backing = self._taxon_backing
+        self.vernacular_label = QLabel(self._vernacular_label(), backing)
+        self.vernacular_input = QLineEdit(backing)
         self.vernacular_input.setPlaceholderText(self._vernacular_placeholder())
         self.vernacular_input.textChanged.connect(self._update_taxonomy_tab_indicators)
-        vern_field_layout.addWidget(self.vernacular_input, 1)
+        self.genus_input = QLineEdit(backing)
+        self.genus_input.setPlaceholderText(self.tr("e.g., Flammulina"))
+        self.genus_input.textChanged.connect(self._update_taxonomy_tab_indicators)
+        self.species_input = QLineEdit(backing)
+        self.species_input.setPlaceholderText(self.tr("e.g., velutipes"))
+        self.species_input.textChanged.connect(self._update_taxonomy_tab_indicators)
+        self.scientific_name_input = QLineEdit(backing)
+        self.scientific_name_input.setPlaceholderText(
+            self.tr("Optional: e.g., Hygrocybe conica var. pseudoconica")
+        )
+        # The card names a chosen synonym's stored entry itself.
+        self.scientific_hint_label = QLabel("", backing)
+        self.scientific_hint_label.setVisible(False)
+
+        self._taxon_picker_sync_timer = QTimer(self)
+        self._taxon_picker_sync_timer.setSingleShot(True)
+        self._taxon_picker_sync_timer.timeout.connect(self._sync_taxon_picker)
+        for widget in (self.vernacular_input, self.genus_input, self.species_input, self.scientific_name_input):
+            widget.textChanged.connect(self._schedule_taxon_picker_sync)
+
+        taxon_row = QHBoxLayout()
+        taxon_row.setContentsMargins(0, 0, 0, 0)
+        taxon_row.setSpacing(4)
+        taxon_label = QLabel(self.tr("Species:"))
+        taxon_label.setFixedWidth(taxonomy_label_width)
+        taxon_row.addWidget(taxon_label, 0, Qt.AlignTop)
+        self.taxon_picker = TaxonPicker()
+        self.taxon_picker.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        taxon_label.setMinimumHeight(self.taxon_picker.search_input.sizeHint().height())
+        self.taxon_picker.concept_picked.connect(self._on_taxon_picker_concept)
+        self.taxon_picker.free_text_committed.connect(self._on_taxon_picker_free_name)
+        self.taxon_picker.cleared.connect(self._on_taxon_picker_cleared)
+        self.taxon_picker.set_ai_suggestion_handler(self._on_taxon_picker_ai_suggestion)
+        taxon_row.addWidget(self.taxon_picker, 1)
+        # The language of common names, for the search and the stored name.
         self.vernacular_language_btn = QToolButton()
         self.vernacular_language_btn.setText("🌐")
         self.vernacular_language_btn.setPopupMode(QToolButton.InstantPopup)
         self.vernacular_language_menu = QMenu(self.vernacular_language_btn)
         self.vernacular_language_btn.setMenu(self.vernacular_language_menu)
-        input_height = max(18, int(self.vernacular_input.sizeHint().height()))
+        input_height = max(18, int(self.taxon_picker.search_input.sizeHint().height()))
         self.vernacular_language_btn.setFixedSize(input_height, input_height)
         self._populate_vernacular_language_menu()
-        vern_field_layout.addWidget(self.vernacular_language_btn, 0, Qt.AlignVCenter)
-        vern_row.addWidget(vern_field_container, 1)
-        identified_layout.addLayout(vern_row)
-
-        genus_row = QHBoxLayout()
-        genus_label = QLabel(self.tr("Genus:"))
-        genus_label.setFixedWidth(taxonomy_label_width)
-        genus_row.addWidget(genus_label)
-        self.genus_input = QLineEdit()
-        self.genus_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.genus_input.setPlaceholderText(self.tr("e.g., Flammulina"))
-        self.genus_input.textChanged.connect(self._update_taxonomy_tab_indicators)
-        genus_row.addWidget(self.genus_input, 1)
-        identified_layout.addLayout(genus_row)
-
-        species_row = QHBoxLayout()
-        species_label = QLabel(self.tr("Species:"))
-        species_label.setFixedWidth(taxonomy_label_width)
-        species_row.addWidget(species_label)
-        self.species_input = QLineEdit()
-        self.species_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.species_input.setPlaceholderText(self.tr("e.g., velutipes"))
-        self.species_input.textChanged.connect(self._update_taxonomy_tab_indicators)
-        species_row.addWidget(self.species_input, 1)
-        identified_layout.addLayout(species_row)
-
-        scientific_row = QHBoxLayout()
-        scientific_label = QLabel(self.tr("Scientific:"))
-        scientific_label.setFixedWidth(taxonomy_label_width)
-        scientific_row.addWidget(scientific_label)
-        self.scientific_name_input = QLineEdit()
-        self.scientific_name_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.scientific_name_input.setPlaceholderText(
-            self.tr("Optional: e.g., Hygrocybe conica var. pseudoconica")
-        )
-        scientific_row.addWidget(self.scientific_name_input, 1)
-        identified_layout.addLayout(scientific_row)
-
-        self.scientific_hint_label = QLabel("")
-        self.scientific_hint_label.setStyleSheet("color: #6b7280; font-size: 11px;")
-        self.scientific_hint_label.setVisible(False)
-        identified_layout.addWidget(self.scientific_hint_label)
+        taxon_row.addWidget(self.vernacular_language_btn, 0, Qt.AlignTop)
+        identified_layout.addLayout(taxon_row)
 
         # Offered, never applied: a provider identifier that resolves to one
         # Sporely taxon matching the entered name, for an observation without
-        # a proven identity. A one-line hint, and Link at the end of the
-        # Scientific row; only the button binds it.
+        # a proven identity. A one-line hint with Link; only the button
+        # binds it.
+        offer_row = QHBoxLayout()
+        offer_row.setContentsMargins(0, 0, 0, 0)
+        offer_row.setSpacing(4)
+        offer_row.addSpacing(taxonomy_label_width + 4)
         self.identity_offer_row = QLabel("")
         self.identity_offer_row.setWordWrap(True)
         self.identity_offer_row.setStyleSheet("color: #6b7280; font-size: 11px;")
-        self.identity_offer_row.setContentsMargins(taxonomy_label_width, 0, 0, 0)
         self.identity_offer_row.setVisible(False)
         self.identity_offer_label = self.identity_offer_row
+        offer_row.addWidget(self.identity_offer_row, 1)
         self.identity_offer_button = QPushButton(self.tr("Link"))
         self.identity_offer_button.clicked.connect(self._on_identity_offer_accepted)
         self.identity_offer_button.setVisible(False)
-        scientific_row.addWidget(self.identity_offer_button)
+        offer_row.addWidget(self.identity_offer_button, 0, Qt.AlignVCenter)
         self._identity_offer = None
-        identified_layout.addWidget(self.identity_offer_row)
+        identified_layout.addLayout(offer_row)
 
         red_list_row = QHBoxLayout()
         red_list_label = QLabel(self.tr("Red list:"))
@@ -15662,7 +15671,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         red_list_row.addWidget(red_list_label)
         from ui.delegates import RedListCircleWidget
         self.red_list_badge_widget = RedListCircleWidget()
-        badge_size = max(24, int(self.species_input.sizeHint().height()))
+        badge_size = max(24, int(self.taxon_picker.search_input.sizeHint().height()))
         self.red_list_badge_widget.setFixedSize(48, badge_size)
         self.red_list_badge_widget.setVisible(False)
         red_list_row.addWidget(self.red_list_badge_widget, 0, Qt.AlignVCenter)
@@ -15721,6 +15730,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         uncertain_row.addSpacing(taxonomy_label_width)
         self.uncertain_checkbox = QCheckBox(self.tr("Uncertain"))
         self.uncertain_checkbox.toggled.connect(self._update_taxonomy_tab_indicators)
+        self.uncertain_checkbox.toggled.connect(self.taxon_picker.set_uncertain)
         uncertain_row.addWidget(self.uncertain_checkbox)
         uncertain_row.addStretch()
         identified_layout.addLayout(uncertain_row)
@@ -15737,7 +15747,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         identified_layout.addStretch(1)
 
-        self.taxonomy_tabs.addTab(identified_tab, self.tr("Species"))
+        # The page scrolls rather than squashing the identification card when
+        # the taxonomy pane is short.
+        species_page = QScrollArea()
+        species_page.setObjectName("taxonomyPage")
+        species_page.setFrameShape(QFrame.NoFrame)
+        species_page.setWidgetResizable(True)
+        species_page.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        species_page.setWidget(identified_tab)
+        self.species_tab = species_page
+        self.taxonomy_tabs.addTab(species_page, self.tr("Species"))
 
         # Tab 2: Biotope metadata
         self._habitat_tree_states: dict[str, dict] = {}
@@ -16542,6 +16561,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 if source == self._ai_source_key():
                     self._ai_selected_taxon = None
                 self._set_ai_copy_enabled(False, source=source)
+        self._refresh_taxon_picker_ai()
 
     @staticmethod
     def _ai_prediction_score(pred: dict) -> float:
@@ -17036,10 +17056,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         pred = item.data(Qt.UserRole) if item else None
         return pred if isinstance(pred, dict) else {}
 
-    def _on_ai_copy_to_taxonomy(self, source: str | None = None) -> None:
+    def _on_ai_copy_to_taxonomy(self, source: str | None = None, prediction: dict | None = None) -> None:
         source = source or self._ai_source_key()
+        concept_before = self._committed_sporely_taxon_id()
         index = self._current_ai_index()
-        selected_pred = self._selected_ai_prediction(source)
+        # A prediction chosen elsewhere (an Artsorakel chip in the species
+        # picker), else the row selected in the AI table.
+        selected_pred = prediction or self._selected_ai_prediction(source)
         if index is not None:
             if selected_pred:
                 if source == "inat":
@@ -17121,7 +17144,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 self._set_inaturalist_taxon_id(taxon.get("id"))
                 self._set_red_list_category(None, None)
             else:
-                self._set_inaturalist_taxon_id(None)
+                # The publishing taxon ID stays only with the concept it was
+                # stored for (see _committed_sporely_taxon_id).
+                if concept_before is None or self._committed_sporely_taxon_id() != concept_before:
+                    self._set_inaturalist_taxon_id(None)
                 if species:
                     self._set_red_list_category(
                         self._read_red_list_code(taxon) or self._read_red_list_code(selected_pred),
@@ -17548,6 +17574,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         observation public and not a draft. Cancel keeps the previous state."""
         from ui.publish_notice import confirm_publish_if_needed, load_local_facts
 
+        if not self._confirm_unfinished_taxon_search():
+            return
         previous = self._publish_baseline_state()
         try:
             new_state = dict(self.get_data())
@@ -17665,10 +17693,18 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._update_ai_controls_state()
 
     def _on_edit_images_clicked(self):
+        # Leaving for Prepare Images keeps the identification; unfinished
+        # species search text needs the same decision as on Save.
+        if not self._confirm_unfinished_taxon_search():
+            return
         self.request_edit_images = True
         self.reject()
 
     def _on_image_double_clicked(self, _img_id, path: str) -> None:
+        # Leaving for Prepare Images keeps the identification; unfinished
+        # species search text needs the same decision as on Save.
+        if not self._confirm_unfinished_taxon_search():
+            return
         self.request_edit_images = True
         self.request_edit_images_path = path or None
         self.reject()
@@ -17681,6 +17717,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         # request_edit_images_skip_return flag tells the caller not to
         # re-open the details dialog after Prepare Images closes; a
         # thumbnail right-click is a direct "just edit this photo" action.
+        # Unfinished species search text needs the same decision as on Save.
+        if not self._confirm_unfinished_taxon_search():
+            return
         self.request_edit_images = True
         self.request_edit_images_path = (filepath or "").strip() or None
         self.request_edit_images_skip_return = True
@@ -18924,6 +18963,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             getattr(self, "species_input", None),
             getattr(self, "uncertain_checkbox", None),
             getattr(self, "determination_method_combo", None),
+            getattr(self, "taxon_picker", None),
         ):
             if widget is not None:
                 widget.setEnabled(not checked)
@@ -18943,7 +18983,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._ai_selected_taxon = None
             self._update_selected_ai_summary_label(None)
             self._suppress_taxon_autofill = False
-
+            picker = getattr(self, "taxon_picker", None)
+            if picker is not None:
+                picker.discard_unfinished()
+        self._sync_taxon_picker(force=True)
         self._update_taxonomy_tab_indicators()
 
     def _update_taxonomy_tab_indicators(self) -> None:
@@ -19987,7 +20030,15 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 self.vernacular_db = VernacularDB(db_path, language_code=lang)
         else:
             self.vernacular_db = None
-        self._ensure_taxon_lookup()
+        lookup = self._ensure_taxon_lookup()
+        if hasattr(self, "taxon_picker"):
+            self.taxon_picker.set_lookup(lookup)
+            # The card's common name follows the new language. Search text
+            # still being typed is kept and searched again in that language.
+            unfinished = self.taxon_picker.unfinished_text()
+            self._sync_taxon_picker(force=True)
+            if unfinished and not self.taxon_picker.unfinished_text():
+                self.taxon_picker.search_for(unfinished)
         if not db_path:
             return
         self._refresh_vernacular_for_current_taxon()
@@ -20065,6 +20116,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             # Species picks bind the picked concept, like Scientific picks.
             concept_species_suggestions=True,
         )
+        if hasattr(self, "taxon_picker"):
+            self.taxon_picker.set_lookup(self._taxon_lookup)
         self._genus_model = self._taxon_controller.genus_model
         self._species_model = self._taxon_controller.species_model
         self._vernacular_model = self._taxon_controller.vernacular_model
@@ -20358,9 +20411,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         lookup = self._ensure_taxon_lookup()
         entries = self._identity_evidence_entries()
         try:
-            controller.set_evidence_taxon_ids(evidence_concept_ids(lookup, entries))
+            evidence_ids = evidence_concept_ids(lookup, entries)
         except Exception:
-            controller.set_evidence_taxon_ids(())
+            evidence_ids = ()
+        controller.set_evidence_taxon_ids(evidence_ids)
+        picker = getattr(self, "taxon_picker", None)
+        if picker is not None:
+            picker.set_evidence_taxon_ids(evidence_ids)
         if self.is_unidentified():
             return
         genus = self.genus_input.text().strip()
@@ -20448,7 +20505,237 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                         widget.setText(value)
         self._hide_identity_offer()
 
+    # ------------------------------------------------------------------
+    # Unified taxon picker
+    # ------------------------------------------------------------------
+
+    def _on_taxon_picker_concept(self, _row, concept) -> None:
+        """A concept the user picked: the same commit as a Scientific pick."""
+        controller = getattr(self, "_taxon_controller", None)
+        if controller is None or self.is_unidentified():
+            self._schedule_taxon_picker_sync()
+            return
+        before = self._committed_sporely_taxon_id()
+        if not controller.commit_picked_concept(concept.as_scientific_suggestion()):
+            # Not committed (a name the snapshot parser refuses): show what
+            # the observation still holds.
+            self._sync_taxon_picker(force=True)
+        elif self._committed_sporely_taxon_id() != before:
+            self._set_inaturalist_taxon_id(None)
+        self._update_taxonomy_tab_indicators()
+
+    def _on_taxon_picker_free_name(self, name: str) -> None:
+        controller = getattr(self, "_taxon_controller", None)
+        if controller is None:
+            return
+        controller.set_unlinked_name(name)
+        self._set_inaturalist_taxon_id(None)
+        self._update_taxonomy_tab_indicators()
+        self._refresh_identity_offer()
+
+    def _on_taxon_picker_cleared(self) -> None:
+        controller = getattr(self, "_taxon_controller", None)
+        if controller is None:
+            return
+        controller.clear_identification()
+        self._set_inaturalist_taxon_id(None)
+        # The AI determination that was chosen goes with the identification,
+        # or loading would refill the empty name from it. The predictions
+        # themselves stay.
+        self._current_ai_selected_fields = self._ai_selected_fields(None)
+        self._ai_selected_by_index.clear()
+        self._inat_selected_by_index.clear()
+        self._update_selected_ai_summary_label(None)
+        self._update_taxonomy_tab_indicators()
+        self._refresh_identity_offer()
+
+    def _committed_sporely_taxon_id(self) -> int | None:
+        """The concept the observation is bound to now, or None.
+
+        The stored iNaturalist taxon ID is the publishing ID for that
+        concept: a pick of another concept, a name without a taxon and ✕
+        drop it (publishing then resolves the new name as for an
+        observation that never had one). Picking the same concept again
+        keeps it."""
+        controller = getattr(self, "_taxon_controller", None)
+        if controller is None:
+            return None
+        identity = controller.committed_identity()
+        if identity.is_proven_sporely and identity.sporely_taxon_id is not None:
+            return int(identity.sporely_taxon_id)
+        return None
+
+    def _on_taxon_picker_ai_suggestion(self, suggestion: AiSuggestion) -> None:
+        """An Artsorakel chip whose identifier resolved to an installed
+        concept: applied exactly as Copy to taxonomy applies that prediction,
+        so the provider identifier and the AI selection are kept."""
+        prediction = suggestion.key if isinstance(suggestion.key, dict) else None
+        if prediction is None:
+            return
+        self._on_ai_copy_to_taxonomy("arts", prediction=prediction)
+
+    def _refresh_taxon_picker_ai(self) -> None:
+        """Offer the current image's top Artsorakel predictions as chips."""
+        picker = getattr(self, "taxon_picker", None)
+        if picker is None:
+            return
+        index = self._current_ai_index()
+        predictions = self._ai_predictions_by_index.get(index, []) if index is not None else []
+        lookup = self._ensure_taxon_lookup()
+        suggestions = []
+        for pred in predictions or []:
+            if not isinstance(pred, dict):
+                continue
+            taxon = _normalize_ai_prediction_taxon(pred, source="arts")
+            genus, species = self._extract_genus_species_from_taxon(taxon)
+            name = " ".join(part for part in (genus, species) if part)
+            if not name:
+                continue
+            concept = resolve_provider_concept(lookup, ai_prediction_external_id(pred, taxon), name)
+            score = self._ai_prediction_score(pred)
+            suggestions.append(AiSuggestion(
+                self._preferred_vernacular_from_taxon(taxon) or name,
+                name,
+                score / 100.0 if score > 1.0 else score,
+                getattr(concept, "sporely_taxon_id", None) if concept is not None else None,
+                key=pred,
+            ))
+            if len(suggestions) == 3:
+                break
+        picker.set_ai_suggestions(suggestions)
+
+    def _schedule_taxon_picker_sync(self, *_args) -> None:
+        timer = getattr(self, "_taxon_picker_sync_timer", None)
+        if timer is not None:
+            timer.start(0)
+
+    def _taxon_picker_row_for(self, names, taxon_id: int, link_kind: str | None):
+        """The search row and concept that show a stored concept: a row with
+        the stored name if there is one, else any row holding the concept."""
+        lookup = self._ensure_taxon_lookup()
+        searcher = getattr(lookup, "search_taxa", None) if lookup is not None else None
+        if not callable(searcher):
+            return None
+        fallback = None
+        for name in names:
+            if not name:
+                continue
+            try:
+                page = searcher(name, limit=40, current_taxon_id=taxon_id)
+            except Exception:
+                continue
+            exact = []
+            for row in page.rows:
+                concept = next((c for c in row.concepts if c.sporely_taxon_id == taxon_id), None)
+                if concept is None:
+                    continue
+                if row.name.casefold() == name.casefold():
+                    exact.append((row, concept))
+                elif fallback is None:
+                    fallback = (row, concept)
+            if exact:
+                return next((pair for pair in exact if pair[1].link_kind == link_kind), exact[0])
+        return fallback
+
+    def _sync_taxon_picker(self, force: bool = False) -> None:
+        """Show what the backing fields and the committed identity hold.
+
+        Display only: it reads the identification and never commits one, so
+        loading, the Artsorakel copy and Link appear in the picker without
+        any pick being made. A state the picker already shows is left alone.
+        """
+        picker = getattr(self, "taxon_picker", None)
+        controller = getattr(self, "_taxon_controller", None)
+        if picker is None or controller is None:
+            return
+        unidentified = self.is_unidentified()
+        picker.setEnabled(not unidentified)
+        picker.set_uncertain(self.uncertain_checkbox.isChecked())
+        snapshot = controller.committed_snapshot() or {}
+        identity = controller.committed_identity()
+        proven_id = (
+            int(identity.sporely_taxon_id)
+            if identity.is_proven_sporely and identity.sporely_taxon_id is not None
+            else None
+        )
+        # The committed concept, after a source switch too, is its row's
+        # default: Endre + Enter on the unchanged name keeps it.
+        picker.set_current_taxon_id(proven_id)
+        genus = self.genus_input.text().strip()
+        species = self.species_input.text().strip()
+        typed_name = " ".join(part for part in (genus, species) if part)
+        stored_name = str(snapshot.get("scientific_name") or "").strip()
+        if identity.is_proven_sporely and identity.sporely_taxon_id is not None:
+            taxon_id = int(identity.sporely_taxon_id)
+            current = picker.selection()
+            if not force and current is not None and current[1].sporely_taxon_id == taxon_id \
+                    and (not stored_name or current[1].scientific_name == stored_name):
+                return
+            try:
+                display = self._ensure_taxon_lookup().display_scientific_name(taxon_id)
+            except Exception:
+                display = None
+            found = self._taxon_picker_row_for(
+                (stored_name, snapshot.get("canonical_scientific_name"), display, typed_name),
+                taxon_id,
+                snapshot.get("link_kind"),
+            )
+            if found is not None:
+                picker.show_selection(*found)
+            else:
+                picker.show_missing_concept(stored_name or display or typed_name or str(taxon_id))
+            return
+        name = stored_name or typed_name or self.vernacular_input.text().strip()
+        if not name:
+            if force or picker.selection() is not None or picker.unlinked() is not None:
+                picker.clear_display()
+            return
+        # A name kept without a taxon is stored whole in Species; anything
+        # else unlinked is an older or provider-supplied name to review.
+        free = not genus and bool(species) and not snapshot
+        wanted = (" ".join(name.split()), "free" if free else "legacy")
+        if not force and picker.unlinked() == wanted:
+            return
+        picker.show_unlinked_name(name, legacy=not free)
+
+    def _confirm_unfinished_taxon_search(self) -> bool:
+        """Typed species search text that was never picked needs a decision
+        before saving: keep it as a name, drop it, or go back. Returns
+        whether saving may go on."""
+        picker = getattr(self, "taxon_picker", None)
+        text = picker.unfinished_text() if picker is not None and picker.isEnabled() else ""
+        if not text:
+            if picker is not None:
+                # Endre without typing: the card comes back as it was.
+                picker.discard_unfinished()
+            return True
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle(self.tr("Unfinished species search"))
+        box.setText(self.tr("“{text}” is typed in the species search, but no entry is chosen.").format(text=text))
+        box.setInformativeText(self.tr(
+            "Choose an entry from the results, keep the text as a name without a taxon, "
+            "or discard it and keep the identification as it was."
+        ))
+        keep = box.addButton(self.tr("Keep as name without taxon"), QMessageBox.AcceptRole)
+        discard = box.addButton(self.tr("Discard search text"), QMessageBox.DestructiveRole)
+        back = box.addButton(self.tr("Choose an entry"), QMessageBox.RejectRole)
+        box.setDefaultButton(back)
+        box.setEscapeButton(back)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is keep:
+            return picker.keep_unfinished_as_name()
+        if clicked is discard:
+            picker.discard_unfinished()
+            return True
+        if hasattr(self, "taxonomy_tabs"):
+            self.taxonomy_tabs.setCurrentIndex(self.taxonomy_tabs.indexOf(self.species_tab))
+        picker.search_input.setFocus(Qt.OtherFocusReason)
+        return False
+
     def _on_scientific_snapshot_committed(self, snapshot: dict) -> None:
+        self._schedule_taxon_picker_sync()
         self._hide_identity_offer()
         # Stage 3B.3 red-list invariant: an explicit new taxonomy
         # selection clears the previous red-list snapshot BEFORE any
@@ -20486,6 +20773,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             label.setVisible(False)
 
     def _on_scientific_snapshot_invalidated(self, reason: str | None = None) -> None:
+        self._schedule_taxon_picker_sync()
         # Stage 3B.3 red-list invariant: any manual genus/species/
         # scientific-name edit that invalidates identity also clears the
         # red-list snapshot. Category, categories map, and label all go
@@ -22059,6 +22347,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 })
             else:
                 _controller.load_committed_snapshot(None)
+        if hasattr(self, "taxon_picker"):
+            # The concept already on the observation stays its row's default:
+            # neither Artsorakel evidence nor the source order replaces it.
+            self.taxon_picker.set_current_taxon_id(
+                restored_identity.sporely_taxon_id if restored_identity.is_proven_sporely else None
+            )
         self._set_inaturalist_taxon_id(obs.get("inaturalist_taxon_id"))
         red_categories = None
         raw_red_categories = obs.get("red_list_categories_json")

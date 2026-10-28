@@ -117,12 +117,27 @@ def _taxon_link_offer(context: ReviewContext):
     )
 
 
-def _species_popup_ambiguous(context: ReviewContext):
-    return _observation_editor(context, draft={}, with_ai=False)
-
-
-def _species_popup_settled(context: ReviewContext):
+def _editor_with_ai(context: ReviewContext):
     return _observation_editor(context, draft={}, with_ai=True)
+
+
+def _bound_editor(context: ReviewContext):
+    """Saved with the COL entry, Usikker and Mikroskopi; Artsorakel says
+    NBIC:54701 (the NorTaxa entry). The saved row comes from a real pick."""
+    first = _observation_editor(context, draft={}, with_ai=False)
+    page = first._taxon_lookup.search_taxa("Flammulina velutipes")
+    row = next(r for r in page.rows if r.name == "Flammulina velutipes")
+    first._on_taxon_picker_concept(row, next(c for c in row.concepts if c.source_name == "COL"))
+    saved = dict(first.get_data())
+    first._cleanup_dialog_threads()
+    first.deleteLater()
+    saved.update(uncertain=1, determination_method=1, ai_selected_service="artsorakel",
+                 ai_selected_taxon_id="NBIC:54701", ai_selected_scientific_name="Flammulina velutipes")
+    return _observation_editor(context, draft=saved, with_ai=True)
+
+
+def _free_name_editor(context: ReviewContext):
+    return _observation_editor(context, draft={"species": "Cortinarius sp. «SKA-2026-14»"}, with_ai=False)
 
 
 def _settle_editor_layout(dialog):
@@ -135,16 +150,18 @@ def _settle_editor_layout(dialog):
     return dialog
 
 
-def _open_species_popup(dialog):
-    controller = dialog._taxon_controller
-    dialog.genus_input.setText("Flammulina")
-    dialog.species_input.setFocus()
-    dialog.species_input.setText("vel")
-    controller.refresh_species_suggestions()
-    completer = controller.species_completer
-    completer.setCompletionPrefix("vel")
-    completer.complete()
-    return completer.popup().window()
+def _search_in_editor(query: str):
+    def capture(dialog):
+        from PySide6.QtWidgets import QApplication
+
+        _settle_editor_layout(dialog)
+        picker = dialog.taxon_picker
+        if not picker.search_input.isVisible():
+            picker.begin_edit()
+        picker.search_for(query)
+        QApplication.processEvents()
+        return dialog
+    return capture
 
 
 def register_observation_scenarios(registry: ScenarioRegistry) -> None:
@@ -158,26 +175,57 @@ def register_observation_scenarios(registry: ScenarioRegistry) -> None:
                 "database taxon: one line offers the database taxon, with Link."
             ),
             viewport=(1280, 1000),
+            locale="nb_NO",
             build=_taxon_link_offer,
             capture_target=_settle_editor_layout,
         ),
         ReviewScenario(
-            id="observations.species-picker-ambiguous",
+            id="observations.taxon-picker-search",
             group="observations",
-            title="Observation editor — Species list, same-name taxa",
-            description="Without an identifier, both database taxa named Flammulina velutipes are listed with their sources.",
-            viewport=(1280, 900),
-            build=_species_popup_ambiguous,
-            capture_target=_open_species_popup,
+            title="Observation editor — species search with two sources",
+            description=(
+                "Flammulina vel in the unified picker: the Flammulina velutipes row offers NorTaxa and COL, "
+                "NorTaxa filled because the Artsorakel identifier points to it; the highlighted row "
+                "shows how to switch source."
+            ),
+            viewport=(1280, 1000),
+            locale="nb_NO",
+            build=_editor_with_ai,
+            capture_target=_search_in_editor("Flammulina vel"),
         ),
         ReviewScenario(
-            id="observations.species-picker-settled",
+            id="observations.taxon-picker-card",
             group="observations",
-            title="Observation editor — Species list settled by an identifier",
-            description="An Artsorakel identifier proves the NorTaxa taxon, so velutipes is listed once.",
-            viewport=(1280, 900),
-            build=_species_popup_settled,
-            capture_target=_open_species_popup,
+            title="Observation editor — saved identification",
+            description=(
+                "Saved with the COL entry, Usikker and Mikroskopi: the card keeps COL although "
+                "Artsorakel points to NorTaxa; Kilde switches, and the Artsorakel chips only offer."
+            ),
+            viewport=(1280, 1000),
+            locale="nb_NO",
+            build=_bound_editor,
+            capture_target=_settle_editor_layout,
+        ),
+        ReviewScenario(
+            id="observations.taxon-picker-free-name",
+            group="observations",
+            title="Observation editor — name without a taxon",
+            description="A provisional name kept whole without a taxon: the grey card.",
+            viewport=(1280, 1000),
+            locale="nb_NO",
+            build=_free_name_editor,
+            capture_target=_settle_editor_layout,
+        ),
+        ReviewScenario(
+            id="observations.taxon-picker-search-dark",
+            group="observations",
+            title="Observation editor — species search, dark theme",
+            description="The velutipes search in the dark theme.",
+            viewport=(1280, 1000),
+            theme="dark",
+            locale="nb_NO",
+            build=_editor_with_ai,
+            capture_target=_search_in_editor("velutipes"),
         ),
     ):
         registry.register(scenario)

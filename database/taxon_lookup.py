@@ -195,6 +195,7 @@ class TaxonLookupService:
         self._resolve_scientific_cache: dict[tuple[str, str], TaxonChoice | None] = {}
         self._best_common_name_cache: dict[tuple[str, str], TaxonChoice | None] = {}
         self._common_names_for_taxon_cache: dict[tuple[str, str, int], tuple[TaxonChoice, ...]] = {}
+        self._search_taxa_cache: dict[tuple, "TaxonSearchPage"] = {}
 
         initial_language = normalize_vernacular_language(language_code) if language_code else None
         if self.vernacular_db is not None:
@@ -230,6 +231,7 @@ class TaxonLookupService:
         self._resolve_scientific_cache.clear()
         self._best_common_name_cache.clear()
         self._common_names_for_taxon_cache.clear()
+        self._search_taxa_cache.clear()
 
     @contextmanager
     def _local_connection(self):
@@ -641,6 +643,63 @@ class TaxonLookupService:
             choices.append(TaxonChoice(genus=genus, species=species, source=source))
         self._suggest_species_cache[cache_key] = tuple(choices)
         return choices
+
+    def search_taxa(
+        self,
+        query: str = "",
+        *,
+        offset: int = 0,
+        limit: int = 40,
+        evidence_taxon_ids=(),
+        current_taxon_id: int | None = None,
+    ) -> "TaxonSearchPage":
+        """The taxon picker's unified search (:mod:`database.taxon_search`).
+
+        Rows of names over the installed taxonomy-v2 artifact, each carrying
+        the concepts it can mean. Writes no identity. Evidence ids (provider
+        ids that resolved to one concept) and the observation's current
+        concept rank their rows first and become the row's default; they
+        never remove a concept. Empty without a v2 artifact.
+        """
+        from database.taxon_search import TaxonSearchPage, search, search_language_codes
+
+        db = self.vernacular_db
+        text = " ".join(str(query or "").split())
+        if db is None or not text:
+            return TaxonSearchPage(offset=max(0, int(offset)))
+        try:
+            if not db._is_v2():
+                return TaxonSearchPage(offset=max(0, int(offset)))
+        except Exception:
+            return TaxonSearchPage(offset=max(0, int(offset)))
+        codes = search_language_codes(getattr(db, "language_code", None) or self.language_code)
+        evidence = tuple(sorted({int(t) for t in evidence_taxon_ids if t is not None}))
+        cache_key = (
+            text, codes, getattr(db, "display_language_code", None),
+            int(offset), int(limit), evidence, current_taxon_id,
+        )
+        cached = self._search_taxa_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        try:
+            conn = sqlite3.connect(f"file:{db.db_path}?mode=ro", uri=True)
+        except sqlite3.Error:
+            return TaxonSearchPage(offset=max(0, int(offset)))
+        try:
+            page = search(
+                conn, text,
+                language_codes=codes,
+                national_expr=db._national_name_expr(conn),
+                offset=offset, limit=limit,
+                evidence_taxon_ids=evidence,
+                current_taxon_id=current_taxon_id,
+            )
+        except sqlite3.Error:
+            return TaxonSearchPage(offset=max(0, int(offset)))
+        finally:
+            conn.close()
+        self._search_taxa_cache[cache_key] = page
+        return page
 
     def resolve_external_identity(self, identity) -> "InstalledTaxonConcept | None":
         """The installed taxonomy-v2 concept an external identity names, if exact.

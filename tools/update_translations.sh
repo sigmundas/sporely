@@ -30,6 +30,7 @@ files=(
   "ui/measurement_content_view.py"
   "ui/reference_sharing_dialogs.py"
   "ui/publish_notice.py"
+  "ui/taxon_picker.py"
 )
 
 if [[ -x ".venv/bin/pyside6-lupdate" ]]; then

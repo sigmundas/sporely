@@ -667,75 +667,18 @@ def test_observation_editor_drops_the_offer_for_a_different_scientific_name(
         dialog.deleteLater()
 
 
-@pytest.mark.parametrize("first, second", [
-    (COL_CONCEPT, NORTAXA_CONCEPT), (NORTAXA_CONCEPT, COL_CONCEPT),
-])
-@pytest.mark.parametrize("input_method", ["mouse", "keyboard"])
-def test_popup_selections_survive_focus_change_and_reopening(editor, first, second, input_method):
-    """Exercise the completer signals, rather than calling selection handlers.
-
-    Both concepts must remain selectable after a previous pick; the last
-    selection must survive Save's focus change and a reconstructed editor.
-    """
-    from PySide6.QtCore import Qt
-    from PySide6.QtTest import QTest
-
-    dialog = editor(**_observation(
-        ai_selected_service=None, ai_selected_taxon_id=None,
-        ai_selected_scientific_name=None,
-    ))
-    dialog.show()
-
-    def pick(field, completer, text, concept):
-        field.setFocus()
-        field.selectAll()
-        QTest.keyClicks(field, text)
-        QTest.qWait(300)
-        popup = completer.popup()
-        model = popup.model()
-        canonical = {
-            model.index(r, 0).data(ROLE_TAXON_CHOICE)["sporely_taxon_id"]
-            for r in range(model.rowCount())
-            if isinstance(model.index(r, 0).data(ROLE_TAXON_CHOICE), dict)
-            and model.index(r, 0).data(ROLE_TAXON_CHOICE)["scientific_name"]
-            == "Flammulina velutipes"
-        }
-        assert canonical == {COL_CONCEPT, NORTAXA_CONCEPT}
-        index = next(
-            model.index(r, 0) for r in range(model.rowCount())
-            if isinstance(model.index(r, 0).data(ROLE_TAXON_CHOICE), dict)
-            and model.index(r, 0).data(ROLE_TAXON_CHOICE)["sporely_taxon_id"] == concept
-        )
-        popup.setCurrentIndex(index)
-        if input_method == "mouse":
-            QTest.mouseClick(popup.viewport(), Qt.LeftButton,
-                             pos=popup.visualRect(index).center())
-        else:
-            QTest.keyClick(popup, Qt.Key_Return)
-        assert dialog.isVisible()  # selecting a suggestion must not save the dialog
-        assert dialog.get_data()["sporely_taxon_id"] == concept
-
-    controller = dialog._taxon_controller
-    pick(dialog.species_input, controller.species_completer, "VEL", first)
-    pick(dialog.scientific_name_input, controller._scientific_completer,
-         "fLaMmUlInA vEl", second)
-    dialog.submit_observation_btn.setFocus()
-    QTest.qWait(300)
-    data = dialog.get_data()
-    assert data["sporely_taxon_id"] == second
-    assert data["scientific_name_snapshot"] == "Flammulina velutipes"
-    dialog.hide()
-    reopened = editor(**data)
-    assert reopened.get_data()["sporely_taxon_id"] == second
-    assert reopened.scientific_name_input.text() == "Flammulina velutipes"
-
-
 # ── Review findings (PR #39 follow-up): real key events ──────────────────────
 #
 # Highlighting a row copies its text into the field. The pickers must not
 # treat that as new input (rebuilding the list under the highlight), and a
 # rebuild that does happen between highlight and Enter must keep the same
 # row highlighted -- never another one.
+#
+# The observation editor now shows the unified taxon picker instead of these
+# inputs; they remain its hidden backing state, and the controller's
+# completers still serve the other editors. The tests below drive those
+# completers directly. Picks through the editor's picker are covered in
+# tests/test_observation_details_taxon_picker.py.
 
 _NO_AI = dict(ai_selected_service=None, ai_selected_taxon_id=None, ai_selected_scientific_name=None)
 
@@ -763,96 +706,12 @@ def _down(popup, times=1):
     return index.data(ROLE_TAXON_CHOICE)
 
 
-def _enter(popup):
-    from PySide6.QtCore import Qt
-    from PySide6.QtTest import QTest
-
-    QTest.keyClick(popup, Qt.Key_Return)
-    QTest.qWait(80)
-
-
 def _pickers(dialog):
     controller = dialog._taxon_controller
     return {
         "species": (dialog.species_input, controller.species_completer, "vel"),
         "scientific": (dialog.scientific_name_input, controller._scientific_completer, "flammulina vel"),
     }
-
-
-@pytest.mark.parametrize("picker", ["species", "scientific"])
-@pytest.mark.parametrize("rows_down", [1, 2])
-def test_down_then_enter_binds_the_highlighted_concept(editor, picker, rows_down):
-    dialog = editor(**_observation(**_NO_AI))
-    dialog.show()
-    accepted = []
-    dialog.accepted.connect(lambda: accepted.append(True))
-    field, completer, text = _pickers(dialog)[picker]
-    _type_into(field, text)
-    popup = completer.popup()
-    assert popup.isVisible()
-    highlighted = _down(popup, rows_down)
-    # The first two rows are the two same-name concepts, COL then NorTaxa:
-    # each Down moves one row, also past a same-name concept.
-    assert highlighted["sporely_taxon_id"] == (COL_CONCEPT, NORTAXA_CONCEPT)[rows_down - 1]
-    _enter(popup)
-
-    assert accepted == [] and dialog.isVisible()   # Enter picked; it did not save
-    data = dialog.get_data()
-    assert data["sporely_taxon_id"] == highlighted["sporely_taxon_id"]
-    assert data["taxon_identity_proof"] == PROOF_TAXONOMY_V2_ARTIFACT
-    assert (data["genus"], data["species"]) == ("Flammulina", "velutipes")
-    assert dialog.scientific_name_input.text() == "Flammulina velutipes"
-
-    dialog.hide()
-    reopened = editor(**data)
-    assert reopened.get_data()["sporely_taxon_id"] == highlighted["sporely_taxon_id"]
-    assert reopened.scientific_name_input.text() == "Flammulina velutipes"
-
-
-def _force_refresh(dialog, picker):
-    controller = dialog._taxon_controller
-    if picker == "species":
-        controller._last_species_query = None
-        controller._last_species_signature = ()
-        controller.refresh_species_suggestions()
-    else:
-        controller.refresh_scientific_suggestions()
-
-
-@pytest.mark.parametrize("picker", ["species", "scientific"])
-def test_a_refresh_between_highlight_and_enter_keeps_the_highlighted_concept(editor, picker):
-    dialog = editor(**_observation(**_NO_AI))
-    dialog.show()
-    field, completer, text = _pickers(dialog)[picker]
-    _type_into(field, text)
-    popup = completer.popup()
-    highlighted = _down(popup, 2)
-    from PySide6.QtTest import QTest
-
-    _force_refresh(dialog, picker)           # the model is rebuilt under the highlight
-    QTest.qWait(50)
-    assert popup.currentIndex().data(ROLE_TAXON_CHOICE)["sporely_taxon_id"] == highlighted["sporely_taxon_id"]
-    _enter(popup)
-    assert dialog.get_data()["sporely_taxon_id"] == highlighted["sporely_taxon_id"]
-
-
-@pytest.mark.parametrize("picker", ["species", "scientific"])
-def test_a_refresh_that_drops_the_highlighted_concept_selects_nothing(editor, picker):
-    """Evidence arriving mid-highlight may settle the name to the other
-    concept. Enter must then bind nothing, not the row now in its place."""
-    dialog = editor(**_observation(**_NO_AI))
-    dialog.show()
-    field, completer, text = _pickers(dialog)[picker]
-    _type_into(field, text)
-    popup = completer.popup()
-    highlighted = _down(popup, 1)
-    other = NORTAXA_CONCEPT if highlighted["sporely_taxon_id"] == COL_CONCEPT else COL_CONCEPT
-    dialog._taxon_controller.set_evidence_taxon_ids({other})
-    _force_refresh(dialog, picker)
-    _enter(popup)
-    data = dialog.get_data()
-    assert data["sporely_taxon_id"] is None
-    assert dialog.isVisible()
 
 
 def test_mouse_click_after_a_keyboard_highlight_binds_the_clicked_row(editor):
@@ -875,52 +734,6 @@ def test_mouse_click_after_a_keyboard_highlight_binds_the_clicked_row(editor):
     QTest.mouseClick(popup.viewport(), Qt.LeftButton, pos=popup.visualRect(target).center())
     QTest.qWait(80)
     assert dialog.get_data()["sporely_taxon_id"] == clicked
-
-
-@pytest.mark.parametrize("which, text", [("genus", "Flamm"), ("vernacular", "vinter")])
-def test_enter_in_the_genus_and_common_name_popups_never_saves(editor, which, text):
-    dialog = editor(**_observation(genus="", species="", **_NO_AI))
-    dialog.show()
-    accepted = []
-    dialog.accepted.connect(lambda: accepted.append(True))
-    controller = dialog._taxon_controller
-    field, completer = {
-        "genus": (dialog.genus_input, controller.genus_completer),
-        "vernacular": (dialog.vernacular_input, controller.vernacular_completer),
-    }[which]
-    _type_into(field, text)
-    popup = completer.popup()
-    assert popup.isVisible()
-    from PySide6.QtCore import Qt
-    from PySide6.QtTest import QTest
-
-    QTest.keyClick(popup, Qt.Key_Down)
-    QTest.qWait(80)
-    picked = popup.currentIndex().data(completer.completionRole())
-    _enter(popup)
-    assert accepted == [] and dialog.isVisible()
-    assert field.text() == picked
-
-
-@pytest.mark.parametrize("picker", ["species", "scientific"])
-def test_hyphenated_epithets_are_concepts_in_both_pickers(editor, picker):
-    dialog = editor(**_observation(genus="", species="", **_NO_AI))
-    dialog.show()
-    field, completer, _text = _pickers(dialog)[picker]
-    if picker == "species":
-        dialog.genus_input.setText("Cortinarius")
-        text = "albo-och"
-    else:
-        text = "Cortinarius albo-och"
-    _type_into(field, text)
-    popup = completer.popup()
-    highlighted = _down(popup, 1)
-    assert highlighted["scientific_name"] == "Cortinarius albo-ochraceus"
-    _enter(popup)
-    data = dialog.get_data()
-    assert data["sporely_taxon_id"] == highlighted["sporely_taxon_id"]
-    assert (data["genus"], data["species"], data["scientific_name_snapshot"]) == (
-        "Cortinarius", "albo-ochraceus", "Cortinarius albo-ochraceus")
 
 
 @pytest.mark.parametrize("genus", ["Russula", "Cortinarius"])
@@ -965,58 +778,6 @@ def test_link_writes_the_taxonomy_spelling_into_every_field(editor):
     reopened = editor(**data)
     assert reopened.get_data()["sporely_taxon_id"] == NORTAXA_CONCEPT
     assert reopened.scientific_name_input.text() == "Flammulina velutipes"
-
-
-class _MacPopupFocusReturn:
-    """Reproduce macOS: a completer popup that hides hands focus back to its
-    field (``PopupFocusReason``) before QCompleter completes the captured
-    row. Offscreen Qt sends no such focus event."""
-
-    def __init__(self, popup, field):
-        from PySide6.QtCore import QObject
-
-        outer = self
-
-        class _Filter(QObject):
-            def eventFilter(self, obj, event):
-                from PySide6.QtCore import QEvent, Qt
-                from PySide6.QtGui import QFocusEvent
-                from PySide6.QtWidgets import QApplication
-
-                if event.type() == QEvent.Hide:
-                    outer.sent += 1
-                    QApplication.sendEvent(field, QFocusEvent(QEvent.FocusIn, Qt.PopupFocusReason))
-                return False
-
-        self.sent = 0
-        self._filter = _Filter()
-        popup.installEventFilter(self._filter)
-
-
-@pytest.mark.parametrize("picker, genus, text, rows_down", [
-    # The refresh would narrow the list under the captured row index, which
-    # then names a different taxon (or none).
-    ("scientific", "", "Cortinarius a", 3),
-    ("species", "Cortinarius", "a", 3),
-    # The refresh would leave one row equal to the text and clear the list.
-    ("species", "Cortinarius", "albo-och", 1),
-])
-def test_focus_returning_before_completion_keeps_the_pick(editor, picker, genus, text, rows_down):
-    dialog = editor(**_observation(genus="", species="", **_NO_AI))
-    dialog.show()
-    if genus:
-        dialog.genus_input.setText(genus)
-    field, completer, _text = _pickers(dialog)[picker]
-    _type_into(field, text)
-    popup = completer.popup()
-    mac = _MacPopupFocusReturn(popup, field)
-    highlighted = _down(popup, rows_down)
-    _enter(popup)
-    assert mac.sent >= 1
-    data = dialog.get_data()
-    assert data["sporely_taxon_id"] == highlighted["sporely_taxon_id"]
-    assert data["scientific_name_snapshot"] == highlighted["scientific_name"]
-    assert not popup.isVisible()              # a pick does not reopen the list
 
 
 def test_focus_returning_while_typing_keeps_the_popup_open(editor):

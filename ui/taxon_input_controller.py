@@ -1462,6 +1462,50 @@ class TaxonInputController(QObject):
         self._notify_taxon_changed()
         return True
 
+    # ------------------------------------------------------------------
+    # Unified taxon picker (ui/taxon_picker.py)
+    # ------------------------------------------------------------------
+    #
+    # The observation editor shows one search field instead of the genus,
+    # species, vernacular and scientific inputs; those stay as this
+    # controller's backing state. A picked concept goes through the same
+    # commit as a Scientific pick. A kept name and a clear replace the
+    # identification explicitly; neither binds anything.
+
+    def commit_picked_concept(self, suggestion: dict) -> bool:
+        """Commit a concept the user picked in the unified picker."""
+        return self._commit_scientific_suggestion(suggestion)
+
+    def set_unlinked_name(self, name: str) -> None:
+        """Replace the identification with a name kept without a taxon.
+
+        The name is stored whole in Species with Genus empty, as the web
+        client stores a manual name: no genus is split off and no concept
+        is assumed.
+        """
+        self._replace_identification(" ".join(str(name or "").split()))
+
+    def clear_identification(self) -> None:
+        """Remove the identification: names, snapshot and identity."""
+        self._replace_identification("")
+
+    def _replace_identification(self, species: str) -> None:
+        with self._suspended():
+            self._set_text(self.genus_input, "")
+            self._set_text(self.species_input, species)
+            self._set_text(self.scientific_name_input, "")
+            self._set_text(self.vernacular_input, "")
+        self._display_only_name_match = None
+        self._committed_snapshot = None
+        # The host drops what belonged to the previous identification (the
+        # Red List), whether or not a snapshot had been committed.
+        if self._on_snapshot_invalidated is not None:
+            try:
+                self._on_snapshot_invalidated()
+            except Exception:
+                pass
+        self._notify_taxon_changed()
+
     def _popups(self) -> tuple:
         return tuple(
             completer.popup()

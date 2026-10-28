@@ -118,13 +118,26 @@ OTHER_UI_IDS = {
     "measure.metadata-tags",
     "observations.image-metadata-tags",
     "observations.taxon-link-offer",
-    "observations.species-picker-ambiguous",
-    "observations.species-picker-settled",
+    "observations.taxon-picker-search",
+    "observations.taxon-picker-card",
+    "observations.taxon-picker-free-name",
+    "observations.taxon-picker-search-dark",
     "raw-processing.methods",
     "portable-import.all-selected",
     "portable-import.subset",
 }
-ALL_IDS = REFERENCE_IDS | CONFLICT_IDS | OTHER_UI_IDS
+TAXON_PICKER_IDS = {
+    "taxon-picker.search-genus",
+    "taxon-picker.search-epithet-switched",
+    "taxon-picker.search-evidence",
+    "taxon-picker.search-group-show-more",
+    "taxon-picker.search-family-split",
+    "taxon-picker.card",
+    "taxon-picker.card-states",
+    "taxon-picker.search-genus-dark",
+    "taxon-picker.card-states-dark",
+}
+ALL_IDS = REFERENCE_IDS | CONFLICT_IDS | OTHER_UI_IDS | TAXON_PICKER_IDS
 
 
 def _run(*arguments: str, timeout: int = 120) -> subprocess.CompletedProcess[str]:
@@ -147,7 +160,7 @@ def test_registry_has_unique_semantic_ids_and_expected_groups() -> None:
     assert len(ids) == len(set(ids))
     assert set(registry.groups()) == {
         "conflict", "measure", "observations", "portable-import",
-        "raw-processing", "reference-library",
+        "raw-processing", "reference-library", "taxon-picker",
     }
     assert {scenario.id for scenario in registry.all()} == ALL_IDS
 
