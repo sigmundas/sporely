@@ -101,10 +101,9 @@ from database.taxon_suggestions import (
     ai_prediction_external_id,
     evidence_concept_ids,
     observation_identity_offer,
-    resolve_provider_concept,
 )
 from .taxon_input_controller import TaxonInputController
-from .taxon_picker import AiSuggestion, TaxonPicker
+from .taxon_picker import TaxonPicker
 from database.reverse_location_lookup import (
     LocationLookupResult,
     lookup_location_suggestions,
@@ -15630,7 +15629,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.taxon_picker.concept_picked.connect(self._on_taxon_picker_concept)
         self.taxon_picker.free_text_committed.connect(self._on_taxon_picker_free_name)
         self.taxon_picker.cleared.connect(self._on_taxon_picker_cleared)
-        self.taxon_picker.set_ai_suggestion_handler(self._on_taxon_picker_ai_suggestion)
         taxon_row.addWidget(self.taxon_picker, 1)
         # The language of common names, for the search and the stored name.
         self.vernacular_language_btn = QToolButton()
@@ -16561,7 +16559,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 if source == self._ai_source_key():
                     self._ai_selected_taxon = None
                 self._set_ai_copy_enabled(False, source=source)
-        self._refresh_taxon_picker_ai()
 
     @staticmethod
     def _ai_prediction_score(pred: dict) -> float:
@@ -20564,45 +20561,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if identity.is_proven_sporely and identity.sporely_taxon_id is not None:
             return int(identity.sporely_taxon_id)
         return None
-
-    def _on_taxon_picker_ai_suggestion(self, suggestion: AiSuggestion) -> None:
-        """An Artsorakel chip whose identifier resolved to an installed
-        concept: applied exactly as Copy to taxonomy applies that prediction,
-        so the provider identifier and the AI selection are kept."""
-        prediction = suggestion.key if isinstance(suggestion.key, dict) else None
-        if prediction is None:
-            return
-        self._on_ai_copy_to_taxonomy("arts", prediction=prediction)
-
-    def _refresh_taxon_picker_ai(self) -> None:
-        """Offer the current image's top Artsorakel predictions as chips."""
-        picker = getattr(self, "taxon_picker", None)
-        if picker is None:
-            return
-        index = self._current_ai_index()
-        predictions = self._ai_predictions_by_index.get(index, []) if index is not None else []
-        lookup = self._ensure_taxon_lookup()
-        suggestions = []
-        for pred in predictions or []:
-            if not isinstance(pred, dict):
-                continue
-            taxon = _normalize_ai_prediction_taxon(pred, source="arts")
-            genus, species = self._extract_genus_species_from_taxon(taxon)
-            name = " ".join(part for part in (genus, species) if part)
-            if not name:
-                continue
-            concept = resolve_provider_concept(lookup, ai_prediction_external_id(pred, taxon), name)
-            score = self._ai_prediction_score(pred)
-            suggestions.append(AiSuggestion(
-                self._preferred_vernacular_from_taxon(taxon) or name,
-                name,
-                score / 100.0 if score > 1.0 else score,
-                getattr(concept, "sporely_taxon_id", None) if concept is not None else None,
-                key=pred,
-            ))
-            if len(suggestions) == 3:
-                break
-        picker.set_ai_suggestions(suggestions)
 
     def _schedule_taxon_picker_sync(self, *_args) -> None:
         timer = getattr(self, "_taxon_picker_sync_timer", None)

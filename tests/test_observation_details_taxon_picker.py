@@ -332,35 +332,13 @@ _UNKNOWN = {"probability": 0.05, "scientificName": "Gymnopus", "name": "Gymnopus
             "taxonId": "", "id": ""}
 
 
-def test_artsorakel_chips_offer_without_applying(editor):
+def test_artsorakel_predictions_offer_no_chips_in_the_picker(editor):
     dialog = editor()
     before = _taxon(dialog.get_data())
     _artsorakel(dialog, [_VINTERSOPP, _UNKNOWN])
     picker = dialog.taxon_picker
-    assert [b.property("resolved") for b in picker.ai_buttons] == [True, False]
+    assert picker.ai_buttons == [] and picker.ai_strip.isHidden()
     assert _taxon(dialog.get_data()) == before
-
-
-def test_a_resolved_artsorakel_chip_applies_like_copy_to_taxonomy(editor):
-    dialog = editor(uncertain=1)
-    _artsorakel(dialog, [_VINTERSOPP])
-    dialog.taxon_picker.ai_buttons[0].click()
-    QTest.qWait(20)
-    data = dialog.get_data()
-    assert data["sporely_taxon_id"] == NORTAXA
-    assert data["taxon_identity_proof"] == PROOF_EXTERNAL_ID_RESOLUTION
-    assert data["taxon_identity_raw_external_id"] == "NBIC:54701"
-    assert data["ai_selected_taxon_id"] == "NBIC:54701"
-    assert data["uncertain"]  # no chip changes Usikker
-    assert _shown(dialog) == ("Flammulina velutipes", NORTAXA)
-
-
-def test_an_unresolved_chip_only_searches(editor):
-    dialog = editor()
-    _artsorakel(dialog, [_UNKNOWN])
-    dialog.taxon_picker.ai_buttons[0].click()
-    assert dialog.taxon_picker.is_popup_visible()
-    assert dialog.get_data()["sporely_taxon_id"] is None
 
 
 def test_unidentified_disables_the_picker(editor):
@@ -607,18 +585,18 @@ def test_the_main_gallery_edit_photo_opens_prepare_images():
 # --- final review fixes ------------------------------------------------------
 
 
-def test_an_artsorakel_chip_for_the_same_concept_keeps_the_publishing_taxon_id(editor, tmp_path, monkeypatch):
+def test_copying_artsorakel_for_the_same_concept_keeps_the_publishing_taxon_id(editor, tmp_path, monkeypatch):
     db, path = _fresh_db(tmp_path, monkeypatch)
     obs_id = _stored_bound(editor, db, path)  # NorTaxa, the concept NBIC:54701 resolves to
     dialog = _reopen(editor, db, obs_id)
     _artsorakel(dialog, [_VINTERSOPP])
-    dialog.taxon_picker.ai_buttons[0].click()
+    dialog.ai_copy_buttons["arts"].click()
     assert dialog.get_data()["taxon_identity_proof"] == PROOF_EXTERNAL_ID_RESOLUTION
     _save(db, obs_id, dialog)
     assert _column(path, obs_id, "sporely_taxon_id", "inaturalist_taxon_id") == (NORTAXA, 48701)
 
 
-def test_an_artsorakel_chip_for_another_concept_drops_the_publishing_taxon_id(editor, tmp_path, monkeypatch):
+def test_copying_artsorakel_for_another_concept_drops_the_publishing_taxon_id(editor, tmp_path, monkeypatch):
     db, path = _fresh_db(tmp_path, monkeypatch)
     obs_id = _stored_bound(editor, db, path)
     switched = _reopen(editor, db, obs_id)
@@ -627,7 +605,7 @@ def test_an_artsorakel_chip_for_another_concept_drops_the_publishing_taxon_id(ed
     db.update_observation(obs_id, inaturalist_taxon_id=48701)
     dialog = _reopen(editor, db, obs_id)
     _artsorakel(dialog, [_VINTERSOPP])
-    dialog.taxon_picker.ai_buttons[0].click()
+    dialog.ai_copy_buttons["arts"].click()
     _save(db, obs_id, dialog)
     assert _column(path, obs_id, "sporely_taxon_id", "inaturalist_taxon_id", "inaturalist_id") == (
         NORTAXA, None, 777)
