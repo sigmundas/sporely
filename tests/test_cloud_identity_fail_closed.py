@@ -223,6 +223,35 @@ def test_cloud_only_identity_change_is_adopted_and_never_reverted_by_a_later_pus
         "the next push must not re-assert 83668 either"
 
 
+def test_a_cloud_change_the_desktop_re_derives_is_adopted_proven_and_not_withheld(monkeypatch, tmp_path):
+    """Web re-identified 83668 → 99 from NBIC:57217, and the installed
+    artifact resolves that tuple to 99: the adoption is proven, and the push
+    carries the cloud's own concept (its RPC then finds it in place)."""
+    import database.taxon_lookup as taxon_lookup
+    from database.taxon_lookup import InstalledTaxonConcept
+    from utils import vernacular_utils
+    from utils.cloud_sync_impl import identity_state
+
+    concept = InstalledTaxonConcept(99, "tax-test", "Pholiotina rugosa", "species")
+    monkeypatch.setattr(identity_state, "_installed_taxon_concept", lambda sid: concept if int(sid) == 99 else None)
+    monkeypatch.setattr(taxon_lookup, "resolve_installed_external_identity", lambda *a, **k: concept)
+    monkeypatch.setattr(vernacular_utils, "resolve_vernacular_db_path", lambda: "taxonomy.sqlite3")
+    db_path, client, live, store = _push_env(monkeypatch, tmp_path, baseline_selected=83668, remote_selected=99)
+    live.update({
+        "taxon_identity_source_system": "nortaxa", "taxon_identity_namespace": "nortaxa_taxon_id",
+        "taxon_identity_external_id": "57217", "taxon_identity_raw_external_id": "NBIC:57217",
+    })
+    client_remote = getattr(client, "remote_obs", None)
+    if isinstance(client_remote, dict):
+        client_remote.update(live)
+
+    _edit_and_push(db_path, client, live, "local edit")
+    local = _local_identity(db_path)
+    assert local.sporely_taxon_id == 99 and local.identity_proof == "external_id_resolution"
+    pushed = TaxonIdentity.from_row(client.push_observation_calls[-1])
+    assert pushed.sporely_taxon_id == 99, "the cloud's own concept, not the stale 83668"
+
+
 def test_no_baseline_disagreement_stays_under_review_and_blocks_the_next_push(monkeypatch, tmp_path):
     db_path, client, live, store = _push_env(
         monkeypatch, tmp_path, baseline_selected=None, remote_selected=99, with_snapshot=False,

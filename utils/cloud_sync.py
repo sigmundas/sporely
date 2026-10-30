@@ -10056,9 +10056,15 @@ def _push_all_once(
                                        'taxon_rank_snapshot', *_TAXON_IDENTITY_COLUMNS):
                             push_payload[column] = adopted.get(column)
                         if TaxonIdentity.from_row(push_payload).is_proven_sporely:
-                            # Cannot happen (adoption never yields proof); never
-                            # let a remote-only change become an RPC write.
-                            _withhold_identity_from_push(push_payload)
+                            # Adoption yields proof only when the cloud's own
+                            # provider tuple re-derives the cloud's concept
+                            # (`_verified_cloud_selection`); the push then finds
+                            # that selection in place and writes nothing. Any
+                            # other proven adoption must never become an RPC
+                            # write.
+                            claim = _remote_identity_claim(remote)
+                            if claim is None or _local_identity_sync_key(push_payload) != claim.key:
+                                _withhold_identity_from_push(push_payload)
 
                     # Preflight: mirror pull_all's review-needed contract. If
                     # metadata, images, or measurements diverged on both

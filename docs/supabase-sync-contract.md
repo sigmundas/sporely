@@ -1111,10 +1111,18 @@ client) and maps it to ONE coherent local identity
 | identity columns absent from the row | nothing — local identity untouched |
 
 The provider tuple never enters the identity sync key: a selection compares as
-`sporely:<id>` with or without it. When the local row already holds the same
-concept as `cloud_selected_unverified` and the cloud row now proves it, the
-pull raises the local proof (a local-only write; no push follows, because the
-key is unchanged). Any other local identity for the same concept is left as is.
+`sporely:<id>` with or without it. The mapping runs where the identity is
+applied: creating a local row from the cloud, a pull without a stored
+snapshot, the owner's "use cloud" choice, and a three-way cloud-only identity
+change (pull or push-side adoption). There, a local row holding the same
+concept as `cloud_selected_unverified` is raised in place when the cloud row
+proves it (a local-only write). A row whose cloud identity has not changed
+since its baseline is not re-examined: the unchanged-observation fast path
+stays a no-op, so such rows keep `cloud_selected_unverified` until the cloud
+identity changes or the owner links them (Link / a picker selection). A
+proven adoption of the cloud's own concept is pushed unchanged; the RPC finds
+that selection in place and writes nothing. Any other local identity for the
+same concept is left as is.
 
 Rules common to every write path:
 

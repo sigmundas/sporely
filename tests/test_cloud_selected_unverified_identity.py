@@ -140,6 +140,22 @@ def test_push_never_reasserts_a_cloud_selected_identity(remote_selected):
     assert recorder.rpc_calls == [], "skip, never assert and never clear"
 
 
+def test_push_writes_nothing_for_a_proven_identity_the_cloud_already_holds():
+    """A pulled selection re-derived from its own provider tuple is proven,
+    but the cloud already holds that concept: the push writes nothing."""
+    recorder = _RpcRecorder()
+    proven = TaxonIdentity.unresolved_external(
+        source_system="nortaxa", namespace="nortaxa_taxon_id", external_id="57217",
+        raw_external_id="NBIC:57217", scientific_name="Conocybe rugosa", rank="species",
+    ).resolved_to(83668, provenance="taxonomy_v2:tax-test:taxon_external_id_text_min")
+    assert proven.is_proven_sporely
+    cloud_sync.SporelyCloudClient._sync_observation_selected_taxon(
+        recorder, "14", {"id": 917, **proven.to_row()},
+        remote_obs={"selected_sporely_taxon_id": 83668},
+    )
+    assert recorder.rpc_calls == []
+
+
 # ── Picker upgrade ───────────────────────────────────────────────────────────
 
 
