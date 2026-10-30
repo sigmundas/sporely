@@ -501,6 +501,7 @@ from utils.cloud_sync_impl.identity_state import (  # noqa: F401  (facade re-exp
     _apply_remote_identity_to_local,
     _installed_taxon_concept,
     _local_identity_columns_for_remote_claim,
+    _verified_cloud_selection,
 )
 from utils.cloud_sync_impl.location_precision import (  # noqa: F401  (facade re-export)
     _LOCATION_PRECISION_REPAIR_DONE_KEY,

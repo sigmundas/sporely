@@ -13,6 +13,7 @@ a cloud ``external_unresolved`` tuple, and never stores a bare integer.
 from __future__ import annotations
 
 import sqlite3
+from types import SimpleNamespace
 
 import pytest
 
@@ -21,6 +22,7 @@ from database.taxon_lookup import InstalledTaxonConcept, installed_taxon_concept
 from utils import cloud_sync
 from utils.taxon_identity import (
     PROOF_CLOUD_SELECTED_UNVERIFIED,
+    PROOF_EXTERNAL_ID_RESOLUTION,
     STATE_EXTERNAL_UNRESOLVED,
     STATE_SPORELY,
     TaxonIdentity,
@@ -347,3 +349,98 @@ def test_installed_concept_refuses_what_it_cannot_confirm(tmp_path, kwargs, taxo
 def test_installed_concept_with_no_database_is_none(tmp_path):
     assert installed_taxon_concept(None, 83668) is None
     assert installed_taxon_concept(tmp_path / "missing.sqlite3", 83668) is None
+
+
+# ── A cloud selection the desktop can re-derive from its provider tuple ─────
+#
+# A web/Android client that resolved Artsorakel's NBIC:57217 writes the
+# selected Sporely ID together with the provider tuple it came from. When the
+# installed artifact resolves that tuple to the same concept, the desktop has
+# proven the identity itself (owner's observation 1044, cloud 1513).
+
+
+def _remote_resolved(**overrides) -> dict:
+    return _remote_917(**{
+        "taxon_identity_source_system": "nortaxa",
+        "taxon_identity_namespace": "nortaxa_taxon_id",
+        "taxon_identity_external_id": "57217",
+        "taxon_identity_raw_external_id": "NBIC:57217",
+        **overrides,
+    })
+
+
+@pytest.fixture
+def resolver(monkeypatch):
+    """The installed artifact's authoritative resolver, recording its calls."""
+    import database.taxon_lookup as taxon_lookup
+    from utils import vernacular_utils
+
+    calls = []
+    answer = {"taxon_id": 83668}
+
+    def resolve(db_path, *, source_system, namespace, external_id):
+        calls.append((source_system, namespace, external_id))
+        taxon_id = answer["taxon_id"]
+        return (
+            InstalledTaxonConcept(taxon_id, RELEASE, "Conocybe rugosa", "species")
+            if taxon_id is not None else None
+        )
+
+    monkeypatch.setattr(taxon_lookup, "resolve_installed_external_identity", resolve)
+    monkeypatch.setattr(vernacular_utils, "resolve_vernacular_db_path", lambda: "taxonomy.sqlite3")
+    return SimpleNamespace(calls=calls, answer=answer)
+
+
+def test_a_cloud_selection_its_own_tuple_resolves_to_is_proven(real_db, resolver):
+    local_id = cloud_sync._create_local_from_remote(_remote_resolved())
+    identity = _identity(local_id)
+    assert identity.is_proven_sporely
+    assert identity.sporely_taxon_id == 83668
+    assert identity.identity_proof == PROOF_EXTERNAL_ID_RESOLUTION
+    assert (identity.source_system, identity.namespace, identity.external_id, identity.raw_external_id) == (
+        "nortaxa", "nortaxa_taxon_id", "57217", "NBIC:57217")
+    assert resolver.calls == [("nortaxa", "nortaxa_taxon_id", "57217")]
+
+
+@pytest.mark.parametrize("resolved_to", [None, 98530])
+def test_a_tuple_that_does_not_resolve_to_the_selection_stays_unverified(real_db, resolver, resolved_to):
+    resolver.answer["taxon_id"] = resolved_to
+    local_id = cloud_sync._create_local_from_remote(_remote_resolved())
+    identity = _identity(local_id)
+    assert identity.sporely_taxon_id == 83668
+    assert identity.identity_proof == PROOF_CLOUD_SELECTED_UNVERIFIED
+
+
+def test_a_sporely_namespace_tuple_is_not_independent_evidence(real_db, resolver):
+    local_id = cloud_sync._create_local_from_remote(_remote_resolved(
+        taxon_identity_source_system="sporely", taxon_identity_namespace="sporely_taxon_id",
+        taxon_identity_external_id="83668", taxon_identity_raw_external_id=None,
+    ))
+    assert _identity(local_id).identity_proof == PROOF_CLOUD_SELECTED_UNVERIFIED
+    assert resolver.calls == []
+
+
+def test_the_provider_tuple_never_changes_the_identity_sync_key():
+    from utils.cloud_sync_impl.reconciliation.identity import _remote_identity_claim
+
+    assert _remote_identity_claim(_remote_resolved()).key == _remote_identity_claim(_remote_917()).key
+
+
+def test_an_unverified_local_selection_is_raised_when_the_cloud_proves_it(real_db, resolver):
+    local_id = cloud_sync._create_local_from_remote(_remote_917())
+    assert _identity(local_id).identity_proof == PROOF_CLOUD_SELECTED_UNVERIFIED
+    cloud_sync._apply_remote_observation_fields(local_id, _remote_resolved())
+    identity = _identity(local_id)
+    assert identity.identity_proof == PROOF_EXTERNAL_ID_RESOLUTION
+    assert identity.sporely_taxon_id == 83668
+
+
+def test_a_picker_proven_local_identity_is_not_replaced_by_the_cloud_proof(real_db, resolver):
+    local_id = models.ObservationDB.create_observation(
+        date="2026-09-15", genus="Conocybe", species="rugosa",
+        scientific_name_snapshot="Conocybe rugosa", taxon_rank_snapshot="species",
+        **TaxonIdentity.from_taxonomy_v2_artifact(83668, scientific_name="Conocybe rugosa").to_row(),
+    )
+    cloud_sync._apply_remote_observation_fields(local_id, _remote_resolved())
+    assert _identity(local_id).identity_proof == "taxonomy_v2_artifact"
+    assert resolver.calls == []

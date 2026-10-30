@@ -190,9 +190,9 @@ Plain English comes first; technical terms are in parentheses.
     concept binds once the cloud release contains it; the refusal itself
     writes nothing.
 
-    **A cloud identity received on pull is kept, never proven.** The server
-    guarantees only that `selected_sporely_taxon_id` was in the active release
-    when it was written; it records no producer and no release, and
+    **A cloud identity received on pull is kept, never proven by itself.** The
+    server guarantees only that `selected_sporely_taxon_id` was in the active
+    release when it was written; it records no producer and no release, and
     pre-Stage-2 desktops asserted unproven integers through the same RPC. A
     desktop therefore stores a pulled Sporely ID as `sporely_v2` with proof
     `cloud_selected_unverified` — only when its installed taxonomy artifact
@@ -202,6 +202,14 @@ Plain English comes first; technical terms are in parentheses.
     preserved across saves, but never re-asserted through the RPC and never
     used by identity-gated lookups (Red List, reference attachment). An
     explicit picker selection replaces it with `taxonomy_v2_artifact`.
+    **Exception — the desktop re-derives it.** When the cloud row also records
+    the non-Sporely provider tuple that produced the selection (a web/Android
+    client resolved `NBIC:57217` and wrote `nortaxa/nortaxa_taxon_id/57217`
+    beside the selected ID), and the installed artifact's authoritative
+    resolver maps that tuple to the same concept, the desktop stores it as
+    `external_id_resolution` with that tuple — the identity a desktop copy of
+    the identifier produces. A tuple that resolves to nothing or to another
+    concept, or a `sporely`-namespace tuple, leaves `cloud_selected_unverified`.
 
     **The persistence API accepts one complete typed identity transition.**
     The identity spans several columns but is a single value, and treating
@@ -1095,11 +1103,18 @@ client) and maps it to ONE coherent local identity
 
 | Cloud row | Local identity written |
 |---|---|
-| selected Sporely ID present in the installed taxonomy-v2 artifact | `sporely_v2` / `cloud_selected_unverified`, artifact canonical name and rank as snapshot, provenance naming the cloud state and the local release |
+| selected Sporely ID present in the installed taxonomy-v2 artifact, with a non-Sporely provider tuple the artifact's authoritative resolver maps to that same concept | `sporely_v2` / `external_id_resolution` with that tuple, artifact canonical name and rank as snapshot, provenance naming the resolving release and the cloud tuple (`_verified_cloud_selection`) |
+| selected Sporely ID present in the installed taxonomy-v2 artifact, otherwise | `sporely_v2` / `cloud_selected_unverified`, artifact canonical name and rank as snapshot, provenance naming the cloud state and the local release |
 | selected Sporely ID absent from the installed artifact (release mismatch, pre-v2 install) | `external_unresolved` `(sporely, sporely_taxon_id, <id>)` — preserved, never a bound integer |
 | `external_unresolved` with a complete tuple | the same tuple as `external_unresolved` |
 | no identity | no identity |
 | identity columns absent from the row | nothing — local identity untouched |
+
+The provider tuple never enters the identity sync key: a selection compares as
+`sporely:<id>` with or without it. When the local row already holds the same
+concept as `cloud_selected_unverified` and the cloud row now proves it, the
+pull raises the local proof (a local-only write; no push follows, because the
+key is unchanged). Any other local identity for the same concept is left as is.
 
 Rules common to every write path:
 
