@@ -24,6 +24,7 @@ import pytest
 
 from database.taxon_lookup import InstalledTaxonConcept, TaxonLookupService
 from database.taxon_suggestions import (
+    KIND_NAME_CONFIRMED,
     KIND_NAME_ONLY,
     KIND_VERIFIED,
     ai_prediction_external_id,
@@ -44,6 +45,9 @@ from utils.taxon_identity import (
 
 NORTAXA_CONCEPT = 625621
 COL_CONCEPT = 98288
+#: Flammulina fennae: one COL concept carrying NorTaxa 54697 only through the
+#: release's automatic exact-name match, so NBIC:54697 does not resolve.
+FENNAE_CONCEPT = 98271
 
 
 # Recorded shapes (owner's local database, 2026-10-25), trimmed of URLs.
@@ -234,6 +238,31 @@ def test_no_offer_without_agreeing_identifier_evidence(lookup, row, genus, speci
     assert observation_identity_offer(lookup, row, genus=genus, species=species) is None
 
 
+def _fennae(**fields) -> dict:
+    return _observation(**{"species": "fennae", "ai_selected_taxon_id": "NBIC:54697",
+                           "ai_selected_scientific_name": "Flammulina fennae", **fields})
+
+
+def test_a_name_matched_identifier_is_offered_for_confirmation(lookup):
+    offer = observation_identity_offer(lookup, _fennae(), genus="Flammulina", species="fennae")
+    assert (offer.kind, offer.sporely_taxon_id, offer.raw_external_id) == (
+        KIND_NAME_CONFIRMED, FENNAE_CONCEPT, "NBIC:54697")
+
+
+def test_a_copied_unresolved_name_matched_tuple_is_offered_for_confirmation(lookup):
+    row = _fennae(ai_selected_taxon_id=None, taxon_identity_state=STATE_EXTERNAL_UNRESOLVED,
+                  taxon_identity_source_system="nortaxa", taxon_identity_namespace="nortaxa_taxon_id",
+                  taxon_identity_external_id="54697", taxon_identity_raw_external_id="NBIC:54697")
+    offer = observation_identity_offer(lookup, row, genus="Flammulina", species="fennae")
+    assert (offer.kind, offer.sporely_taxon_id) == (KIND_NAME_CONFIRMED, FENNAE_CONCEPT)
+
+
+@pytest.mark.parametrize("species", ["velutipes", "elastica"])
+def test_a_name_matched_identifier_offers_nothing_for_another_name(lookup, species):
+    offer = observation_identity_offer(lookup, _fennae(), genus="Flammulina", species=species)
+    assert offer is None or offer.kind != KIND_NAME_CONFIRMED
+
+
 def test_conflicting_identifiers_offer_nothing():
     concepts = {"1": 111, "2": 222}
 
@@ -411,6 +440,36 @@ def test_observation_editor_offers_the_concept_and_binds_it_only_on_acceptance(
         assert data["sporely_taxon_id"] == NORTAXA_CONCEPT
         assert data["taxon_identity_proof"] == PROOF_EXTERNAL_ID_RESOLUTION
         assert data["taxon_identity_raw_external_id"] == "NBIC:54701"
+        assert dialog.identity_offer_row.isHidden()
+    finally:
+        dialog._cleanup_dialog_threads()
+        dialog.deleteLater()
+
+
+def test_observation_editor_links_a_name_matched_identifier_as_a_pick(
+    monkeypatch, tmp_path, shipped_artifact,
+):
+    from PySide6.QtWidgets import QApplication
+    from tests.test_observation_details_ai_copy_and_vernacular_autofill import _build_dialog
+
+    qapp = QApplication.instance() or QApplication([])
+    dialog = _build_dialog(
+        monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=shipped_artifact,
+        draft_data=_fennae(),
+    )
+    try:
+        assert not dialog.identity_offer_row.isHidden()
+        assert dialog.get_data()["sporely_taxon_id"] is None
+
+        dialog.identity_offer_button.click()
+        qapp.processEvents()
+
+        data = dialog.get_data()
+        assert (data["genus"], data["species"]) == ("Flammulina", "fennae")
+        assert data["sporely_taxon_id"] == FENNAE_CONCEPT
+        # The user's confirmation by name, not the provider id, is the proof.
+        assert data["taxon_identity_proof"] == PROOF_TAXONOMY_V2_ARTIFACT
+        assert data["ai_selected_taxon_id"] == "NBIC:54697"
         assert dialog.identity_offer_row.isHidden()
     finally:
         dialog._cleanup_dialog_threads()

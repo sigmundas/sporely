@@ -29,6 +29,10 @@ from utils.taxon_identity import TaxonIdentity
 
 KIND_VERIFIED = "verified"
 KIND_NAME_ONLY = "name_only"
+#: A concept a provider identifier reaches only through the release's
+#: automatic exact-name match: offered for the user to confirm, never bound
+#: as provider evidence.
+KIND_NAME_CONFIRMED = "name_confirmed"
 
 ORIGIN_OBSERVATION = "observation"
 ORIGIN_AI = "ai"
@@ -126,6 +130,55 @@ def resolve_provider_concept(lookup, raw_external_id: str, scientific_name: str 
 
 def _db_path(lookup) -> str | None:
     return getattr(getattr(lookup, "vernacular_db", None), "db_path", None)
+
+
+#: The integer-table note the release compiler writes when it folds a NorTaxa
+#: identifier into a concept by exact scientific-name match.
+_AUTOMATIC_NAME_MATCH_NOTE = "cross_source_automatic_exact"
+
+
+def name_matched_provider_concept(lookup, identity: TaxonIdentity | None, scientific_name: str) -> int | None:
+    """The concept a NorTaxa identifier reaches only by automatic name match.
+
+    The release folds many NorTaxa species into their COL concept by exact
+    scientific-name match and keeps the NorTaxa id in the namespace-lost
+    integer table only, so :func:`resolve_provider_concept` rightly refuses
+    it. This returns that concept when exactly one concept carries the id
+    that way *and* its own name is ``scientific_name``. It is not identity
+    evidence: callers may only offer it for the user to confirm, and binding
+    it is the same as the user picking the concept by name.
+    """
+    if identity is None or not identity.has_external_evidence:
+        return None
+    if (identity.source_system, identity.namespace) != ("nortaxa", "nortaxa_taxon_id"):
+        return None
+    try:
+        external_id = int(_text(identity.external_id))
+    except ValueError:
+        return None
+    name = _text(scientific_name).casefold()
+    db_path = _db_path(lookup)
+    if not name or not db_path:
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return None
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT e.taxon_id, t.canonical_scientific_name "
+            "FROM taxon_external_id_min e JOIN taxon_min t ON t.taxon_id = e.taxon_id "
+            "WHERE e.source_system = 'artsdatabanken' AND e.external_id = ? "
+            "AND e.id_role = 'accepted' AND e.note = ?",
+            (external_id, _AUTOMATIC_NAME_MATCH_NOTE),
+        ).fetchall()
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    if len({int(r[0]) for r in rows}) != 1 or _text(rows[0][1]).casefold() != name:
+        return None
+    return int(rows[0][0])
 
 
 def concept_source_labels(lookup, taxon_ids: Iterable[int]) -> dict[int, str]:
@@ -407,6 +460,11 @@ def observation_identity_offer(
     current ``genus species``. When candidates name different concepts,
     nothing is offered. Returns ``None`` when the observation already has a
     proven identity.
+
+    When no identifier resolves at all, an identifier the release attached
+    to a concept only by automatic name match may still offer that concept
+    (:func:`name_matched_provider_concept`, kind ``KIND_NAME_CONFIRMED``):
+    the user's Link is then the same as picking the concept by name.
     """
     row = dict(observation or {})
     identity = TaxonIdentity.from_row(row)
@@ -450,13 +508,43 @@ def observation_identity_offer(
             candidates.append(suggestion)
 
     offer = _agreeing_concept(candidates, current)
+    if offer is None and not any(c.is_concept for c in candidates):
+        offer = _name_confirmed_offer(lookup, identity, entries, current, genus, species)
     if offer is None:
         return None
     labels = concept_source_labels(lookup, [offer.sporely_taxon_id])
     return replace(offer, source_label=labels.get(offer.sporely_taxon_id, ""))
 
 
+def _name_confirmed_offer(lookup, identity, entries, current, genus, species) -> TaxonSuggestion | None:
+    """The one concept the observation's provider ids reach by automatic name
+    match for the entered name, when no id resolves at all."""
+    found: dict[int, tuple[str, str]] = {}
+    sources = [(ORIGIN_OBSERVATION, identity)] if identity.has_external_evidence else []
+    for entry in entries:
+        raw = _text(entry.get("external_id"))
+        if raw:
+            sources.append((ORIGIN_AI, TaxonIdentity.from_prefixed_external_id(raw)))
+    for origin, provider in sources:
+        taxon_id = name_matched_provider_concept(lookup, provider, current)
+        if taxon_id is not None:
+            found.setdefault(taxon_id, (origin, _text(provider.raw_external_id) or _text(provider.external_id)))
+    if len(found) != 1:
+        return None
+    taxon_id, (origin, raw) = next(iter(found.items()))
+    return TaxonSuggestion(
+        kind=KIND_NAME_CONFIRMED,
+        origin=origin,
+        scientific_name=current,
+        genus=_text(genus),
+        species=_text(species),
+        sporely_taxon_id=taxon_id,
+        raw_external_id=raw,
+    )
+
+
 __all__ = [
+    "KIND_NAME_CONFIRMED",
     "KIND_NAME_ONLY",
     "KIND_VERIFIED",
     "ORIGIN_AI",
@@ -468,6 +556,7 @@ __all__ = [
     "collapse_same_name_by_evidence",
     "concept_source_labels",
     "evidence_concept_ids",
+    "name_matched_provider_concept",
     "observation_identity_offer",
     "reference_default_suggestions",
     "resolve_provider_concept",
