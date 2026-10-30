@@ -189,7 +189,7 @@ Source: former `PLAN.md`.
 - Re-check whether old Phase 7 SQL notes are obsolete after the Supabase baseline reset.
 - Verify whether the earlier AI crop backlog has already been completed before promoting any item.
 
-- Desktop 0.9.29 (2026-10-25): the draft release targets `081a24e` (main). Its generated notes predate #35–#37, so edit them before publishing. Publishing creates the `v0.9.29` tag and the update offer.
+- Desktop 0.9.29 published 2026-10-30: the draft was rebuilt from `main` after PR #49 (taxon picker #47, #48, #49 and the reference/backup fixes #35–#42 included) and published with the CHANGELOG notes; the `v0.9.29` tag points at the PR #49 merge.
 - Housekeeping: merged branches `fix/backup-dynamic-setting-keys`, `fix/backup-cloud-auth-method` and `ci/release-draft-retarget` (local and remote) can be deleted. The `sporely-worktrees/py-taxonomy-audit` worktree holds uncommitted audit outputs (`relationship-pass/author-standards/`, `decision-package-e/`, `v3/NorTaxa-COL-avvik.xlsx` with an Excel lock file); commit or move them before removing it.
 - sporely-landing PR #9 (the public "why COL XR" explainer) is still unmerged. R2 has shipped, so it only needs the owner's go-ahead.
 - Free disk space on the development Mac dropped from 53 GB to 27 GB during 2026-10-25. No leftover backup or build files were found; cause unknown.
