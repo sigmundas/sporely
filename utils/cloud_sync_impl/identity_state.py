@@ -29,14 +29,64 @@ def _installed_taxon_concept(sporely_taxon_id: int):
         return None
 
 
+def _verified_cloud_selection(claim: _RemoteIdentityClaim, concept) -> TaxonIdentity | None:
+    """The cloud selection proven by its own recorded provider tuple, or None.
+
+    When the cloud row records the provider identifier that produced its
+    selected Sporely ID (a web/Android client resolved ``NBIC:57217``, say)
+    and the installed artifact resolves that tuple through its authoritative
+    mapping to the very same concept, the desktop has re-derived the identity
+    itself: it is kept as ``external_id_resolution``, exactly as a desktop
+    copy of that identifier would be. Anything else returns None and the
+    selection stays ``cloud_selected_unverified``.
+    """
+    if not (claim.source_system and claim.namespace and claim.external_id):
+        return None
+    provider = TaxonIdentity.unresolved_external(
+        source_system=claim.source_system,
+        namespace=claim.namespace,
+        external_id=claim.external_id,
+        raw_external_id=claim.raw_external_id,
+        scientific_name=concept.scientific_name,
+        rank=concept.rank,
+    )
+    if not provider.has_external_evidence:
+        return None
+    try:
+        from database.taxon_lookup import resolve_installed_external_identity
+        from utils.vernacular_utils import resolve_vernacular_db_path
+        resolved = resolve_installed_external_identity(
+            resolve_vernacular_db_path(),
+            source_system=provider.source_system,
+            namespace=provider.namespace,
+            external_id=provider.external_id,
+        )
+    except Exception:
+        return None
+    if resolved is None or int(resolved.sporely_taxon_id) != int(claim.sporely_taxon_id):
+        return None
+    proven = provider.resolved_to(
+        claim.sporely_taxon_id,
+        provenance=(
+            f"taxonomy_v2:{resolved.release_id}:"
+            f"{getattr(resolved, 'resolved_through', None) or 'taxon_external_id_text_min'}; "
+            'cloud:observations.taxon_identity_*'
+        ),
+    )
+    return proven if proven.is_proven_sporely else None
+
+
 def _local_identity_columns_for_remote_claim(
     claim: _RemoteIdentityClaim,
     remote: dict,
 ) -> dict:
     """The complete local identity (+ name/rank snapshot) a claim maps to.
 
-    * ``sporely`` present in the installed artifact → ``cloud_selected_unverified``
-      with the artifact's canonical name and rank;
+    * ``sporely`` present in the installed artifact → ``external_id_resolution``
+      when the cloud's recorded provider tuple resolves locally to the same
+      concept (:func:`_verified_cloud_selection`), else
+      ``cloud_selected_unverified``; either way with the artifact's canonical
+      name and rank;
     * ``sporely`` absent locally → preserved as an unresolved Sporely-namespace
       external identity, never a bound integer;
     * ``external`` → the cloud's preserved tuple as ``external_unresolved``;
@@ -46,7 +96,7 @@ def _local_identity_columns_for_remote_claim(
     if claim.kind == 'sporely':
         concept = _installed_taxon_concept(int(claim.sporely_taxon_id))
         if concept is not None:
-            identity = TaxonIdentity.from_cloud_selection(
+            identity = _verified_cloud_selection(claim, concept) or TaxonIdentity.from_cloud_selection(
                 claim.sporely_taxon_id,
                 local_release_id=concept.release_id,
                 scientific_name=concept.scientific_name,
@@ -130,6 +180,13 @@ def _apply_remote_identity_to_local(
     # cloud-derived one for the very same concept.
     local_row = dict(local_before or ObservationDB.get_observation(int(local_id)) or {})
     if _local_identity_sync_key(local_row) == claim.key:
+        # Same concept. Only a cloud-derived, unverified local identity may
+        # still be raised to the proof the cloud's provider tuple now gives.
+        if claim.kind == 'sporely' and TaxonIdentity.from_row(local_row).is_cloud_selected_unverified:
+            columns = _local_identity_columns_for_remote_claim(claim, remote)
+            if TaxonIdentity.from_row(columns).is_proven_sporely:
+                ObservationDB.update_observation(int(local_id), allow_nulls=True, **columns)
+                return IDENTITY_APPLY_APPLIED
         return IDENTITY_APPLY_UNCHANGED
     if fail_closed_on_local_claim and claim.key and _local_identity_is_claim(local_row):
         return IDENTITY_APPLY_CONFLICT

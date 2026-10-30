@@ -108,8 +108,6 @@ def _remote_identity_claim(remote: dict | None) -> _RemoteIdentityClaim | None:
         return None
     state = str(row.get('taxon_identity_state') or '').strip() or None
     selected = _normalize_observation_int_value(row.get('selected_sporely_taxon_id'))
-    if selected is not None and selected > 0:
-        return _RemoteIdentityClaim(kind='sporely', sporely_taxon_id=selected, cloud_state=state)
     tuple_values = tuple(
         str(row.get(column) or '').strip() or None
         for column in (
@@ -119,6 +117,17 @@ def _remote_identity_claim(remote: dict | None) -> _RemoteIdentityClaim | None:
             'taxon_identity_raw_external_id',
         )
     )
+    if selected is not None and selected > 0:
+        # A web/Android client that resolved a provider identifier records
+        # that tuple beside the selected ID. It is kept so the desktop can
+        # re-resolve it; it never takes part in the claim's sync key.
+        if all(tuple_values[:3]) and tuple_values[0] != 'sporely':
+            return _RemoteIdentityClaim(
+                kind='sporely', sporely_taxon_id=selected, cloud_state=state,
+                source_system=tuple_values[0], namespace=tuple_values[1],
+                external_id=tuple_values[2], raw_external_id=tuple_values[3],
+            )
+        return _RemoteIdentityClaim(kind='sporely', sporely_taxon_id=selected, cloud_state=state)
     if state == 'external_unresolved' and all(tuple_values[:3]):
         return _RemoteIdentityClaim(
             kind='external', cloud_state=state,

@@ -90,7 +90,10 @@ PROOF_LEGACY_UNVERIFIED = "legacy_unverified"
 #: that ever wrote it — and local membership is not proof of origin either.
 #: The value is kept (displayed, restored, preserved across saves) but never
 #: re-asserted to the cloud and never drives identity-gated lookups. An
-#: explicit picker selection replaces it with :data:`PROOF_TAXONOMY_V2_ARTIFACT`.
+#: explicit picker selection replaces it with :data:`PROOF_TAXONOMY_V2_ARTIFACT`,
+#: and a cloud row whose own provider tuple the installed artifact resolves to
+#: the same concept is stored as :data:`PROOF_EXTERNAL_ID_RESOLUTION` instead
+#: (``utils/cloud_sync_impl/identity_state._verified_cloud_selection``).
 PROOF_CLOUD_SELECTED_UNVERIFIED = "cloud_selected_unverified"
 
 #: Proof tokens that permit asserting a Sporely-owned identity. Deliberately
