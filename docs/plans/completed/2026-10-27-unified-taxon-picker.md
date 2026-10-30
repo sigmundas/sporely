@@ -4,6 +4,11 @@ Status: completed. Layout A and Stages 1 and 2 approved by the owner on
 2026-10-27; Stage 3 (Edit Observation integration), the floating results
 list and the review fixes passed the final review and the owner's desktop
 acceptance check on 2026-10-28, and landed on `main` via PR #47.
+
+Amended 2026-10-30: Edit Observation no longer shows the Artsorakel chips
+(PR #48). The AI suggestions table beside the picker offers the same
+predictions with Copy to taxonomy. The widget keeps its chip support, now
+unused by any host. The chip notes below are historical.
 Design proposal with renders: https://claude.ai/artifact/FNhyYdKkGVSipUSLshp5mb
 
 This plan replaces the old `feature/unified-taxon-search` plan

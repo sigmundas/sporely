@@ -97,6 +97,7 @@ from database.taxon_lookup import (
     determine_redlist_area,
 )
 from database.taxon_suggestions import (
+    KIND_NAME_CONFIRMED,
     ORIGIN_OBSERVATION,
     ai_prediction_external_id,
     evidence_concept_ids,
@@ -20479,6 +20480,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             " ".join(f"{self.genus_input.text()} {self.species_input.text()}".split()),
         )
         genus, _, species = name.partition(" ")
+        if offer.kind == KIND_NAME_CONFIRMED:
+            # The identifier reaches this concept only by the release's
+            # automatic name match: Link is the user's pick of the concept by
+            # name, bound exactly as picking it in the search.
+            found = self._taxon_picker_row_for([offer.concept_name or name], int(offer.sporely_taxon_id), None)
+            if found is not None:
+                self._on_taxon_picker_concept(*found)
+                self._sync_taxon_picker(force=True)
+            self._hide_identity_offer()
+            return
         if offer.origin != ORIGIN_OBSERVATION and offer.raw_external_id:
             identity = TaxonIdentity.from_prefixed_external_id(
                 offer.raw_external_id,
