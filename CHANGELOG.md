@@ -2,16 +2,23 @@
 
 All notable changes to Sporely are documented here.
 
-## 2026-10-25 (desktop 0.9.29)
+## 2026-10-30 (desktop 0.9.29)
 
-No server migrations. The server's active taxonomy is already `tax-2026.10.23-11` (imported 2026-10-25); this version bundles the same release.
+Requires server migration `20261026180718` (sporely-web, reference statistics), already applied on 2026-10-26. The server's active taxonomy is already `tax-2026.10.23-11` (imported 2026-10-25); this version bundles the same release.
 
 ### Changed
+- **One search field for the species in Edit Observation.** The Name, Genus, Species and Scientific fields are replaced by a single search that finds scientific and common names. Results show one row per name; when the Catalogue of Life and the Norwegian species list hold separate entries for the same name (for example *Flammulina velutipes*), the row lets you choose the source. The chosen species is shown on a card with Change and ✕. A name without a taxon can still be kept.
+- **Full reference statistics.** Reference data keeps Q typical and extreme ranges, means and explicitly reported statistics through editing, plots, export and sync. Older literature stored only in the legacy table can be imported into the reference library.
 - **Taxonomy release `tax-2026.10.23-11`.** The bundled taxonomy follows the September 2026 Catalogue of Life and the current Norwegian species list. It restores seven Norwegian group names (for example *kantareller*, *fingersopper*, *eggrøyksopper*) and adds Swedish names such as *kantarell*. It is installed automatically at the first start, and existing observations keep their species identity.
 
 ### Fixed
 - **Saving an observation could remove its species identity.** Observations whose identity was repaired in October lost it when they were opened and saved, even without changes. The identity is now kept unless you change the species.
 - **Saving an unchanged observation no longer reports a host change to the cloud.** An empty host genus or species was saved in a different form, which sync treated as an edit.
+- **Link for Artsorakel species that Copy to taxonomy leaves unlinked.** For many species the taxonomy knows the Artsorakel identifier only through a name match (for example *Flammulina fennae*), so copying the suggestion showed "Not linked to a confirmed taxon". When the identifier and the entered name agree on one species, a Link offer now appears; pressing it links the species as if you had picked it in the search.
+- **Picking a species binds the row you picked.** Same-name entries from the Catalogue of Life and the Norwegian species list stay separate until you choose or an Artsorakel identifier settles it. Keyboard picks, hyphenated epithets (*Cortinarius albo-ochraceus*) and long result lists are handled correctly, and Enter in a list no longer saves the observation.
+- **Crash on macOS when refreshing the observation table.** Sporely now ships with Qt 6.10.3; newer Qt versions crashed with accessibility tools active.
+- **Deleting a reference together with its uses** no longer reports false dependency warnings on the next sync.
+- **Full backup** now succeeds with cloud sync settings present and keeps the cloud sign-in method with the session.
 
 ## 2026-10-19 (desktop 0.9.28)
 
