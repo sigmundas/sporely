@@ -114,6 +114,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSplitter,
     QStyle,
+    QStyledItemDelegate,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -206,13 +207,44 @@ def format_ai_candidate_display(entry: dict) -> str:
     return f"{base}  {percent}%"
 
 
+_AI_SERVICE_LABELS = {"arts": "Artsorakel", "inat": "iNaturalist"}
+
+
+#: Item role holding :func:`format_ai_scores` text for an AI row.
+_AI_SCORES_ROLE = Qt.UserRole + 1
+
+
+class _AiScoreDelegate(QStyledItemDelegate):
+    """Draws an AI row's services and scores after its label."""
+
+    def initStyleOption(self, option, index):  # noqa: N802 - Qt override
+        super().initStyleOption(option, index)
+        scores = index.data(_AI_SCORES_ROLE)
+        if scores:
+            option.text = f"{option.text}  —  {scores}"
+
+
+def format_ai_scores(scores) -> str:
+    """``Artsorakel 9% · iNaturalist 12%``: which services suggested a row."""
+    parts = []
+    for service, score in scores or ():
+        label = _AI_SERVICE_LABELS.get(str(service or "").casefold(), str(service or ""))
+        if score is not None:
+            percent = int(round(score * 100)) if score <= 1.0 else int(round(score))
+            label = f"{label} {percent}%"
+        if label:
+            parts.append(label)
+    return " · ".join(parts)
+
+
 def format_taxon_suggestion_display(suggestion: TaxonSuggestion) -> str:
     """List label for a suggested reference taxon: ``name (vernacular)``.
 
     A synonym shows the concept it belongs to. The source (``COL 6J82Y``,
     ``NorTaxa 54701``) is shown only when set, i.e. when concepts sharing
     the name remain to be told apart. A row without a database taxon says
-    so. An AI score is never shown: it is not confidence in the taxon.
+    so. The AI scores are drawn beside it in the list only
+    (:class:`_AiScoreDelegate`), so the chosen text never carries them.
     """
     name = suggestion.scientific_name
     if suggestion.concept_name:
@@ -812,6 +844,7 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         # The database search below owns completion; the combo's built-in
         # inline completer would fight it over the same line edit.
         self.taxon_target_combo.setCompleter(None)
+        self.taxon_target_combo.setItemDelegate(_AiScoreDelegate(self.taxon_target_combo))
         # Sized to a taxon name rather than stretched across the dialog, so
         # the dropdown arrow sits next to the text it belongs to.
         self.taxon_target_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
@@ -1205,7 +1238,10 @@ class AddReferenceDialog(GeometryMixin, QDialog):
                 if suggestion.is_concept and suggestion.sporely_taxon_id in labels:
                     suggestion = dc_replace(suggestion, source_label=labels[suggestion.sporely_taxon_id])
                 combo.addItem(format_taxon_suggestion_display(suggestion), self._suggestion_data(suggestion))
+                combo.setItemData(combo.count() - 1, format_ai_scores(suggestion.ai_scores), _AI_SCORES_ROLE)
                 combo.setItemData(combo.count() - 1, taxon_suggestion_tooltip(suggestion), Qt.ToolTipRole)
+        # Wide enough for the scores beside the AI rows.
+        combo.view().setMinimumWidth(combo.view().sizeHintForColumn(0) + 24)
         # With no observation taxon nothing is selected: the field starts
         # empty, showing a prompt rather than text, so the user can type
         # straight away.
@@ -2731,6 +2767,7 @@ __all__ = [
     "LIBRARY_GROUP_ORDER",
     "filter_library_candidates",
     "format_ai_candidate_display",
+    "format_ai_scores",
     "group_library_candidates",
     "library_relevance",
     "PersonalObservationCandidate",

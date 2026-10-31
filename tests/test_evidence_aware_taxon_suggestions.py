@@ -161,6 +161,23 @@ def test_without_an_identifier_there_is_no_link_and_no_evidence(lookup):
     assert defaults.evidence_ids == frozenset()
 
 
+def test_one_species_from_two_services_is_one_row_with_both_scores(lookup):
+    inat = {**_ai_entry(external_id="67594", source="inat"), "score": 0.4}   # iNat ids never resolve
+    defaults = reference_default_suggestions(lookup, ai_entries=[inat, _ai_entry()])
+    (row,) = defaults.ai
+    assert (row.kind, row.sporely_taxon_id) == (KIND_VERIFIED, NORTAXA_CONCEPT)
+    assert row.ai_scores == (("inat", 0.4), ("arts", 0.98))
+
+
+def test_a_name_only_row_keeps_its_own_service_score(lookup):
+    inat = {**_ai_entry(external_id="67594", source="inat", name="Flammulina elastica"), "score": 0.25}
+    rows = reference_default_suggestions(lookup, ai_entries=[_ai_entry(), inat]).ai
+    assert [(r.scientific_name, r.ai_scores) for r in rows] == [
+        ("Flammulina velutipes", (("arts", 0.98),)),
+        ("Flammulina elastica", (("inat", 0.25),)),
+    ]
+
+
 def test_an_unknown_identifier_stays_name_only_and_says_so(lookup):
     defaults = reference_default_suggestions(lookup, ai_entries=[_ai_entry(external_id="NBIC:999999999")])
     (row,) = defaults.ai
