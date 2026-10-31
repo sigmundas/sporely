@@ -1242,9 +1242,11 @@ class TaxonLookupService:
     def current_taxon_id(self, sporely_taxon_id: object) -> int | None:
         """The concept that is current for ``sporely_taxon_id`` in the installed release.
 
-        A live id returns itself; an id a reviewed supersession retired returns
-        its survivor (``taxon_supersession_min``); anything else returns
-        ``None``. Resolution only: callers decide whether to show or store it.
+        A live id returns itself, or its primary when a release name
+        association presents it as another concept (``taxon_association_min``);
+        an id a reviewed supersession retired returns its survivor
+        (``taxon_supersession_min``); anything else returns ``None``.
+        Resolution only: callers decide whether to show or store it.
         """
         try:
             taxon_id = int(sporely_taxon_id)
@@ -1252,6 +1254,12 @@ class TaxonLookupService:
             return None
         if self._fetch_local_rows(
                 "SELECT 1 FROM taxon_min WHERE taxon_id = ? LIMIT 1", (taxon_id,)):
+            if self._has_local_table("taxon_association_min"):
+                rows = self._fetch_local_rows(
+                    "SELECT primary_taxon_id FROM taxon_association_min "
+                    "WHERE member_taxon_id = ? LIMIT 1", (taxon_id,))
+                if rows:
+                    return int(rows[0][0])
             return taxon_id
         if not self._has_local_table("taxon_supersession_min"):
             return None
@@ -1484,7 +1492,10 @@ def resolve_installed_external_identity(
     taxonomy-v2 release (:func:`installed_taxon_concept`). When the bridge
     table names nothing, a concept anchored by the tuple's own source usage
     (:func:`source_identity_matches`) resolves instead, again only when it is
-    exactly one. No match, several matches, a pre-v2 database or any read
+    exactly one. Matches that a release name association presents as one
+    taxon (``taxon_association_min``) count as their primary, and a row the
+    association projected is named in ``resolved_through`` so provenance
+    records it. No match, several matches, a pre-v2 database or any read
     error all return ``None`` — the caller keeps the identity unresolved
     rather than guessing.
     """
@@ -1511,6 +1522,34 @@ def resolve_installed_external_identity(
                 # An artifact without canonical source columns names no anchor.
                 matches = set()
             resolved_through = "taxon_min.canonical_source_usage"
+        if matches:
+            from database.taxon_search import association_primaries
+            primaries = association_primaries(conn, matches)
+            if primaries:
+                matches = {primaries.get(m, (m,))[0] for m in matches}
+                resolved_through += "+taxon_association_min"
+        if len(matches) == 1 and resolved_through.startswith("taxon_external_id_text_min"):
+            try:
+                note = conn.execute(
+                    "SELECT note FROM taxon_external_id_text_min WHERE taxon_id = ? AND source_system = ? "
+                    "AND namespace = ? AND external_id = ? AND note LIKE 'name_association:%' LIMIT 1",
+                    (next(iter(matches)), source, ns, ext),
+                ).fetchone()
+            except sqlite3.OperationalError:
+                note = None  # an artifact without row notes
+            if note:
+                tag = str(note[0])
+                association = None
+                try:
+                    association = conn.execute(
+                        "SELECT association_id FROM taxon_association_min WHERE member_source_system = ? "
+                        "AND member_namespace = ? AND member_external_id = ?", (source, ns, ext),
+                    ).fetchone()
+                except sqlite3.OperationalError:
+                    pass
+                if association:
+                    tag += f";association={association[0]}"
+                resolved_through += f"[{tag}]"
     except sqlite3.Error:
         return None
     finally:
