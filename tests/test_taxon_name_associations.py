@@ -229,6 +229,8 @@ def test_editor_shows_and_keeps_a_member_bound_observation(release, tmp_path, mo
     picking again binds the primary."""
     import os
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication
 
     from database import schema
@@ -271,6 +273,13 @@ def test_editor_shows_and_keeps_a_member_bound_observation(release, tmp_path, mo
         assert _shown(dialog) == ("Russula aeruginea", 20)
         _save(db, obs_id, dialog)
         assert stored() == before
+        # Endre, then Escape: the card comes back with the member, nothing bound.
+        dialog = editor()
+        dialog.taxon_picker.begin_edit()
+        QTest.keyClick(dialog.taxon_picker.search_input, Qt.Key_Escape)
+        assert _shown(dialog) == ("Russula aeruginea", 20)
+        _save(db, obs_id, dialog)
+        assert stored() == before
         _save(db, obs_id, editor())
         assert stored() == before
         dialog = editor()
@@ -284,3 +293,43 @@ def test_editor_shows_and_keeps_a_member_bound_observation(release, tmp_path, mo
             dialog._cleanup_dialog_threads()
             dialog.hide()
             dialog.deleteLater()
+
+
+def test_editor_shows_a_superseded_id_in_its_survivors_entry(tmp_path, monkeypatch):
+    """A retired id (reviewed supersession) shows in the surviving concept's
+    entry, still carrying the stored id, as the display name already did."""
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from database import schema
+    from tests.test_observation_details_ai_copy_and_vernacular_autofill import _build_dialog
+    from tests.test_observation_details_taxon_picker import _save, _shown
+    from utils import vernacular_utils
+
+    artifact = build(tmp_path / "tax-2026.10.31-01.sqlite3")
+    with sqlite3.connect(artifact) as conn:
+        conn.execute("INSERT INTO taxon_supersession_min VALUES (777, 12, 'test', 'tax-test')")
+    db_path = tmp_path / "observations.sqlite3"
+    monkeypatch.setattr(schema, "get_database_path", lambda: db_path)
+    monkeypatch.setattr(vernacular_utils, "resolve_vernacular_db_path", lambda *_a, **_k: artifact)
+    schema.init_database()
+    from database.models import ObservationDB as db
+
+    obs_id = db.create_observation(date="2026-10-31 12:00", genus="Flammulina", species="fennae",
+                                   scientific_name_snapshot="Flammulina fennae", taxon_rank_snapshot="species",
+                                   **TaxonIdentity.from_taxonomy_v2_artifact(777).to_row())
+    qapp = QApplication.instance() or QApplication([])
+    dialog = _build_dialog(monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=artifact,
+                           observation=db.get_observation(obs_id))
+    try:
+        dialog.show()
+        qapp.processEvents()
+        assert _shown(dialog) == ("Flammulina fennae", 777)
+        _save(db, obs_id, dialog)
+        with sqlite3.connect(db_path) as conn:
+            assert conn.execute("SELECT sporely_taxon_id FROM observations WHERE id = ?", (obs_id,)).fetchone() == (777,)
+    finally:
+        dialog._cleanup_dialog_threads()
+        dialog.hide()
+        dialog.deleteLater()
