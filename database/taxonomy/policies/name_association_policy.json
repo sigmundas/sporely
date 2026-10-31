@@ -1,0 +1,22 @@
+{
+  "format": "sporely-taxonomy-name-association-policy-v1",
+  "policy_version": "name-association-v1",
+  "semantics": "Owner product decision 2026-10-31: merge by default when scientific names match. A national source usage (NorTaxa, Dyntaxa) whose canonical scientific name and rank equal exactly one live concept within Fungi is associated with that concept, preferring the COL-backed concept. Authorship, family, source identifiers and classification may differ. An association never allocates, retires or renumbers a Sporely id: an associated NorTaxa concept keeps its own live id, and the association is recorded per release in taxon_association_min so a later release can drop it. Associated usages' names, vernaculars, source ids and Red List rows are projected onto the primary concept.",
+  "decided_by": "owner (Sigmund Ås)",
+  "decided_at": "2026-10-31",
+  "member_sources": ["nortaxa", "dyntaxa"],
+  "rules": {
+    "exact_accepted_name": "The usage's accepted name and rank equal exactly one candidate primary concept.",
+    "unique_synonym_bridge": "No candidate has the usage's accepted name; exactly one candidate's accepted name is a synonym of this usage and of no other accepted usage in the same source, and no other usage of that source is associated with the candidate."
+  },
+  "blocking_reasons": {
+    "qualified_concept": "The name, authorship or concept annotation qualifies the concept (coll., s.lat., s.str., agg., sensu, auct., pro parte, cf., aff.).",
+    "source_homonym": "Two accepted usages of the same source share the name and rank.",
+    "multiple_primary_candidates": "More than one live concept is a candidate.",
+    "primary_claimed_by_other_usage": "Another usage of the same source already maps to the candidate.",
+    "already_bridged": "The usage already has an authoritative bridge in the base release; it is kept as is.",
+    "continuity_hold": "The usage is under an owner hold in source_continuity_holds.json.",
+    "reviewed_exclusion": "The association is listed in exclusions below."
+  },
+  "exclusions": []
+}

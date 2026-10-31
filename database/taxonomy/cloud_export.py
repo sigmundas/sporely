@@ -644,8 +644,9 @@ def _validate_national_names(conn: sqlite3.Connection, present: set[str]) -> Non
 
     Each scoped `preferred_scientific_name_<country>` must carry its complete
     provenance, and that provenance must be an accepted authoritative bridge
-    row of the same concept with the same name — i.e. a row this export also
-    publishes in `taxon_external_id.jsonl`. Provenance without a name is
+    or name-association row (``name_association:<rule>``, see
+    ``scripts/name_associations.py``) of the same concept with the same name —
+    i.e. a row this export also publishes in `taxon_external_id.jsonl`. Provenance without a name is
     refused as well.
     """
     for country in NATIONAL_NAME_COUNTRIES:
@@ -680,7 +681,8 @@ def _validate_national_names(conn: sqlite3.Connection, present: set[str]) -> Non
             f"AND e.external_id = t.{name_col}_external_id "
             f"AND e.external_name = t.{name_col} "
             "AND e.id_role = 'accepted' "
-            "AND e.note LIKE 'authoritative_bridge:%')"
+            "AND (e.note LIKE 'authoritative_bridge:%' "
+            "OR e.note LIKE 'name_association:%'))"
         ).fetchone()[0]
         if untraced:
             raise ExportError(
