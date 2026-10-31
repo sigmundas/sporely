@@ -50,6 +50,10 @@ SYNONYM = "unique_synonym_bridge"
 #: accepted usage already names (providers such as Artsorakel still return
 #: ids of older names).
 OWN_SYNONYM = "own_source_synonym"
+#: A usage whose name matches a concept that is itself an association member
+#: (a Dyntaxa name equal to a NorTaxa concept attached to COL): one step of
+#: transitivity through an existing association, labelled as such.
+VIA_ASSOCIATION = "exact_name_via_association"
 #: Sources whose synonym ids are taxon ids a provider may return.
 SYNONYM_ID_SOURCES = frozenset({"nortaxa"})
 #: Synonym statuses a synonym rule may follow. Misapplied names and pro parte
@@ -129,8 +133,10 @@ class Derivation:
     blocked: collections.Counter = field(default_factory=collections.Counter)
     blocked_examples: dict = field(default_factory=lambda: collections.defaultdict(list))
     unmatched: collections.Counter = field(default_factory=collections.Counter)
-    #: ``(concept id, source, synonym id, synonym name)`` for synonym ids of
-    #: accepted usages whose concept is known (see ``OWN_SYNONYM``).
+    #: ``(concept id, source, synonym id, synonym name, association id or
+    #: None)`` for synonym ids of accepted usages whose concept is known (see
+    #: ``OWN_SYNONYM``); the association is set when the concept is reached
+    #: through one.
     source_synonyms: list = field(default_factory=list)
 
     def block(self, source: str, reason: str, usage: Usage, detail=None) -> None:
@@ -267,6 +273,8 @@ def derive(conn: sqlite3.Connection, usages: dict[str, list[Usage]], policy: dic
                 synonyms_of[u.accepted_id].append(u)
                 synonym_targets[u.key].add(u.accepted_id)
 
+        via_member: dict[int, str] = {}
+
         def candidates(key, own):
             found = set()
             for tid in by_name.get(key, ()):
@@ -274,7 +282,10 @@ def derive(conn: sqlite3.Connection, usages: dict[str, list[Usage]], policy: dic
                     continue
                 if source == "nortaxa" and concepts[tid][3] != "col_xr":
                     continue
-                found.add(primary_of.get(tid, tid))
+                primary = primary_of.get(tid, tid)
+                if primary != tid:
+                    via_member[primary] = concepts[tid][1]
+                found.add(primary)
             return found
 
         proposals = []
@@ -319,6 +330,8 @@ def derive(conn: sqlite3.Connection, usages: dict[str, list[Usage]], policy: dic
                              sorted(found)[:5] if rule == EXACT else f"{rule}:{sorted(found)[:5]}")
                 continue
             primary = next(iter(found))
+            if rule == EXACT and norm(concepts[primary][1] or "") != u.key[0] and primary in via_member:
+                rule, via = VIA_ASSOCIATION, via_member[primary]
             if claimed.get((source, primary), set()) - {u.identifier}:
                 result.block(source, "primary_claimed_by_other_usage", u, primary)
                 continue
@@ -328,7 +341,7 @@ def derive(conn: sqlite3.Connection, usages: dict[str, list[Usage]], policy: dic
         for proposal in proposals:
             per_primary[proposal[2]].append(proposal)
         for primary, group in sorted(per_primary.items()):
-            exact = [p for p in group if p[3] == EXACT]
+            exact = [p for p in group if p[3] in (EXACT, VIA_ASSOCIATION)]
             keep = exact if exact else group
             if len(keep) > 1:
                 for p in group:
@@ -380,18 +393,30 @@ def derive(conn: sqlite3.Connection, usages: dict[str, list[Usage]], policy: dic
                 primary_of[own] = primary
 
         if source in SYNONYM_ID_SOURCES:
+            associated = {a["member_taxon_id"]: a["association_id"] for a in result.associations
+                          if a["member_source_system"] == source and a["member_taxon_id"] is not None}
             for u in accepted:
+                if (source, u.namespace, u.identifier) in holds:
+                    continue
                 owners = bridged.get((source, u.namespace, u.identifier)) or (
                     {anchor[(source, u.identifier)]} if (source, u.identifier) in anchor else set())
-                owners = {primary_of.get(t, t) for t in owners}
                 if len(owners) != 1:
                     continue
-                concept = next(iter(owners))
+                owner = next(iter(owners))
+                concept = primary_of.get(owner, owner)
+                association = associated.get(owner) if concept != owner else None
                 for syn in synonyms_of.get(u.identifier, ()):
                     if not syn.qualified and len(synonym_targets[syn.key]) == 1:
-                        result.source_synonyms.append((concept, source, syn.identifier, syn.name))
+                        result.source_synonyms.append((concept, source, syn.identifier, syn.name, association))
     result.associations.sort(key=lambda a: (a["member_source_system"], a["member_external_id"]))
     return result
+
+
+def association_note(rule: str, association_id: str | None) -> str:
+    """``name_association:<rule>[;association=<id>]`` — every projected row
+    names the association it came from, so a provider id resolved through it
+    (accepted or synonym) can be attributed when the association is dropped."""
+    return f"{NOTE_PREFIX}{rule}" + (f";association={association_id}" if association_id else "")
 
 
 def _vernaculars_from_norm(path: Path, core_ids: set[str]) -> dict[str, list[tuple[str, str, bool]]]:
@@ -470,10 +495,13 @@ def apply_overlay(conn: sqlite3.Connection, derivation: Derivation, *, release_i
              a["primary_scientific_name"], a["primary_authorship"], a["primary_family"], a["rule"],
              a["via_scientific_name"], json.dumps(a["flags"]), version, release_id))
         primary, member, source = a["primary_taxon_id"], a["member_taxon_id"], a["member_source_system"]
-        note = f"{NOTE_PREFIX}{a['rule']}"
+        note = association_note(a["rule"], a["association_id"])
         ns = a["member_namespace"]
         add_text(primary, source, ns, a["member_external_id"], "accepted", a["member_scientific_name"], note)
-        if source in INTEGER_SOURCE:
+        # The integer mirror feeds legacy genus+species lookups; a member name
+        # that differs from the primary's would make those ambiguous.
+        mirror = source in INTEGER_SOURCE and a["rule"] != SYNONYM
+        if mirror:
             add_integer(primary, INTEGER_SOURCE[source], a["member_external_id"], "accepted",
                         a["member_scientific_name"], note)
         # The national display name must be an exact scientific name of the
@@ -484,7 +512,8 @@ def apply_overlay(conn: sqlite3.Connection, derivation: Derivation, *, release_i
             add_scientific(primary, syn["name"], source, note)
             if source == "nortaxa":
                 add_text(primary, source, ns, syn["identifier"], "synonym", syn["name"], note)
-                add_integer(primary, INTEGER_SOURCE[source], syn["identifier"], "synonym", syn["name"], note)
+                if mirror:
+                    add_integer(primary, INTEGER_SOURCE[source], syn["identifier"], "synonym", syn["name"], note)
         if member is not None:
             for lang, name, pref, vsource in conn.execute(
                     "SELECT language_code, vernacular_name, is_preferred_name, source FROM vernacular_min "
@@ -530,9 +559,10 @@ def apply_overlay(conn: sqlite3.Connection, derivation: Derivation, *, release_i
             f"WHERE taxon_id = ? AND preferred_scientific_name_{country} IS NULL",
             (a["member_scientific_name"], source, ns, a["member_external_id"], primary))
         counts[f"preferred_scientific_name_{country}"] += cur.rowcount
-    for concept, source, identifier, name in sorted(derivation.source_synonyms):
+    for concept, source, identifier, name, association in sorted(
+            derivation.source_synonyms, key=lambda r: r[:4]):
         add_text(concept, source, TAXON_NAMESPACE[source], identifier, "synonym", name,
-                 f"{NOTE_PREFIX}{OWN_SYNONYM}")
+                 association_note(OWN_SYNONYM, association))
     return dict(sorted(counts.items()))
 
 

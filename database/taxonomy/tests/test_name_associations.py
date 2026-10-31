@@ -165,6 +165,10 @@ def test_dyntaxa_collapses_onto_the_nortaxa_primary(base):
     lsid = "urn:lsid:dyntaxa.se:Taxon:"
     # Dyntaxa agrees with NorTaxa (Rugosomyces), COL says Calocybe: one taxon.
     assert assoc["dyntaxa:" + lsid + "2"]["primary_taxon_id"] == 11
+    # Reached through the NorTaxa association, and labelled so.
+    assert (assoc["dyntaxa:" + lsid + "2"]["rule"], assoc["dyntaxa:" + lsid + "2"]["via_scientific_name"]) == \
+        (na.VIA_ASSOCIATION, "Rugosomyces carneus")
+    assert assoc["dyntaxa:" + lsid + "1"]["rule"] == na.EXACT
     assert assoc["dyntaxa:" + lsid + "1"]["primary_taxon_id"] == 10
     # Dyntaxa is not blocked by NorTaxa's reviewed bridge on Fomes.
     assert assoc["dyntaxa:" + lsid + "3"]["primary_taxon_id"] == 19
@@ -198,10 +202,13 @@ def test_overlay_projects_without_touching_identity(base, tmp_path):
     # NorTaxa ids now resolve to the primary through the namespaced table.
     text = base.execute("SELECT taxon_id, note FROM taxon_external_id_text_min "
                         "WHERE source_system='nortaxa' AND external_id='500'").fetchall()
-    assert text == [(10, "name_association:exact_accepted_name")]
-    syn = base.execute("SELECT taxon_id, id_role FROM taxon_external_id_text_min "
+    assert text == [(10, "name_association:exact_accepted_name;association=nortaxa:500")]
+    syn = base.execute("SELECT taxon_id, id_role, note FROM taxon_external_id_text_min "
                        "WHERE source_system='nortaxa' AND external_id='601'").fetchall()
-    assert syn == [(11, "synonym")]
+    assert syn == [(11, "synonym", "name_association:unique_synonym_bridge;association=nortaxa:501")]
+    # A synonym-rule member's id is not mirrored into the integer table, where
+    # legacy genus+species lookups would find two names for one concept.
+    assert base.execute("SELECT count(*) FROM taxon_external_id_min WHERE external_id IN (501, 601)").fetchone() == (0,)
     # Names, vernaculars, Red List and the national display name follow.
     assert base.execute("SELECT vernacular_name FROM vernacular_min WHERE taxon_id=10").fetchall() == [("grønnkremle",)]
     assert base.execute("SELECT taxon_id FROM taxon_redlist_min WHERE assessment_id='A1'").fetchone() == (10,)
@@ -288,3 +295,9 @@ def test_synonym_ids_follow_an_already_bridged_usage(base, tmp_path):
     assert base.execute("SELECT taxon_id, id_role, note FROM taxon_external_id_text_min "
                         "WHERE source_system='nortaxa' AND external_id='609'").fetchall() == \
         [(19, "synonym", "name_association:own_source_synonym")]
+
+
+def test_held_usages_project_no_synonym_ids(base, tmp_path):
+    d = derive(base, holds={("nortaxa", "nortaxa_taxon_id", "509")})
+    na.apply_overlay(base, d, release_id="tax-cand", policy=POLICY, norm_dir=tmp_path)
+    assert base.execute("SELECT count(*) FROM taxon_external_id_text_min WHERE external_id='609'").fetchone() == (0,)

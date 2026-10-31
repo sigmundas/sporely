@@ -187,4 +187,34 @@ def test_source_records_explain_the_association(release):
         ("nortaxa:501", "unique_synonym_bridge", "Calocybe carnea", 21)
     assert a["differences"][0] == "scientific_name"
     assert {"source_system": "nortaxa", "namespace": "nortaxa_taxon_id", "external_id": "601",
-            "id_role": "synonym", "note": "name_association:unique_synonym_bridge"} in details["external_ids"]
+            "id_role": "synonym", "note": "name_association:unique_synonym_bridge;association=nortaxa:501"} \
+        in details["external_ids"]
+
+
+def test_picking_the_primary_by_its_own_name_records_no_association(release):
+    concept = rows(release, "Russula aeruginea")[0].default_concept
+    assert concept.association_id is None
+    assert concept.as_scientific_suggestion()["provenance"] is None
+
+
+def test_reversal_attributes_an_observation_resolved_through_a_synonym_id(tmp_path, release):
+    obs_db = tmp_path / "mushrooms.db"
+    with sqlite3.connect(obs_db) as conn:
+        conn.execute(
+            "CREATE TABLE observations (id INTEGER PRIMARY KEY, genus TEXT, species TEXT, "
+            "scientific_name_snapshot TEXT, sporely_taxon_id INTEGER, taxon_identity_state TEXT, "
+            "taxon_identity_proof TEXT, taxon_identity_source_system TEXT, taxon_identity_namespace TEXT, "
+            "taxon_identity_external_id TEXT, taxon_identity_provenance TEXT)")
+        # Artsorakel returned the old name's id (Calocybe carnea, NorTaxa synonym 601).
+        provider = TaxonIdentity.from_prefixed_external_id("NBIC:601", scientific_name="Calocybe carnea",
+                                                           rank="species")
+        concept = resolve_installed_external_identity(
+            release, source_system="nortaxa", namespace="nortaxa_taxon_id", external_id="601")
+        assert "association=nortaxa:501" in concept.resolved_through
+        save(conn, 1, provider.resolved_to(concept.sporely_taxon_id, provenance=(
+            f"taxonomy_v2:{concept.release_id}:{concept.resolved_through}")), "Calocybe carnea")
+    (tmp_path / "rev").mkdir()
+    reversed_release = build(tmp_path / "rev" / "tax-2026.11.01-01.sqlite3", exclusions=("501",))
+    (affected,) = reversal.audit(obs_db, release, reversed_release)["affected"]
+    assert affected["observation_id"] == 1
+    assert affected["proposal"] == {"action": "rebind_to_member_concept", "sporely_taxon_id": 21}

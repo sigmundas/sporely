@@ -1,8 +1,10 @@
 {
  "associations": {
   "dyntaxa|source_usage|exact_accepted_name|above_genus": 935,
-  "dyntaxa|source_usage|exact_accepted_name|genus": 2694,
-  "dyntaxa|source_usage|exact_accepted_name|species_and_below": 10822,
+  "dyntaxa|source_usage|exact_accepted_name|genus": 2693,
+  "dyntaxa|source_usage|exact_accepted_name|species_and_below": 10466,
+  "dyntaxa|source_usage|exact_name_via_association|genus": 1,
+  "dyntaxa|source_usage|exact_name_via_association|species_and_below": 356,
   "dyntaxa|source_usage|unique_synonym_bridge|above_genus": 7,
   "dyntaxa|source_usage|unique_synonym_bridge|genus": 2,
   "dyntaxa|source_usage|unique_synonym_bridge|species_and_below": 273,
@@ -1354,7 +1356,7 @@
   "nortaxa|family_differs": 4145
  },
  "format": "sporely-name-association-build-v1",
- "gz_sha256": "816b6db6d258f844ca79665b931f72bae11922d205213540dc90c9aea2e7f05f",
+ "gz_sha256": "3e13a125c3a3d5ec4b3fd7e26c1ba2aa0eaaa9f36b3e82ce3fa271f46f77b3de",
  "inputs_sha256": {
   "norm/col_xr/taxa.jsonl": "e4e1cddf6ad63809ebe50699a60dc7103e7201bd700a7e3328921c83a529b71a",
   "norm/dyntaxa/taxa.jsonl": "637352733da7bd42ad9e50f94b1b7fb772de041ba58cc4753c99d0f176145be7",
@@ -1362,17 +1364,17 @@
   "norm/nortaxa/taxa.jsonl": "9eb597bc75e268a5cf8eacf4d7ec8e5cfbf79a528b7ec5bb7722ddd40aa162a1",
   "norm/nortaxa/vernacular.jsonl": "77707870a4c171a947ae7ef75def2a499f61d326611133a3c4062f0358ae4aae"
  },
- "policy_sha256": "2e4a6a58194dee827fa6cfc0bfbd5ba598cc44d5228d89ef4d6ee5c878e3a9a2",
+ "policy_sha256": "34c4d565be734375744f1703d1bfdb38695576026fa3cb9085186fb1679efc28",
  "policy_version": "name-association-v1",
  "projection_counts": {
   "external_id_integer:artportalen:accepted": 1262,
   "external_id_integer:artportalen:synonym": 127,
-  "external_id_integer:artsdatabanken:accepted": 5660,
-  "external_id_integer:artsdatabanken:synonym": 4799,
+  "external_id_integer:artsdatabanken:accepted": 4680,
+  "external_id_integer:artsdatabanken:synonym": 2427,
   "external_id_integer:inaturalist:accepted": 1195,
   "external_id_text:dyntaxa:accepted": 14733,
   "external_id_text:nortaxa:accepted": 22046,
-  "external_id_text:nortaxa:synonym": 22580,
+  "external_id_text:nortaxa:synonym": 22549,
   "inaturalist_column": 1174,
   "preferred_scientific_name_no": 22046,
   "preferred_scientific_name_sv": 14733,
@@ -1381,7 +1383,7 @@
   "scientific_name": 16128,
   "vernacular": 1588
  },
- "sqlite_sha256": "c4dd4c3bdefcfd832a20dc30e8b4b638e2e923bdd3efff5962aeaf381fdb4969",
+ "sqlite_sha256": "ec19acac6a0dafbd3fd629760d9aa92fa5d7ec270597e29fffe72c7cba5cacfe",
  "unmatched_national_usages": {
   "dyntaxa|above_genus": 211,
   "dyntaxa|genus": 4,

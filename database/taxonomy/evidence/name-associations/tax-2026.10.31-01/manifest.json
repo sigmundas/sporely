@@ -5,10 +5,10 @@
   "state": "candidate",
   "publication": "none",
   "gz_artifact": "tax-2026.10.31-01.sqlite3.gz",
-  "gz_sha256": "816b6db6d258f844ca79665b931f72bae11922d205213540dc90c9aea2e7f05f",
-  "gz_bytes": 46565394,
-  "sqlite_sha256": "c4dd4c3bdefcfd832a20dc30e8b4b638e2e923bdd3efff5962aeaf381fdb4969",
-  "sqlite_bytes": 175104000,
+  "gz_sha256": "3e13a125c3a3d5ec4b3fd7e26c1ba2aa0eaaa9f36b3e82ce3fa271f46f77b3de",
+  "gz_bytes": 46653902,
+  "sqlite_sha256": "ec19acac6a0dafbd3fd629760d9aa92fa5d7ec270597e29fffe72c7cba5cacfe",
+  "sqlite_bytes": 177414144,
   "registry_concatenated_sha256": "716bff20853a7639b888548a06088d1dd71b0eb6684fd5c492758af3691da5f8",
   "compiler_manifest_sha256": "6c21ed302a9abf7e99c90f1a165026af65314c355a607df9e418b01f18becba8",
   "install_target_name": "vernacular_multilanguage_v2.sqlite3",
@@ -58,7 +58,7 @@
     "base_release_id": "tax-2026.10.23-11",
     "base_sqlite_sha256": "2a81f68435d0606633319be0845f9fa1de46ccd9c2442f391af742fad3899a97",
     "policy_version": "name-association-v1",
-    "policy_sha256": "2e4a6a58194dee827fa6cfc0bfbd5ba598cc44d5228d89ef4d6ee5c878e3a9a2",
+    "policy_sha256": "34c4d565be734375744f1703d1bfdb38695576026fa3cb9085186fb1679efc28",
     "associations_total": 36779,
     "report": "association-report.json"
   }

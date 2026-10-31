@@ -208,8 +208,12 @@ Plain English comes first; technical terms are in parentheses.
     beside the selected ID), and the installed artifact's authoritative
     resolver maps that tuple to the same concept, the desktop stores it as
     `external_id_resolution` with that tuple — the identity a desktop copy of
-    the identifier produces. A tuple that resolves to nothing or to another
-    concept, or a `sporely`-namespace tuple, leaves `cloud_selected_unverified`.
+    the identifier produces. When the installed release presents the selected
+    concept as another one through a name association (`taxon_association_min`
+    member → primary), a tuple resolving to that primary also proves it; the
+    cloud's own selected ID is kept, never replaced by the primary. A tuple
+    that resolves to nothing or to an unrelated concept, or a
+    `sporely`-namespace tuple, leaves `cloud_selected_unverified`.
 
     **The persistence API accepts one complete typed identity transition.**
     The identity spans several columns but is a single value, and treating
@@ -1103,7 +1107,7 @@ client) and maps it to ONE coherent local identity
 
 | Cloud row | Local identity written |
 |---|---|
-| selected Sporely ID present in the installed taxonomy-v2 artifact, with a non-Sporely provider tuple the artifact's authoritative resolver maps to that same concept | `sporely_v2` / `external_id_resolution` with that tuple, artifact canonical name and rank as snapshot, provenance naming the resolving release and the cloud tuple (`_verified_cloud_selection`) |
+| selected Sporely ID present in the installed taxonomy-v2 artifact, with a non-Sporely provider tuple the artifact's authoritative resolver maps to that same concept (or to the concept a name association presents it as) | `sporely_v2` / `external_id_resolution` with that tuple, artifact canonical name and rank as snapshot, provenance naming the resolving release and the cloud tuple (`_verified_cloud_selection`) |
 | selected Sporely ID present in the installed taxonomy-v2 artifact, otherwise | `sporely_v2` / `cloud_selected_unverified`, artifact canonical name and rank as snapshot, provenance naming the cloud state and the local release |
 | selected Sporely ID absent from the installed artifact (release mismatch, pre-v2 install) | `external_unresolved` `(sporely, sporely_taxon_id, <id>)` — preserved, never a bound integer |
 | `external_unresolved` with a complete tuple | the same tuple as `external_unresolved` |

@@ -1539,18 +1539,9 @@ def resolve_installed_external_identity(
             except sqlite3.OperationalError:
                 note = None  # an artifact without row notes
             if note:
-                tag = str(note[0])
-                association = None
-                try:
-                    association = conn.execute(
-                        "SELECT association_id FROM taxon_association_min WHERE member_source_system = ? "
-                        "AND member_namespace = ? AND member_external_id = ?", (source, ns, ext),
-                    ).fetchone()
-                except sqlite3.OperationalError:
-                    pass
-                if association:
-                    tag += f";association={association[0]}"
-                resolved_through += f"[{tag}]"
+                # ``name_association:<rule>;association=<id>`` (see
+                # name_associations.association_note).
+                resolved_through += f"[{note[0]}]"
     except sqlite3.Error:
         return None
     finally:
@@ -1561,6 +1552,24 @@ def resolve_installed_external_identity(
     if concept is None:
         return None
     return _dc_replace(concept, resolved_through=resolved_through)
+
+
+def association_primary_id(db_path, sporely_taxon_id: object) -> int | None:
+    """The primary a release name association presents ``sporely_taxon_id``
+    as, or ``None`` when it is no association member (or nothing is known)."""
+    try:
+        taxon_id = int(sporely_taxon_id)
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except (TypeError, ValueError, sqlite3.Error):
+        return None
+    try:
+        from database.taxon_search import association_primaries
+        entry = association_primaries(conn, [taxon_id]).get(taxon_id)
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    return entry[0] if entry else None
 
 
 def taxon_source_records(db_path, sporely_taxon_id: object) -> dict | None:
@@ -1634,6 +1643,7 @@ __all__ = [
     "source_identity_matches",
     "resolve_installed_external_identity",
     "taxon_source_records",
+    "association_primary_id",
     "ManualScientificResolution",
     "TaxonChoice",
     "TaxonLookupService",

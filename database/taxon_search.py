@@ -16,7 +16,7 @@ A release's name associations (``taxon_association_min``) are applied
 first: a hit on an associated NorTaxa concept counts as a hit on its primary
 (COL-backed) concept, so the two never appear as separate rows or as a
 source choice. Its name stays findable, as a synonym row of the primary when
-it differs, and the bound concept records which association led to it.
+it differs; a pick of that row records which association led to it.
 
 Inside a row the concepts are ordered so the first is the default a click
 picks: the observation's current concept, then concepts proven by provider
@@ -603,8 +603,9 @@ def _collapse_associated(conn, hits: list[_Hit]) -> list[_Hit]:
         if snapshot is None:
             continue
         if hit.match_kind in (MATCH_VERNACULAR, MATCH_VERNACULAR_PART) or hit.row_name == name:
+            # The primary's own row: picking it needs no association.
             out.append(replace(hit, taxon_id=primary, row_name=name, rank=snapshot, kind=KIND_TAXON,
-                               link_kind="canonical", association_id=association))
+                               link_kind="canonical"))
             continue
         link_kind = "synonym_of_accepted" if hit.rank == snapshot else "linked"
         out.append(replace(hit, taxon_id=primary, kind=KIND_SYNONYM, link_kind=link_kind,
@@ -724,8 +725,6 @@ def _build_rows(conn, query, codes, national_expr, hits, evidence_ids, current_i
             draft.best = hit
         held = draft.taxon_ids.get(hit.taxon_id)
         if held is None or _hit_order(hit) < _hit_order(held):
-            if held is not None and hit.association_id is None and held.association_id:
-                hit = replace(hit, association_id=held.association_id)
             draft.taxon_ids[hit.taxon_id] = hit
     siblings = _same_name_siblings(conn, list(drafts.values()))
     sibling_primaries = association_primaries(conn, {t for ids in siblings.values() for t in ids})
