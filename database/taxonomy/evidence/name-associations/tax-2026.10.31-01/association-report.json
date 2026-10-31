@@ -1354,7 +1354,7 @@
   "nortaxa|family_differs": 4145
  },
  "format": "sporely-name-association-build-v1",
- "gz_sha256": "4c613d86c936f40883af34b187261d9aba9c4adefd61d3125bd114a078c9a602",
+ "gz_sha256": "816b6db6d258f844ca79665b931f72bae11922d205213540dc90c9aea2e7f05f",
  "inputs_sha256": {
   "norm/col_xr/taxa.jsonl": "e4e1cddf6ad63809ebe50699a60dc7103e7201bd700a7e3328921c83a529b71a",
   "norm/dyntaxa/taxa.jsonl": "637352733da7bd42ad9e50f94b1b7fb772de041ba58cc4753c99d0f176145be7",
@@ -1372,7 +1372,7 @@
   "external_id_integer:inaturalist:accepted": 1195,
   "external_id_text:dyntaxa:accepted": 14733,
   "external_id_text:nortaxa:accepted": 22046,
-  "external_id_text:nortaxa:synonym": 9363,
+  "external_id_text:nortaxa:synonym": 22580,
   "inaturalist_column": 1174,
   "preferred_scientific_name_no": 22046,
   "preferred_scientific_name_sv": 14733,
@@ -1381,7 +1381,7 @@
   "scientific_name": 16128,
   "vernacular": 1588
  },
- "sqlite_sha256": "2e29bcd81d9fa114c1bfed2b15bd655083bb339788b879aace1bc7c12ed76a56",
+ "sqlite_sha256": "c4dd4c3bdefcfd832a20dc30e8b4b638e2e923bdd3efff5962aeaf381fdb4969",
  "unmatched_national_usages": {
   "dyntaxa|above_genus": 211,
   "dyntaxa|genus": 4,

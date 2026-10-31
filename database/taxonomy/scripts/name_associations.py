@@ -46,6 +46,12 @@ POLICY_FORMAT = "sporely-taxonomy-name-association-policy-v1"
 NOTE_PREFIX = "name_association:"
 EXACT = "exact_accepted_name"
 SYNONYM = "unique_synonym_bridge"
+#: A national source's own synonym id projected onto the concept its
+#: accepted usage already names (providers such as Artsorakel still return
+#: ids of older names).
+OWN_SYNONYM = "own_source_synonym"
+#: Sources whose synonym ids are taxon ids a provider may return.
+SYNONYM_ID_SOURCES = frozenset({"nortaxa"})
 #: Synonym statuses a synonym rule may follow. Misapplied names and pro parte
 #: synonyms name other concepts, so they never bridge.
 PLAIN_SYNONYM_STATUSES = frozenset({"synonym", "heterotypicSynonym", "homotypicSynonym"})
@@ -123,6 +129,9 @@ class Derivation:
     blocked: collections.Counter = field(default_factory=collections.Counter)
     blocked_examples: dict = field(default_factory=lambda: collections.defaultdict(list))
     unmatched: collections.Counter = field(default_factory=collections.Counter)
+    #: ``(concept id, source, synonym id, synonym name)`` for synonym ids of
+    #: accepted usages whose concept is known (see ``OWN_SYNONYM``).
+    source_synonyms: list = field(default_factory=list)
 
     def block(self, source: str, reason: str, usage: Usage, detail=None) -> None:
         self.blocked[(source, reason, rank_group(usage.rank))] += 1
@@ -369,6 +378,18 @@ def derive(conn: sqlite3.Connection, usages: dict[str, list[Usage]], policy: dic
             claimed[(source, primary)].add(u.identifier)
             if own is not None:
                 primary_of[own] = primary
+
+        if source in SYNONYM_ID_SOURCES:
+            for u in accepted:
+                owners = bridged.get((source, u.namespace, u.identifier)) or (
+                    {anchor[(source, u.identifier)]} if (source, u.identifier) in anchor else set())
+                owners = {primary_of.get(t, t) for t in owners}
+                if len(owners) != 1:
+                    continue
+                concept = next(iter(owners))
+                for syn in synonyms_of.get(u.identifier, ()):
+                    if not syn.qualified and len(synonym_targets[syn.key]) == 1:
+                        result.source_synonyms.append((concept, source, syn.identifier, syn.name))
     result.associations.sort(key=lambda a: (a["member_source_system"], a["member_external_id"]))
     return result
 
@@ -455,7 +476,9 @@ def apply_overlay(conn: sqlite3.Connection, derivation: Derivation, *, release_i
         if source in INTEGER_SOURCE:
             add_integer(primary, INTEGER_SOURCE[source], a["member_external_id"], "accepted",
                         a["member_scientific_name"], note)
-        if norm(a["member_scientific_name"]) != norm(a["primary_scientific_name"]):
+        # The national display name must be an exact scientific name of the
+        # primary (the cloud validator checks this), so compare exactly here.
+        if a["member_scientific_name"] != a["primary_scientific_name"]:
             add_scientific(primary, a["member_scientific_name"], source, note)
         for syn in a["synonyms"]:
             add_scientific(primary, syn["name"], source, note)
@@ -507,6 +530,9 @@ def apply_overlay(conn: sqlite3.Connection, derivation: Derivation, *, release_i
             f"WHERE taxon_id = ? AND preferred_scientific_name_{country} IS NULL",
             (a["member_scientific_name"], source, ns, a["member_external_id"], primary))
         counts[f"preferred_scientific_name_{country}"] += cur.rowcount
+    for concept, source, identifier, name in sorted(derivation.source_synonyms):
+        add_text(concept, source, TAXON_NAMESPACE[source], identifier, "synonym", name,
+                 f"{NOTE_PREFIX}{OWN_SYNONYM}")
     return dict(sorted(counts.items()))
 
 

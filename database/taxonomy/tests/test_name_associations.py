@@ -61,6 +61,7 @@ def nortaxa_usages():
         usage("nortaxa", "506", "Lycoperdon", rank="genus"),
         usage("nortaxa", "508", "Panaeolina foenisecii", family="Bolbitiaceae", authorship="(Peck) Maire"),
         usage("nortaxa", "509", "Fomes fomentarius"),
+        usage("nortaxa", "609", "Polyporus fomentarius", status="synonym", accepted="509"),
     ]
 
 
@@ -278,3 +279,12 @@ def test_cloud_export_accepts_association_provenance_only(base, tmp_path):
                  "WHERE taxon_id = 11 AND external_id = '501'")
     with pytest.raises(ce.ExportError, match="without an authoritative bridge"):
         ce._validate_national_names(base, present)
+
+
+def test_synonym_ids_follow_an_already_bridged_usage(base, tmp_path):
+    na.apply_overlay(base, derive(base), release_id="tax-cand", policy=POLICY, norm_dir=tmp_path)
+    # Fomes: the NorTaxa usage was bridged by review; its old-name id now
+    # resolves too, without any new association.
+    assert base.execute("SELECT taxon_id, id_role, note FROM taxon_external_id_text_min "
+                        "WHERE source_system='nortaxa' AND external_id='609'").fetchall() == \
+        [(19, "synonym", "name_association:own_source_synonym")]
