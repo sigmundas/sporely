@@ -174,3 +174,17 @@ def test_reversal_recovers_the_member_identity(tmp_path, release):
     # After the reversal the two concepts are separate entries again.
     assert sorted(r.concepts[0].sporely_taxon_id for r in rows(reversed_release, "Rugosomyces")) == [21]
     assert [c.sporely_taxon_id for c in rows(reversed_release, "Russula aeruginea")[0].concepts] == [10]
+
+
+def test_source_records_explain_the_association(release):
+    from database.taxon_lookup import taxon_source_records
+
+    details = taxon_source_records(release, 21)  # asked for the member
+    assert details["sporely_taxon_id"] == 11
+    assert details["primary"]["scientific_name"] == "Calocybe carnea"
+    (a,) = details["associations"]
+    assert (a["association_id"], a["rule"], a["via_scientific_name"], a["member_taxon_id"]) == \
+        ("nortaxa:501", "unique_synonym_bridge", "Calocybe carnea", 21)
+    assert a["differences"][0] == "scientific_name"
+    assert {"source_system": "nortaxa", "namespace": "nortaxa_taxon_id", "external_id": "601",
+            "id_role": "synonym", "note": "name_association:unique_synonym_bridge"} in details["external_ids"]
