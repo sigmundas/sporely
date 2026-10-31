@@ -20585,6 +20585,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         searcher = getattr(lookup, "search_taxa", None) if lookup is not None else None
         if not callable(searcher):
             return None
+        # A concept a release name association presents as another one has
+        # no row of its own: it shows in its primary's row, still carrying
+        # the stored id, so nothing changes unless the user picks again.
+        try:
+            shown_as = lookup.current_taxon_id(taxon_id) or taxon_id
+        except Exception:
+            shown_as = taxon_id
         fallback = None
         for name in names:
             if not name:
@@ -20595,9 +20602,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 continue
             exact = []
             for row in page.rows:
-                concept = next((c for c in row.concepts if c.sporely_taxon_id == taxon_id), None)
+                concept = next((c for c in row.concepts if c.sporely_taxon_id in (taxon_id, shown_as)), None)
                 if concept is None:
                     continue
+                if concept.sporely_taxon_id != taxon_id:
+                    concept = dataclass_replace(concept, sporely_taxon_id=taxon_id)
                 if row.name.casefold() == name.casefold():
                     exact.append((row, concept))
                 elif fallback is None:

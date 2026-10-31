@@ -218,3 +218,69 @@ def test_reversal_attributes_an_observation_resolved_through_a_synonym_id(tmp_pa
     (affected,) = reversal.audit(obs_db, release, reversed_release)["affected"]
     assert affected["observation_id"] == 1
     assert affected["proposal"] == {"action": "rebind_to_member_concept", "sporely_taxon_id": 21}
+
+
+# --- the observation editor -------------------------------------------------
+
+
+def test_editor_shows_and_keeps_a_member_bound_observation(release, tmp_path, monkeypatch):
+    """An observation bound to the NorTaxa member shows in its primary's
+    entry with the stored id; saving unchanged keeps the id and provenance;
+    picking again binds the primary."""
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from database import schema
+    from tests.test_observation_details_ai_copy_and_vernacular_autofill import _build_dialog
+    from tests.test_observation_details_taxon_picker import _pick, _save, _shown
+    from utils import vernacular_utils
+
+    db_path = tmp_path / "observations.sqlite3"
+    monkeypatch.setattr(schema, "get_database_path", lambda: db_path)
+    monkeypatch.setattr(vernacular_utils, "resolve_vernacular_db_path", lambda *_a, **_k: release)
+    schema.init_database()
+    from database.models import ObservationDB as db
+
+    identity = TaxonIdentity.from_prefixed_external_id(
+        "NBIC:500", scientific_name="Russula aeruginea", rank="species").resolved_to(
+        20, provenance="taxonomy_v2:tax-2026.10.07-01:taxon_min.canonical_source_usage")
+    obs_id = db.create_observation(date="2026-10-31 12:00", genus="Russula", species="aeruginea",
+                                   scientific_name_snapshot="Russula aeruginea", taxon_rank_snapshot="species",
+                                   **identity.to_row())
+    columns = ("sporely_taxon_id", "taxon_identity_proof", "taxon_identity_external_id", "taxon_identity_provenance")
+
+    def stored():
+        with sqlite3.connect(db_path) as conn:
+            return conn.execute(f"SELECT {', '.join(columns)} FROM observations WHERE id = ?", (obs_id,)).fetchone()
+
+    before = stored()
+    qapp = QApplication.instance() or QApplication([])
+    dialogs = []
+
+    def editor():
+        dialog = _build_dialog(monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=release,
+                               observation=db.get_observation(obs_id))
+        dialog.show()
+        qapp.processEvents()
+        dialogs.append(dialog)
+        return dialog
+
+    try:
+        dialog = editor()
+        assert _shown(dialog) == ("Russula aeruginea", 20)
+        _save(db, obs_id, dialog)
+        assert stored() == before
+        _save(db, obs_id, editor())
+        assert stored() == before
+        dialog = editor()
+        dialog.taxon_picker.begin_edit()
+        _pick(dialog, "Russula aeruginea", "Russula aeruginea")
+        _save(db, obs_id, dialog)
+        assert stored()[:2] == (10, "taxonomy_v2_artifact")
+        assert _shown(editor()) == ("Russula aeruginea", 10)
+    finally:
+        for dialog in dialogs:
+            dialog._cleanup_dialog_threads()
+            dialog.hide()
+            dialog.deleteLater()
