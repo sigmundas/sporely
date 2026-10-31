@@ -2,6 +2,11 @@
 
 All notable changes to Sporely are documented here.
 
+## Unreleased
+
+### Changed
+- **The reference picker shows which AI service suggested each species, and its score.** Each AI suggestion row now ends with, for example, "Artsorakel 9% · iNaturalist 12%". A species suggested by both services is listed once. Before, an iNaturalist row marked "name only" could repeat a species that Artsorakel had already linked.
+
 ## 2026-10-30 (desktop 0.9.29)
 
 Requires server migration `20261026180718` (sporely-web, reference statistics), already applied on 2026-10-26. The server's active taxonomy is already `tax-2026.10.23-11` (imported 2026-10-25); this version bundles the same release.

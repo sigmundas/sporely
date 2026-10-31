@@ -70,6 +70,8 @@ class TaxonSuggestion:
     #: True when the provider identifier did not resolve to one concept
     #: (unknown to the installed taxonomy, or ambiguous).
     external_id_unresolved: bool = False
+    #: ``(service, score)`` of every AI row merged into this one, in order.
+    ai_scores: tuple[tuple[str, float | None], ...] = ()
 
     @property
     def is_concept(self) -> bool:
@@ -379,7 +381,9 @@ def reference_default_suggestions(
     AI rows are deduplicated by concept, never by name: a row naming the
     own taxon's concept is dropped, while a same-name row naming another
     concept stays (that ambiguity is real). Name-only AI rows are
-    deduplicated by name and dropped when they repeat the own name.
+    deduplicated by name, dropped when they repeat the own name, and merged
+    into a concept row carrying their name. Each row keeps every merged
+    service's score in ``ai_scores``.
     ``own_label`` names the own taxon when genus and species are not given.
     """
     own_name = _text(f"{own_genus} {own_species}") or _text(own_label)
@@ -414,22 +418,38 @@ def reference_default_suggestions(
     if own is not None and own_id is None:
         link = _agreeing_concept(resolved, own_name)
 
-    ai: list[TaxonSuggestion] = []
-    seen_ids: set[int] = {own_id} if own_id is not None else set()
+    skip_ids: set[int] = {own_id} if own_id is not None else set()
     if link is not None:
-        seen_ids.add(link.sporely_taxon_id)
-    seen_names: set[str] = {own_name.casefold()} if own_name else set()
+        skip_ids.add(link.sporely_taxon_id)
+    skip_names: set[str] = {own_name.casefold()} if own_name else set()
+    # A name-only row joins the concept row that carries its name: the
+    # same species seen by a service whose identifiers are not installed.
+    concept_by_name: dict[str, int] = {}
     for suggestion in resolved:
         if suggestion.is_concept:
-            if suggestion.sporely_taxon_id in seen_ids:
+            for name in (suggestion.scientific_name, suggestion.concept_name):
+                if name:
+                    concept_by_name.setdefault(name.casefold(), suggestion.sporely_taxon_id)
+    rows: dict[object, TaxonSuggestion] = {}
+    scores: dict[object, list[tuple[str, float | None]]] = {}
+    for suggestion in resolved:
+        folded = suggestion.scientific_name.casefold()
+        if suggestion.is_concept:
+            if suggestion.sporely_taxon_id in skip_ids:
                 continue
-            seen_ids.add(suggestion.sporely_taxon_id)
+            key: object = suggestion.sporely_taxon_id
+        elif folded in skip_names:
+            continue
         else:
-            folded = suggestion.scientific_name.casefold()
-            if folded in seen_names:
+            key = concept_by_name.get(folded, folded)
+            if isinstance(key, int) and key in skip_ids:
                 continue
-            seen_names.add(folded)
-        ai.append(suggestion)
+        if key not in rows or (suggestion.is_concept and not rows[key].is_concept):
+            rows[key] = suggestion
+        entry_scores = scores.setdefault(key, [])
+        if suggestion.service and all(service != suggestion.service for service, _ in entry_scores):
+            entry_scores.append((suggestion.service, suggestion.score))
+    ai = [replace(row, ai_scores=tuple(scores[key])) for key, row in rows.items()]
 
     # Provider identifiers only. The own concept joins them only when there
     # are some, so that an identifier naming a *different* same-name concept

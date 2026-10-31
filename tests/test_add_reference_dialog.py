@@ -19,7 +19,7 @@ import pytest
 from utils.taxon_identity import TaxonIdentity
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QDialog
+from PySide6.QtWidgets import QApplication, QDialog, QStyleOptionViewItem
 
 from database.reference_library import MeasurementSetCandidate
 from ui.add_reference_dialog import (
@@ -27,7 +27,9 @@ from ui.add_reference_dialog import (
     PersonalObservationCandidate,
     default_my_observation_candidates,
     filter_library_candidates,
+    _AI_SCORES_ROLE,
     format_ai_candidate_display,
+    format_ai_scores,
 )
 
 
@@ -151,6 +153,24 @@ def _ai_row_indexes(combo) -> list[int]:
 def test_format_ai_candidate_display():
     text = format_ai_candidate_display(_ai_candidates()[0])
     assert text == "Cortinarius rubellus (Bittersnerlerørsopp)  82%"
+
+
+def test_format_ai_scores_names_each_service():
+    assert format_ai_scores([("arts", 0.09), ("inat", 12.4), ("other", None)]) == (
+        "Artsorakel 9% · iNaturalist 12% · other"
+    )
+
+
+def test_ai_rows_show_service_and_score_beside_a_clean_label():
+    dialog = _make_dialog(genus="Cortinarius", species="limonius", ai_candidates=_ai_candidates())
+    combo = dialog.taxon_target_combo
+    (ai_index,) = _ai_row_indexes(combo)
+    assert "%" not in combo.itemText(ai_index)
+    assert combo.itemData(ai_index, _AI_SCORES_ROLE) == "Artsorakel 82%"
+    option = QStyleOptionViewItem()
+    combo.itemDelegate().initStyleOption(option, combo.model().index(ai_index, 0))
+    assert option.text == f"{combo.itemText(ai_index)}  —  Artsorakel 82%"
+    dialog.reject()
 
 
 def test_taxon_target_combo_defaults_to_own_taxon():
