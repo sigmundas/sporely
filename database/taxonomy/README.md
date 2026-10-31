@@ -153,6 +153,23 @@ build or freeze, or concepts that stop being live without a supersession.
 Publication remains the separate release-decision → promote → export/import
 flow below.
 
+## Name associations
+
+`scripts/name_associations.py` derives a candidate from a frozen release by
+the owner's merge-by-name policy (`policies/name_association_policy.json`,
+ADR 0006). It associates each NorTaxa and Dyntaxa Fungi usage with the live
+concept of the same canonical name and rank, or through a unique synonym,
+preferring the COL-backed concept, and blocks only ambiguous cases. It
+allocates no id: it writes `taxon_association_min` and projects the member's
+ids, names, vernaculars and Red List rows onto the primary as
+`name_association:<rule>` rows. NorTaxa synonym ids of already-known concepts
+are projected too (`own_source_synonym`), because Artsorakel returns ids of
+older names. Inputs are the base release gz (pinned sha256) and that build's
+`norm/` directory; two builds are byte-identical. Reverse an association by
+adding an `exclusions` entry and rebuilding; preview the affected
+observations with `scripts/association_reversal_audit.py` (read-only).
+Command and evidence: `evidence/name-associations/tax-2026.10.31-01/`.
+
 ## Publishing to the cloud
 
 The cloud copy is built from the committed bundle, not from the build
