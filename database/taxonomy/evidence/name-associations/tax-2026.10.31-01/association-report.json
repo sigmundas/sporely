@@ -1,0 +1,1395 @@
+{
+ "associations": {
+  "dyntaxa|source_usage|exact_accepted_name|above_genus": 935,
+  "dyntaxa|source_usage|exact_accepted_name|genus": 2693,
+  "dyntaxa|source_usage|exact_accepted_name|species_and_below": 10466,
+  "dyntaxa|source_usage|exact_name_via_association|genus": 1,
+  "dyntaxa|source_usage|exact_name_via_association|species_and_below": 356,
+  "dyntaxa|source_usage|unique_synonym_bridge|above_genus": 7,
+  "dyntaxa|source_usage|unique_synonym_bridge|genus": 2,
+  "dyntaxa|source_usage|unique_synonym_bridge|species_and_below": 273,
+  "nortaxa|concept|exact_accepted_name|above_genus": 324,
+  "nortaxa|concept|exact_accepted_name|genus": 1736,
+  "nortaxa|concept|exact_accepted_name|species_and_below": 2620,
+  "nortaxa|concept|unique_synonym_bridge|genus": 2,
+  "nortaxa|concept|unique_synonym_bridge|species_and_below": 978,
+  "nortaxa|source_usage|exact_accepted_name|above_genus": 401,
+  "nortaxa|source_usage|exact_accepted_name|genus": 2340,
+  "nortaxa|source_usage|exact_accepted_name|species_and_below": 13645
+ },
+ "associations_total": 36779,
+ "base_release_id": "tax-2026.10.23-11",
+ "base_sqlite_sha256": "2a81f68435d0606633319be0845f9fa1de46ccd9c2442f391af742fad3899a97",
+ "blocked": {
+  "dyntaxa|already_bridged|genus": 2,
+  "dyntaxa|already_bridged|species_and_below": 2359,
+  "dyntaxa|multiple_primary_candidates|above_genus": 5,
+  "dyntaxa|multiple_primary_candidates|genus": 38,
+  "dyntaxa|multiple_primary_candidates|species_and_below": 87,
+  "dyntaxa|primary_claimed_by_other_usage|species_and_below": 12,
+  "dyntaxa|qualified_concept|above_genus": 312,
+  "dyntaxa|qualified_concept|genus": 10,
+  "dyntaxa|qualified_concept|species_and_below": 131,
+  "dyntaxa|source_homonym|species_and_below": 4,
+  "nortaxa|already_bridged|species_and_below": 5867,
+  "nortaxa|continuity_hold|above_genus": 1,
+  "nortaxa|continuity_hold|genus": 21,
+  "nortaxa|continuity_hold|species_and_below": 92,
+  "nortaxa|multiple_primary_candidates|genus": 34,
+  "nortaxa|multiple_primary_candidates|species_and_below": 93,
+  "nortaxa|primary_claimed_by_other_usage|species_and_below": 2,
+  "nortaxa|qualified_concept|species_and_below": 88,
+  "nortaxa|source_homonym|above_genus": 79,
+  "nortaxa|source_homonym|genus": 15,
+  "nortaxa|source_homonym|species_and_below": 13
+ },
+ "blocked_examples": {
+  "dyntaxa|already_bridged": [
+   {
+    "name": "Abortiporus biennis",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1"
+   },
+   {
+    "name": "Melittosporiella",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1015563"
+   },
+   {
+    "name": "Megalaria grossa",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1026"
+   },
+   {
+    "name": "Melanophyllum eyrei",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1034"
+   },
+   {
+    "name": "Micarea globulosella",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1044"
+   },
+   {
+    "name": "Ascocoryne turficola",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:107"
+   },
+   {
+    "name": "Ascotremella faginea",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:108"
+   },
+   {
+    "name": "Nephroma laevigatum",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1083"
+   },
+   {
+    "name": "Osteina undosa",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1106"
+   },
+   {
+    "name": "Lecanographa amylacea",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1114"
+   },
+   {
+    "name": "Lecanographa lyncea",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1115"
+   },
+   {
+    "name": "Alyxoria ochrocheila",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1116"
+   },
+   {
+    "name": "Zwackhia viridis",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1119"
+   },
+   {
+    "name": "Gyalecta carneola",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1144"
+   },
+   {
+    "name": "Pannaria conoplea",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1152"
+   },
+   {
+    "name": "Parmelina tiliacea",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1173"
+   },
+   {
+    "name": "Perenniporia medulla-panis",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1177"
+   },
+   {
+    "name": "Lepra multipuncta",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1182"
+   },
+   {
+    "name": "Petractis clausa",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1184"
+   },
+   {
+    "name": "Gyalecta hypoleuca",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1185"
+   },
+   {
+    "name": "Phaeophyscia endophoenicea",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1195"
+   },
+   {
+    "name": "Phellinus populicola",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1205"
+   },
+   {
+    "name": "Phellodon confluens",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1206"
+   },
+   {
+    "name": "Hermanssonia centrifuga",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1209"
+   },
+   {
+    "name": "Phlyctis agelaea",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1223"
+   }
+  ],
+  "dyntaxa|multiple_primary_candidates": [
+   {
+    "detail": [
+     84754,
+     626582
+    ],
+    "name": "Byssomerulius",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1000746"
+   },
+   {
+    "detail": [
+     15025,
+     626152,
+     626964
+    ],
+    "name": "Cerinomyces",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1000778"
+   },
+   {
+    "detail": [
+     85259,
+     611731,
+     625687
+    ],
+    "name": "Gerronema",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1000943"
+   },
+   {
+    "detail": [
+     63307,
+     151102,
+     625690
+    ],
+    "name": "Henningsomyces",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1000977"
+   },
+   {
+    "detail": [
+     74905,
+     166366,
+     625129
+    ],
+    "name": "Lachnella",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1001035"
+   },
+   {
+    "detail": [
+     77981,
+     168340,
+     625453
+    ],
+    "name": "Lycoperdon",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1001080"
+   },
+   {
+    "detail": [
+     130788,
+     606961,
+     626721
+    ],
+    "name": "Xenasmatella",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1001193"
+   },
+   {
+    "detail": [
+     111787,
+     171573,
+     633800
+    ],
+    "name": "Propolis",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1001234"
+   },
+   {
+    "detail": "unique_synonym_bridge:[130316, 607649]",
+    "name": "Triblidiopsis",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1001374"
+   },
+   {
+    "detail": [
+     130360,
+     612850,
+     628297
+    ],
+    "name": "Tympanis",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1001395"
+   },
+   {
+    "detail": [
+     86091,
+     624151,
+     627953
+    ],
+    "name": "Monodictys",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1008014"
+   },
+   {
+    "detail": [
+     80203,
+     169865,
+     631845
+    ],
+    "name": "Mycoporum",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1008020"
+   },
+   {
+    "detail": [
+     130680,
+     131056,
+     633631
+    ],
+    "name": "Pyrenula",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1008103"
+   },
+   {
+    "detail": [
+     129967,
+     606786,
+     631276
+    ],
+    "name": "Tephromela",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1008160"
+   },
+   {
+    "detail": [
+     130013,
+     634296
+    ],
+    "name": "Thelidium",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1008165"
+   },
+   {
+    "detail": [
+     59958,
+     625589
+    ],
+    "name": "Gymnopus",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1010826"
+   },
+   {
+    "detail": [
+     86815,
+     624150,
+     625514
+    ],
+    "name": "Nia",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1013752"
+   },
+   {
+    "detail": [
+     87313,
+     626433
+    ],
+    "name": "Xylodon",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1014488"
+   },
+   {
+    "detail": [
+     11091,
+     628324
+    ],
+    "name": "Calycina",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1015318"
+   },
+   {
+    "detail": [
+     61427,
+     165551,
+     627727
+    ],
+    "name": "Hapalocystis",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1015482"
+   },
+   {
+    "detail": [
+     80598,
+     170130,
+     621890
+    ],
+    "name": "Myriococcum",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1015592"
+   },
+   {
+    "detail": [
+     40391,
+     634733
+    ],
+    "name": "Endomyces",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1016007"
+   },
+   {
+    "detail": "unique_synonym_bridge:[98240, 626453]",
+    "name": "Fomitopsis mellita",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1964"
+   },
+   {
+    "detail": [
+     150660,
+     623934,
+     631852
+    ],
+    "name": "Myxotrichaceae",
+    "rank": "family",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:2002272"
+   },
+   {
+    "detail": [
+     164345,
+     630918
+    ],
+    "name": "Farnoldia micropsis",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:228827"
+   }
+  ],
+  "dyntaxa|primary_claimed_by_other_usage": [
+   {
+    "detail": 24972,
+    "name": "Leptosphaeria orae-maris",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:259128"
+   },
+   {
+    "detail": 24972,
+    "name": "Phaeosphaeria orae-maris",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:6319521"
+   },
+   {
+    "detail": 61720,
+    "name": "Russula anatina",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:5830"
+   },
+   {
+    "detail": 61720,
+    "name": "Russula galochroa",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:5869"
+   },
+   {
+    "detail": 62808,
+    "name": "Encoelia rhenana",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:258686"
+   },
+   {
+    "detail": 62808,
+    "name": "Rutstroemia rhenana",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:6010945"
+   },
+   {
+    "detail": 81008,
+    "name": "Botryobasidium botryosum",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:253699"
+   },
+   {
+    "detail": 81008,
+    "name": "Botryobasidium vagum",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:3151"
+   },
+   {
+    "detail": 166202,
+    "name": "Lecanora rupicola",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:229052"
+   },
+   {
+    "detail": 166202,
+    "name": "Lecanora rupicola subsp. subplanata",
+    "rank": "subspecies",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:230453"
+   },
+   {
+    "detail": 171344,
+    "name": "Phaeorrhiza sareptana",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:6000453"
+   },
+   {
+    "detail": 171344,
+    "name": "Phaeorrhiza sareptana var. sphaerocarpa",
+    "rank": "variety",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:6000454"
+   }
+  ],
+  "dyntaxa|qualified_concept": [
+   {
+    "name": "Encoelia",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1000897"
+   },
+   {
+    "name": "Exidia s.lat.",
+    "rank": "speciesaggregate",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1000912"
+   },
+   {
+    "name": "Peziza s.lat.",
+    "rank": "speciesaggregate",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1001181"
+   },
+   {
+    "name": "Piceomphale",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1001207"
+   },
+   {
+    "name": "Psathyrella s.lat.",
+    "rank": "speciesaggregate",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1001239"
+   },
+   {
+    "name": "Chromosera",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1010839"
+   },
+   {
+    "name": "Roridomyces",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1012304"
+   },
+   {
+    "name": "Aleurocystidiellum",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1014458"
+   },
+   {
+    "name": "Anthostoma",
+    "rank": "genus",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1015992"
+   },
+   {
+    "name": "Microglossum olivaceum s.lat.",
+    "rank": "speciesaggregate",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1051"
+   },
+   {
+    "name": "Coprinopsis episcopalis",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:106599"
+   },
+   {
+    "name": "Asterodon ferruginosus",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:112"
+   },
+   {
+    "name": "Phellopilus nigrolimitatus",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1204"
+   },
+   {
+    "name": "Hemipholiota populnea",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1225"
+   },
+   {
+    "name": "Bacidina phacodes/tarandina",
+    "rank": "speciesaggregate",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:132"
+   },
+   {
+    "name": "Sarcodon glaucopus s.lat.",
+    "rank": "speciesaggregate",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1437"
+   },
+   {
+    "name": "Sarcoscypha coccinea s.lat.",
+    "rank": "speciesaggregate",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1444"
+   },
+   {
+    "name": "Skeletocutis nivea s.lat.",
+    "rank": "speciesaggregate",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1504"
+   },
+   {
+    "name": "Tricholoma sulphurescens s.lat.",
+    "rank": "speciesaggregate",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1600"
+   },
+   {
+    "name": "Bryobilimbia hypnorum s.lat.",
+    "rank": "speciesaggregate",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1811"
+   },
+   {
+    "name": "Cortinarius dionysae s.lat.",
+    "rank": "speciesaggregate",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1981"
+   },
+   {
+    "name": "Cortinarius mussivus/russeoides",
+    "rank": "speciesaggregate",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:1986"
+   },
+   {
+    "name": "Gautieria graveolens s.str.",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:202845"
+   },
+   {
+    "name": "Ramaria fennica/fumigata",
+    "rank": "speciesaggregate",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:2050"
+   },
+   {
+    "name": "Tricholoma sejunctum s. str.",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:205306"
+   }
+  ],
+  "dyntaxa|source_homonym": [
+   {
+    "name": "Cortinarius subexitiosus",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:6006834"
+   },
+   {
+    "name": "Bispora betulina",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:6034963"
+   },
+   {
+    "name": "Cortinarius subexitiosus",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:6331894"
+   },
+   {
+    "name": "Bispora betulina",
+    "rank": "species",
+    "usage": "urn:lsid:dyntaxa.se:Taxon:6332375"
+   }
+  ],
+  "nortaxa|already_bridged": [
+   {
+    "name": "Aspicilia berntii",
+    "rank": "species",
+    "usage": "120095"
+   },
+   {
+    "name": "Henrica melaspora",
+    "rank": "species",
+    "usage": "120101"
+   },
+   {
+    "name": "Henrica theleodes",
+    "rank": "species",
+    "usage": "120102"
+   },
+   {
+    "name": "Placopyrenium cinereoatratum",
+    "rank": "species",
+    "usage": "120104"
+   },
+   {
+    "name": "Pterygiopsis concordatula",
+    "rank": "species",
+    "usage": "120105"
+   },
+   {
+    "name": "Cortinarius latobalteatus",
+    "rank": "species",
+    "usage": "120244"
+   },
+   {
+    "name": "Cortinarius arcifolius",
+    "rank": "species",
+    "usage": "120258"
+   },
+   {
+    "name": "Proliferodiscus tricolor",
+    "rank": "species",
+    "usage": "120296"
+   },
+   {
+    "name": "Aphanobasidium subnitens",
+    "rank": "species",
+    "usage": "120298"
+   },
+   {
+    "name": "Cystobasidium fimetarium",
+    "rank": "species",
+    "usage": "122248"
+   },
+   {
+    "name": "Colacogloea peniophorae",
+    "rank": "species",
+    "usage": "122253"
+   },
+   {
+    "name": "Microbotryum anomalum",
+    "rank": "species",
+    "usage": "122263"
+   },
+   {
+    "name": "Microbotryum bistortarum",
+    "rank": "species",
+    "usage": "122268"
+   },
+   {
+    "name": "Microbotryum goeppertianum",
+    "rank": "species",
+    "usage": "122280"
+   },
+   {
+    "name": "Microbotryum koenigiae",
+    "rank": "species",
+    "usage": "122283"
+   },
+   {
+    "name": "Microbotryum kuehneanum",
+    "rank": "species",
+    "usage": "122286"
+   },
+   {
+    "name": "Microbotryum parlatorei",
+    "rank": "species",
+    "usage": "122293"
+   },
+   {
+    "name": "Microbotryum picaceum",
+    "rank": "species",
+    "usage": "122296"
+   },
+   {
+    "name": "Microbotryum pinguiculae",
+    "rank": "species",
+    "usage": "122299"
+   },
+   {
+    "name": "Microbotryum pustulatum",
+    "rank": "species",
+    "usage": "122302"
+   },
+   {
+    "name": "Microbotryum reticulatum",
+    "rank": "species",
+    "usage": "122306"
+   },
+   {
+    "name": "Microbotryum scabiosae",
+    "rank": "species",
+    "usage": "122309"
+   },
+   {
+    "name": "Microbotryum scorzonerae",
+    "rank": "species",
+    "usage": "122312"
+   },
+   {
+    "name": "Microbotryum stellariae",
+    "rank": "species",
+    "usage": "122317"
+   },
+   {
+    "name": "Microbotryum stygium",
+    "rank": "species",
+    "usage": "122319"
+   }
+  ],
+  "nortaxa|continuity_hold": [
+   {
+    "name": "Vibrissea filisporia f. filisporia",
+    "rank": "form",
+    "usage": "123816"
+   },
+   {
+    "name": "Ascochyta stipae",
+    "rank": "species",
+    "usage": "128204"
+   },
+   {
+    "name": "Xylocoremium",
+    "rank": "genus",
+    "usage": "128474"
+   },
+   {
+    "name": "Cheilymenia granulata var. granulata",
+    "rank": "variety",
+    "usage": "129598"
+   },
+   {
+    "name": "Pleospora penicillus var. penicillus",
+    "rank": "variety",
+    "usage": "129616"
+   },
+   {
+    "name": "Cortinarius bovinoideus",
+    "rank": "species",
+    "usage": "131574"
+   },
+   {
+    "name": "Cortinarius balteatocumatilis var. pallidus",
+    "rank": "variety",
+    "usage": "132229"
+   },
+   {
+    "name": "Pycnothyrium junci",
+    "rank": "species",
+    "usage": "133525"
+   },
+   {
+    "name": "Inocybe boreolilacina",
+    "rank": "species",
+    "usage": "144094"
+   },
+   {
+    "name": "Fumago",
+    "rank": "genus",
+    "usage": "145252"
+   },
+   {
+    "name": "Caripia",
+    "rank": "genus",
+    "usage": "171012"
+   },
+   {
+    "name": "Deflexula",
+    "rank": "genus",
+    "usage": "171144"
+   },
+   {
+    "name": "Melanopus rhizophilus",
+    "rank": "species",
+    "usage": "171674"
+   },
+   {
+    "name": "Saccoblastia",
+    "rank": "genus",
+    "usage": "173611"
+   },
+   {
+    "name": "Hydnophlebia",
+    "rank": "genus",
+    "usage": "203634"
+   },
+   {
+    "name": "Ascocoryne inflata",
+    "rank": "species",
+    "usage": "214743"
+   },
+   {
+    "name": "Parmelia cyloselis",
+    "rank": "species",
+    "usage": "216388"
+   },
+   {
+    "name": "Siphula thamnolioides",
+    "rank": "species",
+    "usage": "220321"
+   },
+   {
+    "name": "Verrucaria tessellata",
+    "rank": "species",
+    "usage": "222742"
+   },
+   {
+    "name": "Geoscypha",
+    "rank": "genus",
+    "usage": "225897"
+   },
+   {
+    "name": "Peltigera neorufescens-3",
+    "rank": "species",
+    "usage": "226331"
+   },
+   {
+    "name": "Cortinarius flexipes var. brachyspermus",
+    "rank": "variety",
+    "usage": "228156"
+   },
+   {
+    "name": "Entoloma phlebodermum",
+    "rank": "species",
+    "usage": "298350"
+   },
+   {
+    "name": "Triscelophorus",
+    "rank": "genus",
+    "usage": "299603"
+   },
+   {
+    "name": "Postia calvenda",
+    "rank": "species",
+    "usage": "300026"
+   }
+  ],
+  "nortaxa|multiple_primary_candidates": [
+   {
+    "detail": "unique_synonym_bridge:[49319, 87401]",
+    "name": "Achroomyces disciformis",
+    "rank": "species",
+    "usage": "122356"
+   },
+   {
+    "detail": [
+     159865,
+     609750
+    ],
+    "name": "Chrysopsora",
+    "rank": "genus",
+    "usage": "122551"
+   },
+   {
+    "detail": "unique_synonym_bridge:[55991, 57095, 110871]",
+    "name": "Puccinia angelicae",
+    "rank": "species",
+    "usage": "122602"
+   },
+   {
+    "detail": [
+     130393,
+     164910
+    ],
+    "name": "Hendersonia",
+    "rank": "genus",
+    "usage": "128270"
+   },
+   {
+    "detail": [
+     85307,
+     165809
+    ],
+    "name": "Himantia",
+    "rank": "genus",
+    "usage": "128279"
+   },
+   {
+    "detail": [
+     80598,
+     170130
+    ],
+    "name": "Myriococcum",
+    "rank": "genus",
+    "usage": "135886"
+   },
+   {
+    "detail": [
+     38681,
+     163798
+    ],
+    "name": "Drechslera",
+    "rank": "genus",
+    "usage": "137004"
+   },
+   {
+    "detail": [
+     15340,
+     161599
+    ],
+    "name": "Chaetospermum",
+    "rank": "genus",
+    "usage": "139111"
+   },
+   {
+    "detail": [
+     81695,
+     161600
+    ],
+    "name": "Chaetospermum chaetosporum",
+    "rank": "species",
+    "usage": "139112"
+   },
+   {
+    "detail": "unique_synonym_bridge:[16120, 157922]",
+    "name": "Trechispora thelephora",
+    "rank": "species",
+    "usage": "143399"
+   },
+   {
+    "detail": "unique_synonym_bridge:[75285, 75307]",
+    "name": "Placopyrenium fuscellum",
+    "rank": "species",
+    "usage": "145111"
+   },
+   {
+    "detail": [
+     38073,
+     162762
+    ],
+    "name": "Discosporium",
+    "rank": "genus",
+    "usage": "169571"
+   },
+   {
+    "detail": [
+     607763,
+     612636
+    ],
+    "name": "Zygodesmus",
+    "rank": "genus",
+    "usage": "172443"
+   },
+   {
+    "detail": "unique_synonym_bridge:[1126, 620753]",
+    "name": "Crustomyces pini-canadensis",
+    "rank": "species",
+    "usage": "173546"
+   },
+   {
+    "detail": [
+     69873,
+     169196
+    ],
+    "name": "Inoderma",
+    "rank": "genus",
+    "usage": "187228"
+   },
+   {
+    "detail": "unique_synonym_bridge:[23151, 165963]",
+    "name": "Miriquidica fuscescens nom. dub.",
+    "rank": "species",
+    "usage": "187353"
+   },
+   {
+    "detail": "unique_synonym_bridge:[17465, 22474]",
+    "name": "Hyphodontia subdetritica",
+    "rank": "species",
+    "usage": "207019"
+   },
+   {
+    "detail": "unique_synonym_bridge:[39510, 102775]",
+    "name": "Pelloporus triqueter",
+    "rank": "species",
+    "usage": "213175"
+   },
+   {
+    "detail": "unique_synonym_bridge:[107226, 107640]",
+    "name": "Alnicola macrospora",
+    "rank": "species",
+    "usage": "214806"
+   },
+   {
+    "detail": [
+     139600,
+     165802
+    ],
+    "name": "Kukwaea",
+    "rank": "genus",
+    "usage": "226885"
+   },
+   {
+    "detail": "unique_synonym_bridge:[139163, 139254, 617971, 618658, 619418]",
+    "name": "Cortinarius daulnoyae",
+    "rank": "species",
+    "usage": "227136"
+   },
+   {
+    "detail": [
+     131609,
+     131615,
+     160877
+    ],
+    "name": "Ceriosporella",
+    "rank": "genus",
+    "usage": "227413"
+   },
+   {
+    "detail": [
+     32451,
+     163254
+    ],
+    "name": "Dendrostoma",
+    "rank": "genus",
+    "usage": "295837"
+   },
+   {
+    "detail": "unique_synonym_bridge:[71910, 71931]",
+    "name": "Thelephora bryophila",
+    "rank": "species",
+    "usage": "296476"
+   },
+   {
+    "detail": "unique_synonym_bridge:[24097, 105396]",
+    "name": "Leucocoprinus sericifer",
+    "rank": "species",
+    "usage": "296862"
+   }
+  ],
+  "nortaxa|primary_claimed_by_other_usage": [
+   {
+    "detail": 6399,
+    "name": "Echinoderma pseudoasperulum",
+    "rank": "species",
+    "usage": "300295"
+   },
+   {
+    "detail": 1083,
+    "name": "Cystolepiota moelleri",
+    "rank": "species",
+    "usage": "300296"
+   }
+  ],
+  "nortaxa|qualified_concept": [
+   {
+    "name": "Ramaria rubrievanescens",
+    "rank": "species",
+    "usage": "129065"
+   },
+   {
+    "name": "Cortinarius milvinicolor",
+    "rank": "species",
+    "usage": "131436"
+   },
+   {
+    "name": "Ramaria strasseri",
+    "rank": "species",
+    "usage": "136341"
+   },
+   {
+    "name": "Ramaria botrytis coll. var. compactospora",
+    "rank": "variety",
+    "usage": "145284"
+   },
+   {
+    "name": "Ramaria conjunctipes",
+    "rank": "species",
+    "usage": "151982"
+   },
+   {
+    "name": "Cuphophyllus virgineus coll.",
+    "rank": "species",
+    "usage": "186442"
+   },
+   {
+    "name": "Cuphophyllus fornicatus coll.",
+    "rank": "species",
+    "usage": "186446"
+   },
+   {
+    "name": "Ramaria flavoides coll. 1",
+    "rank": "species",
+    "usage": "226900"
+   },
+   {
+    "name": "Ramaria flavoides coll. 2",
+    "rank": "species",
+    "usage": "226901"
+   },
+   {
+    "name": "Cortinarius ferrugineifolius coll.",
+    "rank": "species",
+    "usage": "228158"
+   },
+   {
+    "name": "Cortinarius vicus coll.",
+    "rank": "species",
+    "usage": "299535"
+   },
+   {
+    "name": "Dermoloma rostratum coll.",
+    "rank": "species",
+    "usage": "300284"
+   },
+   {
+    "name": "Echinoderma pseudoasperulum coll.",
+    "rank": "species",
+    "usage": "300297"
+   },
+   {
+    "name": "Agaricus semotus coll.",
+    "rank": "species",
+    "usage": "51960"
+   },
+   {
+    "name": "Cortinarius anomalus coll.",
+    "rank": "species",
+    "usage": "52547"
+   },
+   {
+    "name": "Cortinarius bovinus coll.",
+    "rank": "species",
+    "usage": "52593"
+   },
+   {
+    "name": "Cortinarius casimiri coll.",
+    "rank": "species",
+    "usage": "52625"
+   },
+   {
+    "name": "Cortinarius cyanites coll.",
+    "rank": "species",
+    "usage": "52671"
+   },
+   {
+    "name": "Cortinarius depressus coll.",
+    "rank": "species",
+    "usage": "52682"
+   },
+   {
+    "name": "Cortinarius elatior coll.",
+    "rank": "species",
+    "usage": "52700"
+   },
+   {
+    "name": "Cortinarius flexipes coll.",
+    "rank": "species",
+    "usage": "52718"
+   },
+   {
+    "name": "Cortinarius fulvescens coll.",
+    "rank": "species",
+    "usage": "52729"
+   },
+   {
+    "name": "Cortinarius glaucopus coll.",
+    "rank": "species",
+    "usage": "52737"
+   },
+   {
+    "name": "Cortinarius glaucopus coll. var. acyaneus",
+    "rank": "variety",
+    "usage": "52738"
+   },
+   {
+    "name": "Cortinarius herpeticus coll.",
+    "rank": "species",
+    "usage": "52750"
+   }
+  ],
+  "nortaxa|source_homonym": [
+   {
+    "name": "Incertae sedis",
+    "rank": "order",
+    "usage": "1011"
+   },
+   {
+    "name": "Incertae sedis",
+    "rank": "order",
+    "usage": "1035"
+   },
+   {
+    "name": "Mortierellales",
+    "rank": "order",
+    "usage": "1127"
+   },
+   {
+    "name": "Zoopagales",
+    "rank": "order",
+    "usage": "1130"
+   },
+   {
+    "name": "Incertae sedis",
+    "rank": "family",
+    "usage": "122366"
+   },
+   {
+    "name": "Incertae sedis",
+    "rank": "family",
+    "usage": "123016"
+   },
+   {
+    "name": "Incertae sedis",
+    "rank": "class",
+    "usage": "127412"
+   },
+   {
+    "name": "Incertae sedis",
+    "rank": "class",
+    "usage": "127740"
+   },
+   {
+    "name": "Incertae sedis",
+    "rank": "family",
+    "usage": "128059"
+   },
+   {
+    "name": "Incertae sedis",
+    "rank": "family",
+    "usage": "128060"
+   },
+   {
+    "name": "Incertae sedis",
+    "rank": "order",
+    "usage": "128062"
+   },
+   {
+    "name": "Incertae sedis",
+    "rank": "family",
+    "usage": "128063"
+   },
+   {
+    "name": "Incertae sedis",
+    "rank": "order",
+    "usage": "128154"
+   },
+   {
+    "name": "Incertae sedis",
+    "rank": "family",
+    "usage": "128158"
+   },
+   {
+    "name": "Camarosporium",
+    "rank": "genus",
+    "usage": "128159"
+   },
+   {
+    "name": "Incertae sedis",
+    "rank": "order",
+    "usage": "128175"
+   },
+   {
+    "name": "Incertae sedis",
+    "rank": "family",
+    "usage": "128176"
+   },
+   {
+    "name": "Oidiodendron",
+    "rank": "genus",
+    "usage": "128501"
+   },
+   {
+    "name": "Incertae sedis",
+    "rank": "class",
+    "usage": "128502"
+   },
+   {
+    "name": "Incertae sedis",
+    "rank": "order",
+    "usage": "128503"
+   },
+   {
+    "name": "Incertae sedis",
+    "rank": "family",
+    "usage": "128504"
+   },
+   {
+    "name": "Trichosporonaceae",
+    "rank": "family",
+    "usage": "128512"
+   },
+   {
+    "name": "Incertae sedis",
+    "rank": "family",
+    "usage": "129134"
+   },
+   {
+    "name": "Incertae sedis",
+    "rank": "family",
+    "usage": "129153"
+   },
+   {
+    "name": "Incertae sedis",
+    "rank": "class",
+    "usage": "129636"
+   }
+  ]
+ },
+ "content_release_id": "tax-2026.10.31-01",
+ "flags": {
+  "dyntaxa|authorship_differs": 5410,
+  "dyntaxa|broader_concept_signal": 2162,
+  "dyntaxa|family_differs": 2065,
+  "nortaxa|authorship_differs": 5970,
+  "nortaxa|broader_concept_signal": 732,
+  "nortaxa|family_differs": 4145
+ },
+ "format": "sporely-name-association-build-v1",
+ "gz_sha256": "3e13a125c3a3d5ec4b3fd7e26c1ba2aa0eaaa9f36b3e82ce3fa271f46f77b3de",
+ "inputs_sha256": {
+  "norm/col_xr/taxa.jsonl": "e4e1cddf6ad63809ebe50699a60dc7103e7201bd700a7e3328921c83a529b71a",
+  "norm/dyntaxa/taxa.jsonl": "637352733da7bd42ad9e50f94b1b7fb772de041ba58cc4753c99d0f176145be7",
+  "norm/dyntaxa/vernacular.jsonl": "5d419ef754d04c743c3316682ece6c9b877e55ba35c12d4ded9ffb01c000f77a",
+  "norm/nortaxa/taxa.jsonl": "9eb597bc75e268a5cf8eacf4d7ec8e5cfbf79a528b7ec5bb7722ddd40aa162a1",
+  "norm/nortaxa/vernacular.jsonl": "77707870a4c171a947ae7ef75def2a499f61d326611133a3c4062f0358ae4aae"
+ },
+ "policy_sha256": "34c4d565be734375744f1703d1bfdb38695576026fa3cb9085186fb1679efc28",
+ "policy_version": "name-association-v1",
+ "projection_counts": {
+  "external_id_integer:artportalen:accepted": 1262,
+  "external_id_integer:artportalen:synonym": 127,
+  "external_id_integer:artsdatabanken:accepted": 4680,
+  "external_id_integer:artsdatabanken:synonym": 2427,
+  "external_id_integer:inaturalist:accepted": 1195,
+  "external_id_text:dyntaxa:accepted": 14733,
+  "external_id_text:nortaxa:accepted": 22046,
+  "external_id_text:nortaxa:synonym": 22549,
+  "inaturalist_column": 1174,
+  "preferred_scientific_name_no": 22046,
+  "preferred_scientific_name_sv": 14733,
+  "redlist_repointed": 1373,
+  "redlist_resolved": 0,
+  "scientific_name": 16128,
+  "vernacular": 1588
+ },
+ "sqlite_sha256": "ec19acac6a0dafbd3fd629760d9aa92fa5d7ec270597e29fffe72c7cba5cacfe",
+ "unmatched_national_usages": {
+  "dyntaxa|above_genus": 211,
+  "dyntaxa|genus": 4,
+  "dyntaxa|species_and_below": 506,
+  "nortaxa|above_genus": 236,
+  "nortaxa|genus": 266,
+  "nortaxa|species_and_below": 4895
+ }
+}

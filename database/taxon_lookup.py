@@ -33,6 +33,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass, replace as _dc_replace
+import json
 import sqlite3
 from typing import Any
 
@@ -1242,9 +1243,11 @@ class TaxonLookupService:
     def current_taxon_id(self, sporely_taxon_id: object) -> int | None:
         """The concept that is current for ``sporely_taxon_id`` in the installed release.
 
-        A live id returns itself; an id a reviewed supersession retired returns
-        its survivor (``taxon_supersession_min``); anything else returns
-        ``None``. Resolution only: callers decide whether to show or store it.
+        A live id returns itself, or its primary when a release name
+        association presents it as another concept (``taxon_association_min``);
+        an id a reviewed supersession retired returns its survivor
+        (``taxon_supersession_min``); anything else returns ``None``.
+        Resolution only: callers decide whether to show or store it.
         """
         try:
             taxon_id = int(sporely_taxon_id)
@@ -1252,6 +1255,12 @@ class TaxonLookupService:
             return None
         if self._fetch_local_rows(
                 "SELECT 1 FROM taxon_min WHERE taxon_id = ? LIMIT 1", (taxon_id,)):
+            if self._has_local_table("taxon_association_min"):
+                rows = self._fetch_local_rows(
+                    "SELECT primary_taxon_id FROM taxon_association_min "
+                    "WHERE member_taxon_id = ? LIMIT 1", (taxon_id,))
+                if rows:
+                    return int(rows[0][0])
             return taxon_id
         if not self._has_local_table("taxon_supersession_min"):
             return None
@@ -1484,7 +1493,10 @@ def resolve_installed_external_identity(
     taxonomy-v2 release (:func:`installed_taxon_concept`). When the bridge
     table names nothing, a concept anchored by the tuple's own source usage
     (:func:`source_identity_matches`) resolves instead, again only when it is
-    exactly one. No match, several matches, a pre-v2 database or any read
+    exactly one. Matches that a release name association presents as one
+    taxon (``taxon_association_min``) count as their primary, and a row the
+    association projected is named in ``resolved_through`` so provenance
+    records it. No match, several matches, a pre-v2 database or any read
     error all return ``None`` — the caller keeps the identity unresolved
     rather than guessing.
     """
@@ -1511,6 +1523,25 @@ def resolve_installed_external_identity(
                 # An artifact without canonical source columns names no anchor.
                 matches = set()
             resolved_through = "taxon_min.canonical_source_usage"
+        if matches:
+            from database.taxon_search import association_primaries
+            primaries = association_primaries(conn, matches)
+            if primaries:
+                matches = {primaries.get(m, (m,))[0] for m in matches}
+                resolved_through += "+taxon_association_min"
+        if len(matches) == 1 and resolved_through.startswith("taxon_external_id_text_min"):
+            try:
+                note = conn.execute(
+                    "SELECT note FROM taxon_external_id_text_min WHERE taxon_id = ? AND source_system = ? "
+                    "AND namespace = ? AND external_id = ? AND note LIKE 'name_association:%' LIMIT 1",
+                    (next(iter(matches)), source, ns, ext),
+                ).fetchone()
+            except sqlite3.OperationalError:
+                note = None  # an artifact without row notes
+            if note:
+                # ``name_association:<rule>;association=<id>`` (see
+                # name_associations.association_note).
+                resolved_through += f"[{note[0]}]"
     except sqlite3.Error:
         return None
     finally:
@@ -1523,6 +1554,87 @@ def resolve_installed_external_identity(
     return _dc_replace(concept, resolved_through=resolved_through)
 
 
+def association_primary_id(db_path, sporely_taxon_id: object) -> int | None:
+    """The primary a release name association presents ``sporely_taxon_id``
+    as, or ``None`` when it is no association member (or nothing is known)."""
+    try:
+        taxon_id = int(sporely_taxon_id)
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except (TypeError, ValueError, sqlite3.Error):
+        return None
+    try:
+        from database.taxon_search import association_primaries
+        entry = association_primaries(conn, [taxon_id]).get(taxon_id)
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    return entry[0] if entry else None
+
+
+def taxon_source_records(db_path, sporely_taxon_id: object) -> dict | None:
+    """The source records behind one presented taxon, for a details view.
+
+    ``sporely_taxon_id`` may be the primary or an associated member; the
+    answer is about the primary. Returns ``None`` when the artifact cannot be
+    read or does not know the id. ``associations`` lists every national usage
+    the release presents as this taxon (``taxon_association_min``), with the
+    rule that associated it, its own name, authorship and family, the flags
+    the compiler recorded and the differences from the primary; it is empty
+    for a release without the table. ``external_ids`` are the namespaced ids
+    the concept carries, with the note that says where each came from.
+    """
+    try:
+        taxon_id = int(sporely_taxon_id)
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except (TypeError, ValueError, sqlite3.Error):
+        return None
+    try:
+        from database.taxon_search import association_primaries
+        taxon_id = association_primaries(conn, [taxon_id]).get(taxon_id, (taxon_id,))[0]
+        row = conn.execute(
+            "SELECT canonical_scientific_name, taxon_rank, canonical_source_system, canonical_external_id, family "
+            "FROM taxon_min WHERE taxon_id = ?", (taxon_id,)).fetchone()
+        if row is None:
+            return None
+        primary = {"scientific_name": row[0], "rank": row[1], "source_system": row[2],
+                   "external_id": row[3], "family": row[4]}
+        associations = []
+        try:
+            for a in conn.execute(
+                    "SELECT association_id, rule, member_kind, member_taxon_id, member_source_system, "
+                    "member_namespace, member_external_id, member_scientific_name, member_authorship, "
+                    "member_rank, member_family, primary_authorship, primary_family, via_scientific_name, "
+                    "flags, policy_version FROM taxon_association_min WHERE primary_taxon_id = ? "
+                    "ORDER BY member_source_system, member_external_id", (taxon_id,)):
+                differences = []
+                if a[7] != primary["scientific_name"]:
+                    differences.append("scientific_name")
+                flags = json.loads(a[14] or "[]")
+                differences += [f.removesuffix("_differs") for f in flags if f.endswith("_differs")]
+                associations.append({
+                    "association_id": a[0], "rule": a[1], "member_kind": a[2], "member_taxon_id": a[3],
+                    "source_system": a[4], "namespace": a[5], "external_id": a[6], "scientific_name": a[7],
+                    "authorship": a[8], "rank": a[9], "family": a[10], "primary_authorship": a[11],
+                    "primary_family": a[12], "via_scientific_name": a[13], "flags": flags,
+                    "policy_version": a[15], "differences": differences,
+                })
+        except sqlite3.OperationalError:
+            pass
+        external_ids = [
+            {"source_system": r[0], "namespace": r[1], "external_id": r[2], "id_role": r[3], "note": r[4]}
+            for r in conn.execute(
+                "SELECT source_system, namespace, external_id, id_role, note FROM taxon_external_id_text_min "
+                "WHERE taxon_id = ? ORDER BY source_system, id_role, external_id", (taxon_id,))
+        ]
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    return {"sporely_taxon_id": taxon_id, "primary": primary, "associations": associations,
+            "external_ids": external_ids}
+
+
 __all__ = [
     "TAXON_COMPLETER_LIMIT",
     "InstalledTaxonConcept",
@@ -1530,6 +1642,8 @@ __all__ = [
     "namespaced_external_id_matches",
     "source_identity_matches",
     "resolve_installed_external_identity",
+    "taxon_source_records",
+    "association_primary_id",
     "ManualScientificResolution",
     "TaxonChoice",
     "TaxonLookupService",

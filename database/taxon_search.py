@@ -12,6 +12,12 @@ concepts share a row only when they carry exactly the same name, rank and
 kind and come from different taxonomy sources (a COL concept and a NorTaxa
 concept); same-source homonyms always get rows of their own.
 
+A release's name associations (``taxon_association_min``) are applied
+first: a hit on an associated NorTaxa concept counts as a hit on its primary
+(COL-backed) concept, so the two never appear as separate rows or as a
+source choice. Its name stays findable, as a synonym row of the primary when
+it differs; a pick of that row records which association led to it.
+
 Inside a row the concepts are ordered so the first is the default a click
 picks: the observation's current concept, then concepts proven by provider
 evidence (an Artsorakel id that resolves to exactly one concept), then
@@ -91,6 +97,9 @@ class TaxonSearchConcept:
     vernacular_name: str | None = None
     is_evidence: bool = False
     is_current: bool = False
+    #: The release association (``taxon_association_min.association_id``)
+    #: through which a hit on another concept reached this one.
+    association_id: str | None = None
 
     @property
     def source_name(self) -> str:
@@ -113,6 +122,7 @@ class TaxonSearchConcept:
             "display_scientific_name": self.display_scientific_name,
             "authorship": None,
             "link_kind": self.link_kind,
+            "provenance": f"name_association:{self.association_id}" if self.association_id else None,
         }
 
 
@@ -188,6 +198,8 @@ class _Hit:
     #: order: with the umbrella ``no``, a Bokmål name beats the Nynorsk one
     #: for the same row.
     lang_rank: int = 0
+    #: Set when the hit was on an associated concept and now names its primary.
+    association_id: str | None = None
 
 
 @dataclass
@@ -540,6 +552,67 @@ class _RowDraft:
     synonym_target: str | None = None
 
 
+def association_primaries(conn, taxon_ids) -> dict[int, tuple[int, str]]:
+    """``member id -> (primary id, association id)`` for associated concepts.
+
+    Empty for a release without ``taxon_association_min``.
+    """
+    ids = sorted({int(t) for t in taxon_ids if t is not None})
+    out: dict[int, tuple[int, str]] = {}
+    try:
+        for start in range(0, len(ids), 500):
+            chunk = ids[start:start + 500]
+            marks = ",".join("?" for _ in chunk)
+            for member, primary, association in conn.execute(
+                "SELECT member_taxon_id, primary_taxon_id, association_id FROM taxon_association_min "
+                f"WHERE member_taxon_id IN ({marks})",
+                chunk,
+            ):
+                out[int(member)] = (int(primary), str(association))
+    except sqlite3.OperationalError:
+        return {}
+    return out
+
+
+def _collapse_associated(conn, hits: list[_Hit]) -> list[_Hit]:
+    """Hits on associated concepts, re-aimed at their primary concepts.
+
+    A vernacular hit, or a name equal to the primary's own, becomes a hit on
+    the primary's row; any other name (a genus transfer such as
+    *Rugosomyces carneus* for COL's *Calocybe carnea*) becomes a synonym row
+    of the primary.
+    """
+    primaries = association_primaries(conn, {h.taxon_id for h in hits})
+    if not primaries:
+        return hits
+    targets = {
+        int(tid): (_norm(name), rank)
+        for tid, name, rank in _rows_by_ids(
+            conn, "SELECT taxon_id, canonical_scientific_name, taxon_rank FROM taxon_min",
+            {p for p, _ in primaries.values()})
+    }
+    out: list[_Hit] = []
+    for hit in hits:
+        entry = primaries.get(hit.taxon_id)
+        if entry is None:
+            out.append(hit)
+            continue
+        primary, association = entry
+        name, rank = targets.get(primary, ("", None))
+        snapshot = _rank_snapshot(name, rank)
+        if snapshot is None:
+            continue
+        if hit.match_kind in (MATCH_VERNACULAR, MATCH_VERNACULAR_PART) or hit.row_name == name:
+            # The primary's own row: picking it needs no association.
+            out.append(replace(hit, taxon_id=primary, row_name=name, rank=snapshot, kind=KIND_TAXON,
+                               link_kind="canonical"))
+            continue
+        link_kind = "synonym_of_accepted" if hit.rank == snapshot else "linked"
+        out.append(replace(hit, taxon_id=primary, kind=KIND_SYNONYM, link_kind=link_kind,
+                           association_id=association))
+    return out
+
+
 def _row_key(hit: _Hit, canonical_names: dict[int, str]) -> tuple:
     target = canonical_names.get(hit.taxon_id, "") if hit.kind == KIND_SYNONYM else ""
     return (hit.kind, hit.row_name, hit.rank, target)
@@ -634,6 +707,7 @@ def _concept_order(concept: TaxonSearchConcept) -> tuple:
 def _build_rows(conn, query, codes, national_expr, hits, evidence_ids, current_id) -> list[TaxonSearchRow]:
     if not hits:
         return []
+    hits = _collapse_associated(conn, hits)
     canonical_names = {
         int(tid): _norm(name)
         for tid, name in _rows_by_ids(conn, "SELECT taxon_id, canonical_scientific_name FROM taxon_min",
@@ -653,12 +727,14 @@ def _build_rows(conn, query, codes, national_expr, hits, evidence_ids, current_i
         if held is None or _hit_order(hit) < _hit_order(held):
             draft.taxon_ids[hit.taxon_id] = hit
     siblings = _same_name_siblings(conn, list(drafts.values()))
+    sibling_primaries = association_primaries(conn, {t for ids in siblings.values() for t in ids})
     for key, ids in siblings.items():
         draft = drafts.get(key)
         if draft is None:
             continue
         for taxon_id in ids:
-            draft.taxon_ids.setdefault(taxon_id, None)
+            # An associated concept is already its primary's row.
+            draft.taxon_ids.setdefault(sibling_primaries.get(taxon_id, (taxon_id,))[0], None)
 
     all_ids = sorted({tid for d in drafts.values() for tid in d.taxon_ids})
     details = _concept_details(conn, all_ids, codes, national_expr)
@@ -685,6 +761,7 @@ def _build_rows(conn, query, codes, national_expr, hits, evidence_ids, current_i
                 vernacular_name=info["vernacular_name"],
                 is_evidence=taxon_id in evidence_ids,
                 is_current=taxon_id == current_id,
+                association_id=hit.association_id if hit is not None else None,
             ))
         if not concepts:
             continue
@@ -789,6 +866,12 @@ def search(
         return TaxonSearchPage(offset=offset)
     evidence = frozenset(int(t) for t in evidence_taxon_ids if t is not None)
     current = int(current_taxon_id) if current_taxon_id is not None else None
+    # Evidence for, or a current identity on, an associated concept boosts
+    # its primary: that is the row the member's names now live in.
+    primaries = association_primaries(conn, evidence | ({current} if current is not None else set()))
+    evidence = frozenset(primaries.get(t, (t,))[0] for t in evidence)
+    if current is not None:
+        current = primaries.get(current, (current,))[0]
     need = offset + limit + 1
     cap = max(need * 3, 60)
     for _ in range(_MAX_WIDENINGS):
@@ -823,5 +906,5 @@ __all__ = [
     "MATCH_EPITHET", "MATCH_SCIENTIFIC", "MATCH_SYNONYM", "MATCH_VERNACULAR", "MATCH_VERNACULAR_PART",
     "TAXON_SEARCH_DEFAULT_LIMIT", "TAXON_SEARCH_MIN_CHARS",
     "TaxonSearchConcept", "TaxonSearchPage", "TaxonSearchRow",
-    "search", "search_language_codes", "source_display_name",
+    "association_primaries", "search", "search_language_codes", "source_display_name",
 ]

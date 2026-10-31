@@ -39,6 +39,10 @@ def _verified_cloud_selection(claim: _RemoteIdentityClaim, concept) -> TaxonIden
     itself: it is kept as ``external_id_resolution``, exactly as a desktop
     copy of that identifier would be. Anything else returns None and the
     selection stays ``cloud_selected_unverified``.
+
+    A selected id that the installed release presents as another concept
+    (a name association member) is verified when the tuple resolves to that
+    concept: the cloud's own id is kept, never replaced by the primary.
     """
     if not (claim.source_system and claim.namespace and claim.external_id):
         return None
@@ -53,17 +57,19 @@ def _verified_cloud_selection(claim: _RemoteIdentityClaim, concept) -> TaxonIden
     if not provider.has_external_evidence:
         return None
     try:
-        from database.taxon_lookup import resolve_installed_external_identity
+        from database.taxon_lookup import association_primary_id, resolve_installed_external_identity
         from utils.vernacular_utils import resolve_vernacular_db_path
+        db_path = resolve_vernacular_db_path()
         resolved = resolve_installed_external_identity(
-            resolve_vernacular_db_path(),
+            db_path,
             source_system=provider.source_system,
             namespace=provider.namespace,
             external_id=provider.external_id,
         )
+        claimed_as = association_primary_id(db_path, claim.sporely_taxon_id) if resolved is not None else None
     except Exception:
         return None
-    if resolved is None or int(resolved.sporely_taxon_id) != int(claim.sporely_taxon_id):
+    if resolved is None or int(resolved.sporely_taxon_id) not in {int(claim.sporely_taxon_id), claimed_as}:
         return None
     proven = provider.resolved_to(
         claim.sporely_taxon_id,

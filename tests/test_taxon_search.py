@@ -380,6 +380,7 @@ def test_concept_carries_the_scientific_pick_shape(conn):
         "display_scientific_name": "Russula aeruginea",
         "authorship": None,
         "link_kind": "canonical",
+        "provenance": None,
     }
 
 

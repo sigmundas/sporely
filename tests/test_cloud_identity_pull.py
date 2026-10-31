@@ -444,3 +444,17 @@ def test_a_picker_proven_local_identity_is_not_replaced_by_the_cloud_proof(real_
     cloud_sync._apply_remote_observation_fields(local_id, _remote_resolved())
     assert _identity(local_id).identity_proof == "taxonomy_v2_artifact"
     assert resolver.calls == []
+
+
+@pytest.mark.parametrize("primary_of_claim, proven", [(98530, True), (12345, False), (None, False)])
+def test_a_selection_its_tuple_reaches_through_a_name_association(
+        real_db, resolver, monkeypatch, primary_of_claim, proven):
+    # The installed release presents the cloud's concept (83668) as another
+    # one (its association primary); the tuple now resolves to that primary.
+    import database.taxon_lookup as taxon_lookup
+
+    resolver.answer["taxon_id"] = 98530
+    monkeypatch.setattr(taxon_lookup, "association_primary_id", lambda _db, _id: primary_of_claim)
+    identity = _identity(cloud_sync._create_local_from_remote(_remote_resolved()))
+    assert identity.sporely_taxon_id == 83668  # the cloud's own id, never the primary
+    assert identity.identity_proof == (PROOF_EXTERNAL_ID_RESOLUTION if proven else PROOF_CLOUD_SELECTED_UNVERIFIED)
