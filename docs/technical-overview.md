@@ -37,7 +37,7 @@ A Python-based desktop application (PySide6) for field observations, microscopy 
   - Identity disagreement fails closed rather than creating or reparenting records.
   - Missing or failed child work remains visible and retryable.
 - **Important Upload Failures:** Plan-limit image upload failures surface a detailed dialog naming the observation, image, and file sizes so users can tell which upload needs attention.
-- **Account Lock:** `linked_cloud_user_id` is stored in local settings after the first sync. Any attempt to sync with a different account without explicitly resetting the local cloud link throws an `AccountMismatchError`.
+- **Account Lock:** `linked_cloud_user_id` is stored in local settings after the first sign-in or sync. Any attempt to sync with a different account without explicitly resetting the local cloud link throws an `AccountMismatchError`. An unlinked database that already holds synced observations links only to an account that owns some of them.
 
 ## Privacy & Visibility Model
 - **Workflow vs Privacy:**

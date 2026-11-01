@@ -56,6 +56,7 @@ _PULL_ONLY_ALLOWED_READ_METHODS = frozenset({
     # Observation reads
     'list_remote_observations',
     'get_observation',
+    'list_owned_observation_ids',  # first-link ownership check, one GET
     # Per-record sync keys: the "cloud not ready" probe is a read; the
     # refusal helpers only raise or record local state.
     'sync_identity_ready',

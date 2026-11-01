@@ -758,6 +758,21 @@ A linked metadata-only anchor (valid `cloud_id`, remote `storage_path` NULL) who
 | Social graph, social comments, reports, blocks, billing, moderation | Cloud/web only |
 | Thumbnails, plots, mosaics, and crops | Rebuildable unless deliberately persisted |
 
+### Desktop account binding
+
+A desktop profile stores the account its database syncs with as
+`linked_cloud_user_id` in the profile's app settings, not in the database. A
+linked database refuses every other account (`AccountMismatchError`). An
+unlinked database binds on its first sign-in or sync only when it holds no
+observations with a `cloud_id`, or when the signed-in account owns at least
+one of up to 50 of those observations, most recently synced first. Otherwise
+the desktop refuses the account and saves no link; a refused sign-in also saves
+no credentials. A copied or
+restored database therefore cannot adopt whichever account a browser sign-in
+happens to use. If the ownership lookup fails, the desktop does not link. To
+move a database to a new account, use Reset Cloud Sync, which clears the link
+and every local `cloud_id`.
+
 ## Keep image decisions explicit
 
 The Observations and Measure gallery checkbox represents the desired Sporely Cloud state only:
