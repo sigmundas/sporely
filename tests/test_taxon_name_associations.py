@@ -43,7 +43,7 @@ def usages():
             "dyntaxa": []}
 
 
-def build(path: Path, exclusions=()) -> Path:
+def build(path: Path, exclusions=(), prepare=None) -> Path:
     conn = sqlite3.connect(path)
     conn.executescript(CREATE_SCHEMA_SQL)
     for tid, name, rank, css, ext in CONCEPTS:
@@ -59,6 +59,8 @@ def build(path: Path, exclusions=()) -> Path:
     conn.executemany(
         "INSERT INTO vernacular_min (taxon_id, language_code, vernacular_name, is_preferred_name, source) "
         "VALUES (?, 'nb', ?, 1, 'nortaxa')", [(20, "grønnkremle"), (21, "rosa fagerhatt")])
+    if prepare is not None:
+        prepare(conn)
     conn.executemany("INSERT INTO taxonomy_meta VALUES (?, ?)",
                      [("taxonomy_schema_version", "2"), ("content_release_id", path.stem)])
     policy = dict(POLICY, exclusions=[

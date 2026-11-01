@@ -1048,7 +1048,8 @@ def _lookup_adb_taxon_id_from_db(genus: str, species: str) -> int | None:
             # Artsdatabanken ids; several distinct ids at a tier refuse.
             for tier in ("nortaxa", "artsdatabanken"):
                 resolved = _single_positive_int(
-                    [(v,) for v in _adb_ids_for_concepts(conn, concept_ids, columns, tables, tier=tier)])
+                    [(v,) for v in _adb_ids_for_concepts(conn, concept_ids, columns, tables, tier=tier,
+                                                  name=f"{genus} {species}")])
                 if resolved:
                     return resolved
             return None
@@ -1105,31 +1106,48 @@ def _lookup_adb_taxon_id_from_db(genus: str, species: str) -> int | None:
         conn.close()
 
 
+def _table_has_column(conn, table: str, column: str) -> bool:
+    return any(row[1] == column for row in conn.execute(f"PRAGMA table_info({table})"))
+
+
 def _adb_ids_for_concepts(conn, concept_ids, columns: set[str], tables: set[str],
-                          tier: str | None = None) -> set[int]:
+                          tier: str | None = None, name: str | None = None) -> set[int]:
     """Accepted NorTaxa (Artsdatabanken) ids carried by the given concepts.
 
     ``tier="nortaxa"`` reads only NorTaxa's own concept ids
     (``norwegian_taxon_id`` and reviewed NorTaxa bridges);
     ``tier="artsdatabanken"`` only the accepted Artsdatabanken external ids;
-    ``None`` reads both.
+    ``None`` reads both. An id a release name association copied onto a
+    concept counts only when NorTaxa's name for it is ``name``: under another
+    name it is NorTaxa's id for that name, not one confirmed for this one.
     """
     ids: set[int] = set()
     placeholders = ",".join("?" for _ in concept_ids)
+    association = (
+        " AND (COALESCE(note, '') NOT LIKE 'name_association:%' OR external_name = ? COLLATE NOCASE)")
+
+    def scoped(table: str):
+        if _table_has_column(conn, table, "note") and _table_has_column(conn, table, "external_name"):
+            return association, [*concept_ids, str(name or "")]
+        return "", list(concept_ids)
+
     queries = []
     if "norwegian_taxon_id" in columns and tier in (None, "nortaxa"):
-        queries.append(f"SELECT norwegian_taxon_id FROM taxon_min WHERE taxon_id IN ({placeholders})")
+        queries.append((f"SELECT norwegian_taxon_id FROM taxon_min WHERE taxon_id IN ({placeholders})",
+                        list(concept_ids)))
     if "taxon_external_id_min" in tables and tier in (None, "artsdatabanken"):
-        queries.append(
+        clause, query_params = scoped("taxon_external_id_min")
+        queries.append((
             "SELECT external_id FROM taxon_external_id_min WHERE source_system = 'artsdatabanken' "
-            f"AND id_role = 'accepted' AND taxon_id IN ({placeholders})")
+            f"AND id_role = 'accepted' AND taxon_id IN ({placeholders})" + clause, query_params))
     if "taxon_external_id_text_min" in tables and tier in (None, "nortaxa"):
-        queries.append(
+        clause, query_params = scoped("taxon_external_id_text_min")
+        queries.append((
             "SELECT external_id FROM taxon_external_id_text_min WHERE source_system = 'nortaxa' "
             "AND namespace = 'nortaxa_taxon_id' AND id_role = 'accepted' "
-            f"AND taxon_id IN ({placeholders})")
-    for query in queries:
-        for (value,) in conn.execute(query, list(concept_ids)):
+            f"AND taxon_id IN ({placeholders})" + clause, query_params))
+    for query, query_params in queries:
+        for (value,) in conn.execute(query, query_params):
             try:
                 number = int(value)
             except (TypeError, ValueError):
@@ -1200,7 +1218,7 @@ def _lookup_adb_taxon_id_for_concept(
             return "unresolved", None
         if not any(name == binomial or name.startswith(binomial + " ") for name in names):
             return "unknown", None
-        ids = _adb_ids_for_concepts(conn, [concept], columns, tables)
+        ids = _adb_ids_for_concepts(conn, [concept], columns, tables, name=f"{key[0]} {key[1]}")
         if len(ids) != 1:
             return "unresolved", None
         return "found", next(iter(ids))
@@ -1231,8 +1249,25 @@ def _lookup_external_taxon_id_from_db(genus: str, species: str, source_system: s
 
         if source_system == "artportalen":
             if "taxon_external_id_min" in tables:
+                e_note = "e.note" if _table_has_column(conn, "taxon_external_id_min", "note") else "NULL"
+                e_name = ("e.external_name" if _table_has_column(conn, "taxon_external_id_min", "external_name")
+                          else "NULL")
+                s_note = ("s.note" if "scientific_name_min" in tables
+                          and _table_has_column(conn, "scientific_name_min", "note") else "NULL")
+                # Reached only through what a release name association added
+                # (an id copied from a member, or a member's name listed on its
+                # primary): such an id answers only when nothing else does, and
+                # only when Artportalen's name for it is the queried name.
+                via_association = (
+                    f"(COALESCE({e_note}, '') LIKE 'name_association:%' "
+                    f"OR (COALESCE({s_note}, '') LIKE 'name_association:%' "
+                    "AND s.scientific_name = ? COLLATE NOCASE "
+                    "AND NOT (t.genus = ? COLLATE NOCASE AND t.specific_epithet = ? COLLATE NOCASE) "
+                    "AND NOT t.canonical_scientific_name = ? COLLATE NOCASE))"
+                )
+                via_params = (scientific_name, genus, species, scientific_name)
                 row = conn.execute(
-                    """
+                    f"""
                     SELECT e.external_id
                     FROM taxon_min t
                     JOIN taxon_external_id_min e
@@ -1241,19 +1276,17 @@ def _lookup_external_taxon_id_from_db(genus: str, species: str, source_system: s
                     LEFT JOIN scientific_name_min s
                       ON s.taxon_id = t.taxon_id
                     WHERE (
-                            t.genus = ? COLLATE NOCASE
-                        AND t.specific_epithet = ? COLLATE NOCASE
+                            (t.genus = ? COLLATE NOCASE AND t.specific_epithet = ? COLLATE NOCASE)
+                         OR t.canonical_scientific_name = ? COLLATE NOCASE
+                         OR s.scientific_name = ? COLLATE NOCASE
                     )
-                       OR (
-                            t.canonical_scientific_name = ? COLLATE NOCASE
-                    )
-                       OR (
-                            s.scientific_name = ? COLLATE NOCASE
-                    )
-                    ORDER BY e.is_preferred DESC, s.is_preferred_name DESC, e.external_id
+                      AND (NOT {via_association} OR {e_name} = ? COLLATE NOCASE)
+                    ORDER BY CASE WHEN {via_association} THEN 1 ELSE 0 END,
+                        e.is_preferred DESC, s.is_preferred_name DESC, e.external_id
                     LIMIT 1
                     """,
-                    (source_system, genus, species, scientific_name, scientific_name),
+                    (source_system, genus, species, scientific_name, scientific_name,
+                     *via_params, scientific_name, *via_params),
                 ).fetchone()
                 if row and row[0] is not None:
                     try:
@@ -1279,13 +1312,26 @@ def _lookup_external_taxon_id_from_db(genus: str, species: str, source_system: s
                         return None
 
         if source_system == "inaturalist" and "inaturalist_taxon_id" in columns:
+            # A release name association copies a member's iNaturalist id onto
+            # its primary. Under another name that id is iNaturalist's taxon
+            # for the member's name, not one iNaturalist confirmed for this
+            # name: leave it out, and the upload sends the name instead.
+            association_copy = (
+                "AND NOT EXISTS (SELECT 1 FROM taxon_association_min a "
+                "JOIN taxon_min m ON m.taxon_id = a.member_taxon_id "
+                "WHERE a.primary_taxon_id = taxon_min.taxon_id "
+                "AND m.inaturalist_taxon_id = taxon_min.inaturalist_taxon_id "
+                "AND a.member_scientific_name <> a.primary_scientific_name)"
+                if "taxon_association_min" in tables else ""
+            )
             row = conn.execute(
-                """
+                f"""
                 SELECT inaturalist_taxon_id
                 FROM taxon_min
                 WHERE genus = ? COLLATE NOCASE
                   AND specific_epithet = ? COLLATE NOCASE
                   AND inaturalist_taxon_id IS NOT NULL
+                  {association_copy}
                 LIMIT 1
                 """,
                 (genus, species),
