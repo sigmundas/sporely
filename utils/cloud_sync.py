@@ -1577,9 +1577,10 @@ PreparedImagesCallback = Callable[[dict, ProgressCallback | None], tuple[list[di
 
 
 ACCOUNT_MISMATCH_MESSAGE = (
-    "This local database is permanently linked to another Sporely Cloud account. "
-    "Please switch to the correct OS user profile, or use the 'Reset Cloud Sync' "
-    "tool in Settings to migrate your data to a new account."
+    "This local database belongs to another Sporely Cloud account. "
+    "Sign in with that account, or switch to the Sporely profile for this account. "
+    "Use 'Reset Cloud Sync' in Settings only if you want to upload this data "
+    "to the signed-in account as new observations."
 )
 FREE_TIER_PRIVACY_SLOT_LIMIT = 20
 _IMAGE_TOO_LARGE_FOR_PLAN_FIRST_LINE_RE = re.compile(
@@ -2014,6 +2015,38 @@ def _save_linked_cloud_user_id(user_id: str) -> None:
         update_app_settings({_SETTING_LINKED_CLOUD_USER_ID: normalized})
 
 
+_FIRST_LINK_OWNERSHIP_SAMPLE = 50
+
+
+def _local_synced_observation_cloud_ids(limit: int = _FIRST_LINK_OWNERSHIP_SAMPLE) -> list[str]:
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT cloud_id FROM observations "
+            "WHERE cloud_id IS NOT NULL AND TRIM(CAST(cloud_id AS TEXT)) <> '' "
+            "ORDER BY synced_at IS NULL, synced_at DESC, id DESC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [str(row[0]).strip() for row in rows]
+
+
+def _verify_unlinked_database_owner(client: "SporelyCloudClient") -> None:
+    """Refuse to adopt an account that owns none of this DB's synced observations.
+
+    The link lives in per-profile app settings, so a copied or restored
+    database can arrive unlinked while still holding another account's
+    cloud ids. Only a database with no synced observations (new, or reset
+    through Reset Cloud Sync) may bind to any account.
+    """
+    local_ids = _local_synced_observation_cloud_ids()
+    if not local_ids:
+        return
+    if not client.list_owned_observation_ids(local_ids):
+        raise AccountMismatchError(ACCOUNT_MISMATCH_MESSAGE)
+
+
 def ensure_database_linked_to_cloud_user(client: "SporelyCloudClient") -> str:
     """Bind this local DB to the active cloud account, or reject a mismatch."""
     current_user_id = ""
@@ -2037,6 +2070,7 @@ def ensure_database_linked_to_cloud_user(client: "SporelyCloudClient") -> str:
         raise CloudSyncError("Could not verify the active Sporely Cloud account before syncing.")
     linked_user_id = _load_linked_cloud_user_id()
     if not linked_user_id:
+        _verify_unlinked_database_owner(client)
         _save_linked_cloud_user_id(current_user_id)
         return current_user_id
     if linked_user_id != current_user_id:
@@ -6904,6 +6938,16 @@ class SporelyCloudClient(
                     self.user_id = token_user_id
                 return {'id': token_user_id}
         raise CloudSyncError(f'Could not fetch current cloud user: {resp.text if resp is not None else ""}')
+
+    def list_owned_observation_ids(self, cloud_ids) -> set[str]:
+        """Return which of ``cloud_ids`` are observations owned by this account."""
+        ids = sorted({str(value).strip() for value in cloud_ids or () if str(value or '').strip().isdigit()})
+        if not ids:
+            return set()
+        rows = self._get(
+            f'observations?select=id&user_id=eq.{self.user_id}&id=in.({",".join(ids)})&limit={len(ids)}'
+        )
+        return {str((row or {}).get('id')).strip() for row in rows or [] if (row or {}).get('id') is not None}
 
     def fetch_profile(self) -> dict:
         rows = self._get(

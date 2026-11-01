@@ -2753,7 +2753,7 @@ class SettingsHubDialog(QDialog):
         lower = text.lower()
         if is_cloud_auth_error(exc):
             return self.tr("Your Sporely Cloud session expired. Please sign in again.")
-        if "23505" in lower or "unique constraint" in lower or "duplicate key" in lower or ("username" in lower and "taken" in lower):
+        if "profiles_username_key" in lower or ("username" in lower and "taken" in lower):
             return self.tr("That username is already taken. Please choose a different one.")
         return self.tr("The local profile was saved, but Sporely Cloud was not updated.\n\n{error}").format(error=exc)
 
