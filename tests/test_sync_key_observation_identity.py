@@ -202,6 +202,9 @@ class FakePostgrest:
                 matched = [r for r in matched if r.get(column) is not None and str(r.get(column)) == value]
             elif op == "is" and value == "null":
                 matched = [r for r in matched if r.get(column) is None]
+            elif op == "in":
+                wanted = set(value.strip("()").split(","))
+                matched = [r for r in matched if str(r.get(column)) in wanted]
             else:
                 raise AssertionError(f"fake PostgREST: unsupported filter {column}={expression}")
         return matched
