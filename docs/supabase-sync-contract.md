@@ -197,10 +197,13 @@ Plain English comes first; technical terms are in parentheses.
     selected ID already matches is not written, with one metadata-only
     exception: when the desktop's identity is `external_id_resolution` with a
     non-Sporely tuple and the cloud row was read with its tuple columns and
-    holds no provider value there (all empty, or a `sporely`-namespace tuple),
-    the desktop adds its tuple through `set_observation_identification_v2`
-    with the same selected ID and `p_write_name = false`. It never replaces
-    another provider value, even a partial one; a picker, unverified or
+    holds nothing there (all empty), the desktop adds its tuple through
+    `set_observation_identification_v2` with the same selected ID and
+    `p_write_name = false`. It never replaces an existing value, even a
+    partial one, and that includes a `sporely`-namespace tuple a picker
+    wrote: that is identification provenance too (owner decision
+    2026-11-02); keeping both awaits separate historical identification
+    evidence. A picker, unverified or
     legacy identity never adds one; and once the tuple is there a resync
     writes nothing. It runs only when the observation is pushed, so unchanged
     observations are not swept. A `22023` refusal of that metadata write

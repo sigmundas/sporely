@@ -32,9 +32,9 @@ def _cloud_row_lacks_provider_tuple(identity: TaxonIdentity, remote_obs: dict | 
 
     Only a selection the desktop resolved itself from a provider
     identifier (``external_id_resolution``) qualifies, and only onto a
-    row whose read included the tuple columns and holds no provider value
-    there (empty, or the Sporely namespace). A row with any other provider
-    value, even a partial one, is left as it is: it is never overwritten.
+    row whose read included the tuple columns and holds nothing there. Any
+    existing value, even a partial one, is left as it is: a Sporely tuple a
+    picker wrote is identification provenance too, and is not replaced.
     """
     if not (
         identity.identity_proof == PROOF_EXTERNAL_ID_RESOLUTION
@@ -45,12 +45,10 @@ def _cloud_row_lacks_provider_tuple(identity: TaxonIdentity, remote_obs: dict | 
     row = dict(remote_obs or {})
     if 'taxon_identity_source_system' not in row:
         return False
-    remote_source = str(row.get('taxon_identity_source_system') or '').strip()
-    if remote_source == SPORELY_SOURCE_SYSTEM:
-        return True
-    return not remote_source and not any(
+    return not any(
         str(row.get(column) or '').strip()
         for column in (
+            'taxon_identity_source_system',
             'taxon_identity_namespace',
             'taxon_identity_external_id',
             'taxon_identity_raw_external_id',

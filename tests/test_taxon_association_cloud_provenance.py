@@ -233,12 +233,7 @@ _FENNAE_TUPLE = {"taxon_identity_source_system": "nortaxa", "taxon_identity_name
                  "taxon_identity_external_id": "502", "taxon_identity_raw_external_id": "NBIC:502"}
 
 
-@pytest.mark.parametrize("cloud_tuple", [
-    {},                                                                    # the selected-ID RPC wrote it
-    {"taxon_identity_source_system": "sporely", "taxon_identity_namespace": "sporely_taxon_id",
-     "taxon_identity_external_id": "12"},                                  # a web/picker Sporely tuple
-])
-def test_a_same_id_cloud_row_gets_the_missing_provider_tuple_once(releases, second_desktop, cloud_tuple):
+def test_a_same_id_cloud_row_gets_the_missing_provider_tuple_once(releases, second_desktop):
     """The cloud already holds the species (synced before this change, say)
     but not the provider id the desktop resolved it from. One metadata-only
     identification call adds the tuple; the selection and the name stay; a
@@ -246,7 +241,7 @@ def test_a_same_id_cloud_row_gets_the_missing_provider_tuple_once(releases, seco
     release, reversed_release = releases
     db_path, _use = second_desktop
     cloud = FakeCloud(_remote("Flammulina fennae", selected_sporely_taxon_id=12,
-                              taxon_identity_state="sporely_v2", **cloud_tuple))
+                              taxon_identity_state="sporely_v2"))
     row = _desktop_row(_provider_identity(release, "NBIC:502", "Flammulina fennae"), "Flammulina fennae")
     cloud.push(row)
     assert [(name, payload["p_sporely_taxon_id"], payload["p_write_name"]) for name, payload in cloud.rpcs] == \
@@ -270,6 +265,8 @@ def test_a_same_id_cloud_row_gets_the_missing_provider_tuple_once(releases, seco
 
 
 @pytest.mark.parametrize("cloud_tuple", [
+    {"taxon_identity_source_system": "sporely", "taxon_identity_namespace": "sporely_taxon_id",
+     "taxon_identity_external_id": "12"},                                  # a web/desktop picker's tuple
     {"taxon_identity_source_system": "dyntaxa", "taxon_identity_namespace": "dyntaxa_taxon_id",
      "taxon_identity_external_id": "6000123"},                             # another provider's id
     {**_FENNAE_TUPLE, "taxon_identity_external_id": "999"},               # another NorTaxa id
@@ -277,7 +274,7 @@ def test_a_same_id_cloud_row_gets_the_missing_provider_tuple_once(releases, seco
     {"taxon_identity_raw_external_id": "NBIC:999"},                        # a stray raw value
     _FENNAE_TUPLE,                                                         # already there: nothing to do
 ])
-def test_a_same_id_cloud_row_with_a_provider_value_is_left_alone(releases, cloud_tuple):
+def test_a_same_id_cloud_row_with_any_source_value_is_left_alone(releases, cloud_tuple):
     release, _reversed = releases
     remote = _remote("Flammulina fennae", selected_sporely_taxon_id=12, taxon_identity_state="sporely_v2",
                      **cloud_tuple)
