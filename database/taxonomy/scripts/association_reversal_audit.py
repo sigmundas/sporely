@@ -20,6 +20,11 @@ An observation is attributed to an association by its own stored evidence:
 
 Observations bound to a member concept's own id are unaffected: that id is
 live in both releases.
+
+An observation bound to the primary of a dropped association with none of
+that evidence (a picker selection synced from another device, say) cannot be
+attributed: it is listed under ``unattributed`` with the proposal to keep the
+unified identity, never rebound by guess.
 """
 from __future__ import annotations
 
@@ -76,6 +81,10 @@ def attributed_association(obs: dict, by_usage: dict[tuple, dict]) -> tuple[str 
     return None, ""
 
 
+def _stored_name(obs: dict) -> str:
+    return obs["scientific_name_snapshot"] or f"{obs['genus'] or ''} {obs['species'] or ''}".strip()
+
+
 def audit(observations_db: Path, old_release: Path, new_release: Path) -> dict:
     with _open_ro(old_release) as old, _open_ro(new_release) as new, _open_ro(observations_db) as obs_conn:
         old_assoc, new_assoc = _associations(old), _associations(new)
@@ -89,8 +98,11 @@ def audit(observations_db: Path, old_release: Path, new_release: Path) -> dict:
             "taxon_identity_proof, taxon_identity_source_system, taxon_identity_namespace, "
             "taxon_identity_external_id, taxon_identity_provenance FROM observations ORDER BY id").fetchall()
         counts = {"observations": len(rows), "attributed": 0, "affected_by_drop": 0,
-                  "bound_to_member_unaffected": 0}
-        affected = []
+                  "bound_to_member_unaffected": 0, "unattributed_on_dropped_primary": 0}
+        affected, unattributed = [], []
+        dropped_by_primary: dict[int, list[dict]] = {}
+        for aid in sorted(dropped):
+            dropped_by_primary.setdefault(old_assoc[aid]["primary_taxon_id"], []).append(old_assoc[aid])
         members = {a["member_taxon_id"] for a in old_assoc.values() if a["member_taxon_id"] is not None}
         for row in rows:
             obs = dict(row)
@@ -98,6 +110,21 @@ def audit(observations_db: Path, old_release: Path, new_release: Path) -> dict:
                 counts["bound_to_member_unaffected"] += 1
             association_id, how = attributed_association(obs, by_usage)
             if association_id is None:
+                candidates = dropped_by_primary.get(obs["sporely_taxon_id"])
+                if candidates:
+                    counts["unattributed_on_dropped_primary"] += 1
+                    unattributed.append({
+                        "observation_id": obs["id"],
+                        "stored_name": _stored_name(obs),
+                        "bound_sporely_taxon_id": obs["sporely_taxon_id"],
+                        "identity_proof": obs["taxon_identity_proof"],
+                        "dropped_associations": [
+                            {k: a[k] for k in ("association_id", "member_kind", "member_taxon_id",
+                                               "member_scientific_name")} for a in candidates],
+                        "proposal": {"action": "keep_unified_identity",
+                                     "sporely_taxon_id": obs["sporely_taxon_id"],
+                                     "reason": "no stored source evidence names the association"},
+                    })
                 continue
             counts["attributed"] += 1
             if association_id not in dropped:
@@ -122,7 +149,7 @@ def audit(observations_db: Path, old_release: Path, new_release: Path) -> dict:
                 proposal["provider_tuple"] = [source, namespace, external_id]
             affected.append({
                 "observation_id": obs["id"],
-                "stored_name": obs["scientific_name_snapshot"] or f"{obs['genus'] or ''} {obs['species'] or ''}".strip(),
+                "stored_name": _stored_name(obs),
                 "bound_sporely_taxon_id": obs["sporely_taxon_id"],
                 "association_id": association_id,
                 "attributed_by": how,
@@ -138,6 +165,7 @@ def audit(observations_db: Path, old_release: Path, new_release: Path) -> dict:
             "dropped_associations": len(dropped),
             "counts": counts,
             "affected": affected,
+            "unattributed": unattributed,
         }
 
 
