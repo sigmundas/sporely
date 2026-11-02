@@ -222,6 +222,32 @@ def test_reversal_attributes_an_observation_resolved_through_a_synonym_id(tmp_pa
     assert affected["proposal"] == {"action": "rebind_to_member_concept", "sporely_taxon_id": 21}
 
 
+@pytest.mark.parametrize("proof", ["legacy_unverified", None])
+def test_reversal_does_not_attribute_a_tuple_on_an_unproven_binding(tmp_path, release, proof):
+    """Only a proven binding ties a provider tuple to the selected id: a legacy
+    or proof-less row with the member's tuple on the primary is unattributed."""
+    obs_db = tmp_path / "mushrooms.db"
+    with sqlite3.connect(obs_db) as conn:
+        conn.execute(
+            "CREATE TABLE observations (id INTEGER PRIMARY KEY, genus TEXT, species TEXT, "
+            "scientific_name_snapshot TEXT, sporely_taxon_id INTEGER, taxon_identity_state TEXT, "
+            "taxon_identity_proof TEXT, taxon_identity_source_system TEXT, taxon_identity_namespace TEXT, "
+            "taxon_identity_external_id TEXT, taxon_identity_provenance TEXT)")
+        for obs_id, row_proof in ((1, proof), (2, "external_id_resolution")):
+            conn.execute(
+                "INSERT INTO observations (id, scientific_name_snapshot, sporely_taxon_id, taxon_identity_proof, "
+                "taxon_identity_source_system, taxon_identity_namespace, taxon_identity_external_id) "
+                "VALUES (?, 'Flammulina fennae', 12, ?, 'nortaxa', 'nortaxa_taxon_id', '502')",
+                (obs_id, row_proof))
+    (tmp_path / "rev").mkdir()
+    reversed_release = build(tmp_path / "rev" / "tax-2026.11.01-01.sqlite3", exclusions=("502",))
+    report = reversal.audit(obs_db, release, reversed_release)
+    assert [a["observation_id"] for a in report["affected"]] == [2]
+    (flagged,) = report["unattributed"]
+    assert (flagged["observation_id"], flagged["identity_proof"]) == (1, proof)
+    assert flagged["proposal"]["action"] == "keep_unified_identity"
+
+
 # --- the observation editor -------------------------------------------------
 
 

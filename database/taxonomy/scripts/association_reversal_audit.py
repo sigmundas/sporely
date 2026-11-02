@@ -16,7 +16,8 @@ An observation is attributed to an association by its own stored evidence:
   column and keeps the provider tuple (``taxon_identity_source_system`` /
   ``_namespace`` / ``_external_id``);
 * a provider tuple equal to an association's member usage, bound to its
-  primary, counts as well.
+  primary with a proven identity (``taxonomy_v2_artifact`` or
+  ``external_id_resolution``), counts as well.
 
 Observations bound to a member concept's own id are unaffected: that id is
 live in both releases.
@@ -37,6 +38,8 @@ from pathlib import Path
 
 _PICKER = re.compile(r"(?:^|[;\s])name_association:(?P<id>[^\s;\]]+)")
 _PROVIDER = re.compile(r"association=(?P<id>[^\s;\]]+)")
+# utils.taxon_identity.PROVEN_SPORELY_PROOFS, repeated so the script runs standalone.
+_PROVEN_PROOFS = frozenset({"taxonomy_v2_artifact", "external_id_resolution"})
 
 
 def _open_ro(path: Path) -> sqlite3.Connection:
@@ -76,9 +79,10 @@ def attributed_association(obs: dict, by_usage: dict[tuple, dict]) -> tuple[str 
     usage = (obs.get("taxon_identity_source_system"), obs.get("taxon_identity_namespace"),
              str(obs.get("taxon_identity_external_id") or ""))
     association = by_usage.get(usage)
-    # A cloud tuple the receiving desktop could not verify is kept as a lead,
-    # not evidence: such an observation is listed as unattributed.
-    if obs.get("taxon_identity_proof") == "cloud_selected_unverified":
+    # Only a proven binding ties the tuple to the selected id. A cloud tuple the
+    # receiving desktop could not verify, a legacy id or a row with no proof is
+    # kept as a lead, not evidence: such an observation is listed as unattributed.
+    if obs.get("taxon_identity_proof") not in _PROVEN_PROOFS:
         return None, ""
     if association is not None and obs.get("sporely_taxon_id") == association["primary_taxon_id"]:
         return association["association_id"], "provider_tuple"
