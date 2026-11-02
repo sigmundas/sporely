@@ -1023,25 +1023,7 @@ def _lookup_adb_taxon_id_from_db(genus: str, species: str) -> int | None:
             # (NorTaxa's "nom. dub.") is the same species name and matches too.
             # Canonical names are "Genus epithet"; normalise the genus case so
             # the indexed exact match is case-insensitive in effect.
-            binomial = f"{genus[:1].upper()}{genus[1:].lower()} {species}"
-            concept_ids = [int(r[0]) for r in conn.execute(
-                "SELECT taxon_id FROM taxon_min WHERE canonical_scientific_name IN "
-                f"({','.join('?' * (1 + len(_SPECIES_NAME_QUALIFIERS)))}) "
-                "AND lower(taxon_rank) = 'species'",
-                (binomial, *(f"{binomial} {q}" for q in _SPECIES_NAME_QUALIFIERS)),
-            )]
-            if not concept_ids:
-                # Names whose canonical form differs from the genus/epithet
-                # columns (e.g. authorship kept in the epithet column) still
-                # match by those columns, at species rank only.
-                # The concept's own names must include the queried binomial,
-                # so an unrelated concept sharing column text never answers.
-                concept_ids = [int(r[0]) for r in conn.execute(
-                    "SELECT t.taxon_id FROM taxon_min t WHERE t.genus = ? COLLATE NOCASE "
-                    "AND t.specific_epithet = ? COLLATE NOCASE AND lower(t.taxon_rank) = 'species' "
-                    "AND EXISTS (SELECT 1 FROM scientific_name_min n WHERE n.taxon_id = t.taxon_id "
-                    "AND n.scientific_name = ? COLLATE NOCASE)",
-                    (genus, species, f"{genus} {species}"))] if "scientific_name_min" in tables else []
+            concept_ids = _species_concept_ids(conn, genus, species, tables)
             if not concept_ids:
                 return None
             # NorTaxa's own concept ids first (as before), then legacy
@@ -1106,12 +1088,85 @@ def _lookup_adb_taxon_id_from_db(genus: str, species: str) -> int | None:
         conn.close()
 
 
+def _species_concept_ids(conn, genus: str, species: str, tables: set[str]) -> list[int]:
+    """The taxonomy-v2 species concepts a genus+epithet names."""
+    binomial = f"{genus[:1].upper()}{genus[1:].lower()} {species}"
+    concept_ids = [int(r[0]) for r in conn.execute(
+        "SELECT taxon_id FROM taxon_min WHERE canonical_scientific_name IN "
+        f"({','.join('?' * (1 + len(_SPECIES_NAME_QUALIFIERS)))}) "
+        "AND lower(taxon_rank) = 'species'",
+        (binomial, *(f"{binomial} {q}" for q in _SPECIES_NAME_QUALIFIERS)),
+    )]
+    if not concept_ids and "scientific_name_min" in tables:
+        # Names whose canonical form differs from the genus/epithet
+        # columns (e.g. authorship kept in the epithet column) still
+        # match by those columns, at species rank only.
+        # The concept's own names must include the queried binomial,
+        # so an unrelated concept sharing column text never answers.
+        concept_ids = [int(r[0]) for r in conn.execute(
+            "SELECT t.taxon_id FROM taxon_min t WHERE t.genus = ? COLLATE NOCASE "
+            "AND t.specific_epithet = ? COLLATE NOCASE AND lower(t.taxon_rank) = 'species' "
+            "AND EXISTS (SELECT 1 FROM scientific_name_min n WHERE n.taxon_id = t.taxon_id "
+            "AND n.scientific_name = ? COLLATE NOCASE)",
+            (genus, species, f"{genus} {species}"))]
+    return concept_ids
+
+
+def _adb_taxon_id_from_name_association(
+    adb_taxon_id, sporely_taxon_id, genus: str | None, species: str | None,
+) -> bool:
+    """Whether a resolved Artsdatabanken id reaches the observation only
+    through rows a release name association copied onto its concept.
+
+    The concept is the observation's Sporely concept when ``sporely_taxon_id``
+    is given (a retired id follows ``taxon_supersession_min``), otherwise the
+    species concepts genus+epithet names. Such an id is not one the concept
+    carries itself, so it is used only once Artsobservasjoner confirms it. A
+    release without association notes, or any read failure, answers False.
+    """
+    key = _normalize_taxon_key(genus, species)
+    try:
+        adb_id = int(adb_taxon_id)
+        from utils.vernacular_utils import resolve_vernacular_db_path
+        db_path = resolve_vernacular_db_path()
+        if not key or not db_path or not db_path.exists():
+            return False
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except Exception:
+        return False
+    try:
+        columns = {(r[1] or "").lower() for r in conn.execute("PRAGMA table_info(taxon_min)")}
+        tables = {str(r[0] or "") for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "taxon_association_min" not in tables or "canonical_scientific_name" not in columns:
+            return False
+        if sporely_taxon_id is not None:
+            concept = int(sporely_taxon_id)
+            if conn.execute("SELECT 1 FROM taxon_min WHERE taxon_id = ?", (concept,)).fetchone() is None \
+                    and "taxon_supersession_min" in tables:
+                mapped = conn.execute("SELECT current_taxon_id FROM taxon_supersession_min "
+                                      "WHERE retired_taxon_id = ?", (concept,)).fetchone()
+                concept = int(mapped[0]) if mapped else concept
+            concept_ids = [concept]
+        else:
+            concept_ids = _species_concept_ids(conn, *key, tables)
+        if not concept_ids:
+            return False
+        carried = _adb_ids_for_concepts(conn, concept_ids, columns, tables, name=f"{key[0]} {key[1]}")
+        own = _adb_ids_for_concepts(conn, concept_ids, columns, tables, own_rows_only=True)
+        return adb_id in carried and adb_id not in own
+    except (sqlite3.Error, TypeError, ValueError):
+        return False
+    finally:
+        conn.close()
+
+
 def _table_has_column(conn, table: str, column: str) -> bool:
     return any(row[1] == column for row in conn.execute(f"PRAGMA table_info({table})"))
 
 
 def _adb_ids_for_concepts(conn, concept_ids, columns: set[str], tables: set[str],
-                          tier: str | None = None, name: str | None = None) -> set[int]:
+                          tier: str | None = None, name: str | None = None,
+                          own_rows_only: bool = False) -> set[int]:
     """Accepted NorTaxa (Artsdatabanken) ids carried by the given concepts.
 
     ``tier="nortaxa"`` reads only NorTaxa's own concept ids
@@ -1120,6 +1175,8 @@ def _adb_ids_for_concepts(conn, concept_ids, columns: set[str], tables: set[str]
     ``None`` reads both. An id a release name association copied onto a
     concept counts only when NorTaxa's name for it is ``name``: under another
     name it is NorTaxa's id for that name, not one confirmed for this one.
+    ``own_rows_only`` leaves out every association row: the ids the concepts
+    carry without any association.
     """
     ids: set[int] = set()
     placeholders = ",".join("?" for _ in concept_ids)
@@ -1127,6 +1184,8 @@ def _adb_ids_for_concepts(conn, concept_ids, columns: set[str], tables: set[str]
         " AND (COALESCE(note, '') NOT LIKE 'name_association:%' OR external_name = ? COLLATE NOCASE)")
 
     def scoped(table: str):
+        if own_rows_only and _table_has_column(conn, table, "note"):
+            return " AND COALESCE(note, '') NOT LIKE 'name_association:%'", list(concept_ids)
         if _table_has_column(conn, table, "note") and _table_has_column(conn, table, "external_name"):
             return association, [*concept_ids, str(name or "")]
         return "", list(concept_ids)
@@ -1484,6 +1543,12 @@ class ObservationDB:
     @staticmethod
     def resolve_adb_taxon_id(genus: str | None, species: str | None) -> int | None:
         return _resolve_adb_taxon_id(genus, species)
+
+    @staticmethod
+    def adb_taxon_id_from_name_association(
+        adb_taxon_id, sporely_taxon_id, genus: str | None, species: str | None,
+    ) -> bool:
+        return _adb_taxon_id_from_name_association(adb_taxon_id, sporely_taxon_id, genus, species)
 
     @staticmethod
     def resolve_adb_taxon_id_for_concept(

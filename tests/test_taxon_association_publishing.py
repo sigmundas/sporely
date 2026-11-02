@@ -61,3 +61,45 @@ def test_ids_reached_only_through_an_association_need_the_destination_name(tmp_p
     # Same name: the NorTaxa id is the one for this name.
     assert models._lookup_adb_taxon_id_for_concept(10, "Russula", "aeruginea") == ("found", 500)
     assert models._resolve_adb_taxon_id("Russula", "aeruginea") == 500
+
+
+def test_an_association_derived_artsobservasjoner_id_needs_live_confirmation(tmp_path, monkeypatch):
+    """Artsobservasjoner: an id only an association gave the concept is used
+    when the destination's own search confirms it for the exact name, and
+    never when that check fails (offline, or no exact match); the
+    destination's different id still wins. Ids the concept carries itself
+    keep the existing fallback to the local id."""
+    import pytest
+
+    from tests.test_artsobs_destination_taxon_id import _http500, _item, _ok, _raise, _resolve, _tab
+    from utils import vernacular_utils
+    from utils.artsobservasjoner_taxon import DESTINATION_CONFIRMED_SOURCE, ArtsobservasjonerTaxonIdError
+
+    release = build(tmp_path / "tax-2026.10.31-01.sqlite3")
+    monkeypatch.setattr(vernacular_utils, "resolve_vernacular_db_path", lambda *_a, **_k: release)
+    russula_col = {"genus": "Russula", "species": "aeruginea", "sporely_taxon_id": 10}  # 500 via association
+    russula_nortaxa = {"genus": "Russula", "species": "aeruginea", "sporely_taxon_id": 20}  # its own 500
+    flammulina = {"genus": "Flammulina", "species": "fennae"}  # name path; 502 only via association
+
+    for failing in (_raise, _http500, lambda s: _ok(""), lambda s: _ok(_item(502, "Flammulina velutipes"))):
+        for obs in (russula_col, flammulina):
+            tab, _ = _tab(monkeypatch, failing)
+            with pytest.raises(ArtsobservasjonerTaxonIdError, match="no verified Artsobservasjoner taxon id"):
+                _resolve(tab, dict(obs))
+        tab, _ = _tab(monkeypatch, failing)
+        assert _resolve(tab, dict(russula_nortaxa)).taxon_id == 500
+        tab, _ = _tab(monkeypatch, failing)
+        assert _resolve(tab, {"genus": "Russula", "species": "aeruginea"}).taxon_id == 500
+
+    tab, _ = _tab(monkeypatch, lambda s: _ok(_item(500, s)))
+    assert (_resolve(tab, dict(russula_col)).taxon_id, _resolve(tab, dict(russula_col)).source_field) == \
+        (500, "taxonomy_db.artsdatabanken:concept")
+    tab, _ = _tab(monkeypatch, lambda s: _ok(_item(502, s)))
+    assert _resolve(tab, dict(flammulina)).taxon_id == 502
+    tab, _ = _tab(monkeypatch, lambda s: _ok(_item(57677, s)))
+    resolution = _resolve(tab, dict(russula_col))
+    assert (resolution.taxon_id, resolution.source_field, resolution.local_taxon_id) == \
+        (57677, DESTINATION_CONFIRMED_SOURCE, 500)
+    # An explicit Artsobservasjoner id stored on the observation still publishes.
+    tab, _ = _tab(monkeypatch, _raise)
+    assert _resolve(tab, {**flammulina, "artsobservasjoner_taxon_id": 4711}).taxon_id == 4711

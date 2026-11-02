@@ -11144,6 +11144,14 @@ class ObservationsTab(QWidget):
                 local_source = resolved_taxon_source
                 resolved_taxon_id = confirmed_id
                 resolved_taxon_source = DESTINATION_CONFIRMED_SOURCE
+            elif not confirmed_id and ObservationsTab._artsobs_id_from_name_association(
+                    self, obs, resolved_taxon_id, resolved_taxon_source):
+                # An id only a release name association gave this concept is
+                # used once Artsobservasjoner confirms it for the exact name,
+                # never on the strength of the association alone.
+                print(f"[artsobs] association-derived taxon id {resolved_taxon_id} "
+                      "not confirmed by Artsobservasjoner; not used")
+                resolved_taxon_id = None
         resolution = select_artsobservasjoner_taxon_id(
             obs,
             resolved_taxonomy_taxon_id=resolved_taxon_id,
@@ -11157,6 +11165,18 @@ class ObservationsTab(QWidget):
                 override_reason=DESTINATION_OVERRIDE_REASON,
             )
         return resolution
+
+    def _artsobs_id_from_name_association(self, obs: dict, taxon_id: int, resolved_source: str) -> bool:
+        """Whether the locally resolved id reached this observation only
+        through a release name association (see
+        ``ObservationDB.adb_taxon_id_from_name_association``)."""
+        taxon_pair = self._extract_artsobs_taxon_pair(obs)
+        if not taxon_pair:
+            return False
+        if resolved_source == "taxonomy_db.artsdatabanken:accepted_pair":
+            taxon_pair = self._resolve_accepted_taxon_pair(*taxon_pair) or taxon_pair
+        concept = obs.get("sporely_taxon_id") if resolved_source == "taxonomy_db.artsdatabanken:concept" else None
+        return ObservationDB.adb_taxon_id_from_name_association(taxon_id, concept, *taxon_pair)
 
     def _artsobs_accepted_scientific_name(self, obs: dict, resolved_source: str) -> str | None:
         """Name the existing resolution used: the observation's genus/species
