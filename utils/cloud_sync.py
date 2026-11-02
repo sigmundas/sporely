@@ -500,6 +500,7 @@ from utils.cloud_sync_impl.identity_state import (  # noqa: F401  (facade re-exp
     IDENTITY_APPLY_UNCHANGED,
     _apply_remote_identity_to_local,
     _installed_taxon_concept,
+    _keeping_unverified_cloud_tuple,
     _local_identity_columns_for_remote_claim,
     _verified_cloud_selection,
 )

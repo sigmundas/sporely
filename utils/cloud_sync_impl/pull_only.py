@@ -16,6 +16,7 @@ _PULL_ONLY_BLOCKED_CLIENT_METHODS = frozenset({
     'upload_image_file', 'upload_original_image_file',
     'set_image_storage_path',
     'set_observation_selected_taxon', 'clear_observation_selected_taxon',
+    'set_observation_identification',
     # Preserves a concept the cloud release lacks as external_unresolved.
     '_preserve_identity_missing_from_cloud_release',
     'set_observation_location',

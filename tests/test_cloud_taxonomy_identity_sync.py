@@ -69,9 +69,13 @@ def test_externally_resolved_identity_also_syncs():
         remote_obs=remote,
     )
 
+    # Through the identification RPC, keeping the provider tuple beside it.
     assert calls == [(
-        "set_observation_selected_taxon_v2",
-        {"p_observation_id": 1184, "p_sporely_taxon_id": 7821},
+        "set_observation_identification_v2",
+        {"p_observation_id": 1184, "p_sporely_taxon_id": 7821, "p_identity_state": "sporely_v2",
+          "p_source_system": "nortaxa", "p_namespace": "nortaxa_taxon_id", "p_external_id": "53482",
+          "p_raw_external_id": "NBIC:53482", "p_write_name": False,
+          "p_genus": None, "p_species": None, "p_common_name": None},
     )]
 
 

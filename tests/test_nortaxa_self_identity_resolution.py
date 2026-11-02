@@ -353,11 +353,17 @@ def _refusing_client(code="22023",
 
     def rpc(name, payload):
         client.rpcs.append((name, dict(payload)))
-        if name == "set_observation_selected_taxon_v2":
+        if payload.get("p_sporely_taxon_id") is not None:
             raise CloudWriteRejectedError(
                 f"RPC {name} failed", status_code=400, code=code, message=message)
     client._rpc = rpc
     return client
+
+
+_RESOLVED_PAYLOAD = {
+    "p_sporely_taxon_id": 624659, "p_identity_state": "sporely_v2", "p_source_system": "nortaxa",
+    "p_namespace": "nortaxa_taxon_id", "p_external_id": "52330", "p_raw_external_id": "NBIC:52330",
+    "p_write_name": False, "p_genus": None, "p_species": None, "p_common_name": None}
 
 
 def _self_resolved_row():
@@ -376,7 +382,7 @@ def test_a_concept_missing_from_the_cloud_release_preserves_its_tuple_instead_of
               "selected_sporely_taxon_id": None, "taxon_identity_state": None}
     client.push_observation(_self_resolved_row(), remote_obs=remote)
     assert client.rpcs == [
-        ("set_observation_selected_taxon_v2", {"p_observation_id": 917, "p_sporely_taxon_id": 624659}),
+        ("set_observation_identification_v2", {**_RESOLVED_PAYLOAD, "p_observation_id": 917}),
         ("set_observation_identification_v2", {
             "p_observation_id": 917, "p_sporely_taxon_id": None,
             "p_identity_state": "external_unresolved", "p_source_system": "nortaxa",
@@ -393,7 +399,7 @@ def test_a_tuple_the_cloud_already_holds_is_not_rewritten():
               "taxon_identity_source_system": "nortaxa", "taxon_identity_namespace": "nortaxa_taxon_id",
               "taxon_identity_external_id": "52330", "taxon_identity_raw_external_id": "NBIC:52330"}
     client.push_observation(_self_resolved_row(), remote_obs=remote)
-    assert [name for name, _ in client.rpcs] == ["set_observation_selected_taxon_v2"]
+    assert [name for name, _ in client.rpcs] == ["set_observation_identification_v2"]
 
 
 def test_a_picker_selected_concept_missing_from_the_cloud_stays_local_without_failing():
@@ -414,7 +420,7 @@ def test_a_new_observation_preserves_its_tuple_once_after_the_create():
     client = _refusing_client()
     client._sync_observation_selected_taxon("917", _self_resolved_row(), remote_obs=None)
     assert [name for name, _ in client.rpcs] == [
-        "set_observation_selected_taxon_v2", "set_observation_identification_v2"]
+        "set_observation_identification_v2", "set_observation_identification_v2"]
 
 
 @pytest.mark.parametrize("code, message", [
@@ -429,10 +435,12 @@ def test_any_other_refusal_still_fails_the_push(code, message):
               "selected_sporely_taxon_id": None, "taxon_identity_state": None}
     with pytest.raises(CloudWriteRejectedError):
         client.push_observation(_self_resolved_row(), remote_obs=remote)
-    assert [name for name, _ in client.rpcs] == ["set_observation_selected_taxon_v2"]
+    assert [name for name, _ in client.rpcs] == ["set_observation_identification_v2"]
 
 
 def test_a_self_resolved_identity_pushes_its_own_concept_id_through_the_rpc():
+    """With its NorTaxa tuple and the verbatim Artsorakel value, so another
+    desktop can verify it (``_verified_cloud_selection``)."""
     from tests.test_live_provider_identity_resolution import _push_client
 
     resolved = _provider("NBIC:52330", "Panaeolina foenisecii").resolved_to(
@@ -443,5 +451,4 @@ def test_a_self_resolved_identity_pushes_its_own_concept_id_through_the_rpc():
               "selected_sporely_taxon_id": None, "taxon_identity_state": None}
     client = _push_client()
     client.push_observation(row, remote_obs=remote)
-    assert client.rpcs == [("set_observation_selected_taxon_v2",
-                            {"p_observation_id": 917, "p_sporely_taxon_id": 624659})]
+    assert client.rpcs == [("set_observation_identification_v2", {**_RESOLVED_PAYLOAD, "p_observation_id": 917})]

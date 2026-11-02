@@ -11,6 +11,7 @@ from utils.taxon_identity import (
     SPORELY_SOURCE_SYSTEM,
     STATE_EXTERNAL_UNRESOLVED,
     STATE_NONE,
+    STATE_SPORELY,
     TaxonIdentity,
 )
 
@@ -100,13 +101,43 @@ class CloudSyncTaxonIdentityMixin:
         if remote_taxon_id == taxon_id:
             return
         try:
-            self.set_observation_selected_taxon(cloud_id, taxon_id)
+            if identity.has_external_evidence and identity.source_system != SPORELY_SOURCE_SYSTEM:
+                # Resolved from a provider identifier (NorTaxa, Dyntaxa,
+                # Artsorakel, possibly through a release name association):
+                # the cloud keeps that identifier beside the Sporely ID, as the
+                # web records it, so another desktop can verify the selection
+                # and a later release can trace it back to its source concept.
+                self.set_observation_identification(cloud_id, identity)
+            else:
+                self.set_observation_selected_taxon(cloud_id, taxon_id)
         except CloudWriteRejectedError as exc:
             if not self._is_missing_from_cloud_release(exc):
                 raise
             self._preserve_identity_missing_from_cloud_release(
                 cloud_id, obs, identity, remote_obs=remote_obs,
             )
+
+    def set_observation_identification(self, cloud_id: str, identity: TaxonIdentity) -> None:
+        """Persist a proven selection together with its provider identifier.
+
+        ``set_observation_identification_v2`` writes the selected Sporely ID
+        and the ``taxon_identity_*`` tuple in one statement, with the same
+        guards as ``set_observation_selected_taxon_v2``; the name is not
+        touched.
+        """
+        self._rpc('set_observation_identification_v2', {
+            'p_observation_id': int(cloud_id),
+            'p_sporely_taxon_id': int(identity.sporely_taxon_id),
+            'p_identity_state': STATE_SPORELY,
+            'p_source_system': identity.source_system,
+            'p_namespace': identity.namespace,
+            'p_external_id': identity.external_id,
+            'p_raw_external_id': identity.raw_external_id,
+            'p_write_name': False,
+            'p_genus': None,
+            'p_species': None,
+            'p_common_name': None,
+        })
 
     def _preserve_identity_missing_from_cloud_release(
         self,

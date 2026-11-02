@@ -394,8 +394,11 @@ def test_917_pushes_the_proven_identity_and_nothing_else(tmp_path, monkeypatch, 
     client.push_observation(row, remote_obs=remote)
 
     assert rpcs == [
-        ("set_observation_selected_taxon_v2",
-         {"p_observation_id": 917, "p_sporely_taxon_id": 7821}),
+        ("set_observation_identification_v2",
+         {"p_observation_id": 917, "p_sporely_taxon_id": 7821, "p_identity_state": "sporely_v2",
+          "p_source_system": "nortaxa", "p_namespace": "nortaxa_taxon_id", "p_external_id": "53482",
+          "p_raw_external_id": "NBIC:53482", "p_write_name": False,
+          "p_genus": None, "p_species": None, "p_common_name": None}),
     ]
     # Identity provenance is never an ordinary observation field; the guarded
     # RPC stays the only identity channel.
@@ -515,7 +518,7 @@ def test_a_later_correct_selection_does_not_rewrite_the_historical_snapshot(
     joined = " ".join(written)
     assert "identification_snapshot" not in joined
     assert "resolution_link" not in joined
-    assert "set_observation_selected_taxon_v2" in joined
+    assert "set_observation_identification_v2" in joined
     # The provider history the snapshot was derived from is also intact.
     assert row["ai_selected_scientific_name"] == "Entoloma conferendum"
 

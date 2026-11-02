@@ -280,8 +280,8 @@ def test_an_ai_resolved_identity_replaces_a_different_cloud_concept_only_through
     """A live Artsorakel copy that resolves to concept B on a row whose cloud
     identity is concept A is a deliberate re-identification, exactly like a
     picker selection: it reaches the cloud through
-    set_observation_selected_taxon_v2 once, and no PATCH carries taxonomy
-    identity columns."""
+    set_observation_identification_v2 once (with its provider tuple), and no
+    PATCH carries taxonomy identity columns."""
     resolved = _provider("NBIC:53482", "Entoloma conferendum").resolved_to(
         7821, provenance="taxonomy_v2:tax-2026.09.23-01:taxon_external_id_text_min")
     row = {"id": 1, "cloud_id": "917", "date": "2026-09-25", "genus": "Entoloma",
@@ -290,8 +290,11 @@ def test_an_ai_resolved_identity_replaces_a_different_cloud_concept_only_through
               "selected_sporely_taxon_id": 83668, "taxon_identity_state": "sporely_v2"}
     client = _push_client()
     client.push_observation(row, remote_obs=remote)
-    assert client.rpcs == [("set_observation_selected_taxon_v2",
-                            {"p_observation_id": 917, "p_sporely_taxon_id": 7821})]
+    assert client.rpcs == [("set_observation_identification_v2",
+                            {"p_observation_id": 917, "p_sporely_taxon_id": 7821, "p_identity_state": "sporely_v2",
+          "p_source_system": "nortaxa", "p_namespace": "nortaxa_taxon_id", "p_external_id": "53482",
+          "p_raw_external_id": "NBIC:53482", "p_write_name": False,
+          "p_genus": None, "p_species": None, "p_common_name": None})]
     identity_columns = {"selected_sporely_taxon_id", "taxon_identity_state", "taxon_identity_source_system",
                         "taxon_identity_namespace", "taxon_identity_external_id"}
     assert not any(identity_columns & set(payload) for _path, payload in client.patches)

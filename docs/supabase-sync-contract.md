@@ -176,9 +176,25 @@ Plain English comes first; technical terms are in parentheses.
     taxon id: the raw provider value must be retained, and any namespace hop
     must be a bridge declared in `database/taxonomy/docs/identity-contract.md`.
 
+    **A provider-resolved identity reaches the cloud with its provider tuple.**
+    When the desktop's proven identity was resolved from a non-Sporely
+    provider identifier (`external_id_resolution` with a NorTaxa, Dyntaxa or
+    Artsorakel tuple — including one a release name association resolves to
+    its COL primary) and the cloud's selected ID differs, the desktop writes it
+    through `set_observation_identification_v2` as `sporely_v2` with that
+    tuple and the verbatim `raw_external_id`, `p_write_name = false`: the
+    shape the web already writes for a resolved provider selection. The RPC
+    applies the same guards as `set_observation_selected_taxon_v2`. A picker
+    selection (a `sporely`-namespace tuple) carries no provider identifier and
+    still goes through `set_observation_selected_taxon_v2`; no tuple is
+    derived for it. A cloud row whose selected ID already matches is not
+    written, so existing cloud rows are never rewritten to add a tuple. The
+    desktop's own provenance text and proof are not sent (the cloud has no
+    columns for them); a receiving desktop records its own verification.
+
     **A proven concept the cloud release lacks is preserved, not failed.** A
     client's installed release can hold concepts the scoped cloud release does
-    not (every NorTaxa-only concept). When `set_observation_selected_taxon_v2`
+    not (every NorTaxa-only concept). When the guarded RPC (either writer above)
     refuses a proven identity with `22023` "missing from the active
     taxonomy-v2 release", the client must not fail the observation's push.
     If the identity carries a non-Sporely source tuple, the client preserves
@@ -213,7 +229,11 @@ Plain English comes first; technical terms are in parentheses.
     member → primary), a tuple resolving to that primary also proves it; the
     cloud's own selected ID is kept, never replaced by the primary. A tuple
     that resolves to nothing or to an unrelated concept, or a
-    `sporely`-namespace tuple, leaves `cloud_selected_unverified`.
+    `sporely`-namespace tuple, leaves `cloud_selected_unverified`; a
+    non-Sporely tuple that did not verify is still kept beside it, with
+    `cloud_provider_tuple_unverified` appended to the provenance, so a later
+    release or an association reversal can trace the source concept. It proves
+    nothing and is never pushed.
 
     **The persistence API accepts one complete typed identity transition.**
     The identity spans several columns but is a single value, and treating
@@ -1108,7 +1128,7 @@ client) and maps it to ONE coherent local identity
 | Cloud row | Local identity written |
 |---|---|
 | selected Sporely ID present in the installed taxonomy-v2 artifact, with a non-Sporely provider tuple the artifact's authoritative resolver maps to that same concept (or to the concept a name association presents it as) | `sporely_v2` / `external_id_resolution` with that tuple, artifact canonical name and rank as snapshot, provenance naming the resolving release and the cloud tuple (`_verified_cloud_selection`) |
-| selected Sporely ID present in the installed taxonomy-v2 artifact, otherwise | `sporely_v2` / `cloud_selected_unverified`, artifact canonical name and rank as snapshot, provenance naming the cloud state and the local release |
+| selected Sporely ID present in the installed taxonomy-v2 artifact, otherwise | `sporely_v2` / `cloud_selected_unverified`, artifact canonical name and rank as snapshot, provenance naming the cloud state and the local release; a non-Sporely cloud tuple is kept beside it, flagged `cloud_provider_tuple_unverified` |
 | selected Sporely ID absent from the installed artifact (release mismatch, pre-v2 install) | `external_unresolved` `(sporely, sporely_taxon_id, <id>)` — preserved, never a bound integer |
 | `external_unresolved` with a complete tuple | the same tuple as `external_unresolved` |
 | no identity | no identity |
