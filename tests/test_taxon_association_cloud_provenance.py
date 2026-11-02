@@ -192,6 +192,13 @@ def test_a_tuple_the_receiving_release_cannot_verify_is_kept_and_flagged(release
     assert len(cloud.rpcs) == 1
     assert models.ObservationDB.get_observation(local_id) == before
 
+    # The unverified tuple is a lead for review, not evidence a reversal acts on.
+    report = reversal.audit(_db_path, release, reversed_release)
+    assert not [a for a in report["affected"] if a["observation_id"] == local_id]
+    (flagged,) = [u for u in report["unattributed"] if u["observation_id"] == local_id]
+    assert flagged["proposal"]["action"] == "keep_unified_identity"
+    assert flagged["unverified_provider_tuple"] == ["nortaxa", "nortaxa_taxon_id", "502"]
+
 
 def test_a_picker_selection_carries_no_invented_source_and_reverses_flagged(releases, second_desktop):
     """Picking "Rugosomyces carneus" (presented as COL Calocybe carnea) is a

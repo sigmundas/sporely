@@ -76,6 +76,10 @@ def attributed_association(obs: dict, by_usage: dict[tuple, dict]) -> tuple[str 
     usage = (obs.get("taxon_identity_source_system"), obs.get("taxon_identity_namespace"),
              str(obs.get("taxon_identity_external_id") or ""))
     association = by_usage.get(usage)
+    # A cloud tuple the receiving desktop could not verify is kept as a lead,
+    # not evidence: such an observation is listed as unattributed.
+    if obs.get("taxon_identity_proof") == "cloud_selected_unverified":
+        return None, ""
     if association is not None and obs.get("sporely_taxon_id") == association["primary_taxon_id"]:
         return association["association_id"], "provider_tuple"
     return None, ""
@@ -118,6 +122,10 @@ def audit(observations_db: Path, old_release: Path, new_release: Path) -> dict:
                         "stored_name": _stored_name(obs),
                         "bound_sporely_taxon_id": obs["sporely_taxon_id"],
                         "identity_proof": obs["taxon_identity_proof"],
+                        "unverified_provider_tuple": [obs["taxon_identity_source_system"],
+                                                      obs["taxon_identity_namespace"],
+                                                      obs["taxon_identity_external_id"]]
+                        if obs["taxon_identity_source_system"] not in (None, "sporely") else None,
                         "dropped_associations": [
                             {k: a[k] for k in ("association_id", "member_kind", "member_taxon_id",
                                                "member_scientific_name")} for a in candidates],
