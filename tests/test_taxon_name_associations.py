@@ -227,8 +227,8 @@ def test_reversal_attributes_an_observation_resolved_through_a_synonym_id(tmp_pa
 
 def test_editor_shows_and_keeps_a_member_bound_observation(release, tmp_path, monkeypatch):
     """An observation bound to the NorTaxa member shows in its primary's
-    entry with the stored id; saving unchanged keeps the id and provenance;
-    picking again binds the primary."""
+    entry with the stored id; saving unchanged, Escape and picking that same
+    entry keep the id and provenance; another species binds as usual."""
     import os
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtCore import Qt
@@ -284,12 +284,22 @@ def test_editor_shows_and_keeps_a_member_bound_observation(release, tmp_path, mo
         assert stored() == before
         _save(db, obs_id, editor())
         assert stored() == before
+        # Endre, then picking the entry it is shown in: the same species, so
+        # the NorTaxa concept, proof and provenance stay.
         dialog = editor()
         dialog.taxon_picker.begin_edit()
         _pick(dialog, "Russula aeruginea", "Russula aeruginea")
+        assert _shown(dialog) == ("Russula aeruginea", 20)
         _save(db, obs_id, dialog)
-        assert stored()[:2] == (10, "taxonomy_v2_artifact")
-        assert _shown(editor()) == ("Russula aeruginea", 10)
+        assert stored() == before
+        assert _shown(editor()) == ("Russula aeruginea", 20)
+        # A different species binds as usual.
+        dialog = editor()
+        dialog.taxon_picker.begin_edit()
+        _pick(dialog, "Flammulina fennae", "Flammulina fennae")
+        _save(db, obs_id, dialog)
+        assert stored()[:2] == (12, "taxonomy_v2_artifact")
+        assert _shown(editor()) == ("Flammulina fennae", 12)
     finally:
         for dialog in dialogs:
             dialog._cleanup_dialog_threads()
@@ -335,3 +345,136 @@ def test_editor_shows_a_superseded_id_in_its_survivors_entry(tmp_path, monkeypat
         dialog._cleanup_dialog_threads()
         dialog.hide()
         dialog.deleteLater()
+
+
+
+def test_editor_keeps_a_differently_named_member_unless_another_name_is_picked(release, tmp_path, monkeypatch):
+    """Bound to NorTaxa's Rugosomyces carneus (a member of COL Calocybe
+    carnea): picking its own entry again keeps it; picking Calocybe carnea is
+    a new identification and binds the COL concept."""
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from database import schema
+    from tests.test_observation_details_ai_copy_and_vernacular_autofill import _build_dialog
+    from tests.test_observation_details_taxon_picker import _pick, _save, _shown
+    from utils import vernacular_utils
+
+    db_path = tmp_path / "observations.sqlite3"
+    monkeypatch.setattr(schema, "get_database_path", lambda: db_path)
+    monkeypatch.setattr(vernacular_utils, "resolve_vernacular_db_path", lambda *_a, **_k: release)
+    schema.init_database()
+    from database.models import ObservationDB as db
+
+    identity = TaxonIdentity.from_prefixed_external_id(
+        "NBIC:501", scientific_name="Rugosomyces carneus", rank="species").resolved_to(
+        21, provenance="taxonomy_v2:tax-2026.10.07-01:taxon_min.canonical_source_usage")
+    obs_id = db.create_observation(date="2026-10-31 12:00", genus="Rugosomyces", species="carneus",
+                                   scientific_name_snapshot="Rugosomyces carneus", taxon_rank_snapshot="species",
+                                   **identity.to_row())
+
+    def stored():
+        with sqlite3.connect(db_path) as conn:
+            return conn.execute("SELECT sporely_taxon_id, taxon_identity_proof, taxon_identity_external_id, "
+                                "taxon_identity_provenance FROM observations WHERE id = ?", (obs_id,)).fetchone()
+
+    before = stored()
+    qapp = QApplication.instance() or QApplication([])
+    dialogs = []
+
+    def editor():
+        dialog = _build_dialog(monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=release,
+                               observation=db.get_observation(obs_id))
+        dialog.show()
+        qapp.processEvents()
+        dialogs.append(dialog)
+        return dialog
+
+    try:
+        dialog = editor()
+        assert _shown(dialog) == ("Rugosomyces carneus", 21)
+        dialog.taxon_picker.begin_edit()
+        _pick(dialog, "Rugosomyces carneus", "Rugosomyces carneus", kind="synonym")
+        _save(db, obs_id, dialog)
+        assert stored() == before
+        dialog = editor()
+        dialog.taxon_picker.begin_edit()
+        _pick(dialog, "Calocybe carnea", "Calocybe carnea")
+        _save(db, obs_id, dialog)
+        assert stored()[:2] == (11, "taxonomy_v2_artifact")
+    finally:
+        for dialog in dialogs:
+            dialog._cleanup_dialog_threads()
+            dialog.hide()
+            dialog.deleteLater()
+
+
+def test_editor_keeps_a_provider_identity_when_its_own_species_is_picked(release, tmp_path, monkeypatch):
+    """Bound to COL Flammulina fennae through NorTaxa's id (NBIC:502, an
+    association member with no concept of its own): Endre, then picking that
+    same species keeps the provider tuple, proof and provenance; another
+    species binds as usual."""
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from database import schema
+    from tests.test_observation_details_ai_copy_and_vernacular_autofill import _build_dialog
+    from tests.test_observation_details_taxon_picker import _pick, _save, _shown
+    from utils import vernacular_utils
+
+    db_path = tmp_path / "observations.sqlite3"
+    monkeypatch.setattr(schema, "get_database_path", lambda: db_path)
+    monkeypatch.setattr(vernacular_utils, "resolve_vernacular_db_path", lambda *_a, **_k: release)
+    schema.init_database()
+    from database.models import ObservationDB as db
+
+    provider = TaxonIdentity.from_prefixed_external_id("NBIC:502", scientific_name="Flammulina fennae",
+                                                       rank="species")
+    concept = resolve_installed_external_identity(
+        release, source_system="nortaxa", namespace="nortaxa_taxon_id", external_id="502")
+    identity = provider.resolved_to(12, provenance=f"taxonomy_v2:{concept.release_id}:{concept.resolved_through}")
+    obs_id = db.create_observation(date="2026-10-31 12:00", genus="Flammulina", species="fennae",
+                                   scientific_name_snapshot="Flammulina fennae", taxon_rank_snapshot="species",
+                                   **identity.to_row())
+
+    def stored():
+        with sqlite3.connect(db_path) as conn:
+            return conn.execute("SELECT sporely_taxon_id, taxon_identity_proof, taxon_identity_source_system, "
+                                "taxon_identity_external_id, taxon_identity_raw_external_id, "
+                                "taxon_identity_provenance FROM observations WHERE id = ?", (obs_id,)).fetchone()
+
+    before = stored()
+    assert before[:5] == (12, "external_id_resolution", "nortaxa", "502", "NBIC:502")
+    assert "association=nortaxa:502" in before[5]
+    qapp = QApplication.instance() or QApplication([])
+    dialogs = []
+
+    def editor():
+        dialog = _build_dialog(monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=release,
+                               observation=db.get_observation(obs_id))
+        dialog.show()
+        qapp.processEvents()
+        dialogs.append(dialog)
+        return dialog
+
+    try:
+        dialog = editor()
+        assert _shown(dialog) == ("Flammulina fennae", 12)
+        dialog.taxon_picker.begin_edit()
+        _pick(dialog, "Flammulina fennae", "Flammulina fennae")
+        _save(db, obs_id, dialog)
+        assert stored() == before
+        _save(db, obs_id, editor())
+        assert stored() == before
+        dialog = editor()
+        dialog.taxon_picker.begin_edit()
+        _pick(dialog, "Russula aeruginea", "Russula aeruginea")
+        _save(db, obs_id, dialog)
+        assert stored()[:3] == (10, "taxonomy_v2_artifact", "sporely")
+    finally:
+        for dialog in dialogs:
+            dialog._cleanup_dialog_threads()
+            dialog.hide()
+            dialog.deleteLater()

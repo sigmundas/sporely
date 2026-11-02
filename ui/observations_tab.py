@@ -20524,6 +20524,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._schedule_taxon_picker_sync()
             return
         before = self._committed_sporely_taxon_id()
+        if self._pick_confirms_stored_identity(before, concept):
+            # The species the observation already is: its source concept,
+            # proof and provenance stay as stored.
+            self._sync_taxon_picker(force=True)
+            self._update_taxonomy_tab_indicators()
+            return
         if not controller.commit_picked_concept(concept.as_scientific_suggestion()):
             # Not committed (a name the snapshot parser refuses): show what
             # the observation still holds.
@@ -20531,6 +20537,29 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         elif self._committed_sporely_taxon_id() != before:
             self._set_inaturalist_taxon_id(None)
         self._update_taxonomy_tab_indicators()
+
+    def _pick_confirms_stored_identity(self, before: int | None, concept) -> bool:
+        """Whether a pick is the identification the observation already has,
+        under the name it stores: the same proven concept (its provider id and
+        provenance are kept), or the entry a member-bound observation is shown
+        in, the concept a release name association presents ``before`` as.
+        Another name of that species is a new identification and binds as
+        usual."""
+        picked = getattr(concept, "sporely_taxon_id", None)
+        if before is None or picked is None:
+            return False
+        controller = getattr(self, "_taxon_controller", None)
+        snapshot = (controller.committed_snapshot() if controller else None) or {}
+        stored = str(snapshot.get("scientific_name") or "")
+        if " ".join(stored.split()).casefold() != " ".join(str(concept.scientific_name or "").split()).casefold():
+            return False
+        if int(picked) == int(before):
+            return TaxonIdentity.from_row(snapshot).is_proven_sporely
+        try:
+            primary = self._ensure_taxon_lookup().association_primary_id(before)
+        except Exception:
+            return False
+        return primary is not None and int(primary) == int(picked)
 
     def _on_taxon_picker_free_name(self, name: str) -> None:
         controller = getattr(self, "_taxon_controller", None)

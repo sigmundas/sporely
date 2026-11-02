@@ -1269,6 +1269,20 @@ class TaxonLookupService:
             "WHERE retired_taxon_id = ? LIMIT 1", (taxon_id,))
         return int(rows[0][0]) if rows else None
 
+    def association_primary_id(self, sporely_taxon_id: object) -> int | None:
+        """The primary a release name association presents ``sporely_taxon_id``
+        as, or ``None`` when it is no association member."""
+        try:
+            taxon_id = int(sporely_taxon_id)
+        except (TypeError, ValueError):
+            return None
+        if not self._has_local_table("taxon_association_min"):
+            return None
+        rows = self._fetch_local_rows(
+            "SELECT primary_taxon_id FROM taxon_association_min "
+            "WHERE member_taxon_id = ? LIMIT 1", (taxon_id,))
+        return int(rows[0][0]) if rows else None
+
     def display_scientific_name(self, sporely_taxon_id: object) -> str | None:
         """The scientific name to show for a concept in the UI language.
 
