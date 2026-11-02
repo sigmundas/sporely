@@ -229,14 +229,109 @@ def test_a_picker_selection_carries_no_invented_source_and_reverses_flagged(rele
     assert [a["association_id"] for a in flagged["dropped_associations"]] == ["nortaxa:501"]
 
 
-def test_an_unchanged_cloud_selection_is_not_rewritten_to_add_the_tuple(releases):
-    """A cloud row that already holds the selection (an existing observation
-    synced before this change) is left as it is."""
+_FENNAE_TUPLE = {"taxon_identity_source_system": "nortaxa", "taxon_identity_namespace": "nortaxa_taxon_id",
+                 "taxon_identity_external_id": "502", "taxon_identity_raw_external_id": "NBIC:502"}
+
+
+@pytest.mark.parametrize("cloud_tuple", [
+    {},                                                                    # the selected-ID RPC wrote it
+    {"taxon_identity_source_system": "sporely", "taxon_identity_namespace": "sporely_taxon_id",
+     "taxon_identity_external_id": "12"},                                  # a web/picker Sporely tuple
+])
+def test_a_same_id_cloud_row_gets_the_missing_provider_tuple_once(releases, second_desktop, cloud_tuple):
+    """The cloud already holds the species (synced before this change, say)
+    but not the provider id the desktop resolved it from. One metadata-only
+    identification call adds the tuple; the selection and the name stay; a
+    resync writes nothing; the second desktop receives the source verified."""
+    release, reversed_release = releases
+    db_path, _use = second_desktop
+    cloud = FakeCloud(_remote("Flammulina fennae", selected_sporely_taxon_id=12,
+                              taxon_identity_state="sporely_v2", **cloud_tuple))
+    row = _desktop_row(_provider_identity(release, "NBIC:502", "Flammulina fennae"), "Flammulina fennae")
+    cloud.push(row)
+    assert [(name, payload["p_sporely_taxon_id"], payload["p_write_name"]) for name, payload in cloud.rpcs] == \
+        [("set_observation_identification_v2", 12, False)]
+    assert {k: cloud.remote[k] for k in _FENNAE_TUPLE} == _FENNAE_TUPLE
+    assert (cloud.remote["selected_sporely_taxon_id"], cloud.remote["genus"], cloud.remote["species"]) == \
+        (12, "Flammulina", "fennae")
+
+    cloud.push(row)
+    assert len(cloud.rpcs) == 1
+
+    local_id = cloud_sync._create_local_from_remote(dict(cloud.remote))
+    received = _identity(local_id)
+    assert (received.sporely_taxon_id, received.identity_proof, received.raw_external_id) == \
+        (12, "external_id_resolution", "NBIC:502")
+    cloud.push({**models.ObservationDB.get_observation(local_id), "cloud_id": "4242"})
+    assert len(cloud.rpcs) == 1
+    (affected,) = [a for a in reversal.audit(db_path, release, reversed_release)["affected"]
+                   if a["observation_id"] == local_id]
+    assert affected["proposal"]["provider_tuple"] == ["nortaxa", "nortaxa_taxon_id", "502"]
+
+
+@pytest.mark.parametrize("cloud_tuple", [
+    {"taxon_identity_source_system": "dyntaxa", "taxon_identity_namespace": "dyntaxa_taxon_id",
+     "taxon_identity_external_id": "6000123"},                             # another provider's id
+    {**_FENNAE_TUPLE, "taxon_identity_external_id": "999"},               # another NorTaxa id
+    {"taxon_identity_source_system": "nortaxa"},                           # a partial tuple
+    {"taxon_identity_raw_external_id": "NBIC:999"},                        # a stray raw value
+    _FENNAE_TUPLE,                                                         # already there: nothing to do
+])
+def test_a_same_id_cloud_row_with_a_provider_value_is_left_alone(releases, cloud_tuple):
+    release, _reversed = releases
+    remote = _remote("Flammulina fennae", selected_sporely_taxon_id=12, taxon_identity_state="sporely_v2",
+                     **cloud_tuple)
+    cloud = FakeCloud(remote)
+    cloud.push(_desktop_row(_provider_identity(release, "NBIC:502", "Flammulina fennae"), "Flammulina fennae"))
+    assert cloud.rpcs == []
+    assert cloud.remote == remote
+
+
+def test_only_a_verified_provider_identity_adds_a_tuple_to_a_same_id_row(releases):
+    """A picker selection, an unverified cloud selection (with its kept,
+    flagged tuple) and a server whose rows lack the tuple columns: none
+    writes to a cloud row that already holds the species."""
+    release, _reversed = releases
+    picked = TaxonIdentity.from_taxonomy_v2_artifact(12, scientific_name="Flammulina fennae", rank="species")
+    unverified = TaxonIdentity.from_row({
+        **TaxonIdentity.from_cloud_selection(12, local_release_id="tax-2026.10.31-01",
+                                             scientific_name="Flammulina fennae", rank="species").to_row(),
+        "taxon_identity_source_system": "nortaxa", "taxon_identity_namespace": "nortaxa_taxon_id",
+        "taxon_identity_external_id": "502", "taxon_identity_raw_external_id": "NBIC:502"})
+    assert unverified.has_external_evidence and not unverified.is_proven_sporely
+    for identity in (picked, unverified):
+        cloud = FakeCloud(_remote("Flammulina fennae", selected_sporely_taxon_id=12,
+                                  taxon_identity_state="sporely_v2"))
+        cloud.push(_desktop_row(identity, "Flammulina fennae"))
+        assert cloud.rpcs == []
+
+    older_server = {"id": 4242, "date": "2026-10-31", "genus": "Flammulina", "species": "fennae",
+                    "selected_sporely_taxon_id": 12}
+    cloud = FakeCloud(older_server)
+    cloud.push(_desktop_row(_provider_identity(release, "NBIC:502", "Flammulina fennae"), "Flammulina fennae"))
+    assert cloud.rpcs == []
+
+
+def test_an_older_client_keeps_the_added_tuple_and_a_refusal_keeps_the_selection(releases):
+    """An older desktop re-asserting the same species through the selected-ID
+    RPC leaves the tuple in place. If the cloud release refuses the species,
+    the metadata-only write is dropped: the cloud's selection is not cleared
+    to an unresolved tuple as a first push would be."""
     release, _reversed = releases
     cloud = FakeCloud(_remote("Flammulina fennae", selected_sporely_taxon_id=12,
                               taxon_identity_state="sporely_v2"))
     cloud.push(_desktop_row(_provider_identity(release, "NBIC:502", "Flammulina fennae"), "Flammulina fennae"))
-    assert cloud.rpcs == []
+    cloud.rpc("set_observation_selected_taxon_v2", {"p_observation_id": 4242, "p_sporely_taxon_id": 12})
+    assert {k: cloud.remote[k] for k in _FENNAE_TUPLE} == _FENNAE_TUPLE
+
+    identity = TaxonIdentity.from_prefixed_external_id(
+        "NBIC:52330", scientific_name="Panaeolina foenisecii", rank="species").resolved_to(
+        624659, provenance="taxonomy_v2:tax-2026.10.31-01:taxon_min.canonical_source_usage")
+    remote = _remote("Panaeolina foenisecii", selected_sporely_taxon_id=624659, taxon_identity_state="sporely_v2")
+    cloud = FakeCloud(remote)
+    cloud.push(_desktop_row(identity, "Panaeolina foenisecii"))
+    assert [name for name, _ in cloud.rpcs] == ["set_observation_identification_v2"]
+    assert cloud.remote == remote
 
 
 def test_a_concept_the_cloud_lacks_still_preserves_its_tuple_unresolved(tmp_path):
@@ -271,3 +366,18 @@ def test_a_later_picker_selection_replaces_the_provider_tuple(releases, second_d
     received = _identity(cloud_sync._create_local_from_remote(dict(cloud.remote)))
     assert (received.sporely_taxon_id, received.source_system, received.external_id) == (10, "sporely", "10")
     assert "cloud_provider_tuple_unverified" not in (received.provenance or "")
+
+
+def test_re_picking_an_unverified_selection_leaves_the_cloud_tuple(releases):
+    """Confirming the same species with the picker binds it locally as a
+    picker selection with its own Sporely tuple (one tuple slot, one proof).
+    The cloud row already holds the species, so nothing is written: the
+    cloud keeps the provider id it had, and another desktop still receives
+    it and verifies it against its own release, or keeps it flagged."""
+    release, _reversed = releases
+    remote = _remote("Flammulina fennae", selected_sporely_taxon_id=12, taxon_identity_state="sporely_v2",
+                     **_FENNAE_TUPLE)
+    cloud = FakeCloud(remote)
+    picked = TaxonIdentity.from_taxonomy_v2_artifact(12, scientific_name="Flammulina fennae", rank="species")
+    cloud.push(_desktop_row(picked, "Flammulina fennae"))
+    assert cloud.rpcs == [] and cloud.remote == remote

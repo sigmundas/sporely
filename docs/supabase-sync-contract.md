@@ -193,8 +193,22 @@ Plain English comes first; technical terms are in parentheses.
     not left paired with the new species. A client that still changes the
     selection through `set_observation_selected_taxon_v2` alone (older
     desktops, the web's fallback) can leave such a stale tuple; a receiving
-    desktop then keeps it only as unverified, never as proof. A cloud row whose selected ID already matches is not
-    written, so existing cloud rows are never rewritten to add a tuple. The
+    desktop then keeps it only as unverified, never as proof. A cloud row whose
+    selected ID already matches is not written, with one metadata-only
+    exception: when the desktop's identity is `external_id_resolution` with a
+    non-Sporely tuple and the cloud row was read with its tuple columns and
+    holds no provider value there (all empty, or a `sporely`-namespace tuple),
+    the desktop adds its tuple through `set_observation_identification_v2`
+    with the same selected ID and `p_write_name = false`. It never replaces
+    another provider value, even a partial one; a picker, unverified or
+    legacy identity never adds one; and once the tuple is there a resync
+    writes nothing. It runs only when the observation is pushed, so unchanged
+    observations are not swept. A `22023` refusal of that metadata write
+    leaves the row as it is (no unresolved fallback: the cloud's selection is
+    not cleared). Re-picking the same species over an unverified cloud
+    selection writes nothing, so the cloud keeps any provider tuple it held;
+    locally the picker selection replaces the kept unverified tuple, because
+    the single tuple slot beside a proven proof would read as verified. The
     desktop's own provenance text and proof are not sent (the cloud has no
     columns for them); a receiving desktop records its own verification.
 

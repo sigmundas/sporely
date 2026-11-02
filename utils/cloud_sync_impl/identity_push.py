@@ -8,6 +8,7 @@ in Stage S4 of the cloud-sync extraction.
 from __future__ import annotations
 
 from utils.taxon_identity import (
+    PROOF_EXTERNAL_ID_RESOLUTION,
     SPORELY_SOURCE_SYSTEM,
     STATE_EXTERNAL_UNRESOLVED,
     STATE_NONE,
@@ -24,6 +25,37 @@ from utils.cloud_sync_impl.reconciliation.identity import (
     _remote_identity_claim,
 )
 from utils.cloud_sync_impl.reconciliation.values import _normalize_observation_int_value
+
+
+def _cloud_row_lacks_provider_tuple(identity: TaxonIdentity, remote_obs: dict | None) -> bool:
+    """Whether a same-ID cloud row may receive this identity's provider tuple.
+
+    Only a selection the desktop resolved itself from a provider
+    identifier (``external_id_resolution``) qualifies, and only onto a
+    row whose read included the tuple columns and holds no provider value
+    there (empty, or the Sporely namespace). A row with any other provider
+    value, even a partial one, is left as it is: it is never overwritten.
+    """
+    if not (
+        identity.identity_proof == PROOF_EXTERNAL_ID_RESOLUTION
+        and identity.has_external_evidence
+        and identity.source_system != SPORELY_SOURCE_SYSTEM
+    ):
+        return False
+    row = dict(remote_obs or {})
+    if 'taxon_identity_source_system' not in row:
+        return False
+    remote_source = str(row.get('taxon_identity_source_system') or '').strip()
+    if remote_source == SPORELY_SOURCE_SYSTEM:
+        return True
+    return not remote_source and not any(
+        str(row.get(column) or '').strip()
+        for column in (
+            'taxon_identity_namespace',
+            'taxon_identity_external_id',
+            'taxon_identity_raw_external_id',
+        )
+    )
 
 
 class CloudSyncTaxonIdentityMixin:
@@ -99,6 +131,25 @@ class CloudSyncTaxonIdentityMixin:
             (remote_obs or {}).get('selected_sporely_taxon_id')
         )
         if remote_taxon_id == taxon_id:
+            if _cloud_row_lacks_provider_tuple(identity, remote_obs):
+                # Metadata only: the cloud already holds this species but not
+                # the provider identifier it was resolved from (a row written
+                # by the selected-ID RPC, or by a client before
+                # set_observation_identification). The same RPC adds the tuple;
+                # the Sporely ID and the name are unchanged. Once the tuple is
+                # there this branch no longer applies, so a resync is a no-op.
+                try:
+                    self.set_observation_identification(cloud_id, identity)
+                except CloudWriteRejectedError as exc:
+                    if not self._is_missing_from_cloud_release(exc):
+                        raise
+                    # Never the unresolved fallback here: that would clear a
+                    # selection the cloud already holds. The row stays as is.
+                    logger.info(
+                        "cloud sync: provider tuple not added to observation %s — "
+                        "Sporely %s is missing from the active cloud release",
+                        obs.get('id'), taxon_id,
+                    )
             return
         try:
             remote_claim = _remote_identity_claim(remote_obs)

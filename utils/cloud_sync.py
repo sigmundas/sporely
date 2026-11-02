@@ -553,6 +553,7 @@ from utils.cloud_sync_impl.calibrations import (  # noqa: F401  (facade re-expor
     repair_calibrations_local_wins,
 )
 from utils.cloud_sync_impl.identity_push import (  # noqa: F401  (facade re-export)
+    _cloud_row_lacks_provider_tuple,
     CloudSyncTaxonIdentityMixin,
 )
 from utils.cloud_sync_impl.image_identity import (  # noqa: F401  (facade re-export)
