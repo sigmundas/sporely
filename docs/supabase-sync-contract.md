@@ -187,7 +187,13 @@ Plain English comes first; technical terms are in parentheses.
     applies the same guards as `set_observation_selected_taxon_v2`. A picker
     selection (a `sporely`-namespace tuple) carries no provider identifier and
     still goes through `set_observation_selected_taxon_v2`; no tuple is
-    derived for it. A cloud row whose selected ID already matches is not
+    derived for it. When the cloud row it replaces holds a provider tuple, the
+    picker selection is written through `set_observation_identification_v2`
+    with its own `sporely`-namespace tuple instead, so the old provider id is
+    not left paired with the new species. A client that still changes the
+    selection through `set_observation_selected_taxon_v2` alone (older
+    desktops, the web's fallback) can leave such a stale tuple; a receiving
+    desktop then keeps it only as unverified, never as proof. A cloud row whose selected ID already matches is not
     written, so existing cloud rows are never rewritten to add a tuple. The
     desktop's own provenance text and proof are not sent (the cloud has no
     columns for them); a receiving desktop records its own verification.

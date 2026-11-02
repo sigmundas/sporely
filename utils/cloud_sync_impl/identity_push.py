@@ -101,12 +101,17 @@ class CloudSyncTaxonIdentityMixin:
         if remote_taxon_id == taxon_id:
             return
         try:
-            if identity.has_external_evidence and identity.source_system != SPORELY_SOURCE_SYSTEM:
+            remote_claim = _remote_identity_claim(remote_obs)
+            if (identity.has_external_evidence and identity.source_system != SPORELY_SOURCE_SYSTEM) or (
+                    remote_claim is not None and remote_claim.source_system):
                 # Resolved from a provider identifier (NorTaxa, Dyntaxa,
                 # Artsorakel, possibly through a release name association):
                 # the cloud keeps that identifier beside the Sporely ID, as the
                 # web records it, so another desktop can verify the selection
                 # and a later release can trace it back to its source concept.
+                # A picker selection replacing a row that holds a provider
+                # tuple writes its own Sporely tuple the same way, so the old
+                # provider id is not left paired with the new species.
                 self.set_observation_identification(cloud_id, identity)
             else:
                 self.set_observation_selected_taxon(cloud_id, taxon_id)

@@ -244,3 +244,23 @@ def test_a_concept_the_cloud_lacks_still_preserves_its_tuple_unresolved(tmp_path
     assert [name for name, _ in cloud.rpcs] == ["set_observation_identification_v2"] * 2
     assert (cloud.remote["selected_sporely_taxon_id"], cloud.remote["taxon_identity_state"],
             cloud.remote["taxon_identity_external_id"]) == (None, "external_unresolved", "52330")
+
+
+def test_a_later_picker_selection_replaces_the_provider_tuple(releases, second_desktop):
+    """After a provider-resolved push, picking another species writes that
+    selection with its own Sporely tuple: the old NorTaxa id is not left
+    paired with the new species, so the second desktop stores none."""
+    release, _reversed = releases
+    cloud = FakeCloud(_remote("Flammulina fennae"))
+    cloud.push(_desktop_row(_provider_identity(release, "NBIC:502", "Flammulina fennae"), "Flammulina fennae"))
+    picked = TaxonIdentity.from_taxonomy_v2_artifact(10, scientific_name="Russula aeruginea", rank="species")
+    cloud.push(_desktop_row(picked, "Russula aeruginea"))
+    assert cloud.rpcs[-1] == ("set_observation_identification_v2", {
+        "p_observation_id": 4242, "p_sporely_taxon_id": 10, "p_identity_state": "sporely_v2",
+        "p_source_system": "sporely", "p_namespace": "sporely_taxon_id", "p_external_id": "10",
+        "p_raw_external_id": None, "p_write_name": False,
+        "p_genus": None, "p_species": None, "p_common_name": None})
+
+    received = _identity(cloud_sync._create_local_from_remote(dict(cloud.remote)))
+    assert (received.sporely_taxon_id, received.source_system, received.external_id) == (10, "sporely", "10")
+    assert "cloud_provider_tuple_unverified" not in (received.provenance or "")

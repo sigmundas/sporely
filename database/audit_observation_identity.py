@@ -860,7 +860,8 @@ def _classify_identity(
             "refusal_reason": (
                 f"Sporely concept {stored_id} came from the cloud selection "
                 f"({identity.provenance}); the cloud cannot prove its producer "
-                "and its own Sporely-namespace tuple is not independent evidence"
+                "and its tuple (Sporely-namespace, or a provider tuple this "
+                "release did not verify) is not independent evidence"
                 + ("" if artifact.contains(stored_id) else
                    "; it is also absent from this artifact")
             ),
