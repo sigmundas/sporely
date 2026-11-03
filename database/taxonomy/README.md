@@ -168,7 +168,8 @@ older names. Inputs are the base release gz (pinned sha256) and that build's
 `norm/` directory; two builds are byte-identical. Reverse an association by
 adding an `exclusions` entry and rebuilding; preview the affected
 observations with `scripts/association_reversal_audit.py` (read-only).
-Command and evidence: `evidence/name-associations/tax-2026.10.31-01/`.
+Command and evidence: `evidence/name-associations/tax-2026.10.31-01/`. Such a
+release is frozen with `freeze_release.py --derivation-dir` (below).
 
 ## Publishing to the cloud
 
@@ -382,6 +383,33 @@ reviewed bytes — nothing is rebuilt — with:
   --frozen-dir /path/to/build/frozen \
   --expect-freeze-sha256 <reviewed-sha256-of-freeze.json>
 ```
+
+A release derived from a frozen base by `name_associations.py` has no compiler
+output; freeze it with `--derivation-dir` instead of the compiler arguments:
+
+```bash
+.venv/bin/python database/taxonomy/scripts/freeze_release.py \
+  --derivation-dir <releases>/<release>/build --norm-dir <releases>/<base>/build/norm \
+  --policy database/taxonomy/policies/name_association_policy.json \
+  --holds database/taxonomy/policies/source_continuity_holds.json \
+  --bundle-dir database/reference_data/generated/taxonomy_v2 \
+  --registry-manifest database/taxonomy/registry/canonical/manifest.json \
+  --compatibility database/taxonomy/desktop-compatibility.json \
+  --validation-receipt <receipt.json> --output <frozen dir>
+```
+
+It requires the published bundle to be exactly the base's frozen publication
+(`<base>.freeze.json`, its manifest and gzip), the policy and every normalized
+input the derivation report pins, and a receipt binding the SQLite, the
+derivation report and `expected_associations_total`. It rebuilds the release
+from the base gzip and requires every output byte-identical, checks that the
+release holds exactly the base's Sporely ids with unchanged canonical identity,
+that the association table, `associations.jsonl` and report agree, and that
+red-list resolution is unchanged (the base's red-list block is carried). The
+evidence archive (`sporely-derived-evidence-v1`, named by the manifest's
+`derivation_evidence`) holds the report, association list, base freeze, policy,
+holds, receipt and the overlay implementation, whose hashes the manifest's
+`name_association` block also pins. Promotion is the same command as above.
 
 Promotion requires the unchanged baseline manifest/compatibility (or an identical
 already-published set) and committed registry. Any artifact mismatch fails before
