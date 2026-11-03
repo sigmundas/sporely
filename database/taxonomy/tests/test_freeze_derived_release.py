@@ -68,7 +68,9 @@ def _base_sqlite(path: Path) -> None:
                  "(20, 'artsdatabanken_redlist', '2021', 'A1', 'Norge', 'artsdatabanken', "
                  "'artsnavnebase_scientific_name_id', '500', 'Russula aeruginea', 'LC', 'LC'), "
                  "(NULL, 'artsdatabanken_redlist', '2021', 'A2', 'Norge', 'artsdatabanken', "
-                 "'artsnavnebase_scientific_name_id', '999', 'Nomen nudum', 'NT', 'NT')")
+                 "'artsnavnebase_scientific_name_id', '999', 'Nomen nudum', 'NT', 'NT'), "
+                 "(12, 'artsdatabanken_redlist', '2021', 'A3', 'Norge', 'artsdatabanken', "
+                 "'artsnavnebase_scientific_name_id', '502', 'Flammulina fennae', 'VU', 'VU')")
     conn.executemany("INSERT INTO taxonomy_meta VALUES (?, ?)", [
         ("content_release_id", BASE), ("taxonomy_schema_version", "2"), ("registry_sha256", REGISTRY_SHA),
         ("compiler_manifest_sha256", COMPILER_SHA), ("state", "candidate"), ("publication", "none")])
@@ -94,8 +96,10 @@ def setup(tmp_path: Path) -> dict:
         "sqlite_bytes": base_sqlite.stat().st_size, "registry_concatenated_sha256": REGISTRY_SHA,
         "compiler_manifest_sha256": COMPILER_SHA, "freeze_artifact": f"{BASE}.freeze.json",
         "install_target_name": "vernacular_multilanguage_v2.sqlite3",
-        "redlist_no": {"source_release": "2021", "citation": "Curated", "row_count": 2,
-                       "resolved_count": 1, "unresolved_count": 1},
+        "redlist_no": {"source_release": "2021", "citation": "Curated", "row_count": 3,
+                       "resolved_count": 2, "unresolved_count": 1,
+                       "collision_summary": {"unique": 2, "multiple_rows_same_category": 0,
+                                             "conflicting_categories": 0, "conflicting_ranks": 0}},
         "compiler_evidence": {"artifact": f"{BASE}.evidence.tar.gz",
                               "sha256": _sha(bundle / f"{BASE}.evidence.tar.gz"), "bytes": 13,
                               "format": promote.COMPILER_EVIDENCE_FORMAT},
@@ -269,6 +273,14 @@ def test_a_base_id_missing_from_the_derived_release_is_refused(setup, tmp_path):
      "association table, list and report disagree"),
     (lambda c: c.execute("UPDATE taxon_redlist_min SET taxon_id = 12 WHERE assessment_id = 'A2'"),
      "red-list resolution"),
+    # Same counts, but two assessments now fall on one concept with conflicting categories.
+    (lambda c: c.execute("UPDATE taxon_redlist_min SET taxon_id = "
+                         "(SELECT taxon_id FROM taxon_redlist_min WHERE assessment_id = 'A1') WHERE assessment_id = 'A3'"),
+     "red-list resolution"),
+    # Same counts, but a different row is the unresolved one.
+    (lambda c: c.executescript("UPDATE taxon_redlist_min SET taxon_id = 11 WHERE assessment_id = 'A2'; "
+                               "UPDATE taxon_redlist_min SET taxon_id = NULL WHERE assessment_id = 'A3';"),
+     "red-list resolution"),
 ])
 def test_derived_artifact_checks_ids_associations_and_redlist(setup, tmp_path, mutate, message):
     base_sqlite, derived = _copy_with_base(setup, tmp_path, mutate)
@@ -316,6 +328,9 @@ def _edit_report(files, inventory, **changes):
 @pytest.mark.parametrize("edit, message", [
     (lambda f, i: f.update({"implementation/name_associations.py": b"# other"}), "overlay implementation"),
     (lambda f, i: f.update({"inputs/base-freeze.json": b"{}"}), "does not bind the frozen base"),
+    (lambda f, i: f.update({"inputs/previous-publication-manifest.json": b'{"sqlite_sha256": "x"}'}),
+     "does not chain back to the frozen base"),
+    (lambda f, i: f.update({"inputs/source-continuity-holds.json": b'{"holds": []}'}), "does not bind its holds"),
     (lambda f, i: f.update({"derivation/associations.jsonl": b""}), "association list is incomplete"),
     (lambda f, i: _edit_report(f, i, sqlite_sha256="00" * 32), "archived derivation report mismatch"),
     (lambda f, i: f.update({"validation/receipt.json": b'{"validated": false}'}), "archived validation receipt"),

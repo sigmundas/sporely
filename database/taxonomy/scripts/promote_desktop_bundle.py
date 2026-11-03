@@ -422,13 +422,32 @@ def _verify_derived_artifact(sqlite_path: Path, base_sqlite: Path, *, report: di
             "AND NOT EXISTS (SELECT 1 FROM taxon_min t WHERE t.taxon_id = a.member_taxon_id)) LIMIT 1").fetchone(),
             "an association names a concept the release does not hold")
         rows, resolved = conn.execute("SELECT count(*), count(taxon_id) FROM taxon_redlist_min").fetchone()
+        # Unresolved rows (and so their reasons) are exactly the base's.
+        unresolved_changed = any(conn.execute(
+            f"SELECT 1 FROM {a}.taxon_redlist_min x WHERE x.taxon_id IS NULL AND NOT EXISTS "
+            f"(SELECT 1 FROM {b}.taxon_redlist_min y WHERE y.redlist_row_id = x.redlist_row_id "
+            f"AND y.taxon_id IS NULL) LIMIT 1").fetchone() for a, b in (("main", "base"), ("base", "main")))
+        collisions = _redlist_collision_summary(conn)
     finally:
         conn.close()
     # The base's red-list block is published unchanged, so it must still be true.
     redlist = previous.get("redlist_no") or {}
     _require(rows == redlist.get("row_count") and resolved == redlist.get("resolved_count")
-             and rows - resolved == redlist.get("unresolved_count"),
+             and rows - resolved == redlist.get("unresolved_count") and not unresolved_changed
+             and collisions == redlist.get("collision_summary"),
              "the derivation changed red-list resolution; the base's red-list block no longer describes it")
+
+
+def _redlist_collision_summary(conn: sqlite3.Connection) -> dict[str, int]:
+    """compile_release's collision audit over the resolved rows of ``conn``'s release."""
+    unique, same, categories, ranks = conn.execute(
+        "WITH g AS (SELECT count(*) AS n, count(DISTINCT category_code) AS c, "
+        "count(DISTINCT coalesce(taxon_rank_snapshot, '')) AS r FROM taxon_redlist_min "
+        "WHERE taxon_id IS NOT NULL GROUP BY source_release, assessment_area, taxon_id) "
+        "SELECT coalesce(sum(n = 1), 0), coalesce(sum(n > 1 AND c = 1 AND r = 1), 0), "
+        "coalesce(sum(n > 1 AND c > 1), 0), coalesce(sum(n > 1 AND c = 1 AND r > 1), 0) FROM g").fetchone()
+    return {"unique": unique, "multiple_rows_same_category": same,
+            "conflicting_categories": categories, "conflicting_ranks": ranks}
 
 
 def freeze_derived(
@@ -544,6 +563,7 @@ def freeze_derived(
             **derivation_manifest["name_association"],
             "base_freeze_sha256": base_freeze_sha,
             "implementation_sha256": {name: _sha256_file(path) for name, path in implementation.items()},
+            "holds_sha256": _sha256_file(holds_path) if holds_path is not None else None,
         }
         members = {
             "derivation/association-report.json": report_path,
@@ -566,7 +586,8 @@ def freeze_derived(
         _write_evidence_archive(archive_path, members, {
             "format": DERIVED_EVIDENCE_FORMAT, "content_release_id": release_id, "sqlite_sha256": sqlite_sha,
             "association_report_sha256": report_sha, "base_release_id": base_id,
-            "base_freeze_sha256": base_freeze_sha, "inputs_sha256": report.get("inputs_sha256") or {}})
+            "base_freeze_sha256": base_freeze_sha, "inputs_sha256": report.get("inputs_sha256") or {},
+            "holds_sha256": manifest["name_association"]["holds_sha256"]})
         manifest["derivation_evidence"] = {"artifact": archive_path.name, "sha256": _sha256_file(archive_path),
                                            "bytes": archive_path.stat().st_size, "format": DERIVED_EVIDENCE_FORMAT}
         (staging / "manifest.json").write_text(_dump_json(manifest), encoding="utf-8")
@@ -641,7 +662,7 @@ def verify_frozen(frozen_dir: Path) -> dict:
                 size += len(chunk); digest.update(chunk)
             _require(size == expected["bytes"] and digest.hexdigest() == expected["sha256"], f"evidence member fingerprint mismatch: {name}")
         if "derivation_evidence" in manifest:
-            _verify_derivation_evidence(archive, inventory, manifest)
+            _verify_derivation_evidence(archive, inventory, manifest, frozen)
         else:
             _verify_compiler_evidence(archive, inventory, manifest)
     digest = hashlib.sha256(); size = 0
@@ -664,14 +685,32 @@ def _verify_compiler_evidence(archive: tarfile.TarFile, inventory: dict, manifes
              and receipt.get("compiler_manifest_sha256") == manifest["compiler_manifest_sha256"], "archived validation receipt mismatch")
 
 
-def _verify_derivation_evidence(archive: tarfile.TarFile, inventory: dict, manifest: dict) -> None:
+def _verify_derivation_evidence(archive: tarfile.TarFile, inventory: dict, manifest: dict, frozen: dict) -> None:
     """The archived derivation binds this artifact to its frozen base, inputs and implementation."""
     members = inventory["members"]
     block = manifest.get("name_association") or {}
-    _require(inventory.get("base_release_id") == block.get("base_release_id")
+    base_id = block.get("base_release_id")
+    _require(inventory.get("base_release_id") == base_id
              and inventory.get("base_freeze_sha256") == block.get("base_freeze_sha256")
-             and members.get("inputs/base-freeze.json", {}).get("sha256") == block.get("base_freeze_sha256"),
+             and members.get("inputs/base-freeze.json", {}).get("sha256") == block.get("base_freeze_sha256")
+             and frozen.get("derived_from") == {"content_release_id": base_id,
+                                                "freeze_sha256": block.get("base_freeze_sha256")},
              "derivation evidence does not bind the frozen base")
+    # The chain continues inside the archive: base freeze → base manifest → base SQLite.
+    base_freeze = json.load(archive.extractfile("inputs/base-freeze.json"))
+    base_manifest_sha = members.get("inputs/previous-publication-manifest.json", {}).get("sha256")
+    base_manifest = json.load(archive.extractfile("inputs/previous-publication-manifest.json"))
+    _require(base_freeze.get("format") == "sporely-frozen-publication-v1"
+             and base_freeze.get("content_release_id") == base_id
+             and (base_freeze.get("files") or {}).get("manifest.json", {}).get("sha256") == base_manifest_sha
+             == frozen.get("baseline_manifest_sha256")
+             and base_manifest.get("content_release_id") == base_id
+             and base_manifest.get("sqlite_sha256") == block.get("base_sqlite_sha256")
+             and base_manifest.get("gz_sha256") == base_freeze["files"].get(base_manifest.get("gz_artifact"), {}).get("sha256"),
+             "derivation evidence does not chain back to the frozen base")
+    holds_member = members.get("inputs/source-continuity-holds.json", {}).get("sha256")
+    _require(inventory.get("holds_sha256") == block.get("holds_sha256") == holds_member,
+             "derivation evidence does not bind its holds")
     implementation = block.get("implementation_sha256") or {}
     _require(set(implementation) == set(DERIVATION_IMPLEMENTATION)
              and all(members.get(f"implementation/{name}", {}).get("sha256") == digest

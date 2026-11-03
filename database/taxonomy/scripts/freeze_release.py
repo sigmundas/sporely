@@ -6,6 +6,7 @@ frozen base by ``name_associations.py`` instead (see ``freeze_derived``).
 """
 import argparse
 import json
+import sqlite3
 from pathlib import Path
 from promote_desktop_bundle import freeze, freeze_derived, PromotionError
 
@@ -50,7 +51,7 @@ def main():
                 bundle_dir=args.bundle_dir, registry_manifest_path=args.registry_manifest,
                 compatibility_path=args.compatibility, validation_receipt_path=args.validation_receipt,
                 evidence_inputs=evidence, output_dir=args.output)
-    except (PromotionError, OSError, ValueError, KeyError) as exc:
+    except (PromotionError, OSError, ValueError, KeyError, sqlite3.Error) as exc:
         parser.exit(1, f'refused: {exc}\n')
     print(json.dumps(result, indent=2, sort_keys=True))
 
