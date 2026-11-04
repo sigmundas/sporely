@@ -8,8 +8,10 @@ shipped taxonomy release and check what `get_data()` would save, after
 reopening the editor from that data and after a round trip through the
 observations table.
 
-*Flammulina velutipes* has two same-name concepts: NorTaxa 625621
-(Artsdatabanken 54701, Artsorakel ``NBIC:54701``) and COL 98288.
+*Mycena pearsoniana* has two same-name concepts: NorTaxa 625327
+(Artsdatabanken 53838, Artsorakel ``NBIC:53838``) and COL 34794. Since
+tax-2026.10.31-01 most same-name pairs are one taxon by name association
+(Mycena pearsoniana, used here before, is one); this pair is not.
 """
 from __future__ import annotations
 
@@ -31,8 +33,8 @@ from utils.taxon_identity import (
     PROOF_TAXONOMY_V2_ARTIFACT,
 )
 
-NORTAXA = 625621
-COL = 98288
+NORTAXA = 625327
+COL = 34794
 
 # What the editor saves for the identification (the edit path's columns).
 TAXON_KEYS = (
@@ -135,23 +137,23 @@ def test_enter_picks_the_shown_default_and_never_saves(editor):
     dialog = editor()
     accepted = []
     dialog.accepted.connect(lambda: accepted.append(True))
-    _type(dialog, "Flammulina velutipes")
+    _type(dialog, "Mycena pearsoniana")
     QTest.keyClick(dialog.taxon_picker.search_input, Qt.Key_Return)
     assert accepted == [] and dialog.isVisible()
     data = dialog.get_data()
     assert data["sporely_taxon_id"] == NORTAXA  # NorTaxa, the filled chip by default
     assert data["taxon_identity_proof"] == PROOF_TAXONOMY_V2_ARTIFACT
     assert (data["genus"], data["species"], data["scientific_name_snapshot"]) == (
-        "Flammulina", "velutipes", "Flammulina velutipes")
-    assert data["common_name"] == "vintersopp"
-    assert _shown(dialog) == ("Flammulina velutipes", NORTAXA)
+        "Mycena", "pearsoniana", "Mycena pearsoniana")
+    assert data["common_name"] == "sumpreddikhette"
+    assert _shown(dialog) == ("Mycena pearsoniana", NORTAXA)
 
 
 def test_enter_in_the_search_with_the_results_closed_never_saves(editor):
     dialog = editor()
     accepted = []
     dialog.accepted.connect(lambda: accepted.append(True))
-    _type(dialog, "Flammulina")
+    _type(dialog, "Mycena")
     QTest.keyClick(dialog.taxon_picker.search_input, Qt.Key_Escape)
     QTest.keyClick(dialog.taxon_picker.search_input, Qt.Key_Return)
     assert accepted == [] and dialog.isVisible()
@@ -160,35 +162,35 @@ def test_enter_in_the_search_with_the_results_closed_never_saves(editor):
 
 def test_tab_leaves_the_search_without_picking(editor):
     dialog = editor()
-    _type(dialog, "Flammulina velutipes")
+    _type(dialog, "Mycena pearsoniana")
     QTest.keyClick(dialog.taxon_picker.search_input, Qt.Key_Tab)
     assert dialog.get_data()["sporely_taxon_id"] is None
-    assert dialog.taxon_picker.unfinished_text() == "Flammulina velutipes"
+    assert dialog.taxon_picker.unfinished_text() == "Mycena pearsoniana"
 
 
 def test_both_sources_are_pickable_and_the_card_switches_between_them(editor):
     dialog = editor()
-    _pick(dialog, "velutipes", "Flammulina velutipes", source_steps=1)
+    _pick(dialog, "pearsoniana", "Mycena pearsoniana", source_steps=1)
     assert dialog.get_data()["sporely_taxon_id"] == COL
-    assert _shown(dialog) == ("Flammulina velutipes", COL)
+    assert _shown(dialog) == ("Mycena pearsoniana", COL)
     # Kilde on the card re-commits the other concept, and only that.
     card = dialog.taxon_picker.card
     nortaxa = next(b for b in card.source_buttons if b.text().startswith("NorTaxa"))
     nortaxa.click()
     data = dialog.get_data()
     assert data["sporely_taxon_id"] == NORTAXA
-    assert data["scientific_name_snapshot"] == "Flammulina velutipes"
+    assert data["scientific_name_snapshot"] == "Mycena pearsoniana"
 
 
 def test_a_synonym_pick_stores_its_name_on_the_target_concept(editor):
     dialog = editor()
-    _pick(dialog, "Collybia velutipes", "Collybia velutipes", kind="synonym")
+    _pick(dialog, "Mycena pseudopura", "Mycena pseudopura", kind="synonym")
     data = dialog.get_data()
     assert data["sporely_taxon_id"] == NORTAXA
-    assert data["scientific_name_snapshot"] == "Collybia velutipes"
-    assert (data["genus"], data["species"]) == ("Collybia", "velutipes")
+    assert data["scientific_name_snapshot"] == "Mycena pseudopura"
+    assert (data["genus"], data["species"]) == ("Mycena", "pseudopura")
     reopened = editor(**data)
-    assert _shown(reopened) == ("Collybia velutipes", NORTAXA)
+    assert _shown(reopened) == ("Mycena pseudopura", NORTAXA)
     assert dialog.taxon_picker.selection()[0].kind == "synonym"
     assert _taxon(reopened.get_data()) == _taxon(data)
 
@@ -217,7 +219,7 @@ def test_a_hyphenated_epithet_is_a_concept(editor):
 
 def _bound(dialog_factory, concept_source_steps: int = 0, **extra) -> dict:
     dialog = dialog_factory(**extra)
-    _pick(dialog, "Flammulina velutipes", "Flammulina velutipes", source_steps=concept_source_steps)
+    _pick(dialog, "Mycena pearsoniana", "Mycena pearsoniana", source_steps=concept_source_steps)
     return dialog.get_data()
 
 
@@ -225,18 +227,18 @@ def test_opening_and_saving_changes_nothing(editor):
     data = _bound(editor, 1, uncertain=1, determination_method=2)
     assert data["sporely_taxon_id"] == COL
     reopened = editor(**data)
-    assert _shown(reopened) == ("Flammulina velutipes", COL)
+    assert _shown(reopened) == ("Mycena pearsoniana", COL)
     assert _taxon(reopened.get_data()) == _taxon(data)
     assert reopened.get_data()["uncertain"] and reopened.get_data()["determination_method"] == 2
 
 
 def test_the_stored_concept_stays_the_default_against_artsorakel_evidence(editor):
-    # Stored COL, Artsorakel says NBIC:54701 (NorTaxa): Endre + Enter keeps COL.
+    # Stored COL, Artsorakel says NBIC:53838 (NorTaxa): Endre + Enter keeps COL.
     data = _bound(editor, 1)
-    data.update(ai_selected_service="artsorakel", ai_selected_taxon_id="NBIC:54701",
-                ai_selected_scientific_name="Flammulina velutipes")
+    data.update(ai_selected_service="artsorakel", ai_selected_taxon_id="NBIC:53838",
+                ai_selected_scientific_name="Mycena pearsoniana")
     reopened = editor(**data)
-    _type(reopened, "Flammulina velutipes")
+    _type(reopened, "Mycena pearsoniana")
     QTest.keyClick(reopened.taxon_picker.search_input, Qt.Key_Return)
     assert reopened.get_data()["sporely_taxon_id"] == COL
 
@@ -299,7 +301,7 @@ def test_save_with_unfinished_search_text_asks(editor, monkeypatch, answer):
     after = dialog.get_data()
     if answer == "Discard search text":
         assert proceeds and _taxon(after) == _taxon(data)
-        assert _shown(dialog) == ("Flammulina velutipes", NORTAXA)
+        assert _shown(dialog) == ("Mycena pearsoniana", NORTAXA)
     elif answer == "Keep as name without taxon":
         assert proceeds and (after["genus"], after["species"]) == (None, "Gymnopus dryo")
         assert after["sporely_taxon_id"] is None
@@ -326,8 +328,8 @@ def _artsorakel(dialog, predictions: list[dict]) -> None:
     dialog._update_ai_table()
 
 
-_VINTERSOPP = {"probability": 0.82, "scientificName": "Flammulina velutipes", "name": "Flammulina velutipes",
-               "vernacularName": "vintersopp", "taxonId": "NBIC:54701", "id": "NBIC:54701"}
+_SUMPREDDIKHETTE = {"probability": 0.82, "scientificName": "Mycena pearsoniana", "name": "Mycena pearsoniana",
+               "vernacularName": "sumpreddikhette", "taxonId": "NBIC:53838", "id": "NBIC:53838"}
 _UNKNOWN = {"probability": 0.05, "scientificName": "Gymnopus", "name": "Gymnopus", "vernacularName": "",
             "taxonId": "", "id": ""}
 
@@ -335,7 +337,7 @@ _UNKNOWN = {"probability": 0.05, "scientificName": "Gymnopus", "name": "Gymnopus
 def test_artsorakel_predictions_offer_no_chips_in_the_picker(editor):
     dialog = editor()
     before = _taxon(dialog.get_data())
-    _artsorakel(dialog, [_VINTERSOPP, _UNKNOWN])
+    _artsorakel(dialog, [_SUMPREDDIKHETTE, _UNKNOWN])
     picker = dialog.taxon_picker
     assert picker.ai_buttons == [] and picker.ai_strip.isHidden()
     assert _taxon(dialog.get_data()) == before
@@ -394,24 +396,24 @@ def test_switching_source_survives_the_database_and_a_fresh_editor(editor, tmp_p
     db, path = _fresh_db(tmp_path, monkeypatch)
     obs_id = db.create_observation(date="2026-10-27 12:00")
     dialog = _reopen(editor, db, obs_id)
-    _pick(dialog, "Flammulina velutipes", "Flammulina velutipes")
+    _pick(dialog, "Mycena pearsoniana", "Mycena pearsoniana")
     _save(db, obs_id, dialog)
     assert _identity_row(path, obs_id)[3] == NORTAXA
 
     reopened = _reopen(editor, db, obs_id)
-    assert _shown(reopened) == ("Flammulina velutipes", NORTAXA)
+    assert _shown(reopened) == ("Mycena pearsoniana", NORTAXA)
     reopened.taxon_picker.begin_edit()
-    _type(reopened, "velutipes")
-    _move_to(reopened, "Flammulina velutipes")
+    _type(reopened, "pearsoniana")
+    _move_to(reopened, "Mycena pearsoniana")
     QTest.keyClick(reopened.taxon_picker.search_input, Qt.Key_Right)
     QTest.keyClick(reopened.taxon_picker.search_input, Qt.Key_Return)
     _save(db, obs_id, reopened)
     row = _identity_row(path, obs_id)
-    assert row[:5] == ("Flammulina", "velutipes", "vintersopp", COL, "Flammulina velutipes")
+    assert row[:5] == ("Mycena", "pearsoniana", "sumpreddikhette", COL, "Mycena pearsoniana")
 
     # A fresh editor on the stored row, saved untouched, writes the same row.
     third = _reopen(editor, db, obs_id)
-    assert _shown(third) == ("Flammulina velutipes", COL)
+    assert _shown(third) == ("Mycena pearsoniana", COL)
     _save(db, obs_id, third)
     assert _identity_row(path, obs_id) == row
 
@@ -440,7 +442,7 @@ def test_endre_then_save_without_typing_keeps_the_identification(editor, monkeyp
     assert dialog._confirm_unfinished_taxon_search()
     assert asked == []
     assert _taxon(dialog.get_data()) == _taxon(data)
-    assert _shown(dialog) == ("Flammulina velutipes", NORTAXA)
+    assert _shown(dialog) == ("Mycena pearsoniana", NORTAXA)
 
 
 def test_edit_images_with_unfinished_text_asks_first(editor, monkeypatch):
@@ -463,11 +465,11 @@ def _column(path, obs_id: int, *columns):
 
 
 def _stored_bound(editor, db, path):
-    """A stored observation bound to NorTaxa Flammulina velutipes, with a
+    """A stored observation bound to NorTaxa Mycena pearsoniana, with a
     publishing taxon ID and a published iNaturalist observation."""
     obs_id = db.create_observation(date="2026-10-27 12:00", inaturalist_id=777)
     dialog = _reopen(editor, db, obs_id)
-    _pick(dialog, "Flammulina velutipes", "Flammulina velutipes")
+    _pick(dialog, "Mycena pearsoniana", "Mycena pearsoniana")
     _save(db, obs_id, dialog)
     db.update_observation(obs_id, inaturalist_taxon_id=48701)
     assert _column(path, obs_id, "sporely_taxon_id", "inaturalist_taxon_id") == (NORTAXA, 48701)
@@ -516,10 +518,10 @@ def test_leaving_the_concept_drops_the_publishing_taxon_id(editor, tmp_path, mon
 def test_clear_drops_the_chosen_ai_determination_but_not_the_predictions(editor, tmp_path, monkeypatch):
     db, path = _fresh_db(tmp_path, monkeypatch)
     obs_id = _stored_bound(editor, db, path)
-    db.update_observation(obs_id, ai_selected_service="artsorakel", ai_selected_taxon_id="NBIC:54701",
-                          ai_selected_scientific_name="Flammulina velutipes")
+    db.update_observation(obs_id, ai_selected_service="artsorakel", ai_selected_taxon_id="NBIC:53838",
+                          ai_selected_scientific_name="Mycena pearsoniana")
     dialog = _reopen(editor, db, obs_id)
-    prediction = dict(_VINTERSOPP)
+    prediction = dict(_SUMPREDDIKHETTE)
     dialog._ai_predictions_by_index[0] = [prediction]
     dialog._ai_selected_by_index[0] = prediction
     dialog.taxon_picker.card.clear_button.click()
@@ -545,14 +547,14 @@ def test_endre_enter_after_a_source_switch_keeps_the_switched_concept(editor, tm
     col.click()
     QTest.qWait(20)  # the display sync is queued
     dialog.taxon_picker.begin_edit()
-    _type(dialog, "Flammulina velutipes")  # searched again: the switched concept is the default
+    _type(dialog, "Mycena pearsoniana")  # searched again: the switched concept is the default
     assert dialog.taxon_picker.current_entry().row.concepts[dialog.taxon_picker.current_entry().choice] \
         .sporely_taxon_id == COL
     QTest.keyClick(dialog.taxon_picker.search_input, Qt.Key_Return)
     assert dialog.get_data()["sporely_taxon_id"] == COL
     _save(db, obs_id, dialog)
     reopened = _reopen(editor, db, obs_id)
-    assert _shown(reopened) == ("Flammulina velutipes", COL)
+    assert _shown(reopened) == ("Mycena pearsoniana", COL)
 
 
 @pytest.mark.parametrize("answer", ["Choose an entry", "Discard search text"])
@@ -587,9 +589,9 @@ def test_the_main_gallery_edit_photo_opens_prepare_images():
 
 def test_copying_artsorakel_for_the_same_concept_keeps_the_publishing_taxon_id(editor, tmp_path, monkeypatch):
     db, path = _fresh_db(tmp_path, monkeypatch)
-    obs_id = _stored_bound(editor, db, path)  # NorTaxa, the concept NBIC:54701 resolves to
+    obs_id = _stored_bound(editor, db, path)  # NorTaxa, the concept NBIC:53838 resolves to
     dialog = _reopen(editor, db, obs_id)
-    _artsorakel(dialog, [_VINTERSOPP])
+    _artsorakel(dialog, [_SUMPREDDIKHETTE])
     dialog.ai_copy_buttons["arts"].click()
     assert dialog.get_data()["taxon_identity_proof"] == PROOF_EXTERNAL_ID_RESOLUTION
     _save(db, obs_id, dialog)
@@ -604,7 +606,7 @@ def test_copying_artsorakel_for_another_concept_drops_the_publishing_taxon_id(ed
     _save(db, obs_id, switched)
     db.update_observation(obs_id, inaturalist_taxon_id=48701)
     dialog = _reopen(editor, db, obs_id)
-    _artsorakel(dialog, [_VINTERSOPP])
+    _artsorakel(dialog, [_SUMPREDDIKHETTE])
     dialog.ai_copy_buttons["arts"].click()
     _save(db, obs_id, dialog)
     assert _column(path, obs_id, "sporely_taxon_id", "inaturalist_taxon_id", "inaturalist_id") == (

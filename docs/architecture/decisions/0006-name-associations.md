@@ -1,6 +1,6 @@
 # ADR 0006: Name associations
 
-- Status: Proposed (candidate `tax-2026.10.31-01`, not released)
+- Status: Accepted (release `tax-2026.10.31-01`, approved and imported into production 2026-11-04)
 - Date: 2026-10-31
 - Amends: ADR 0002 ("name equality alone never establishes identity")
 

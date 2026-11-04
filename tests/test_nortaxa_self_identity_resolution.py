@@ -181,17 +181,23 @@ def shipped_artifact(tmp_path_factory) -> Path:
     return taxonomy_v2.ensure_installed(app_data_dir=tmp_path_factory.mktemp("shipped-taxonomy"))
 
 
-def test_shipped_release_has_no_bridge_colliding_with_an_anchor_id(shipped_artifact):
-    """The precedence rule never has to decide in the shipped release: no
-    approved NorTaxa bridge id is also a NorTaxa-only concept's own id, and no
-    two NorTaxa-only concepts share one."""
+def test_shipped_release_anchor_id_collisions_are_the_intended_ones(shipped_artifact):
+    """The precedence rule decides only where a release means it to. Since
+    tax-2026.10.31-01 a name association carries a member's own NorTaxa id
+    onto its primary (ADR 0006), so those collisions are intended. Six other
+    anchor ids are also a synonym id of another association and now resolve
+    to that primary (owner review, docs/plans/INBOX.md); no other collides,
+    and no two NorTaxa-only concepts share an id."""
     conn = sqlite3.connect(f"file:{shipped_artifact}?mode=ro", uri=True)
     try:
-        collisions = conn.execute(
-            "SELECT COUNT(*) FROM taxon_external_id_text_min e JOIN taxon_min t "
+        unexpected = conn.execute(
+            "SELECT e.external_id FROM taxon_external_id_text_min e JOIN taxon_min t "
             "ON t.canonical_source_system = 'nortaxa' AND t.canonical_external_id = e.external_id "
-            "WHERE e.source_system = 'nortaxa' AND e.namespace = 'nortaxa_taxon_id'"
-        ).fetchone()[0]
+            "WHERE e.source_system = 'nortaxa' AND e.namespace = 'nortaxa_taxon_id' "
+            "AND NOT (e.note LIKE 'name_association:%' AND EXISTS (SELECT 1 FROM taxon_association_min x "
+            "  WHERE x.member_taxon_id = t.taxon_id AND x.primary_taxon_id = e.taxon_id)) "
+            "ORDER BY 1"
+        ).fetchall()
         shared = conn.execute(
             "SELECT COUNT(*) FROM (SELECT canonical_external_id FROM taxon_min "
             "WHERE canonical_source_system = 'nortaxa' "
@@ -199,7 +205,8 @@ def test_shipped_release_has_no_bridge_colliding_with_an_anchor_id(shipped_artif
         ).fetchone()[0]
     finally:
         conn.close()
-    assert (collisions, shared) == (0, 0)
+    assert [row[0] for row in unexpected] == ["62451", "67495", "67718", "69728", "70320", "70995"]
+    assert shared == 0
 
 
 @pytest.fixture
@@ -230,22 +237,21 @@ def _copy_artsorakel(monkeypatch, qapp, tmp_path, artifact, raw, name):
     return dialog
 
 
-def test_live_artsorakel_copy_of_nbic_52330_binds_the_nortaxa_concept(
+def test_live_artsorakel_copy_of_a_nortaxa_only_id_binds_the_nortaxa_concept(
     monkeypatch, qapp, tmp_path, shipped_artifact,
 ):
     dialog = _copy_artsorakel(monkeypatch, qapp, tmp_path, shipped_artifact,
-                              "NBIC:52330", "Panaeolina foenisecii")
+                              "NBIC:137886", "Parasola conopilea")
     try:
         data = dialog.get_data()
-        assert (data["genus"], data["species"]) == ("Panaeolina", "foenisecii")
-        assert data["sporely_taxon_id"] == 624659
+        assert (data["genus"], data["species"]) == ("Parasola", "conopilea")
+        assert data["sporely_taxon_id"] == 622011
         assert data["taxon_identity_proof"] == PROOF_EXTERNAL_ID_RESOLUTION
         assert (data["taxon_identity_source_system"], data["taxon_identity_namespace"],
-                data["taxon_identity_external_id"]) == ("nortaxa", "nortaxa_taxon_id", "52330")
+                data["taxon_identity_external_id"]) == ("nortaxa", "nortaxa_taxon_id", "137886")
         shipped = taxonomy_v2.load_manifest().content_release_id
         assert data["taxon_identity_provenance"] == f"taxonomy_v2:{shipped}:{SELF}"
-        # Observation 1032's defect: the suggestion's id was never recorded.
-        assert dialog._current_ai_selected_fields["ai_selected_taxon_id"] == "NBIC:52330"
+        assert dialog._current_ai_selected_fields["ai_selected_taxon_id"] == "NBIC:137886"
     finally:
         dialog._cleanup_dialog_threads()
         dialog.deleteLater()
@@ -268,16 +274,39 @@ def test_a_binding_artsorakel_copy_keeps_its_red_list_snapshot(
     dialog = _build_dialog(monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=shipped_artifact)
     try:
         dialog._location_country_code = country
-        prediction = {**_artsorakel_prediction("NBIC:52330", "Panaeolina foenisecii"),
+        prediction = {**_artsorakel_prediction("NBIC:137886", "Parasola conopilea"),
                       "redListCategory": "LC", "redListCategories": {"NO": "LC"}}
         _select_prediction(dialog, prediction, source="arts")
         dialog._on_ai_copy_to_taxonomy("arts")
         for _ in range(5):
             qapp.processEvents()
         data = dialog.get_data()
-        assert data["sporely_taxon_id"] == 624659
+        assert data["sporely_taxon_id"] == 622011
         assert data["red_list_categories_json"] == '{"NO": "LC"}'
         assert data["red_list_category"] == expected_category
+    finally:
+        dialog._cleanup_dialog_threads()
+        dialog.deleteLater()
+
+
+def test_live_artsorakel_copy_of_nbic_52330_binds_the_association_primary(
+    monkeypatch, qapp, tmp_path, shipped_artifact,
+):
+    """Observation 1032's species. Since tax-2026.10.31-01 NorTaxa 624659 is
+    associated with COL 40673 by name (ADR 0006): the copy binds the primary
+    and records the association in its provenance."""
+    dialog = _copy_artsorakel(monkeypatch, qapp, tmp_path, shipped_artifact,
+                              "NBIC:52330", "Panaeolina foenisecii")
+    try:
+        data = dialog.get_data()
+        assert (data["genus"], data["species"]) == ("Panaeolina", "foenisecii")
+        assert data["sporely_taxon_id"] == 40673
+        assert data["taxon_identity_proof"] == PROOF_EXTERNAL_ID_RESOLUTION
+        assert (data["taxon_identity_source_system"], data["taxon_identity_namespace"],
+                data["taxon_identity_external_id"]) == ("nortaxa", "nortaxa_taxon_id", "52330")
+        assert "name_association:exact_accepted_name" in data["taxon_identity_provenance"]
+        # Observation 1032's defect: the suggestion's id was never recorded.
+        assert dialog._current_ai_selected_fields["ai_selected_taxon_id"] == "NBIC:52330"
     finally:
         dialog._cleanup_dialog_threads()
         dialog.deleteLater()
@@ -287,13 +316,14 @@ def test_overriding_an_artsorakel_suggestion_then_picking_keeps_only_the_pick(
     monkeypatch, qapp, tmp_path, shipped_artifact,
 ):
     """The owner's case: Artsorakel suggests *Russula sanguinea* (NorTaxa
-    57843, concept 626870); the observer overrides it with *R. emetica* and
-    then explicitly picks the COL concept 61951 — not the same-name NorTaxa
-    concept 626835."""
+    57843, concept 626870, associated by name with COL 62510 since
+    tax-2026.10.31-01, so the copy binds 62510); the observer overrides it with
+    *R. emetica* and then explicitly picks the COL concept 61951 — not the
+    same-name NorTaxa concept 626835."""
     dialog = _copy_artsorakel(monkeypatch, qapp, tmp_path, shipped_artifact,
                               "NBIC:57843", "Russula sanguinea")
     try:
-        assert dialog.get_data()["sporely_taxon_id"] == 626870
+        assert dialog.get_data()["sporely_taxon_id"] == 62510
 
         dialog.species_input.setText("emetica")
         qapp.processEvents()
