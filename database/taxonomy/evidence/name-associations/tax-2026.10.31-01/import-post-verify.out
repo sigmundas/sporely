@@ -1,0 +1,20 @@
+releases tax-2026.10.23-11=retired, tax-2026.10.31-01=active
+active tax-2026.10.31-01
+validate_ok true
+national_name_errors []
+import_run succeeded {"row_counts": {"taxon.jsonl": 53166, "vernacular.jsonl": 62025, "taxon_redlist.jsonl": 3601, "scientific_name.jsonl": 66718, "taxon_external_id.jsonl": 77451, "taxon_external_id_legacy_integer.jsonl": 0}, "expected_active_releases": 1}
+counts taxa=53166 sci=66718 vern=62025 ext=77451 redlist=3601
+r11_kept taxa=53166
+nb_kantareller 129742
+nb_eggrøyksopper 8992
+nb_fingersopper 20056
+nb_fagerkjuker 15031
+nb_beitemarkvokssopper 68411
+nb_silkeparasollsopp 6398
+nb_kalktalg 140472
+col_XQVS 616943
+col_XQVT 616942
+nortaxa_226896 16187
+dyntaxa_3213 168873
+selected_not_in_active 0
+idle_in_transaction 0
