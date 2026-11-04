@@ -11,8 +11,9 @@ that identifier as ``taxon_id`` / ``taxon.id`` and ``ai_selected_taxon_id``
 ``scientific_name_id`` — at the top level or inside ``taxon``.
 
 Pickers must offer the concept the identifier proves, list same-name
-concepts separately when there is no identifier, and never bind anything
-from name equality.
+concepts separately when there is no identifier and no association joins them
+(*Mycena pearsoniana*), show an associated pair as its primary, and never bind
+anything from name equality.
 """
 from __future__ import annotations
 
@@ -138,10 +139,34 @@ def test_every_stored_prediction_shape_keeps_the_artsorakel_identifier(predictio
     assert taxon["id"] == "NBIC:54701"
 
 
-def test_the_shipped_release_holds_two_same_name_concepts(lookup):
-    ids = {hit["sporely_taxon_id"] for hit in lookup.suggest_scientific_names("Flammulina velutipes")
-           if hit["scientific_name"] == "Flammulina velutipes"}
-    assert ids == {COL_CONCEPT, NORTAXA_CONCEPT}
+def _suggested_ids(lookup, name, limit=40):
+    return {hit["sporely_taxon_id"] for hit in lookup.suggest_scientific_names(name, limit=limit)
+            if hit["scientific_name"] == name}
+
+
+def test_the_scientific_search_shows_an_associated_pair_as_its_primary(lookup):
+    """ADR 0006: the release presents NorTaxa 625621 as COL 98288; both
+    concepts stay in the release. A pair no association joins stays two."""
+    assert _suggested_ids(lookup, "Flammulina velutipes") == {COL_CONCEPT}
+    assert _suggested_ids(lookup, "Mycena pearsoniana") == {PAIR_COL, PAIR_NORTAXA}
+
+
+def test_a_name_reached_through_an_association_records_it(lookup):
+    """A name the association brought (NorTaxa's synonym *Collybia
+    velutipes*) points at the primary and names the association, as the
+    unified picker's rows do (``TaxonSearchConcept.as_scientific_suggestion``)."""
+    rows = [(hit["sporely_taxon_id"], hit["link_kind"], hit.get("provenance"))
+            for hit in lookup.suggest_scientific_names("Collybia velutipes")
+            if hit["scientific_name"] == "Collybia velutipes"]
+    assert rows == [(COL_CONCEPT, "synonym_of_accepted", "name_association:nortaxa:54701")]
+
+
+def test_the_common_name_search_shows_an_associated_pair_as_its_primary(lookup):
+    ids = {(c.taxon_id, c.genus, c.species) for c in lookup.suggest_common_names("vintersopp")
+           if c.common_name == "vintersopp"}
+    assert ids == {(COL_CONCEPT, "Flammulina", "velutipes")}
+    pair = {c.taxon_id for c in lookup.suggest_common_names("sumpreddikhette")}
+    assert pair == {PAIR_COL, PAIR_NORTAXA}
 
 
 def test_the_own_name_is_offered_a_link_to_the_concept_its_identifier_proves(lookup):
@@ -405,30 +430,44 @@ def test_unrelated_ai_suggestions_sit_in_their_own_section(picker_settings, look
         dialog.reject()
 
 
+def _mycena_picker(lookup, **kwargs):
+    return _picker(lookup, taxon_label="Mycena pearsoniana", genus="Mycena", species="pearsoniana",
+                   **kwargs)
+
+
 def test_picker_search_shows_one_match_when_an_identifier_settles_it(picker_settings, lookup):
-    dialog, _attached = _picker(lookup)
+    dialog, _attached = _mycena_picker(lookup, ai_candidates=[_ai_entry("NBIC:53838", "Mycena pearsoniana")])
     try:
-        rows = dialog.taxon_search_rows("Flammulina velutipes")
-        ids = {data["taxon_id"] for _label, data in rows if data.get("label") == "Flammulina velutipes"}
-        assert ids == {PROVEN_CONCEPT}
-        assert [label for label, data in rows if data.get("label") == "Flammulina velutipes"] == [
-            "Flammulina velutipes (vintersopp)"]
-        # A variety no identifier speaks for stays ambiguous, with sources.
-        variety = [label for label, data in rows if data.get("label") == "Flammulina velutipes var. velutipes"]
-        assert len(variety) == 2 and all("·" in label for label in variety)
+        rows = dialog.taxon_search_rows("Mycena pearsoniana")
+        ids = [data["taxon_id"] for _label, data in rows if data.get("label") == "Mycena pearsoniana"]
+        assert ids == [PAIR_NORTAXA]
     finally:
         dialog.reject()
 
 
 def test_picker_search_lists_both_sources_when_genuinely_ambiguous(picker_settings, lookup):
+    dialog, _attached = _mycena_picker(lookup, ai_candidates=[])
+    try:
+        rows = dialog.taxon_search_rows("Mycena pearsoniana")
+        by_id = {data["taxon_id"]: label for label, data in rows
+                 if data.get("label") == "Mycena pearsoniana"}
+        assert {PAIR_COL, PAIR_NORTAXA} <= set(by_id)
+        assert "NorTaxa 53838" in by_id[PAIR_NORTAXA]
+        assert "COL" in by_id[PAIR_COL]
+    finally:
+        dialog.reject()
+
+
+def test_picker_search_offers_an_associated_pair_once_as_its_primary(picker_settings, lookup):
     dialog, _attached = _picker(lookup, ai_candidates=[])
     try:
         rows = dialog.taxon_search_rows("Flammulina velutipes")
-        by_id = {data["taxon_id"]: label for label, data in rows
-                 if data.get("label") == "Flammulina velutipes"}
-        assert {COL_CONCEPT, NORTAXA_CONCEPT} <= set(by_id)
-        assert "NorTaxa 54701" in by_id[NORTAXA_CONCEPT]
-        assert "COL" in by_id[COL_CONCEPT]
+        assert [(label, data["taxon_id"]) for label, data in rows
+                if data.get("label") == "Flammulina velutipes"] == [
+            ("Flammulina velutipes (vintersopp)", COL_CONCEPT)]
+        common = {data["taxon_id"] for label, data in dialog.taxon_search_rows("vintersopp")
+                  if label.endswith("(Flammulina velutipes)")}
+        assert common == {COL_CONCEPT}
     finally:
         dialog.reject()
 
@@ -582,32 +621,71 @@ def editor(monkeypatch, tmp_path, shipped_artifact):
         dialog.deleteLater()
 
 
-@pytest.mark.parametrize("source, concept", [("COL", COL_CONCEPT), ("NorTaxa", NORTAXA_CONCEPT)])
+def _mycena_rows(dialog):
+    return _species_rows(dialog, genus="Mycena", prefix="pears")
+
+
+@pytest.mark.parametrize("source, concept", [("COL", PAIR_COL), ("NorTaxa", PAIR_NORTAXA)])
 def test_species_pick_binds_the_picked_rows_own_concept(editor, source, concept):
     dialog = editor()
-    rows = [(label, index) for label, index in _species_rows(dialog) if label.startswith("velutipes ·")]
+    rows = [(label, index) for label, index in _mycena_rows(dialog) if label.startswith("pearsoniana ·")]
     assert len(rows) == 2                        # genuinely ambiguous: both, with sources
     label, index = next(row for row in rows if source in row[0])
     dialog._taxon_controller.on_species_selected(index)
     data = dialog.get_data()
-    assert (data["genus"], data["species"]) == ("Flammulina", "velutipes")
+    assert (data["genus"], data["species"]) == ("Mycena", "pearsoniana")
     assert data["sporely_taxon_id"] == concept
     assert data["taxon_identity_proof"] == PROOF_TAXONOMY_V2_ARTIFACT
-    assert dialog.scientific_name_input.text() == "Flammulina velutipes"
+    assert dialog.scientific_name_input.text() == "Mycena pearsoniana"
+
+
+def test_an_associated_pair_is_one_species_row_that_binds_the_primary(editor):
+    dialog = editor()
+    rows = [(label, index) for label, index in _species_rows(dialog)
+            if isinstance(index.data(ROLE_TAXON_CHOICE), dict)
+            and index.data(ROLE_TAXON_CHOICE)["scientific_name"] == "Flammulina velutipes"]
+    assert [label for label, _index in rows] == ["velutipes"]
+    dialog._taxon_controller.on_species_selected(rows[0][1])
+    assert dialog.get_data()["sporely_taxon_id"] == COL_CONCEPT
+
+
+def test_a_scientific_pick_through_an_association_binds_the_primary_and_records_it(editor):
+    dialog = editor()
+    controller = dialog._taxon_controller
+    dialog.scientific_name_input.setText("Collybia velutipes")
+    controller.refresh_scientific_suggestions()
+    model = controller._scientific_model
+    controller.on_scientific_name_selected(next(
+        model.index(r, 0) for r in range(model.rowCount())
+        if (model.item(r).data(ROLE_TAXON_CHOICE) or {}).get("scientific_name") == "Collybia velutipes"))
+    data = dialog.get_data()
+    assert data["sporely_taxon_id"] == COL_CONCEPT
+    assert "name_association:nortaxa:54701" in data["taxon_identity_provenance"]
+
+
+def test_an_observation_bound_to_an_associated_member_keeps_it(editor):
+    """Folding is for new selections: a saved member binding is not remapped."""
+    dialog = editor()
+    _pick_scientific(dialog, COL_CONCEPT, "Flammulina velutipes")
+    stored = {**dialog.get_data(), "sporely_taxon_id": NORTAXA_CONCEPT}
+    reopened = editor(**stored)
+    data = reopened.get_data()
+    assert data["sporely_taxon_id"] == NORTAXA_CONCEPT
+    assert (data["genus"], data["species"]) == ("Flammulina", "velutipes")
 
 
 def test_species_and_scientific_picks_commit_the_same_snapshot(editor):
     species_dialog = editor()
-    _label, index = next(row for row in _species_rows(species_dialog) if "NorTaxa" in row[0])
+    _label, index = next(row for row in _mycena_rows(species_dialog) if "NorTaxa" in row[0])
     species_dialog._taxon_controller.on_species_selected(index)
 
     scientific_dialog = editor()
     controller = scientific_dialog._taxon_controller
-    scientific_dialog.scientific_name_input.setText("Flammulina velutipes")
+    scientific_dialog.scientific_name_input.setText("Mycena pearsoniana")
     controller.refresh_scientific_suggestions()
     model = controller._scientific_model
     pick = next(model.index(r, 0) for r in range(model.rowCount())
-                if (model.item(r).data(ROLE_TAXON_CHOICE) or {}).get("sporely_taxon_id") == NORTAXA_CONCEPT)
+                if (model.item(r).data(ROLE_TAXON_CHOICE) or {}).get("sporely_taxon_id") == PAIR_NORTAXA)
     controller.on_scientific_name_selected(pick)
 
     assert species_dialog._taxon_controller.committed_snapshot() == controller.committed_snapshot()
@@ -685,9 +763,9 @@ def test_evidence_for_one_name_never_hides_another_names_concept():
     assert [r[1] for r in kept] == [1, 3]
 
 
-def _pick_scientific(dialog, concept):
+def _pick_scientific(dialog, concept, name="Mycena pearsoniana"):
     controller = dialog._taxon_controller
-    dialog.scientific_name_input.setText("Flammulina velutipes")
+    dialog.scientific_name_input.setText(name)
     controller.refresh_scientific_suggestions()
     model = controller._scientific_model
     controller.on_scientific_name_selected(next(
@@ -699,20 +777,20 @@ def test_a_committed_concept_never_hides_the_alternative(editor):
     """Committing one same-name concept is not evidence: both stay listed
     in Species and Scientific, so the observer can switch."""
     dialog = editor()
-    _pick_scientific(dialog, COL_CONCEPT)
+    _pick_scientific(dialog, PAIR_COL)
     controller = dialog._taxon_controller
     controller.refresh_species_suggestions()
-    _pick_scientific(dialog, NORTAXA_CONCEPT)
-    assert dialog.get_data()["sporely_taxon_id"] == NORTAXA_CONCEPT
+    _pick_scientific(dialog, PAIR_NORTAXA)
+    assert dialog.get_data()["sporely_taxon_id"] == PAIR_NORTAXA
 
     controller.refresh_species_suggestions()
     model = controller.species_model
     rows = {model.item(r).data(ROLE_TAXON_CHOICE)["sporely_taxon_id"]: r for r in range(model.rowCount())
             if isinstance(model.item(r).data(ROLE_TAXON_CHOICE), dict)
-            and model.item(r).text().startswith("velutipes")}
-    assert set(rows) == {COL_CONCEPT, NORTAXA_CONCEPT}
-    controller.on_species_selected(model.index(rows[COL_CONCEPT], 0))
-    assert dialog.get_data()["sporely_taxon_id"] == COL_CONCEPT
+            and model.item(r).text().startswith("pearsoniana")}
+    assert set(rows) == {PAIR_COL, PAIR_NORTAXA}
+    controller.on_species_selected(model.index(rows[PAIR_COL], 0))
+    assert dialog.get_data()["sporely_taxon_id"] == PAIR_COL
 
 
 def test_link_binds_nothing_once_the_name_no_longer_matches(editor):
@@ -804,10 +882,10 @@ def test_mouse_click_after_a_keyboard_highlight_binds_the_clicked_row(editor):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
 
-    dialog = editor(**_observation(**_NO_AI))
+    dialog = editor(**_observation(genus="Mycena", species="", **_NO_AI))
     dialog.show()
-    field, completer, text = _pickers(dialog)["species"]
-    _type_into(field, text)
+    field, completer, _text = _pickers(dialog)["species"]
+    _type_into(field, "pears")
     popup = completer.popup()
     first = _down(popup, 1)
     model = popup.model()
@@ -897,9 +975,7 @@ def test_a_row_limit_never_splits_concepts_sharing_a_name():
 
 
 def test_scientific_search_at_its_limit_still_lists_both_same_name_concepts(lookup):
-    rows = lookup.suggest_scientific_names("Flammulina velutipes", limit=1)
-    assert {r["sporely_taxon_id"] for r in rows if r["scientific_name"] == "Flammulina velutipes"} == {
-        COL_CONCEPT, NORTAXA_CONCEPT}
+    assert _suggested_ids(lookup, "Mycena pearsoniana", limit=1) == {PAIR_COL, PAIR_NORTAXA}
 
 
 def test_species_rows_at_their_limit_still_list_both_same_name_concepts():

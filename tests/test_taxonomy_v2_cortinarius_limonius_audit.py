@@ -251,29 +251,31 @@ def test_cortinarius_limonius_resolves_to_aureonarius_limonius_canonical(
 def test_both_names_reach_same_sporely_taxon_id_via_picker_synonym_link(
     lookup: TaxonLookupService,
 ):
-    """The scientific-name picker surfaces the concept disagreement:
-    typing ``Aureonarius limonius`` yields BOTH the COL canonical
-    (139099) AND a ``synonym_of_accepted``-linked entry that binds
-    to the NorTaxa Cortinarius canonical (624905). The observer can
-    therefore reach the same sporely_taxon_id NorTaxa users see by
-    picking the alias entry from the picker.
+    """Both names reach COL 139099 in the scientific-name picker.
 
-    Typing ``Cortinarius limonius`` yields the NorTaxa canonical and,
-    since taxonomy-v3 Stage 4P, the COL taxon too: Dyntaxa accepts
-    Cortinarius limonius (``Taxon:3653``), and an owner-approved Dyntaxa
-    manifest bridges it to 139099, which adds that spelling there. The two
-    concepts stay distinct.
+    NorTaxa's *Cortinarius limonius* concept (624905) has COL's *Aureonarius
+    limonius* (139099) as its name association primary (``unique_synonym_bridge``,
+    since tax-2026.10.31-01), so the picker presents the two as one taxon
+    (ADR 0006): typing either name offers 139099 only, and the NorTaxa name
+    records the association. Both concepts stay in the release.
+
+    139099 also carries *Cortinarius limonius* itself: Dyntaxa accepts it
+    (``Taxon:3653``), and an owner-approved Dyntaxa manifest bridges it to
+    139099.
     """
     aureo_suggestions = lookup.suggest_scientific_names("Aureonarius limonius", limit=10)
-    aureo_ids = {(s["sporely_taxon_id"], s["link_kind"]) for s in aureo_suggestions}
-    assert (139099, "canonical") in aureo_ids
-    assert (624905, "synonym_of_accepted") in aureo_ids
+    aureo_ids = {(s["sporely_taxon_id"], s["link_kind"]) for s in aureo_suggestions
+                 if s["scientific_name"] == "Aureonarius limonius"}
+    assert aureo_ids == {(139099, "canonical")}
 
     cort_suggestions = lookup.suggest_scientific_names("Cortinarius limonius", limit=10)
-    cort_ids = {(s["sporely_taxon_id"], s["link_kind"]) for s in cort_suggestions}
-    assert cort_ids == {(624905, "canonical"), (139099, "synonym_of_accepted")}
-    # The reverse alias comes only from the approved Dyntaxa bridge.
+    cort = {(s["sporely_taxon_id"], s["link_kind"], s.get("provenance")) for s in cort_suggestions}
+    assert cort == {(139099, "synonym_of_accepted", "name_association:nortaxa:52796")}
     conn = sqlite3.connect(lookup.vernacular_db.db_path)
+    assert conn.execute(
+        "SELECT primary_taxon_id, rule FROM taxon_association_min WHERE member_taxon_id = 624905"
+    ).fetchall() == [(139099, "unique_synonym_bridge")]
+    # The reverse alias comes only from the approved Dyntaxa bridge.
     assert conn.execute(
         "SELECT source, note FROM scientific_name_min "
         "WHERE taxon_id = 139099 AND scientific_name = 'Cortinarius limonius'").fetchall() == [

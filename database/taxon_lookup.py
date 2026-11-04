@@ -586,6 +586,45 @@ class TaxonLookupService:
             red_list_source=None,
         )
 
+    def _fold_associated_common_rows(self, rows: list) -> list:
+        """``rows`` with associated concepts shown as their primary (ADR 0006):
+        a common name both concepts carry is one row, and picking it names
+        the primary."""
+        if not rows or self.vernacular_db is None:
+            return rows
+        try:
+            primaries = self.vernacular_db.association_primaries({row["taxon_id"] for row in rows})
+        except Exception:
+            return rows
+        if not primaries:
+            return rows
+        ids = sorted(set(primaries.values()))
+        family = "family" if "family" in self._local_columns("taxon_min") else "NULL"
+        targets = {
+            int(row["taxon_id"]): row
+            for row in self._fetch_local_rows(
+                f"SELECT taxon_id, genus, specific_epithet AS species, {family} AS family FROM taxon_min "
+                f"WHERE taxon_id IN ({','.join('?' for _ in ids)})",
+                tuple(ids),
+            )
+        }
+        out: list[dict] = []
+        seen: set[tuple] = set()
+        for row in rows:
+            row = dict(row)
+            if row["taxon_id"] in primaries:
+                primary = targets.get(primaries[row["taxon_id"]])
+                if primary is None:
+                    continue
+                row.update(taxon_id=primary["taxon_id"], genus=primary["genus"],
+                           species=primary["species"], family=primary["family"])
+            key = (row["taxon_id"], row["common_name"], row["language_code"])
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(row)
+        return out
+
     def _local_common_names_for_taxon(self, genus: str, species: str, limit: int | None = None) -> list[TaxonChoice]:
         rows = self._local_common_name_rows(genus=genus, species=species, limit=limit)
         return [self._row_to_choice(row, "taxonomy") for row in rows]
@@ -757,6 +796,7 @@ class TaxonLookupService:
         if cached is not None:
             return list(cached[:limit_value])
         rows = self._local_common_name_rows(prefix=prefix or None, genus=genus, species=species, limit=limit_value)
+        rows = self._fold_associated_common_rows(rows)
         values = tuple(self._row_to_choice(row, "taxonomy") for row in rows[:limit_value])
         self._suggest_common_names_cache[cache_key] = values
         return list(values)
