@@ -825,6 +825,8 @@ def _row_sort_key(row: TaxonSearchRow) -> tuple:
     return (
         row.tier,
         0 if boosted else 1,
+        # A boosted concept's synonyms share its boost; its accepted name leads.
+        (0 if row.kind == KIND_TAXON else 1) if boosted else 0,
         _row_sort_text(row),
         0 if row.kind == KIND_TAXON else 1,
         _RANK_ORDER.get(row.rank, 9),
