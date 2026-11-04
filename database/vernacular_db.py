@@ -897,6 +897,24 @@ def _suggest_scientific_names(
                 "ORDER BY s.scientific_name LIMIT ?",
                 (lo, hi, int(limit) * 2),
             ))
+        # Concepts a release name association presents as another: their
+        # rows are re-aimed at the primary below, as the unified picker does
+        # (taxon_search._collapse_associated).
+        from database.taxon_search import association_primaries
+        associated = association_primaries(
+            conn, {row[0] for row in canonical_rows} | {row[0] for row in alias_rows})
+        primaries: dict[int, tuple] = {}
+        if associated:
+            ids = sorted({p for p, _a in associated.values()})
+            primaries = {
+                int(row[0]): row for row in conn.execute(
+                    "SELECT t.taxon_id, t.canonical_scientific_name, t.taxon_rank, "
+                    "       t.taxonomic_status, t.family, t.canonical_source_system, "
+                    f"      {national_expr} "
+                    f"FROM taxon_min t WHERE t.taxon_id IN ({','.join('?' for _ in ids)})",
+                    ids,
+                )
+            }
 
     seen: set[tuple[int, str]] = set()
     out: list[dict] = []
@@ -982,6 +1000,9 @@ def _suggest_scientific_names(
             "link_kind": link_kind,
         })
 
+    if associated:
+        out = _fold_associated_suggestions(out, associated, primaries, parsed_rank_or)
+
     out.sort(key=lambda r: (
         r["scientific_name"].casefold(),
         # Prefer canonical over alias at equal names.
@@ -989,6 +1010,52 @@ def _suggest_scientific_names(
         r["sporely_taxon_id"],
     ))
     return truncate_keeping_name_groups(out, limit)
+
+
+def _fold_associated_suggestions(rows: list[dict], associated: dict, primaries: dict,
+                                 rank_of) -> list[dict]:
+    """``rows`` with associated concepts shown as their primary (ADR 0006).
+
+    A member's row under the primary's own name becomes the primary's own row;
+    under any other name, a synonym row of the primary whose ``provenance``
+    names the association, so a pick binds the primary and records it. That
+    row wins over the primary's own row for the same name (the release copies
+    member names onto the primary), as in the unified picker, so a reversal
+    of the association finds the observations it bound.
+    """
+    folded: dict[tuple[int, str], dict] = {}
+    for row in rows:
+        entry = associated.get(row["sporely_taxon_id"])
+        primary = primaries.get(entry[0]) if entry else None
+        if entry and primary is None:
+            continue
+        if primary is not None:
+            primary_id, name, rank, status, family, source, national_name = primary
+            name = str(name or "")
+            primary_rank = rank_of(rank, name)
+            if primary_rank not in _SCIENTIFIC_PICKER_RANKS and primary_rank != "aggregate":
+                continue
+            fields = {
+                "sporely_taxon_id": int(primary_id),
+                "canonical_scientific_name": name,
+                "canonical_rank": str(rank or ""),
+                "canonical_taxonomic_status": str(status or ""),
+                "family": str(family or "") or None,
+                "canonical_source_system": str(source or "") or None,
+                "display_scientific_name": str(national_name or "") or name,
+            }
+            if row["scientific_name"] == name:
+                row = {**row, **fields, "taxon_rank_snapshot": primary_rank,
+                       "is_canonical": True, "link_kind": "canonical"}
+            else:
+                row = {**row, **fields, "is_canonical": False,
+                       "link_kind": ("synonym_of_accepted" if row["taxon_rank_snapshot"] == primary_rank
+                                     else "linked"),
+                       "provenance": f"name_association:{entry[1]}"}
+        key = (row["sporely_taxon_id"], row["scientific_name"])
+        if key not in folded or (row.get("provenance") and not folded[key].get("provenance")):
+            folded[key] = row
+    return list(folded.values())
 
 
 def truncate_keeping_name_groups(rows: list[dict], limit: int) -> list[dict]:
