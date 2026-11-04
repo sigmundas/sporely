@@ -181,13 +181,27 @@ def shipped_artifact(tmp_path_factory) -> Path:
     return taxonomy_v2.ensure_installed(app_data_dir=tmp_path_factory.mktemp("shipped-taxonomy"))
 
 
+#: NorTaxa synonym ids that anchor their own synonym-status concept and are
+#: also a synonym id of the concept carrying their accepted name. NorTaxa
+#: (release 1.292, ``acceptedNameUsageID``) names that accepted id, so they
+#: resolve by NorTaxa's own synonymy, not by a collision (checked 2026-11-04):
+#: synonym id -> (NorTaxa accepted id, concept that carries it).
+SYNONYM_ANCHORS = {
+    "62451": ("300363", 614211),   # Clavulina cristata var. incarnata -> Clavulina incarnata
+    "67495": ("223201", 154532),   # Ascocoryne solitaria -> Ascocoryne albida
+    "67718": ("300252", 113094),   # Belonidium leucostomum -> Solenopezia leucostoma
+    "69728": ("300345", 51346),    # Arctopeltis thuleana -> Polyozosia thuleana
+    "70320": ("300345", 51346),    # Lecanora thuleana -> Polyozosia thuleana
+    "70995": ("70986", 114873),    # Megalospora marginiflexa -> Megaloblastenia marginiflexa
+}
+
+
 def test_shipped_release_anchor_id_collisions_are_the_intended_ones(shipped_artifact):
     """The precedence rule decides only where a release means it to. Since
     tax-2026.10.31-01 a name association carries a member's own NorTaxa id
-    onto its primary (ADR 0006), so those collisions are intended. Six other
-    anchor ids are also a synonym id of another association and now resolve
-    to that primary (pending owner review, docs/plans/INBOX.md); no other collides,
-    and no two NorTaxa-only concepts share an id."""
+    onto its primary (ADR 0006), so those collisions are intended. The only
+    other anchor ids that collide are ``SYNONYM_ANCHORS``; no two NorTaxa-only
+    concepts share an id."""
     conn = sqlite3.connect(f"file:{shipped_artifact}?mode=ro", uri=True)
     try:
         unexpected = conn.execute(
@@ -205,8 +219,31 @@ def test_shipped_release_anchor_id_collisions_are_the_intended_ones(shipped_arti
         ).fetchone()[0]
     finally:
         conn.close()
-    assert [row[0] for row in unexpected] == ["62451", "67495", "67718", "69728", "70320", "70995"]
+    assert [row[0] for row in unexpected] == sorted(SYNONYM_ANCHORS)
     assert shared == 0
+
+
+@pytest.mark.parametrize("synonym_id", sorted(SYNONYM_ANCHORS))
+def test_a_synonym_anchor_resolves_to_the_concept_with_its_accepted_name(shipped_artifact, synonym_id):
+    """The id's own concept is a NorTaxa synonym; the concept it resolves to
+    carries the id as a synonym and NorTaxa's accepted id as accepted."""
+    accepted_id, target = SYNONYM_ANCHORS[synonym_id]
+    conn = sqlite3.connect(f"file:{shipped_artifact}?mode=ro", uri=True)
+    try:
+        own_status = conn.execute(
+            "SELECT taxonomic_status FROM taxon_min WHERE canonical_source_system = 'nortaxa' "
+            "AND canonical_external_id = ?", (synonym_id,)).fetchone()
+        roles = dict(conn.execute(
+            "SELECT external_id, id_role FROM taxon_external_id_text_min WHERE taxon_id = ? "
+            "AND source_system = 'nortaxa' AND namespace = 'nortaxa_taxon_id' AND external_id IN (?, ?)",
+            (target, synonym_id, accepted_id)).fetchall())
+    finally:
+        conn.close()
+    assert own_status == ("synonym",)
+    assert roles == {synonym_id: "synonym", accepted_id: "accepted"}
+    resolved = resolve_installed_external_identity(
+        shipped_artifact, source_system="nortaxa", namespace="nortaxa_taxon_id", external_id=synonym_id)
+    assert resolved is not None and resolved.sporely_taxon_id == target
 
 
 @pytest.fixture
