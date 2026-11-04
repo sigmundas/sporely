@@ -3406,6 +3406,11 @@ def test_keep_local_identity_missing_from_cloud_release_records_what_landed(monk
                 message=f"sporely_taxon_id {taxon_id} is missing from the active taxonomy-v2 release")
         def _rpc(self, name, payload):
             assert name == "set_observation_identification_v2"
+            if payload["p_sporely_taxon_id"] is not None:
+                raise CloudWriteRejectedError(
+                    f"RPC {name} failed", status_code=400, code="22023",
+                    message=f"sporely_taxon_id {payload['p_sporely_taxon_id']} is missing from "
+                            "the active taxonomy-v2 release")
             live_remote.update({
                 "selected_sporely_taxon_id": None,
                 "taxon_identity_state": payload["p_identity_state"],

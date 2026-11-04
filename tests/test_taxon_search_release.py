@@ -3,7 +3,7 @@
 Representative results and broad-query timing on the real artifact
 (`database/reference_data/generated/taxonomy_v2`, or the database named by
 ``SPORELY_TAXONOMY_PROBE_DB``). The ids below are those of
-``tax-2026.10.23-11``; a later release may renumber them, so the module skips
+``tax-2026.10.31-01``; a later release may renumber them, so the module skips
 when the bundle is another release and no override is given.
 """
 from __future__ import annotations
@@ -29,7 +29,7 @@ from database.taxon_search import (
 
 ROOT = Path(__file__).resolve().parents[1]
 BUNDLE = ROOT / "database/reference_data/generated/taxonomy_v2"
-RELEASE = "tax-2026.10.23-11"
+RELEASE = "tax-2026.10.31-01"
 
 # Warm median per query. The searches measured 2-30 ms on a 2024 laptop;
 # the ceiling leaves room for slower CI runners while still catching an
@@ -69,11 +69,11 @@ def find(page, name, kind="taxon"):
     return rows[0]
 
 
-def test_genus_query_offers_both_flammulina_concepts_first(conn):
+def test_genus_query_offers_the_associated_flammulina_concept_first(conn):
     page = run(conn, "Flammulina", limit=10)
     genus = page.rows[0]
     assert (genus.name, genus.rank, genus.tier) == ("Flammulina", "genus", TIER_EXACT)
-    assert ids(genus) == [625619, 50109]  # NorTaxa (Artsdatabanken 54695), then COL
+    assert ids(genus) == [50109]  # COL primary; NorTaxa 625619 is associated with it
     assert genus.vernacular_name == "vintersopper"
     assert page.has_more
     assert all(r.name.startswith("Flammulina ") for r in page.rows[1:])
@@ -82,10 +82,10 @@ def test_genus_query_offers_both_flammulina_concepts_first(conn):
 def test_epithet_query_spans_genera_with_pairs_and_synonyms(conn):
     page = run(conn, "velutipes")
     assert all(r.match_kind == MATCH_EPITHET for r in page.rows)
-    assert ids(find(page, "Flammulina velutipes")) == [625621, 98288]
+    assert ids(find(page, "Flammulina velutipes")) == [98288]
     assert {"Arrhenia velutipes", "Aureoboletus velutipes", "Conocybe velutipes"} <= {r.name for r in page.rows}
     synonym = find(page, "Collybia velutipes", KIND_SYNONYM)
-    assert ids(synonym) == [625621] and synonym.synonym_of == "Flammulina velutipes"
+    assert ids(synonym) == [98288] and synonym.synonym_of == "Flammulina velutipes"
 
 
 def test_artsorakel_evidence_reorders_without_removing(conn):
@@ -93,7 +93,7 @@ def test_artsorakel_evidence_reorders_without_removing(conn):
     proven = run(conn, "velutipes", evidence_taxon_ids=[98288])
     assert {tuple(sorted(ids(r))) for r in proven.rows} == {tuple(sorted(ids(r))) for r in plain.rows}
     assert proven.rows[0].name == "Flammulina velutipes"
-    assert ids(proven.rows[0]) == [98288, 625621]
+    assert ids(proven.rows[0]) == [98288]
 
 
 def test_vernacular_exact_and_group_queries(conn):
@@ -101,7 +101,7 @@ def test_vernacular_exact_and_group_queries(conn):
     kremler = run(conn, "kremler")
     assert ids(kremler.rows[0]) == [123322] and kremler.rows[0].rank == "genus"
     green = run(conn, "grønnkremle").rows[0]
-    assert ids(green) == [626822, 61673]
+    assert ids(green) == [61673]  # NorTaxa 626822 is associated with it
     assert all(r.match_kind == MATCH_VERNACULAR_PART for r in kremler.rows[1:])
     assert all(r.default_concept.canonical_scientific_name.startswith("Russula") for r in kremler.rows[1:])
 

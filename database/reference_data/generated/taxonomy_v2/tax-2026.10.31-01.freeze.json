@@ -1,0 +1,28 @@
+{
+  "format": "sporely-frozen-publication-v1",
+  "content_release_id": "tax-2026.10.31-01",
+  "files": {
+    "compatibility.json": {
+      "sha256": "c269d2fcd2500d3052af373e496c6069342076b14bbdcf8874d4df910ddc1747",
+      "bytes": 3214
+    },
+    "manifest.json": {
+      "sha256": "270f40b95984a79b868fd645232daa0726239f5001ef648e37c1cda8f94920a7",
+      "bytes": 5129
+    },
+    "tax-2026.10.31-01.evidence.tar.gz": {
+      "sha256": "08e7ecac525f820771e1481753293a8d64066f23a35681e1be28ee5c77fb91d4",
+      "bytes": 2139480
+    },
+    "tax-2026.10.31-01.sqlite3.gz": {
+      "sha256": "3e13a125c3a3d5ec4b3fd7e26c1ba2aa0eaaa9f36b3e82ce3fa271f46f77b3de",
+      "bytes": 46653902
+    }
+  },
+  "baseline_manifest_sha256": "694b6d8941325af76f44dfc3ab36a99c16827998644a6f910f3cb223f94905c9",
+  "baseline_compatibility_sha256": "a2d9d74df1a78fee56ab57f28717a5b98ab83ea2a090c04e71d8665f027e2461",
+  "derived_from": {
+    "content_release_id": "tax-2026.10.23-11",
+    "freeze_sha256": "26e77446fb3b71720fa44cf54fe5237bb0bab5f240f2f762036da3e92877bc99"
+  }
+}

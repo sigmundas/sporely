@@ -2,8 +2,10 @@
 
 The shipped taxonomy holds two same-name species concepts for *Flammulina
 velutipes*: COL 98288 (no NorTaxa id) and NorTaxa 625621 (NorTaxa 54701).
-Artsorakel identifies the species as ``NBIC:54701``, which the NorTaxa
-bridge resolves to 625621. An Android observation synced to desktop keeps
+Artsorakel identifies the species as ``NBIC:54701``. Since
+tax-2026.10.31-01 NorTaxa 625621 is associated by name with COL 98288
+(ADR 0006), so the identifier resolves to the primary, 98288
+(``PROVEN_CONCEPT``); both concepts stay in the release. An Android observation synced to desktop keeps
 that identifier as ``taxon_id`` / ``taxon.id`` and ``ai_selected_taxon_id``
 (owner's observations 366 and 685), while a desktop run keeps it as
 ``scientific_name_id`` — at the top level or inside ``taxon``.
@@ -45,9 +47,16 @@ from utils.taxon_identity import (
 
 NORTAXA_CONCEPT = 625621
 COL_CONCEPT = 98288
-#: Flammulina fennae: one COL concept carrying NorTaxa 54697 only through the
-#: release's automatic exact-name match, so NBIC:54697 does not resolve.
-FENNAE_CONCEPT = 98271
+#: The concept NBIC:54701 proves: the association primary.
+PROVEN_CONCEPT = COL_CONCEPT
+#: Mycena pearsoniana, a same-name pair the release does not associate:
+#: NorTaxa 625327 (NBIC:53838) and COL 34794.
+PAIR_NORTAXA, PAIR_COL = 625327, 34794
+#: Echinoderma pseudoasperulum: one COL concept carrying NorTaxa 300295 only
+#: through the release's automatic exact-name match, so NBIC:300295 does not
+#: resolve. (Flammulina fennae, used before, resolves by name association
+#: since tax-2026.10.31-01.)
+NAME_MATCHED_CONCEPT = 6399
 
 
 # Recorded shapes (owner's local database, 2026-10-25), trimmed of URLs.
@@ -140,15 +149,15 @@ def test_the_own_name_is_offered_a_link_to_the_concept_its_identifier_proves(loo
         lookup, own_genus="Flammulina", own_species="velutipes", ai_entries=[_ai_entry()],
     )
     assert (defaults.own.kind, defaults.own.sporely_taxon_id) == (KIND_NAME_ONLY, None)
-    assert (defaults.link.sporely_taxon_id, defaults.link.raw_external_id) == (NORTAXA_CONCEPT, "NBIC:54701")
+    assert (defaults.link.sporely_taxon_id, defaults.link.raw_external_id) == (PROVEN_CONCEPT, "NBIC:54701")
     # The AI suggestion is the link itself, so the AI section repeats nothing.
     assert defaults.ai == ()
-    assert defaults.evidence_ids == {NORTAXA_CONCEPT}
+    assert defaults.evidence_ids == {PROVEN_CONCEPT}
 
 
 def test_ai_scores_play_no_part_in_the_evidence(lookup):
     unlikely = {**_ai_entry(), "score": 0.0001}
-    assert evidence_concept_ids(lookup, [unlikely]) == {NORTAXA_CONCEPT}
+    assert evidence_concept_ids(lookup, [unlikely]) == {PROVEN_CONCEPT}
 
 
 def test_without_an_identifier_there_is_no_link_and_no_evidence(lookup):
@@ -165,7 +174,7 @@ def test_one_species_from_two_services_is_one_row_with_both_scores(lookup):
     inat = {**_ai_entry(external_id="67594", source="inat"), "score": 0.4}   # iNat ids never resolve
     defaults = reference_default_suggestions(lookup, ai_entries=[inat, _ai_entry()])
     (row,) = defaults.ai
-    assert (row.kind, row.sporely_taxon_id) == (KIND_VERIFIED, NORTAXA_CONCEPT)
+    assert (row.kind, row.sporely_taxon_id) == (KIND_VERIFIED, PROVEN_CONCEPT)
     assert row.ai_scores == (("inat", 0.4), ("arts", 0.98))
 
 
@@ -187,22 +196,22 @@ def test_an_unknown_identifier_stays_name_only_and_says_so(lookup):
 
 def test_a_synonym_name_resolves_by_identifier_to_its_concept(lookup):
     (row,) = reference_default_suggestions(lookup, ai_entries=[_ai_entry(name="Collybia velutipes")]).ai
-    assert (row.kind, row.sporely_taxon_id) == (KIND_VERIFIED, NORTAXA_CONCEPT)
+    assert (row.kind, row.sporely_taxon_id) == (KIND_VERIFIED, PROVEN_CONCEPT)
     assert (row.scientific_name, row.concept_name) == ("Collybia velutipes", "Flammulina velutipes")
 
 
 def test_an_own_concept_keeps_a_different_same_name_ai_concept(lookup):
     defaults = reference_default_suggestions(
-        lookup, own_genus="Flammulina", own_species="velutipes", own_taxon_id=COL_CONCEPT,
-        ai_entries=[_ai_entry()],
+        lookup, own_genus="Mycena", own_species="pearsoniana", own_taxon_id=PAIR_COL,
+        ai_entries=[_ai_entry("NBIC:53838", "Mycena pearsoniana")],
     )
     assert defaults.link is None
-    assert [row.sporely_taxon_id for row in defaults.ai] == [NORTAXA_CONCEPT]
+    assert [row.sporely_taxon_id for row in defaults.ai] == [PAIR_NORTAXA]
     # Both concepts are evidence, so typed search keeps both: real ambiguity.
-    assert defaults.evidence_ids == {COL_CONCEPT, NORTAXA_CONCEPT}
+    assert defaults.evidence_ids == {PAIR_COL, PAIR_NORTAXA}
     # The own concept alone is no evidence: it never hides the alternative.
     alone = reference_default_suggestions(
-        lookup, own_genus="Flammulina", own_species="velutipes", own_taxon_id=COL_CONCEPT)
+        lookup, own_genus="Mycena", own_species="pearsoniana", own_taxon_id=PAIR_COL)
     assert alone.evidence_ids == frozenset()
 
 
@@ -228,7 +237,7 @@ def _observation(**fields) -> dict:
 def test_an_observation_without_identity_is_offered_the_verified_concept(lookup):
     offer = observation_identity_offer(lookup, _observation(), genus="Flammulina", species="velutipes")
     assert (offer.sporely_taxon_id, offer.raw_external_id, offer.source_label) == (
-        NORTAXA_CONCEPT, "NBIC:54701", "NorTaxa 54701")
+        PROVEN_CONCEPT, "NBIC:54701", "COL 6J82Y")
 
 
 def test_an_unresolved_provider_tuple_on_the_observation_is_offered(lookup):
@@ -237,7 +246,7 @@ def test_an_unresolved_provider_tuple_on_the_observation_is_offered(lookup):
                        taxon_identity_namespace="nortaxa_taxon_id",
                        taxon_identity_external_id="54701")
     offer = observation_identity_offer(lookup, row, genus="Flammulina", species="velutipes")
-    assert offer is not None and offer.sporely_taxon_id == NORTAXA_CONCEPT
+    assert offer is not None and offer.sporely_taxon_id == PROVEN_CONCEPT
 
 
 @pytest.mark.parametrize("row, genus, species", [
@@ -255,28 +264,29 @@ def test_no_offer_without_agreeing_identifier_evidence(lookup, row, genus, speci
     assert observation_identity_offer(lookup, row, genus=genus, species=species) is None
 
 
-def _fennae(**fields) -> dict:
-    return _observation(**{"species": "fennae", "ai_selected_taxon_id": "NBIC:54697",
-                           "ai_selected_scientific_name": "Flammulina fennae", **fields})
+def _name_matched(**fields) -> dict:
+    return _observation(**{"genus": "Echinoderma", "species": "pseudoasperulum",
+                           "ai_selected_taxon_id": "NBIC:300295",
+                           "ai_selected_scientific_name": "Echinoderma pseudoasperulum", **fields})
 
 
 def test_a_name_matched_identifier_is_offered_for_confirmation(lookup):
-    offer = observation_identity_offer(lookup, _fennae(), genus="Flammulina", species="fennae")
+    offer = observation_identity_offer(lookup, _name_matched(), genus="Echinoderma", species="pseudoasperulum")
     assert (offer.kind, offer.sporely_taxon_id, offer.raw_external_id) == (
-        KIND_NAME_CONFIRMED, FENNAE_CONCEPT, "NBIC:54697")
+        KIND_NAME_CONFIRMED, NAME_MATCHED_CONCEPT, "NBIC:300295")
 
 
 def test_a_copied_unresolved_name_matched_tuple_is_offered_for_confirmation(lookup):
-    row = _fennae(ai_selected_taxon_id=None, taxon_identity_state=STATE_EXTERNAL_UNRESOLVED,
+    row = _name_matched(ai_selected_taxon_id=None, taxon_identity_state=STATE_EXTERNAL_UNRESOLVED,
                   taxon_identity_source_system="nortaxa", taxon_identity_namespace="nortaxa_taxon_id",
-                  taxon_identity_external_id="54697", taxon_identity_raw_external_id="NBIC:54697")
-    offer = observation_identity_offer(lookup, row, genus="Flammulina", species="fennae")
-    assert (offer.kind, offer.sporely_taxon_id) == (KIND_NAME_CONFIRMED, FENNAE_CONCEPT)
+                  taxon_identity_external_id="300295", taxon_identity_raw_external_id="NBIC:300295")
+    offer = observation_identity_offer(lookup, row, genus="Echinoderma", species="pseudoasperulum")
+    assert (offer.kind, offer.sporely_taxon_id) == (KIND_NAME_CONFIRMED, NAME_MATCHED_CONCEPT)
 
 
-@pytest.mark.parametrize("species", ["velutipes", "elastica"])
+@pytest.mark.parametrize("species", ["asperum", "echinaceum"])
 def test_a_name_matched_identifier_offers_nothing_for_another_name(lookup, species):
-    offer = observation_identity_offer(lookup, _fennae(), genus="Flammulina", species=species)
+    offer = observation_identity_offer(lookup, _name_matched(), genus="Echinoderma", species=species)
     assert offer is None or offer.kind != KIND_NAME_CONFIRMED
 
 
@@ -357,7 +367,7 @@ def test_picker_opens_on_the_observation_taxon_and_offers_the_link(picker_settin
 
         dialog.taxon_link_button.click()
         # The reference taxon only: the observation is untouched.
-        assert dialog._taxon_id == str(NORTAXA_CONCEPT)
+        assert dialog._taxon_id == str(PROVEN_CONCEPT)
         assert (dialog._genus, dialog._species) == ("Flammulina", "velutipes")
         assert dialog._own_taxon_id is None
         assert dialog._exclude_observation_id == 685
@@ -400,7 +410,7 @@ def test_picker_search_shows_one_match_when_an_identifier_settles_it(picker_sett
     try:
         rows = dialog.taxon_search_rows("Flammulina velutipes")
         ids = {data["taxon_id"] for _label, data in rows if data.get("label") == "Flammulina velutipes"}
-        assert ids == {NORTAXA_CONCEPT}
+        assert ids == {PROVEN_CONCEPT}
         assert [label for label, data in rows if data.get("label") == "Flammulina velutipes"] == [
             "Flammulina velutipes (vintersopp)"]
         # A variety no identifier speaks for stays ambiguous, with sources.
@@ -454,7 +464,7 @@ def test_observation_editor_offers_the_concept_and_binds_it_only_on_acceptance(
 
         data = dialog.get_data()
         assert (data["genus"], data["species"]) == ("Flammulina", "velutipes")
-        assert data["sporely_taxon_id"] == NORTAXA_CONCEPT
+        assert data["sporely_taxon_id"] == PROVEN_CONCEPT
         assert data["taxon_identity_proof"] == PROOF_EXTERNAL_ID_RESOLUTION
         assert data["taxon_identity_raw_external_id"] == "NBIC:54701"
         assert dialog.identity_offer_row.isHidden()
@@ -472,7 +482,7 @@ def test_observation_editor_links_a_name_matched_identifier_as_a_pick(
     qapp = QApplication.instance() or QApplication([])
     dialog = _build_dialog(
         monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=shipped_artifact,
-        draft_data=_fennae(),
+        draft_data=_name_matched(),
     )
     try:
         assert not dialog.identity_offer_row.isHidden()
@@ -482,11 +492,11 @@ def test_observation_editor_links_a_name_matched_identifier_as_a_pick(
         qapp.processEvents()
 
         data = dialog.get_data()
-        assert (data["genus"], data["species"]) == ("Flammulina", "fennae")
-        assert data["sporely_taxon_id"] == FENNAE_CONCEPT
+        assert (data["genus"], data["species"]) == ("Echinoderma", "pseudoasperulum")
+        assert data["sporely_taxon_id"] == NAME_MATCHED_CONCEPT
         # The user's confirmation by name, not the provider id, is the proof.
         assert data["taxon_identity_proof"] == PROOF_TAXONOMY_V2_ARTIFACT
-        assert data["ai_selected_taxon_id"] == "NBIC:54697"
+        assert data["ai_selected_taxon_id"] == "NBIC:300295"
         assert dialog.identity_offer_row.isHidden()
     finally:
         dialog._cleanup_dialog_threads()
@@ -513,7 +523,7 @@ def test_observation_editor_binds_its_own_tuple_stored_without_a_raw_value(
         dialog.identity_offer_button.click()
         qapp.processEvents()
         data = dialog.get_data()
-        assert data["sporely_taxon_id"] == NORTAXA_CONCEPT
+        assert data["sporely_taxon_id"] == PROVEN_CONCEPT
         assert data["taxon_identity_proof"] == PROOF_EXTERNAL_ID_RESOLUTION
     finally:
         dialog._cleanup_dialog_threads()
@@ -610,13 +620,13 @@ def test_an_artsorakel_identifier_settles_the_species_and_scientific_lists(edito
     assert not any(label.startswith("velutipes ·") for label in labels)
     _label, index = next(row for row in _species_rows(dialog) if row[0] == "velutipes")
     dialog._taxon_controller.on_species_selected(index)
-    assert dialog.get_data()["sporely_taxon_id"] == NORTAXA_CONCEPT
+    assert dialog.get_data()["sporely_taxon_id"] == PROVEN_CONCEPT
 
     controller = dialog._taxon_controller
     dialog.scientific_name_input.setText("Flammulina velutipes")
     rows = controller.refresh_scientific_suggestions()
     assert [r["sporely_taxon_id"] for r in rows if r["scientific_name"] == "Flammulina velutipes"] == [
-        NORTAXA_CONCEPT]
+        PROVEN_CONCEPT]
 
 
 def test_genus_only_and_typed_names_bind_nothing_and_warn_nothing(editor):
@@ -848,11 +858,11 @@ def test_link_writes_the_taxonomy_spelling_into_every_field(editor):
         "Flammulina", "velutipes", "Flammulina velutipes")
     assert (data["genus"], data["species"], data["scientific_name_snapshot"]) == (
         "Flammulina", "velutipes", "Flammulina velutipes")
-    assert data["sporely_taxon_id"] == NORTAXA_CONCEPT
+    assert data["sporely_taxon_id"] == PROVEN_CONCEPT
     assert data["taxon_identity_proof"] == PROOF_EXTERNAL_ID_RESOLUTION
     # The fields now match the snapshot: nothing invalidates it on its own.
     reopened = editor(**data)
-    assert reopened.get_data()["sporely_taxon_id"] == NORTAXA_CONCEPT
+    assert reopened.get_data()["sporely_taxon_id"] == PROVEN_CONCEPT
     assert reopened.scientific_name_input.text() == "Flammulina velutipes"
 
 

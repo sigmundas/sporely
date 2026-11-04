@@ -1,0 +1,16 @@
+== setup sporely-taxonomy-rehearsal-89910 (public.ecr.aws/supabase/postgres:17.6.1.084)
+PASS schema restore: no errors besides the image's existing public schema (76 policies)
+PASS setup: baseline tax-2026.10.07-01 active and valid; legacy taxa 110833, vernacular 137282, observations 782 (synthetic); 13.09 s
+PASS guard-wrong-nonce: exit 3 with 'no marker row for this release and export'; tax-2026.10.07-01 still active, no tax-2026.10.31-01 release/taxa/import-run rows
+PASS race A overlap: import (pid 409) is waiting on taxonomy_v2_releases while the validated writer (pid 386) holds it
+PASS race-a-import: exit 3 with 'an observation selects a concept absent from the new active release'; tax-2026.10.07-01 still active, no tax-2026.10.31-01 release/taxa/import-run rows
+PASS race B overlap: RPC (pid 950, role authenticated) is waiting on taxonomy_v2_releases held by the import (pid 686)
+PASS race B: import exit 0; RPC exit 1, rejected after waiting ('missing from the active taxonomy-v2 release'); no stale id stored
+PASS import+activation: exit 0; tax-2026.10.31-01 active, 53166 taxa, validates; tax-2026.10.07-01 retired
+     timing: total import 9.83 s; cutover (ACCESS EXCLUSIVE on taxonomy_v2_releases held) 4.034 s (from 832 lock samples)
+PASS search_taxa_v2: 7 Norwegian names return their concepts
+PASS resolve_taxon_external_id_v2: 6 COL ids resolve as expected
+PASS RPC after activation: rejects 34119 (exit 1), accepts 167 from tax-2026.10.31-01 (exit 0)
+PASS replay: exit 3, refused; state unchanged
+PASS rollback: tax-2026.10.07-01 active again, tax-2026.10.31-01 retired with its rows kept, search answers
+ALL 13 CHECKS PASSED in 49.65 s

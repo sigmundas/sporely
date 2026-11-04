@@ -1,17 +1,16 @@
 {
   "manifest_schema_version": 1,
   "taxonomy_schema_version": 2,
-  "content_release_id": "tax-2026.10.23-11",
+  "content_release_id": "tax-2026.10.31-01",
   "state": "candidate",
   "publication": "none",
-  "gz_artifact": "tax-2026.10.23-11.sqlite3.gz",
-  "gz_sha256": "237466e14923fe6c33622314a7cbae0a1707ac6cc8d2f62a86922e922b3f9d38",
-  "gz_bytes": 40037337,
-  "sqlite_sha256": "2a81f68435d0606633319be0845f9fa1de46ccd9c2442f391af742fad3899a97",
-  "sqlite_bytes": 142983168,
+  "gz_artifact": "tax-2026.10.31-01.sqlite3.gz",
+  "gz_sha256": "3e13a125c3a3d5ec4b3fd7e26c1ba2aa0eaaa9f36b3e82ce3fa271f46f77b3de",
+  "gz_bytes": 46653902,
+  "sqlite_sha256": "ec19acac6a0dafbd3fd629760d9aa92fa5d7ec270597e29fffe72c7cba5cacfe",
+  "sqlite_bytes": 177414144,
   "registry_concatenated_sha256": "716bff20853a7639b888548a06088d1dd71b0eb6684fd5c492758af3691da5f8",
   "compiler_manifest_sha256": "6c21ed302a9abf7e99c90f1a165026af65314c355a607df9e418b01f18becba8",
-  "freeze_artifact": "tax-2026.10.23-11.freeze.json",
   "install_target_name": "vernacular_multilanguage_v2.sqlite3",
   "redlist_no": {
     "source_system": "artsdatabanken_redlist",
@@ -55,10 +54,26 @@
       "required_before_publication": "Fetch the Artsdatabanken terms page (e.g. https://artsdatabanken.no/dataandconditions or the equivalent Norwegian URL), record the license identifier + retrieval SHA-256, and set state='published' + publication metadata."
     }
   },
-  "compiler_evidence": {
-    "artifact": "tax-2026.10.23-11.evidence.tar.gz",
-    "sha256": "e85b2000298d8b36341892a1eb10d99b63a580b65f62651f7f638ab1eea8fe7e",
-    "bytes": 44277045,
-    "format": "sporely-compiler-evidence-v1"
+  "name_association": {
+    "base_release_id": "tax-2026.10.23-11",
+    "base_sqlite_sha256": "2a81f68435d0606633319be0845f9fa1de46ccd9c2442f391af742fad3899a97",
+    "policy_version": "name-association-v1",
+    "policy_sha256": "34c4d565be734375744f1703d1bfdb38695576026fa3cb9085186fb1679efc28",
+    "associations_total": 36779,
+    "report": "association-report.json",
+    "base_freeze_sha256": "26e77446fb3b71720fa44cf54fe5237bb0bab5f240f2f762036da3e92877bc99",
+    "implementation_sha256": {
+      "name_associations.py": "353017d4e91dd0efd69969df519018af2bd3b765a6137df6803196b5b11672be",
+      "cross_source_mapping.py": "4b98c7d29cffee8c878ff1b04ab7be616e05a0f0bd1efdfac5db59ee35f1e10d",
+      "vernacular_projection.py": "5d25f03292c90f6b7bdb0175adb805507f8ac4c43c0bcaa887d72c060cf68cdd"
+    },
+    "holds_sha256": "78ebfb3c2ec76b19567f1b183c65c88e77a3d95560720a83dea58688498de573"
+  },
+  "freeze_artifact": "tax-2026.10.31-01.freeze.json",
+  "derivation_evidence": {
+    "artifact": "tax-2026.10.31-01.evidence.tar.gz",
+    "sha256": "08e7ecac525f820771e1481753293a8d64066f23a35681e1be28ee5c77fb91d4",
+    "bytes": 2139480,
+    "format": "sporely-derived-evidence-v1"
   }
 }

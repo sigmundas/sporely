@@ -181,17 +181,23 @@ def shipped_artifact(tmp_path_factory) -> Path:
     return taxonomy_v2.ensure_installed(app_data_dir=tmp_path_factory.mktemp("shipped-taxonomy"))
 
 
-def test_shipped_release_has_no_bridge_colliding_with_an_anchor_id(shipped_artifact):
-    """The precedence rule never has to decide in the shipped release: no
-    approved NorTaxa bridge id is also a NorTaxa-only concept's own id, and no
-    two NorTaxa-only concepts share one."""
+def test_shipped_release_anchor_id_collisions_are_the_intended_ones(shipped_artifact):
+    """The precedence rule decides only where a release means it to. Since
+    tax-2026.10.31-01 a name association carries a member's own NorTaxa id
+    onto its primary (ADR 0006), so those collisions are intended. Six other
+    anchor ids are also a synonym id of another association and now resolve
+    to that primary (pending owner review, docs/plans/INBOX.md); no other collides,
+    and no two NorTaxa-only concepts share an id."""
     conn = sqlite3.connect(f"file:{shipped_artifact}?mode=ro", uri=True)
     try:
-        collisions = conn.execute(
-            "SELECT COUNT(*) FROM taxon_external_id_text_min e JOIN taxon_min t "
+        unexpected = conn.execute(
+            "SELECT e.external_id FROM taxon_external_id_text_min e JOIN taxon_min t "
             "ON t.canonical_source_system = 'nortaxa' AND t.canonical_external_id = e.external_id "
-            "WHERE e.source_system = 'nortaxa' AND e.namespace = 'nortaxa_taxon_id'"
-        ).fetchone()[0]
+            "WHERE e.source_system = 'nortaxa' AND e.namespace = 'nortaxa_taxon_id' "
+            "AND NOT (e.note LIKE 'name_association:%' AND EXISTS (SELECT 1 FROM taxon_association_min x "
+            "  WHERE x.member_taxon_id = t.taxon_id AND x.primary_taxon_id = e.taxon_id)) "
+            "ORDER BY 1"
+        ).fetchall()
         shared = conn.execute(
             "SELECT COUNT(*) FROM (SELECT canonical_external_id FROM taxon_min "
             "WHERE canonical_source_system = 'nortaxa' "
@@ -199,7 +205,8 @@ def test_shipped_release_has_no_bridge_colliding_with_an_anchor_id(shipped_artif
         ).fetchone()[0]
     finally:
         conn.close()
-    assert (collisions, shared) == (0, 0)
+    assert [row[0] for row in unexpected] == ["62451", "67495", "67718", "69728", "70320", "70995"]
+    assert shared == 0
 
 
 @pytest.fixture
@@ -230,22 +237,21 @@ def _copy_artsorakel(monkeypatch, qapp, tmp_path, artifact, raw, name):
     return dialog
 
 
-def test_live_artsorakel_copy_of_nbic_52330_binds_the_nortaxa_concept(
+def test_live_artsorakel_copy_of_a_nortaxa_only_id_binds_the_nortaxa_concept(
     monkeypatch, qapp, tmp_path, shipped_artifact,
 ):
     dialog = _copy_artsorakel(monkeypatch, qapp, tmp_path, shipped_artifact,
-                              "NBIC:52330", "Panaeolina foenisecii")
+                              "NBIC:137886", "Parasola conopilea")
     try:
         data = dialog.get_data()
-        assert (data["genus"], data["species"]) == ("Panaeolina", "foenisecii")
-        assert data["sporely_taxon_id"] == 624659
+        assert (data["genus"], data["species"]) == ("Parasola", "conopilea")
+        assert data["sporely_taxon_id"] == 622011
         assert data["taxon_identity_proof"] == PROOF_EXTERNAL_ID_RESOLUTION
         assert (data["taxon_identity_source_system"], data["taxon_identity_namespace"],
-                data["taxon_identity_external_id"]) == ("nortaxa", "nortaxa_taxon_id", "52330")
+                data["taxon_identity_external_id"]) == ("nortaxa", "nortaxa_taxon_id", "137886")
         shipped = taxonomy_v2.load_manifest().content_release_id
         assert data["taxon_identity_provenance"] == f"taxonomy_v2:{shipped}:{SELF}"
-        # Observation 1032's defect: the suggestion's id was never recorded.
-        assert dialog._current_ai_selected_fields["ai_selected_taxon_id"] == "NBIC:52330"
+        assert dialog._current_ai_selected_fields["ai_selected_taxon_id"] == "NBIC:137886"
     finally:
         dialog._cleanup_dialog_threads()
         dialog.deleteLater()
@@ -268,16 +274,39 @@ def test_a_binding_artsorakel_copy_keeps_its_red_list_snapshot(
     dialog = _build_dialog(monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=shipped_artifact)
     try:
         dialog._location_country_code = country
-        prediction = {**_artsorakel_prediction("NBIC:52330", "Panaeolina foenisecii"),
+        prediction = {**_artsorakel_prediction("NBIC:137886", "Parasola conopilea"),
                       "redListCategory": "LC", "redListCategories": {"NO": "LC"}}
         _select_prediction(dialog, prediction, source="arts")
         dialog._on_ai_copy_to_taxonomy("arts")
         for _ in range(5):
             qapp.processEvents()
         data = dialog.get_data()
-        assert data["sporely_taxon_id"] == 624659
+        assert data["sporely_taxon_id"] == 622011
         assert data["red_list_categories_json"] == '{"NO": "LC"}'
         assert data["red_list_category"] == expected_category
+    finally:
+        dialog._cleanup_dialog_threads()
+        dialog.deleteLater()
+
+
+def test_live_artsorakel_copy_of_nbic_52330_binds_the_association_primary(
+    monkeypatch, qapp, tmp_path, shipped_artifact,
+):
+    """Observation 1032's species. Since tax-2026.10.31-01 NorTaxa 624659 is
+    associated with COL 40673 by name (ADR 0006): the copy binds the primary
+    and records the association in its provenance."""
+    dialog = _copy_artsorakel(monkeypatch, qapp, tmp_path, shipped_artifact,
+                              "NBIC:52330", "Panaeolina foenisecii")
+    try:
+        data = dialog.get_data()
+        assert (data["genus"], data["species"]) == ("Panaeolina", "foenisecii")
+        assert data["sporely_taxon_id"] == 40673
+        assert data["taxon_identity_proof"] == PROOF_EXTERNAL_ID_RESOLUTION
+        assert (data["taxon_identity_source_system"], data["taxon_identity_namespace"],
+                data["taxon_identity_external_id"]) == ("nortaxa", "nortaxa_taxon_id", "52330")
+        assert "name_association:exact_accepted_name" in data["taxon_identity_provenance"]
+        # Observation 1032's defect: the suggestion's id was never recorded.
+        assert dialog._current_ai_selected_fields["ai_selected_taxon_id"] == "NBIC:52330"
     finally:
         dialog._cleanup_dialog_threads()
         dialog.deleteLater()
@@ -287,13 +316,14 @@ def test_overriding_an_artsorakel_suggestion_then_picking_keeps_only_the_pick(
     monkeypatch, qapp, tmp_path, shipped_artifact,
 ):
     """The owner's case: Artsorakel suggests *Russula sanguinea* (NorTaxa
-    57843, concept 626870); the observer overrides it with *R. emetica* and
-    then explicitly picks the COL concept 61951 — not the same-name NorTaxa
-    concept 626835."""
+    57843, concept 626870, associated by name with COL 62510 since
+    tax-2026.10.31-01, so the copy binds 62510); the observer overrides it with
+    *R. emetica* and then explicitly picks the COL concept 61951 — not the
+    same-name NorTaxa concept 626835."""
     dialog = _copy_artsorakel(monkeypatch, qapp, tmp_path, shipped_artifact,
                               "NBIC:57843", "Russula sanguinea")
     try:
-        assert dialog.get_data()["sporely_taxon_id"] == 626870
+        assert dialog.get_data()["sporely_taxon_id"] == 62510
 
         dialog.species_input.setText("emetica")
         qapp.processEvents()
@@ -353,11 +383,17 @@ def _refusing_client(code="22023",
 
     def rpc(name, payload):
         client.rpcs.append((name, dict(payload)))
-        if name == "set_observation_selected_taxon_v2":
+        if payload.get("p_sporely_taxon_id") is not None:
             raise CloudWriteRejectedError(
                 f"RPC {name} failed", status_code=400, code=code, message=message)
     client._rpc = rpc
     return client
+
+
+_RESOLVED_PAYLOAD = {
+    "p_sporely_taxon_id": 624659, "p_identity_state": "sporely_v2", "p_source_system": "nortaxa",
+    "p_namespace": "nortaxa_taxon_id", "p_external_id": "52330", "p_raw_external_id": "NBIC:52330",
+    "p_write_name": False, "p_genus": None, "p_species": None, "p_common_name": None}
 
 
 def _self_resolved_row():
@@ -376,7 +412,7 @@ def test_a_concept_missing_from_the_cloud_release_preserves_its_tuple_instead_of
               "selected_sporely_taxon_id": None, "taxon_identity_state": None}
     client.push_observation(_self_resolved_row(), remote_obs=remote)
     assert client.rpcs == [
-        ("set_observation_selected_taxon_v2", {"p_observation_id": 917, "p_sporely_taxon_id": 624659}),
+        ("set_observation_identification_v2", {**_RESOLVED_PAYLOAD, "p_observation_id": 917}),
         ("set_observation_identification_v2", {
             "p_observation_id": 917, "p_sporely_taxon_id": None,
             "p_identity_state": "external_unresolved", "p_source_system": "nortaxa",
@@ -393,7 +429,7 @@ def test_a_tuple_the_cloud_already_holds_is_not_rewritten():
               "taxon_identity_source_system": "nortaxa", "taxon_identity_namespace": "nortaxa_taxon_id",
               "taxon_identity_external_id": "52330", "taxon_identity_raw_external_id": "NBIC:52330"}
     client.push_observation(_self_resolved_row(), remote_obs=remote)
-    assert [name for name, _ in client.rpcs] == ["set_observation_selected_taxon_v2"]
+    assert [name for name, _ in client.rpcs] == ["set_observation_identification_v2"]
 
 
 def test_a_picker_selected_concept_missing_from_the_cloud_stays_local_without_failing():
@@ -414,7 +450,7 @@ def test_a_new_observation_preserves_its_tuple_once_after_the_create():
     client = _refusing_client()
     client._sync_observation_selected_taxon("917", _self_resolved_row(), remote_obs=None)
     assert [name for name, _ in client.rpcs] == [
-        "set_observation_selected_taxon_v2", "set_observation_identification_v2"]
+        "set_observation_identification_v2", "set_observation_identification_v2"]
 
 
 @pytest.mark.parametrize("code, message", [
@@ -429,10 +465,12 @@ def test_any_other_refusal_still_fails_the_push(code, message):
               "selected_sporely_taxon_id": None, "taxon_identity_state": None}
     with pytest.raises(CloudWriteRejectedError):
         client.push_observation(_self_resolved_row(), remote_obs=remote)
-    assert [name for name, _ in client.rpcs] == ["set_observation_selected_taxon_v2"]
+    assert [name for name, _ in client.rpcs] == ["set_observation_identification_v2"]
 
 
 def test_a_self_resolved_identity_pushes_its_own_concept_id_through_the_rpc():
+    """With its NorTaxa tuple and the verbatim Artsorakel value, so another
+    desktop can verify it (``_verified_cloud_selection``)."""
     from tests.test_live_provider_identity_resolution import _push_client
 
     resolved = _provider("NBIC:52330", "Panaeolina foenisecii").resolved_to(
@@ -443,5 +481,4 @@ def test_a_self_resolved_identity_pushes_its_own_concept_id_through_the_rpc():
               "selected_sporely_taxon_id": None, "taxon_identity_state": None}
     client = _push_client()
     client.push_observation(row, remote_obs=remote)
-    assert client.rpcs == [("set_observation_selected_taxon_v2",
-                            {"p_observation_id": 917, "p_sporely_taxon_id": 624659})]
+    assert client.rpcs == [("set_observation_identification_v2", {**_RESOLVED_PAYLOAD, "p_observation_id": 917})]

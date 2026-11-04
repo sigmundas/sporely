@@ -6,6 +6,8 @@ in Stage S4 of the cloud-sync extraction.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from database.models import ObservationDB
 from utils.taxon_identity import TaxonIdentity
 
@@ -39,6 +41,10 @@ def _verified_cloud_selection(claim: _RemoteIdentityClaim, concept) -> TaxonIden
     itself: it is kept as ``external_id_resolution``, exactly as a desktop
     copy of that identifier would be. Anything else returns None and the
     selection stays ``cloud_selected_unverified``.
+
+    A selected id that the installed release presents as another concept
+    (a name association member) is verified when the tuple resolves to that
+    concept: the cloud's own id is kept, never replaced by the primary.
     """
     if not (claim.source_system and claim.namespace and claim.external_id):
         return None
@@ -53,17 +59,19 @@ def _verified_cloud_selection(claim: _RemoteIdentityClaim, concept) -> TaxonIden
     if not provider.has_external_evidence:
         return None
     try:
-        from database.taxon_lookup import resolve_installed_external_identity
+        from database.taxon_lookup import association_primary_id, resolve_installed_external_identity
         from utils.vernacular_utils import resolve_vernacular_db_path
+        db_path = resolve_vernacular_db_path()
         resolved = resolve_installed_external_identity(
-            resolve_vernacular_db_path(),
+            db_path,
             source_system=provider.source_system,
             namespace=provider.namespace,
             external_id=provider.external_id,
         )
+        claimed_as = association_primary_id(db_path, claim.sporely_taxon_id) if resolved is not None else None
     except Exception:
         return None
-    if resolved is None or int(resolved.sporely_taxon_id) != int(claim.sporely_taxon_id):
+    if resolved is None or int(resolved.sporely_taxon_id) not in {int(claim.sporely_taxon_id), claimed_as}:
         return None
     proven = provider.resolved_to(
         claim.sporely_taxon_id,
@@ -74,6 +82,29 @@ def _verified_cloud_selection(claim: _RemoteIdentityClaim, concept) -> TaxonIden
         ),
     )
     return proven if proven.is_proven_sporely else None
+
+
+def _keeping_unverified_cloud_tuple(identity: TaxonIdentity, claim: _RemoteIdentityClaim) -> TaxonIdentity:
+    """A cloud selection that stays unverified keeps the cloud's provider tuple.
+
+    The tuple is evidence of which source concept the selection came from
+    (a NorTaxa usage a release name association presented as the selected
+    taxon, say) even when this desktop's release cannot confirm it. It is
+    kept beside the unverified selection, flagged in provenance, so a later
+    release or a reversal can trace it; it proves nothing and is never pushed.
+    """
+    if not identity.is_cloud_selected_unverified:
+        return identity
+    if not (claim.source_system and claim.namespace and claim.external_id):
+        return identity
+    return replace(
+        identity,
+        source_system=claim.source_system,
+        namespace=claim.namespace,
+        external_id=claim.external_id,
+        raw_external_id=claim.raw_external_id or claim.external_id,
+        provenance=f"{identity.provenance}; cloud_provider_tuple_unverified",
+    )
 
 
 def _local_identity_columns_for_remote_claim(
@@ -96,12 +127,15 @@ def _local_identity_columns_for_remote_claim(
     if claim.kind == 'sporely':
         concept = _installed_taxon_concept(int(claim.sporely_taxon_id))
         if concept is not None:
-            identity = _verified_cloud_selection(claim, concept) or TaxonIdentity.from_cloud_selection(
-                claim.sporely_taxon_id,
-                local_release_id=concept.release_id,
-                scientific_name=concept.scientific_name,
-                rank=concept.rank,
-                cloud_state=claim.cloud_state,
+            identity = _verified_cloud_selection(claim, concept) or _keeping_unverified_cloud_tuple(
+                TaxonIdentity.from_cloud_selection(
+                    claim.sporely_taxon_id,
+                    local_release_id=concept.release_id,
+                    scientific_name=concept.scientific_name,
+                    rank=concept.rank,
+                    cloud_state=claim.cloud_state,
+                ),
+                claim,
             )
             name, rank = concept.scientific_name or remote_name, concept.rank or remote_rank
         else:

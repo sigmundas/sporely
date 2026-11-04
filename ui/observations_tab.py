@@ -11144,6 +11144,14 @@ class ObservationsTab(QWidget):
                 local_source = resolved_taxon_source
                 resolved_taxon_id = confirmed_id
                 resolved_taxon_source = DESTINATION_CONFIRMED_SOURCE
+            elif not confirmed_id and ObservationsTab._artsobs_id_from_name_association(
+                    self, obs, resolved_taxon_id, resolved_taxon_source):
+                # An id only a release name association gave this concept is
+                # used once Artsobservasjoner confirms it for the exact name,
+                # never on the strength of the association alone.
+                print(f"[artsobs] association-derived taxon id {resolved_taxon_id} "
+                      "not confirmed by Artsobservasjoner; not used")
+                resolved_taxon_id = None
         resolution = select_artsobservasjoner_taxon_id(
             obs,
             resolved_taxonomy_taxon_id=resolved_taxon_id,
@@ -11157,6 +11165,18 @@ class ObservationsTab(QWidget):
                 override_reason=DESTINATION_OVERRIDE_REASON,
             )
         return resolution
+
+    def _artsobs_id_from_name_association(self, obs: dict, taxon_id: int, resolved_source: str) -> bool:
+        """Whether the locally resolved id reached this observation only
+        through a release name association (see
+        ``ObservationDB.adb_taxon_id_from_name_association``)."""
+        taxon_pair = self._extract_artsobs_taxon_pair(obs)
+        if not taxon_pair:
+            return False
+        if resolved_source == "taxonomy_db.artsdatabanken:accepted_pair":
+            taxon_pair = self._resolve_accepted_taxon_pair(*taxon_pair) or taxon_pair
+        concept = obs.get("sporely_taxon_id") if resolved_source == "taxonomy_db.artsdatabanken:concept" else None
+        return ObservationDB.adb_taxon_id_from_name_association(taxon_id, concept, *taxon_pair)
 
     def _artsobs_accepted_scientific_name(self, obs: dict, resolved_source: str) -> str | None:
         """Name the existing resolution used: the observation's genus/species
@@ -20524,6 +20544,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._schedule_taxon_picker_sync()
             return
         before = self._committed_sporely_taxon_id()
+        if self._pick_confirms_stored_identity(before, concept):
+            # The species the observation already is: its source concept,
+            # proof and provenance stay as stored.
+            self._sync_taxon_picker(force=True)
+            self._update_taxonomy_tab_indicators()
+            return
         if not controller.commit_picked_concept(concept.as_scientific_suggestion()):
             # Not committed (a name the snapshot parser refuses): show what
             # the observation still holds.
@@ -20531,6 +20557,29 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         elif self._committed_sporely_taxon_id() != before:
             self._set_inaturalist_taxon_id(None)
         self._update_taxonomy_tab_indicators()
+
+    def _pick_confirms_stored_identity(self, before: int | None, concept) -> bool:
+        """Whether a pick is the identification the observation already has,
+        under the name it stores: the same proven concept (its provider id and
+        provenance are kept), or the entry a member-bound observation is shown
+        in, the concept a release name association presents ``before`` as.
+        Another name of that species is a new identification and binds as
+        usual."""
+        picked = getattr(concept, "sporely_taxon_id", None)
+        if before is None or picked is None:
+            return False
+        controller = getattr(self, "_taxon_controller", None)
+        snapshot = (controller.committed_snapshot() if controller else None) or {}
+        stored = str(snapshot.get("scientific_name") or "")
+        if " ".join(stored.split()).casefold() != " ".join(str(concept.scientific_name or "").split()).casefold():
+            return False
+        if int(picked) == int(before):
+            return TaxonIdentity.from_row(snapshot).is_proven_sporely
+        try:
+            primary = self._ensure_taxon_lookup().association_primary_id(before)
+        except Exception:
+            return False
+        return primary is not None and int(primary) == int(picked)
 
     def _on_taxon_picker_free_name(self, name: str) -> None:
         controller = getattr(self, "_taxon_controller", None)
@@ -20585,6 +20634,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         searcher = getattr(lookup, "search_taxa", None) if lookup is not None else None
         if not callable(searcher):
             return None
+        # A concept a release name association presents as another one has
+        # no row of its own: it shows in its primary's row, still carrying
+        # the stored id, so nothing changes unless the user picks again.
+        try:
+            shown_as = lookup.current_taxon_id(taxon_id) or taxon_id
+        except Exception:
+            shown_as = taxon_id
         fallback = None
         for name in names:
             if not name:
@@ -20595,9 +20651,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 continue
             exact = []
             for row in page.rows:
-                concept = next((c for c in row.concepts if c.sporely_taxon_id == taxon_id), None)
+                concept = next((c for c in row.concepts if c.sporely_taxon_id in (taxon_id, shown_as)), None)
                 if concept is None:
                     continue
+                if concept.sporely_taxon_id != taxon_id:
+                    concept = dataclass_replace(concept, sporely_taxon_id=taxon_id)
                 if row.name.casefold() == name.casefold():
                     exact.append((row, concept))
                 elif fallback is None:

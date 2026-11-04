@@ -1442,6 +1442,9 @@ class TaxonInputController(QObject):
             sporely_id,
             scientific_name=scientific_name,
             rank=rank_snapshot,
+            # A row reached through a release name association names it, so
+            # a later reversal can find the observations it bound.
+            provenance=suggestion.get("provenance"),
         )
         self._committed_snapshot = {
             "genus": genus,

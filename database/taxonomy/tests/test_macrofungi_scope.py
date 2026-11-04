@@ -187,3 +187,38 @@ def test_searchable_synonym_the_concept_already_carries_is_not_duplicated() -> N
     other = dict(dyntaxa, taxon_id=8)
     rows = with_searchable_synonyms([dict(other)], [_maydis_rule(7)])
     assert [(r["taxon_id"], r["source"]) for r in rows] == [(7, "col_xr"), (8, "dyntaxa")]
+
+
+def _national(name, *, external_id="501"):
+    return {"preferred_scientific_name_no": name,
+            "preferred_scientific_name_no_source_system": "nortaxa" if name else None,
+            "preferred_scientific_name_no_namespace": "nortaxa_taxon_id" if name else None,
+            "preferred_scientific_name_no_external_id": external_id if name else None,
+            "preferred_scientific_name_sv": None, "preferred_scientific_name_sv_source_system": None,
+            "preferred_scientific_name_sv_namespace": None, "preferred_scientific_name_sv_external_id": None}
+
+
+@pytest.mark.parametrize("note, ok", [
+    ("authoritative_bridge:manual_approved_exact", True),
+    ("name_association:unique_synonym_bridge;association=nortaxa:501", True),
+    ("cross_source_automatic_exact", False),
+])
+def test_national_name_provenance_may_be_a_name_association(tmp_path, note, ok) -> None:
+    from database.taxonomy.macrofungi_scope import ScopeError, validate_national_names
+
+    (tmp_path / "taxon.jsonl").write_text(json.dumps({"taxon_id": 11, **_national("Rugosomyces carneus")}) + "\n")
+    (tmp_path / "taxon_external_id.jsonl").write_text(json.dumps({
+        "taxon_id": 11, "source_system": "nortaxa", "namespace": "nortaxa_taxon_id", "external_id": "501",
+        "external_name": "Rugosomyces carneus", "id_role": "accepted", "note": note}) + "\n")
+    if ok:
+        assert validate_national_names(tmp_path)["no"] == 1
+    else:
+        with pytest.raises(ScopeError, match="cites no published reviewed bridge"):
+            validate_national_names(tmp_path)
+
+
+def test_a_classification_ancestor_carries_no_national_name() -> None:
+    from database.taxonomy.macrofungi_scope import strip_national_names
+
+    row = strip_national_names({"taxon_id": 931, **_national("Cyttariales", external_id="129650")})
+    assert all(value is None for key, value in row.items() if key.startswith("preferred_scientific_name"))

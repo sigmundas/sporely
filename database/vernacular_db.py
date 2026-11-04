@@ -105,7 +105,25 @@ class VernacularDB:
             for retired_id, current_id in retired.items():
                 if current_id in current:
                     out[retired_id] = current[current_id]
+        # An associated concept is shown as its primary, the one taxon the
+        # release presents for both. Display only, as above.
+        associated = self.association_primaries([t for t in ids if t in out])
+        if associated:
+            primary = self.display_scientific_names(set(associated.values()))
+            for member_id, primary_id in associated.items():
+                if primary_id in primary:
+                    out[member_id] = primary[primary_id]
         return out
+
+    def association_primaries(self, taxon_ids) -> dict[int, int]:
+        """``member id -> primary id`` for concepts a release name association
+        presents as another (``taxon_association_min``). Both ids stay live;
+        a release without the table gives no entry."""
+        if "taxon_association_min" not in self._table_names():
+            return {}
+        from database.taxon_search import association_primaries
+        with self._connect() as conn:
+            return {m: p for m, (p, _a) in association_primaries(conn, taxon_ids).items()}
 
     def current_taxon_ids(self, taxon_ids) -> dict[int, int]:
         """``retired id -> current id`` for ids a reviewed supersession retired.

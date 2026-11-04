@@ -690,7 +690,7 @@ def test_regression_corpus_v2_shape_is_valid() -> None:
     assert not missing
 
 
-def test_backfill_does_not_promote_a_colliding_legacy_integer(tmp_path: Path) -> None:
+def test_backfill_does_not_promote_a_colliding_legacy_integer(tmp_path: Path, monkeypatch) -> None:
     """Membership in ``taxon_min`` is existence, not origin.
 
     Taxonomy-v2 closeout Stage 2 regression, backfill→sync. ``54995`` is a
@@ -740,7 +740,16 @@ def test_backfill_does_not_promote_a_colliding_legacy_integer(tmp_path: Path) ->
     assert identity.is_proven_sporely is False
     assert proven_sporely_taxon_id(row) is None
 
-    # End-to-end: the cloud gate refuses to emit it.
+    # End-to-end: the cloud gate refuses to emit it. The push also keeps
+    # app settings (location precision); give it its own app database, never
+    # whichever one an earlier test or the developer's profile left current.
+    from database import schema
+    monkeypatch.setattr(schema, "get_database_path", lambda: tmp_path / "app" / "mushrooms.db")
+    monkeypatch.setattr(schema, "get_reference_database_path", lambda: tmp_path / "app" / "ref.db")
+    monkeypatch.setattr(schema, "get_bundled_reference_database_path", lambda: tmp_path / "app" / "bundled.db")
+    monkeypatch.setattr(schema, "_migrate_reference_values", lambda *a, **k: None)
+    monkeypatch.setattr(schema, "_migrate_reference_mounts_and_stains", lambda *a, **k: None)
+    schema.init_database()
     client = object.__new__(SporelyCloudClient)
     client.user_id = "00000000-0000-4000-8000-000000000001"
     client._resolve_existing_observation_for_push = lambda _obs, remote_obs=None: "1184"

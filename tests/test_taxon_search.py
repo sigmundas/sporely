@@ -348,6 +348,14 @@ def test_evidence_sets_the_default_without_dropping_concepts(conn):
     assert first.default_concept.is_evidence
 
 
+def test_evidence_puts_the_accepted_name_before_its_synonyms(conn):
+    # Collybia velutipes is a synonym of 625621, so evidence boosts its row
+    # too; it must not sort ahead of the accepted name.
+    rows = run(conn, "velutipes", evidence_taxon_ids=[625621]).rows
+    assert (rows[0].name, rows[0].kind) == ("Flammulina velutipes", KIND_TAXON)
+    assert (rows[1].name, rows[1].kind) == ("Collybia velutipes", KIND_SYNONYM)
+
+
 def test_evidence_that_does_not_match_adds_nothing(conn):
     assert run(conn, "Amanita", evidence_taxon_ids=[98288]).rows == run(conn, "Amanita").rows
 
@@ -380,6 +388,7 @@ def test_concept_carries_the_scientific_pick_shape(conn):
         "display_scientific_name": "Russula aeruginea",
         "authorship": None,
         "link_kind": "canonical",
+        "provenance": None,
     }
 
 

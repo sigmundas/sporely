@@ -35,6 +35,13 @@ Other systems have their own numbers. For example, Artsdatabanken's number for
 two identical numbers from different systems mean the same thing, and it never
 matches species by name alone.
 
+A candidate release, `tax-2026.10.31-01` (not yet released), changes the last
+rule: when NorTaxa or Dyntaxa use the same scientific name as one Catalogue of
+Life species, Sporely treats them as one species and shows one entry, without
+changing anyone's Sporely numbers. Unclear cases stay separate, and a wrong
+match can be undone in a later release. See
+[ADR 0006](architecture/decisions/0006-name-associations.md).
+
 ## Where the names come from
 
 | Source | Who publishes it | What Sporely takes from it | Version in use |

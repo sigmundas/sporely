@@ -111,9 +111,13 @@ def test_boletus_edulis_contradictory_legacy_inaturalist_id(resolve):
 
 def test_no_inaturalist_lookup_id_is_shared_by_two_concepts(release_db):
     conn = sqlite3.connect(release_db)
+    # Since tax-2026.10.31-01 a name association copies the lookup id onto its
+    # primary, so the primary and the associated concept may share it.
     shared = conn.execute(
-        "SELECT inaturalist_taxon_id, COUNT(*) FROM taxon_min WHERE inaturalist_taxon_id IS NOT NULL "
-        "GROUP BY 1 HAVING COUNT(*) > 1").fetchall()
+        "SELECT a.taxon_id, b.taxon_id FROM taxon_min a JOIN taxon_min b "
+        "ON a.inaturalist_taxon_id = b.inaturalist_taxon_id AND a.taxon_id < b.taxon_id "
+        "WHERE NOT EXISTS (SELECT 1 FROM taxon_association_min x WHERE "
+        "  (x.primary_taxon_id, x.member_taxon_id) IN ((a.taxon_id, b.taxon_id), (b.taxon_id, a.taxon_id)))").fetchall()
     assert shared == []
     # Every lookup id is either a one-to-one legacy pairing or a fresh validation.
     legacy_duplicates = conn.execute(
@@ -156,10 +160,14 @@ def test_nortaxa_bridges(release_db, nortaxa_id, sporely_id):
     assert _provider(release_db, "nortaxa", nortaxa_id) == sporely_id
 
 
-def test_craterellus_tubaeformis_nortaxa_id_stays_unresolved(release_db):
+def test_craterellus_tubaeformis_nortaxa_id_resolves_by_name_association(release_db):
     """NorTaxa 56227 is ``single_shared_synonym_low_overlap``, which the owner
-    did not approve. Only the automatic legacy integer row carries it."""
-    assert _provider(release_db, "nortaxa", "56227") is None
+    did not approve as a bridge. Since tax-2026.10.31-01 it resolves by the
+    ``exact_accepted_name`` name association instead."""
+    assert _provider(release_db, "nortaxa", "56227") == 620306
+    assert sqlite3.connect(release_db).execute(
+        "SELECT rule FROM taxon_association_min WHERE member_source_system = 'nortaxa' "
+        "AND member_external_id = '56227'").fetchall() == [("exact_accepted_name",)]
     notes = sqlite3.connect(release_db).execute(
         "SELECT taxon_id, note FROM taxon_external_id_min "
         "WHERE source_system = 'artsdatabanken' AND external_id = 56227").fetchall()
@@ -169,7 +177,9 @@ def test_craterellus_tubaeformis_nortaxa_id_stays_unresolved(release_db):
 @pytest.mark.parametrize("dyntaxa_taxon, sporely_id", [
     ("3423", 83668),    # reciprocal_accepted_synonymy, approved
     ("3957", 7821),     # shared_synonymy ordinary, approved
-    ("236654", None),   # 617026's pair is one-directional: individual review, not approved
+    # 617026's pair is one-directional and was not approved as a bridge; since
+    # tax-2026.10.31-01 the unique_synonym_bridge name association resolves it.
+    ("236654", 617026),
 ])
 def test_dyntaxa_bridges(release_db, dyntaxa_taxon, sporely_id):
     assert _provider(release_db, "dyntaxa", f"urn:lsid:dyntaxa.se:Taxon:{dyntaxa_taxon}") == sporely_id

@@ -1,0 +1,20 @@
+{
+  "format": "sporely-taxonomy-release-decision-v1",
+  "decision": "release_approved",
+  "content_release_id": "tax-2026.10.31-01",
+  "sqlite_sha256": "ec19acac6a0dafbd3fd629760d9aa92fa5d7ec270597e29fffe72c7cba5cacfe",
+  "gz_sha256": "3e13a125c3a3d5ec4b3fd7e26c1ba2aa0eaaa9f36b3e82ce3fa271f46f77b3de",
+  "freeze_sha256": "3b9aaa9ce00fe17cb9f47224fed04e68669976658ecdcf726039ab681c7425a5",
+  "approved_by": "Sigmund Ås",
+  "approved_at": "2026-11-04",
+  "scope": {
+    "release": "approved",
+    "importable_cloud_export_and_import_plan": "approved (preparation only)",
+    "production_migration_execution": "requires separate explicit authorization",
+    "production_import_and_activation": "requires separate explicit authorization",
+    "desktop_promotion_or_install": "requires separate explicit authorization",
+    "pr_53_merge": "requires separate explicit authorization",
+    "desktop_publication": "requires separate explicit authorization"
+  },
+  "decision_reference": "Owner formally approved tax-2026.10.31-01 in the Claude Code session on 2026-11-04: 'I formally approve taxonomy release tax-2026.10.31-01, specifically the already frozen and smoke-tested artifact', SQLite ec19acac6a0dafbd3fd629760d9aa92fa5d7ec270597e29fffe72c7cba5cacfe, gzip 3e13a125c3a3d5ec4b3fd7e26c1ba2aa0eaaa9f36b3e82ce3fa271f46f77b3de, freeze 3b9aaa9ce00fe17cb9f47224fed04e68669976658ecdcf726039ab681c7425a5, and gave 'GO to record the formal release_approved decision for this exact artifact, after verifying the checksums still match' (verified 2026-11-04: frozen files match freeze.json, gzip decompresses to the SQLite hash, gzip byte-identical to the smoke-tested candidate). Does not authorize the production migration, cloud import or activation, desktop promotion, the PR #53 merge or desktop publication."
+}

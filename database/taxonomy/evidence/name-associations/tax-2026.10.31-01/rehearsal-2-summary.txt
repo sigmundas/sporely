@@ -1,0 +1,11 @@
+PASS setup: baseline tax-2026.10.23-11 active and valid (as in production); 781 synthetic observations select -11 concepts
+PASS import without migration 20261031120000: refused (preferred_scientific_name_no of 100000 has no authoritative bridge row ...); tax-2026.10.23-11 still active, nothing written
+PASS migration + import: tax-2026.10.31-01 active and valid, national-name errors [], tax-2026.10.23-11 retired
+PASS continuity: all -11 concepts and every synthetic observation's selected concept present in tax-2026.10.31-01
+PASS resolve_taxon_external_id_v2: 300/300 sampled projected nortaxa/dyntaxa ids resolve to exactly their primary
+PASS named examples resolve: F. fennae 54697, Rugosomyces 54413, Calocybe carnea syn 60592, R. aeruginea 57677, P. foenisecii 52330, P. candolleana syn 54995, L. connata 186407, Dyntaxa Taxon:3186
+PASS search_taxa_v2: Norwegian/Swedish names and national display names (Rugosomyces carneus in no/sv, Calocybe carnea in en)
+PASS Red List: 3601 rows (was 2984); 614 cloud concepts gain an assessment, none lose one
+PASS old-client RPCs: web sporely_v2+tuple write, desktop selected-taxon write, desktop external_unresolved preservation accepted; desktop-only member 624659 refused as before
+PASS rollback: tax-2026.10.23-11 active again, tax-2026.10.31-01 retired with rows kept
+ALL CHECKS PASSED

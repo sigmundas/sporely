@@ -1,0 +1,15 @@
+BEGIN READ ONLY;
+SELECT json_build_object('k','system_identifier','v',(SELECT system_identifier::text FROM pg_control_system()));
+SELECT json_build_object('k','rehearsal_marker_present','v',to_regclass('public.sporely_local_rehearsal_marker') IS NOT NULL);
+SELECT json_build_object('k','releases','v',(SELECT json_agg(json_build_object('id',release_id,'status',status) ORDER BY release_id) FROM public.taxonomy_v2_releases));
+SELECT json_build_object('k','r1031_rows','v',json_build_object('releases',(SELECT count(*) FROM public.taxonomy_v2_releases WHERE release_id='tax-2026.10.31-01'),'taxa',(SELECT count(*) FROM public.taxonomy_v2_taxa WHERE release_id='tax-2026.10.31-01'),'import_runs',(SELECT count(*) FROM public.taxonomy_v2_import_runs WHERE release_id='tax-2026.10.31-01')));
+SELECT json_build_object('k','r11_counts','v',json_build_object('taxa',(SELECT count(*) FROM public.taxonomy_v2_taxa WHERE release_id='tax-2026.10.23-11'),'scientific_names',(SELECT count(*) FROM public.taxonomy_v2_scientific_names WHERE release_id='tax-2026.10.23-11'),'vernacular_names',(SELECT count(*) FROM public.taxonomy_v2_vernacular_names WHERE release_id='tax-2026.10.23-11'),'external_ids',(SELECT count(*) FROM public.taxonomy_v2_external_ids WHERE release_id='tax-2026.10.23-11'),'redlist',(SELECT count(*) FROM public.taxonomy_v2_redlist WHERE release_id='tax-2026.10.23-11')));
+SELECT json_build_object('k','latest_migrations','v',(SELECT json_agg(version ORDER BY version DESC) FROM (SELECT version FROM supabase_migrations.schema_migrations ORDER BY version DESC LIMIT 3) s));
+SELECT json_build_object('k','migration_20261031120000_applied','v',EXISTS (SELECT 1 FROM supabase_migrations.schema_migrations WHERE version='20261031120000'));
+SELECT json_build_object('k','national_name_errors_accepts_name_association','v',position('name_association:%' in pg_get_functiondef('public.taxonomy_v2_national_name_errors(text)'::regprocedure)) > 0);
+SELECT json_build_object('k','cg1_selected_not_in_active','v',(SELECT count(DISTINCT o.selected_sporely_taxon_id) FROM public.observations o WHERE o.selected_sporely_taxon_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.taxonomy_v2_taxa x JOIN public.taxonomy_v2_releases r ON r.release_id=x.release_id WHERE r.status='active' AND x.sporely_taxon_id=o.selected_sporely_taxon_id)));
+SELECT json_build_object('k','selected_ids','v',(SELECT json_agg(DISTINCT selected_sporely_taxon_id) FROM public.observations WHERE selected_sporely_taxon_id IS NOT NULL));
+SELECT json_build_object('k','long_transactions_over_60s','v',(SELECT count(*) FROM pg_stat_activity WHERE xact_start < now()-interval '60 s' AND state <> 'idle' AND pid <> pg_backend_pid()));
+SELECT json_build_object('k','idle_in_transaction','v',(SELECT count(*) FROM pg_stat_activity WHERE state LIKE 'idle in transaction%'));
+SELECT json_build_object('k','not_granted_locks','v',(SELECT count(*) FROM pg_locks WHERE NOT granted));
+ROLLBACK;

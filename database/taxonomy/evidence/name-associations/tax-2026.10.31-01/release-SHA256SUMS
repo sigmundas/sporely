@@ -1,0 +1,12 @@
+3b9aaa9ce00fe17cb9f47224fed04e68669976658ecdcf726039ab681c7425a5  frozen/freeze.json
+270f40b95984a79b868fd645232daa0726239f5001ef648e37c1cda8f94920a7  frozen/manifest.json
+c269d2fcd2500d3052af373e496c6069342076b14bbdcf8874d4df910ddc1747  frozen/compatibility.json
+3e13a125c3a3d5ec4b3fd7e26c1ba2aa0eaaa9f36b3e82ce3fa271f46f77b3de  frozen/tax-2026.10.31-01.sqlite3.gz
+08e7ecac525f820771e1481753293a8d64066f23a35681e1be28ee5c77fb91d4  frozen/tax-2026.10.31-01.evidence.tar.gz
+706cd561d3222ea3abbf88ebe94161f45cc90f59fcca57f890356875e1d423f3  release-prep/release-decision-tax-2026.10.31-01.json
+525f3452721f2ddfe3fd7789aaf05ab25fa900207f96a016fe9e11ece905597c  release-prep/validation-receipt-tax-2026.10.31-01.json
+227b443364c2e9bdb84248d98205488aecb250f3c3e8a18b1935fa6eb3da28d1  production/run1/tax-2026.10.31-01-import.sql
+ba8e35a68a870b15bd9840dcf080e3a6e67f107a8a02a779181e41fd2af4d7bb  production/run1/w1/taxonomy_export_manifest.json
+da26931db1e29b0388113bcb2dfab1ccf33a42bc6503a5e5cb7025bf9bc5ba5a  production/run1/global_macrofungi_tax-2026.10.31-01/taxonomy_export_manifest.json
+8088f03acdf4f129a22cb1d2a7351ed367e5c51b80d9c5bc8bcb8d22dd39641b  production/run1/global_macrofungi_tax-2026.10.31-01/scope-manifest.json
+c081890991e8b743a345b91a76805c77546e56fd5237d639e5a2fbbe09c1ce1c  production/run1/global_macrofungi_tax-2026.10.31-01/desktop-tax-2026.10.31-01.sqlite3

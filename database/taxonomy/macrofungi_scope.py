@@ -557,6 +557,8 @@ def build_export(
         row["scope_state"] = "include" if taxon_id in included else "required_ancestor"
         row["scope_reason"] = results[taxon_id]["reason"] if taxon_id in included else "classification_ancestor"
         row["scope_rule"] = results[taxon_id]["rule"] if taxon_id in included else None
+        if taxon_id not in included:
+            strip_national_names(row)
         taxon_rows.append(row)
     count, size, digest = _write_jsonl(output_dir / "taxon.jsonl", taxon_rows)
     files.append({"name": "taxon.jsonl", "row_count": count, "bytes": size, "sha256": digest})
@@ -677,6 +679,21 @@ def validate_export(output_dir: Path, manifest: dict[str, Any]) -> dict[str, Any
 NATIONAL_NAME_COUNTRIES = ("no", "sv")
 
 
+def strip_national_names(row: dict) -> dict:
+    """Clear a classification ancestor's national display names.
+
+    An ancestor is exported without its child rows (names, ids), so a
+    national name could cite nothing; it shows its canonical name. Since
+    name associations (ADR 0006) higher ranks can carry one.
+    """
+    for country in NATIONAL_NAME_COUNTRIES:
+        prefix = f"preferred_scientific_name_{country}"
+        for key in (prefix, f"{prefix}_source_system", f"{prefix}_namespace", f"{prefix}_external_id"):
+            if key in row:
+                row[key] = None
+    return row
+
+
 def validate_national_names(output_dir: Path) -> dict[str, int]:
     """Every national preferred name must cite a bridge this export publishes.
 
@@ -684,16 +701,17 @@ def validate_national_names(output_dir: Path) -> dict[str, int]:
     display metadata whose provenance is a reviewed bridge identity. The
     scoped export publishes external ids only for included concepts, so the
     cited ``(source_system, namespace, external_id)`` must be an accepted
-    authoritative bridge row of the same concept, with the same name, in this
-    export's ``taxon_external_id.jsonl``. Anything else is refused rather
+    authoritative bridge or name-association row of the same concept, with
+    the same name, in this export's ``taxon_external_id.jsonl``. Anything else is refused rather
     than published with provenance a consumer could not resolve.
     """
     bridges: set[tuple[int, str, str, str, str]] = set()
     with (output_dir / "taxon_external_id.jsonl").open(encoding="utf-8") as handle:
         for raw in handle:
             row = json.loads(raw)
+            # A reviewed bridge, or a release name association (ADR 0006).
             if row.get("id_role") == "accepted" and \
-                    str(row.get("note") or "").startswith("authoritative_bridge:"):
+                    str(row.get("note") or "").startswith(("authoritative_bridge:", "name_association:")):
                 bridges.add((row["taxon_id"], row["source_system"], row["namespace"],
                              str(row["external_id"]), row.get("external_name") or ""))
     counts = {country: 0 for country in NATIONAL_NAME_COUNTRIES}
