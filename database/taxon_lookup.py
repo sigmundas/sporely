@@ -795,8 +795,16 @@ class TaxonLookupService:
         cached = self._suggest_common_names_cache.get(cache_key)
         if cached is not None:
             return list(cached[:limit_value])
-        rows = self._local_common_name_rows(prefix=prefix or None, genus=genus, species=species, limit=limit_value)
-        rows = self._fold_associated_common_rows(rows)
+        if genus is None and species is None:
+            # A free search: show associated concepts as their primary. The
+            # extra rows keep the folded list at the limit.
+            rows = self._local_common_name_rows(prefix=prefix or None, limit=limit_value * 2)
+            rows = self._fold_associated_common_rows(rows)
+        else:
+            # Filtered to a named concept: those are its own names, never
+            # renamed to another concept's.
+            rows = self._local_common_name_rows(
+                prefix=prefix or None, genus=genus, species=species, limit=limit_value)
         values = tuple(self._row_to_choice(row, "taxonomy") for row in rows[:limit_value])
         self._suggest_common_names_cache[cache_key] = values
         return list(values)

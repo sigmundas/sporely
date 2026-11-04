@@ -435,6 +435,15 @@ def _mycena_picker(lookup, **kwargs):
                    **kwargs)
 
 
+def test_common_names_filtered_to_a_member_keep_the_members_name(lookup):
+    """Only a free search folds: the common names of a named concept stay
+    its own (NorTaxa *Uredo empetri* 621034, associated with COL
+    *Chrysomyxa empetri* 82581)."""
+    rows = {(c.taxon_id, c.genus, c.species) for c in
+            lookup.suggest_common_names(genus="Uredo", species="empetri")}
+    assert rows == {(621034, "Uredo", "empetri")}
+
+
 def test_picker_search_shows_one_match_when_an_identifier_settles_it(picker_settings, lookup):
     dialog, _attached = _mycena_picker(lookup, ai_candidates=[_ai_entry("NBIC:53838", "Mycena pearsoniana")])
     try:
