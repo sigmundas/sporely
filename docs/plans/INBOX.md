@@ -121,6 +121,11 @@ Source: former `PLAN.md`; unmatched-image work also appears in `docs/hardware-sy
   - If no reliable name deep link exists, fall back to the official search page with the name easily copyable. If a verified Species Fungorum record ID is available, a direct record link may be preferable.
   - External research aid only: no automatic taxonomy reconciliation or identification, and it must not alter Sporely IDs, taxonomic approvals or observations.
   - Context: Species Fungorum (Kew) is the source of the COL Base fungal backbone (Species Fungorum Plus, version April 2024 in COL releases 2024-10 to 2026-09); the live site may be newer. Index Fungorum (https://www.indexfungorum.org/) is nomenclatural and not interchangeable.
+- Derived-release freeze verification hardening (Codex review of PR #53, 2026-11-04; low severity, deferred by owner decision). `promote()` only accepts the owner-reviewed `freeze.json` hash, so none of these lets a tampered set be promoted. They matter only if every fingerprint in a rewritten frozen set is regenerated: `verify_frozen` alone would then accept it. Fix only if a release-safety problem is shown, because any change means re-freezing and a new descriptor hash. In `database/taxonomy/scripts/promote_desktop_bundle.py`:
+  - `_verify_derivation_evidence` checks `derivation/associations.jsonl` only by line count. Compare its association ids with the SQLite association table.
+  - It never reads the archived `derivation/manifest.json`. Require the published manifest to equal it, apart from the keys the freeze adds (`freeze_artifact`, `derivation_evidence`, the extra `name_association` hashes), so a changed `redlist_no` count is caught.
+  - `freeze_derived` checks the base's manifest and gzip against the base `freeze.json`, but not the base evidence archive. Check that archive's hash against the base freeze entry too.
+  - Not a defect: a derived release cannot be rebuilt from its published files alone. The normalized inputs and the base gzip are pinned by hash, not archived, the same as compiler-built releases.
 
 Source: former `PLAN.md` and the legacy-database lookup audit `docs/taxonomy-lookup-status.md` (removed 2026-09-26; see Git history).
 
