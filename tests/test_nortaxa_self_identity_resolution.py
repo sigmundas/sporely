@@ -186,7 +186,7 @@ def test_shipped_release_anchor_id_collisions_are_the_intended_ones(shipped_arti
     tax-2026.10.31-01 a name association carries a member's own NorTaxa id
     onto its primary (ADR 0006), so those collisions are intended. Six other
     anchor ids are also a synonym id of another association and now resolve
-    to that primary (owner review, docs/plans/INBOX.md); no other collides,
+    to that primary (pending owner review, docs/plans/INBOX.md); no other collides,
     and no two NorTaxa-only concepts share an id."""
     conn = sqlite3.connect(f"file:{shipped_artifact}?mode=ro", uri=True)
     try:

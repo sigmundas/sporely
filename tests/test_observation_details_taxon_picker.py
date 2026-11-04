@@ -11,7 +11,7 @@ observations table.
 *Mycena pearsoniana* has two same-name concepts: NorTaxa 625327
 (Artsdatabanken 53838, Artsorakel ``NBIC:53838``) and COL 34794. Since
 tax-2026.10.31-01 most same-name pairs are one taxon by name association
-(Mycena pearsoniana, used here before, is one); this pair is not.
+(Flammulina velutipes, used here before, is one); this pair is not.
 """
 from __future__ import annotations
 
