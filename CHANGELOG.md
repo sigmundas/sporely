@@ -2,10 +2,21 @@
 
 All notable changes to Sporely are documented here.
 
-## Unreleased
+## 2026-11-04 (desktop 0.9.30)
+
+Requires server migration `20261031120000` (sporely-web, national names from name associations), applied on 2026-11-04. The server's active taxonomy is already `tax-2026.10.31-01` (imported 2026-11-04); this version bundles the same release.
 
 ### Changed
+- **Taxonomy release `tax-2026.10.31-01`: one entry per species name.** When the Catalogue of Life and the Norwegian or Swedish species list hold the same species under the same name, the species searches now show them as one taxon instead of two near-identical rows (for example *Flammulina velutipes*): in Edit Observation, in the main window's taxon fields and in the reference pickers. A name reached only through the national entry still finds the shared taxon, and picking it records the link. Species that share a name but are not the same entry (for example *Mycena pearsoniana*) are still listed separately with their source. Norwegian and Swedish identifiers, preferred scientific names, common names and Red List categories from the national lists now appear on that one taxon. No species identity changes: existing observations keep their taxon, and an observation linked to the national entry is shown under the shared entry. It is installed automatically at the first start.
 - **The reference picker shows which AI service suggested each species, and its score.** Each AI suggestion row now ends with, for example, "Artsorakel 9% · iNaturalist 12%". A species suggested by both services is listed once. Before, an iNaturalist row marked "name only" could repeat a species that Artsorakel had already linked.
+
+### Fixed
+- **Species picked on the web or in the Android app showed as "not linked" on the desktop.** The desktop now keeps the identifier the web or app recorded with the selection and confirms it against the installed taxonomy.
+- **Identities found through a Norwegian or Swedish identifier reach the cloud with that identifier**, and a species picked in the picker replaces an older provider identifier on the cloud observation instead of leaving it behind.
+- **Picking the species an observation already has no longer changes its identity.**
+- **An Artsorakel suggestion ranks the accepted name first.** Synonyms of the suggested species no longer appear above it.
+- **Artsobservasjoner publishing:** an Artsdatabanken id that a taxon has only through a merged national entry is used only after Artsobservasjoner's own species search confirms it for the exact name; otherwise the upload asks for a verified id.
+- **A copied or restored database no longer links itself to whichever account signs in first.** If it holds observations from another account, Sporely refuses to link it and explains why.
 
 ## 2026-10-30 (desktop 0.9.29)
 
