@@ -64,7 +64,6 @@ from PySide6.QtCore import QTranslator, QLocale, Qt, QTimer, QSettings, QRect
 from app_identity import (
     APP_DISPLAY_NAME,
     APP_FULL_NAME,
-    LEGACY_APP_NAME,
     LEGACY_SETTINGS_APP,
     LEGACY_SETTINGS_ORG,
     SETTINGS_APP,
@@ -345,8 +344,7 @@ def main():
     if lang_code != "en":
         qm_dir = Path(__file__).parent / "i18n"
         qm_path = qm_dir / f"Sporely_{lang_code}.qm"
-        legacy_qm_path = qm_dir / f"{LEGACY_APP_NAME}_{lang_code}.qm"
-        if translator.load(str(qm_path if qm_path.exists() else legacy_qm_path)):
+        if translator.load(str(qm_path)):
             app.installTranslator(translator)
             app._translator = translator
 
