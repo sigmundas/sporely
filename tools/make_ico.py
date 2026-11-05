@@ -38,7 +38,9 @@ img = canvas
 sizes = [16, 32, 48, 128, 256]
 icons = [img.resize((s, s), Image.LANCZOS) for s in sizes]
 dst_ico = icons_dir / "sporely.ico"
-icons[0].save(dst_ico, format="ICO", sizes=[(s, s) for s in sizes], append_images=icons[1:])
+# Pillow writes only the sizes it can make from the saved image, so save the
+# largest: saving the 16 px image wrote a 16 px-only icon.
+icons[-1].save(dst_ico, format="ICO", sizes=[(s, s) for s in sizes], append_images=icons[:-1])
 print(f"Written: {dst_ico}")
 
 # Linux PNG (256 px)

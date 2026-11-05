@@ -515,7 +515,7 @@ class AnalysisGalleryTile(QWidget):
         self._overlay.raise_()
         self._reposition_overlay_buttons()
         super().resizeEvent(event)
-from app_identity import APP_NAME, LEGACY_APP_NAME, app_data_dir
+from app_identity import APP_NAME, APP_REPOSITORY_URL, LEGACY_APP_NAME, app_data_dir
 from config import (
     LOCAL_IMPORT_IMAGE_FILTER,
     RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG,
@@ -6193,7 +6193,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         release_action = QAction(self.tr("Open latest release"), self)
         release_action.triggered.connect(
             lambda: QDesktopServices.openUrl(
-                QUrl("https://github.com/sigmundas/mycolog/releases/latest")
+                QUrl(f"{APP_REPOSITORY_URL}/releases/latest")
             )
         )
         help_menu.addAction(release_action)
@@ -6899,7 +6899,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._update_network = QNetworkAccessManager(self)
         
         # Use Atom feed instead of API - no rate limits!
-        req = QNetworkRequest(QUrl("https://github.com/sigmundas/mycolog/releases.atom"))
+        req = QNetworkRequest(QUrl(f"{APP_REPOSITORY_URL}/releases.atom"))
         req.setAttribute(QNetworkRequest.Attribute.Http2AllowedAttribute, False)
         req.setHeader(QNetworkRequest.UserAgentHeader, f"{APP_NAME}/{self.app_version}")
         
