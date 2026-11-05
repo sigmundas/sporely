@@ -17,6 +17,7 @@ Requires server migration `20261031120000` (sporely-web, national names from nam
 - **An Artsorakel suggestion ranks the accepted name first.** Synonyms of the suggested species no longer appear above it.
 - **Artsobservasjoner publishing:** an Artsdatabanken id that a taxon has only through a merged national entry is used only after Artsobservasjoner's own species search confirms it for the exact name; otherwise the upload asks for a verified id.
 - **A copied or restored database no longer links itself to whichever account signs in first.** If it holds observations from another account, Sporely refuses to link it and explains why.
+- **The app icon was still the old MycoLog logo.** The desktop app now uses the Sporely icon from the web and Android apps, and the Windows icon is sharp at every size instead of only 16 px. "Open latest release" and the update check use the Sporely repository address.
 
 ## 2026-10-30 (desktop 0.9.29)
 
