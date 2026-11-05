@@ -515,7 +515,7 @@ class AnalysisGalleryTile(QWidget):
         self._overlay.raise_()
         self._reposition_overlay_buttons()
         super().resizeEvent(event)
-from app_identity import APP_NAME, APP_REPOSITORY_URL, LEGACY_APP_NAME, app_data_dir
+from app_identity import APP_NAME, APP_REPOSITORY_URL, app_data_dir
 from config import (
     LOCAL_IMPORT_IMAGE_FILTER,
     RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG,
@@ -6981,7 +6981,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         box.setIcon(QMessageBox.Information)
         box.setWindowTitle(self.tr("Update available"))
         box.setText(
-            self.tr("A newer version of MycoLog is available.").replace(LEGACY_APP_NAME, APP_NAME)
+            self.tr("A newer version of Sporely is available.")
         )
         box.setInformativeText(
             self.tr("Current version: {current}\nLatest version: {latest}").format(
