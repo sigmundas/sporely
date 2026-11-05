@@ -123,7 +123,7 @@ Source: former `PLAN.md`; unmatched-image work also appears in `docs/hardware-sy
   - If no reliable name deep link exists, fall back to the official search page with the name easily copyable. If a verified Species Fungorum record ID is available, a direct record link may be preferable.
   - External research aid only: no automatic taxonomy reconciliation or identification, and it must not alter Sporely IDs, taxonomic approvals or observations.
   - Context: Species Fungorum (Kew) is the source of the COL Base fungal backbone (Species Fungorum Plus, version April 2024 in COL releases 2024-10 to 2026-09); the live site may be newer. Index Fungorum (https://www.indexfungorum.org/) is nomenclatural and not interchangeable.
-- `tax-2026.10.31-01` derivation evidence archive (`08e7ecac…`, in the frozen set under `<releases>/tax-2026.10.31-01/frozen/`) has no durable R2 copy or `evidence-location.json` yet (as for `-11`, see `733ffb5`). The upload is a production write and needs its own approval.
+- `tax-2026.10.31-01` derivation evidence archive (`08e7ecac…`, in the frozen set under `<releases>/tax-2026.10.31-01/frozen/`) has no durable R2 copy or `evidence-location.json` yet (as for `-11`, see `733ffb5`). The destination, checks and steps are in `database/taxonomy/evidence/name-associations/tax-2026.10.31-01/evidence-upload-plan.md` (prechecks passed 2026-11-05). The upload is a production write and needs its own approval.
 - Derived-release freeze verification hardening (Codex review of PR #53, 2026-11-04; low severity, deferred by owner decision). `promote()` only accepts the owner-reviewed `freeze.json` hash, so none of these lets a tampered set be promoted. They matter only if every fingerprint in a rewritten frozen set is regenerated: `verify_frozen` alone would then accept it. Fix only if a release-safety problem is shown, because any change means re-freezing and a new descriptor hash. In `database/taxonomy/scripts/promote_desktop_bundle.py`:
   - `_verify_derivation_evidence` checks `derivation/associations.jsonl` only by line count. Compare its association ids with the SQLite association table.
   - It never reads the archived `derivation/manifest.json`. Require the published manifest to equal it, apart from the keys the freeze adds (`freeze_artifact`, `derivation_evidence`, the extra `name_association` hashes), so a changed `redlist_no` count is caught.
@@ -197,7 +197,16 @@ Source: former `PLAN.md`.
 - Re-check whether old Phase 7 SQL notes are obsolete after the Supabase baseline reset.
 - Verify whether the earlier AI crop backlog has already been completed before promoting any item.
 
-- Desktop 0.9.29 published 2026-10-30: the draft was rebuilt from `main` after PR #49 (taxon picker #47, #48, #49 and the reference/backup fixes #35–#42 included) and published with the CHANGELOG notes; the `v0.9.29` tag points at the PR #49 merge.
+- Desktop 0.9.30 published 2026-11-05: the draft was rebuilt from `main` after PR #57 (Sporely app icon; release PR #55, compatibility review #56, name associations #53) and published with the CHANGELOG notes as the latest release. The `v0.9.30` tag points at the PR #57 merge, `260d826`. All four installers built, and the published checksums equal the tested draft's.
+  - Verification of the macOS Apple Silicon installer, run in a test profile copied from real data with cloud sign-in blocked:
+    - the app reports 0.9.30, bundles `tax-2026.10.31-01` and installs it byte-identical (`sqlite_sha256` `ec19acac…`);
+    - all 645 observation identities are unchanged;
+    - associated pairs show as one species (*Flammulina velutipes*/vintersopp → 98288) in Edit Observation, the main-window fields and the reference picker; *Mycena pearsoniana* stays two rows.
+  - `tax-2026.10.31-01` is the active release in production (read-only check, 2026-11-05).
+  - Keep until the owner confirms 0.9.30 in their normal profile:
+    - the rollback artifacts (the `releases/` frozen sets, the `-11` bundle in `0c54c47`);
+    - the `sporely-worktrees/py-name-assoc-smoke` worktree;
+    - the test profiles `name-assoc-smoke`, `release-0930-smoke` and `release-0930-smoke2`.
 - Housekeeping: merged branches `fix/backup-dynamic-setting-keys`, `fix/backup-cloud-auth-method` and `ci/release-draft-retarget` (local and remote) can be deleted. The `sporely-worktrees/py-taxonomy-audit` worktree holds uncommitted audit outputs (`relationship-pass/author-standards/`, `decision-package-e/`, `v3/NorTaxa-COL-avvik.xlsx` with an Excel lock file); commit or move them before removing it.
 - sporely-landing PR #9 (the public "why COL XR" explainer) is still unmerged. R2 has shipped, so it only needs the owner's go-ahead.
 - Free disk space on the development Mac dropped from 53 GB to 27 GB during 2026-10-25. No leftover backup or build files were found; cause unknown.
