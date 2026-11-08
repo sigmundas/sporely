@@ -1,6 +1,6 @@
 # Desktop UI redesign
 
-Status: **direction approved; stage 0 in progress.** Rewritten 2026-11-08
+Status: **direction approved; stage 0 in review (sigmundas/sporely#65).** Rewritten 2026-11-08
 against `main` @ `a6d2376` to follow the owner's plan doc, then updated with
 the owner's answers the same day.
 
@@ -660,4 +660,26 @@ test status.
 
 | Stage | PR | Merge | Status |
 | --- | --- | --- | --- |
-| 0 | — | — | Not started |
+| 0 | sigmundas/sporely#65 | — | Agent-verified (tests, inspected renderer screenshots); waiting for the owner's layout opinion |
+
+Found during stage 0, not fixed there (rule 1):
+
+- `tools/update_translations.ps1` lists 14 of the 37 modules the bash script
+  scans and runs lupdate with `-no-obsolete`, so running it on Windows would
+  delete translations.
+- The app loads no Qt base translations (`main.py` installs only
+  `Sporely_<lang>.qm`), so standard dialog and message-box buttons (OK,
+  Cancel, Yes, No, Close) stay English in every language; 15
+  `QDialogButtonBox` standard-button uses in `ui/`.
+- 168 `nb_NO` entries are identical to their English source. Many are
+  legitimate (product names, Latin terms, format strings); real gaps are
+  mostly Analysis plot settings, Parmasto texts and the duplicate-observation
+  prompt. Some `sv_SE` entries reuse Norwegian words (“Felt”, “Forkast”).
+- Analysis panel at narrow widths: other controls clip as well (“Histogram”,
+  “Kernel density”, the export toolbar), and the gallery “Sort” combo renders
+  empty in the owner's screenshot.
+- Tests and the renderer that build `ImageImportDialog` write the user's real
+  `QSettings` (`splitter/ImageImportDialogBottom`) unless `QSettings` is
+  patched in `ui.image_import_dialog`; `tests/test_sample_source_ui_presence.py`
+  still does. `load_objectives()` reads the real `objectives.json` unless
+  `schema.get_objectives_path` is patched.
