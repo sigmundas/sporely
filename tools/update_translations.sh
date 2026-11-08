@@ -31,6 +31,14 @@ files=(
   "ui/reference_sharing_dialogs.py"
   "ui/publish_notice.py"
   "ui/taxon_picker.py"
+  "ui/live_lab_tab.py"
+  "ui/ingestion_hub_tab.py"
+  "ui/sync_shot_dialog.py"
+  "ui/image_gallery_widget.py"
+  "ui/export_image_dialog.py"
+  "ui/dialog_helpers.py"
+  "ui/observation_list.py"
+  "ui/cloud_sync_dialog.py"
 )
 
 if [[ -x ".venv/bin/pyside6-lupdate" ]]; then

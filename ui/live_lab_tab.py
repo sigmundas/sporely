@@ -7801,7 +7801,7 @@ class LiveLabTab(QWidget):
         else:
             self._clear_session_viewer(
                 title=self.tr("Offline session"),
-                meta=self.tr("Log microscope-state changes now and match images later in the Ingestion Hub."),
+                meta=self.tr("Log microscope-state changes now and match images later in Camera import."),
             )
             status_text = self.tr("Offline session started for {name}.").format(
                 name=self._observation_summary_text(self._session_observation_snapshot),

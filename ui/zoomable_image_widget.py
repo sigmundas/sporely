@@ -121,7 +121,7 @@ class ZoomableImageLabel(QLabel):
         self.original_pixmap = pixmap
         self._full_image_path = str(full_path) if full_path else None
         self._preview_is_scaled = bool(preview_scaled)
-        self._preview_tag_text = "Preview" if self._preview_is_scaled else ""
+        self._preview_tag_text = self.tr("Preview") if self._preview_is_scaled else ""
         self._corner_tag_text = ""
         self._full_loaded = (not self._preview_is_scaled) or self._full_image_path is None
         if not pixmap:
@@ -2325,7 +2325,7 @@ class ZoomableImageLabel(QLabel):
         if not self.original_pixmap:
             # Draw placeholder text
             painter.setPen(QColor(180, 180, 182) if _dark else QColor(127, 140, 141))
-            painter.drawText(self.rect(), Qt.AlignCenter, "Load an image to begin")
+            painter.drawText(self.rect(), Qt.AlignCenter, self.tr("Load an image to begin"))
             painter.end()
             return
 

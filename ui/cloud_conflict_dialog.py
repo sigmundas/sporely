@@ -9,7 +9,7 @@ import re
 import tempfile
 import time
 
-from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QSize, Qt, QThread, Signal
+from PySide6.QtCore import QBuffer, QByteArray, QCoreApplication, QIODevice, QSize, Qt, QThread, Signal
 from PySide6.QtGui import QColor, QImage, QImageReader, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -245,7 +245,7 @@ def _conflict_identity(detail: dict) -> dict:
         _observation_species(local_obs),
         _observation_species(remote_obs),
         detail.get('title'),
-    ) or 'Observation'
+    ) or QCoreApplication.translate("CloudConflictDialog", "Observation")
     local_date, local_time = _split_observation_date_time(local_obs.get('date'))
     remote_date, remote_time = _split_observation_date_time(remote_obs.get('date'))
     date_text = local_date if local_date != '—' else remote_date

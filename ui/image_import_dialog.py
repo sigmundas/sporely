@@ -2568,15 +2568,16 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 self._next_btn_dirty_label if dirty else self._next_btn_default_label
             )
             return
-        # Edit mode: always expose a discard action so the user can bail out
-        # without saving. When there's nothing to save, the button labels
-        # collapse to "Cancel" / "Close" which are effectively equivalent.
-        self.cancel_btn.setVisible(True)
+        # Edit mode: expose a discard action whenever there is something to
+        # discard. With nothing to save, both buttons would read "Close", so
+        # only the primary one stays (Esc still rejects the dialog).
         if self._has_pending_resize_operations():
+            self.cancel_btn.setVisible(True)
             self.cancel_btn.setText(self.tr("Discard") if dirty else self.tr("Cancel"))
             self.next_btn.setText(self.tr("Apply"))
             return
-        self.cancel_btn.setText(self.tr("Discard") if dirty else self.tr("Close"))
+        self.cancel_btn.setVisible(dirty)
+        self.cancel_btn.setText(self.tr("Discard"))
         self.next_btn.setText(
             self._next_btn_dirty_label if dirty else self._next_btn_default_label
         )
