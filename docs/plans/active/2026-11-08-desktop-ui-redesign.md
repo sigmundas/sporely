@@ -660,7 +660,8 @@ test status.
 
 | Stage | PR | Merge | Status |
 | --- | --- | --- | --- |
-| 0 | sigmundas/sporely#65 | — | Agent-verified (tests, inspected renderer screenshots); waiting for the owner's layout opinion |
+| 0 | sigmundas/sporely#65 | — | Agent-verified (tests, inspected renderer screenshots); owner tested it 2026-11-08 and said to go on; merge not yet done |
+| P1 | sigmundas/sporely#67 | — | Agent-verified (tests, inspected renderer screenshots); no production code; based on the stage 0 branch |
 
 Found during stage 0, not fixed there (rule 1):
 
@@ -681,5 +682,34 @@ Found during stage 0, not fixed there (rule 1):
 - Tests and the renderer that build `ImageImportDialog` write the user's real
   `QSettings` (`splitter/ImageImportDialogBottom`) unless `QSettings` is
   patched in `ui.image_import_dialog`; `tests/test_sample_source_ui_presence.py`
-  still does. `load_objectives()` reads the real `objectives.json` unless
-  `schema.get_objectives_path` is patched.
+  still does. Tests get an isolated app-data folder from `tests/conftest.py`
+  (`SPORELY_APP_DATA_DIR`), so `objectives.json`, databases and thumbnails
+  are safe there; the review renderer sets no such folder, so a scenario
+  group that builds widgets reading them must isolate them itself (the
+  `quick-fixes` and `live-lab` groups use `tools/review_ui/live_lab_harness.py`).
+
+Found during P1, not fixed there (rule 1); the first two are pinned as
+`xfail(strict=True)` tests in `tests/test_live_lab_behaviour.py`:
+
+- Live Lab forgets the last objective on restart unless it sorts first:
+  `_populate_objective_combo` fills the list while
+  `currentIndexChanged → _save_objective_selection` is connected, so the
+  first objective is saved over the stored choice before it is read back.
+  Stage 2 (capture-state bar) touches this code; fix it there or before.
+- Live Lab captures store no `session_id` in `lab_metadata`:
+  `start_session` snapshots `_session_microscope_state` before it assigns
+  `_session_id`, and later captures inherit the snapshot. Session logs and
+  Kameraimport matches do carry it; only the portable archive reads it from
+  images today.
+- Kameraimport in the dark theme at 1440×900: the side panel gets a vertical
+  scrollbar that covers the right edge of its fields; the light theme has
+  none at the same size (baseline renders `live-lab.camera-import-*`).
+- Offline session start shows the viewer's “Last inn et bilde for å begynne”
+  placeholder rather than the “Offline session” title it sets.
+- The review renderer's `reference-library` group takes about 180 s (also on
+  `main`), so `test_default_renderer_emits_central_manifest_and_all_established_states`
+  exceeds its 120 s timeout; CI skips that file.
+
+Baseline renders for the pilot's before/after comparisons (P1, 2026-11-08):
+`/Users/sigmundas/Documents/Code/sporely/sporely-py/docs/plans/november-ui/baseline-p1/`
+(gitignored, local only).
