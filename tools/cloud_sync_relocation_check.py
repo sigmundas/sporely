@@ -25,7 +25,7 @@ Base and candidate run in separate processes, so free names are compared by
 origin: a function or class by module, qualname and an AST hash; a module by
 name; an immutable literal by ``repr``; anything else must be the single
 shared instance bound by the facade. See the Stage S2 brief in
-``docs/plans/active/2026-10-07-cloud-sync-extraction-and-orchestration.md``.
+``docs/plans/completed/2026-10-07-cloud-sync-extraction-and-orchestration.md``.
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 """Stage 1 barrier cases, now run against the production barrier.
 
-Blocker 2 of ``docs/plans/active/2026-09-10-reported-statistics-and-range-semantics.md``.
+Blocker 2 of ``docs/plans/completed/2026-09-10-reported-statistics-and-range-semantics.md``.
 The barrier is a pair of SQLite triggers on ``reference_measurement_sets`` whose
 body calls an application-defined function, ``sporely_measurement_contract()``.
 A contract-aware connection registers that function; an unaware (older binary)

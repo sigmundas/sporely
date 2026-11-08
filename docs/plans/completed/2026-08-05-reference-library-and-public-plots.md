@@ -6,7 +6,7 @@ reference source is now preserved on the mainlines: `sporely-web` commit
 `89bd2df` and `sporely-admin` commit `4104ca1` merge the Stage 6 stack into
 `main`.
 **Canonical repository:** `sporely-py`
-**Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
+**Canonical path:** `docs/plans/completed/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-admin` →
 `sporely-landing`
 **Primary outcome:** A reference entered once can be reused across observations, and a public observation can display the exact literature measurement sets used in desktop analysis.

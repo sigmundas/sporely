@@ -2,7 +2,7 @@
 
 Status: frozen decisions for the reported-statistics work. Requirements and
 motivation live in
-`docs/plans/active/2026-09-10-reported-statistics-and-range-semantics.md`;
+`docs/plans/completed/2026-09-10-reported-statistics-and-range-semantics.md`;
 this document states what Stage 2 and Stage 3 build. Every claim about current
 code cites the symbol that shows it. Fixtures live in
 `tests/fixtures/reference_statistics/`; `tests/test_measurement_content_contract_fixtures.py`

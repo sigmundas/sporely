@@ -1,7 +1,7 @@
 # Cloud sync orchestration: observation completion design
 
 Status: **decision document (Stage S1 of
-`docs/plans/active/2026-10-07-cloud-sync-extraction-and-orchestration.md`).**
+`docs/plans/completed/2026-10-07-cloud-sync-extraction-and-orchestration.md`).**
 It changes no code. Section 1 to section 7 record current behaviour and a
 proposed target. Section 8 lists the decisions that the person must make
 before the orchestration follow-up plan is written. Section 9 records the

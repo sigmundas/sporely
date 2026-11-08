@@ -1,7 +1,7 @@
 # Cloud sync extraction and orchestration refactor
 
 Written 2026-10-07 against `main` @ `c9d655f`. Replaces, for execution, the
-earlier plan `docs/plans/active/2026-08-23-cloud-sync-extraction.md` (on
+earlier plan `docs/plans/completed/2026-08-23-cloud-sync-extraction.md` (on
 `main`) and its revision at `927eb64` on `feature/cloud-sync-refactor`. Those
 documents and their intake reports remain the record of how the requirements
 below were reached. Nothing in this plan is approved or started by writing it.

@@ -219,7 +219,7 @@ not dropped:
 - The cloud-sync facade extraction (`ea55c68`, `4dc6b82`, `6e05f31`, `8d06a9d`
   and related), which moves ~1529 lines out of `utils/cloud_sync.py` into
   `utils/cloud_sync_impl/*`. It belongs to
-  `docs/plans/active/2026-08-23-cloud-sync-extraction.md`.
+  `docs/plans/completed/2026-08-23-cloud-sync-extraction.md`.
 - `4efdf7d` "Fix reference identity and separate library saving from plotting",
   which belongs to `docs/plans/active/2026-09-10-reference-save-and-plot.md` and
   carries the `ui/main_window.py` change hiding the reference-shape setting.
@@ -344,7 +344,7 @@ remains reachable on `feature/reported-statistics-contract`,
 Stage 5's activation decision was to keep both gates closed, so the plan's own
 objective — v2 emission and enhanced attachments in the field — is not yet met.
 The plan reopens for an activation pass once this work has shipped and the
-reader population can be established. `docs/plans/active/2026-09-09-reference-measurement-table-parser.md`
+reader population can be established. `docs/plans/completed/2026-09-09-reference-measurement-table-parser.md`
 likewise stays open: it defers its Stage 2 to this plan and states explicitly
 that parser-stage completion is not completion of the overall request.
 
