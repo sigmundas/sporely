@@ -1,37 +1,115 @@
 # Desktop UI redesign
 
-Status: **draft.** The owner has not yet chosen the screens in scope or the
-visual direction (see *Owner decisions*). Nothing here is approved for
-implementation except the preparation stages, once the owner says go.
+Status: **draft; direction decided, concept stage D0 next.** The preparation
+stages P1, P5 and P6 may start; P2–P4 are scoped once D0 is approved.
 
 Written 2026-11-08 against `main` @ `fd82d76`.
 
 ## Goal
 
-Redesign the desktop UI screen by screen. Agents verify each screen
-themselves: behavior through tests, layout through inspected screenshots. The
-owner's role is the design contract up front and a layout opinion on each
-finished screen (see the verification tiers in `AGENTS.md`).
+1. **Reduce the number of dialogs.** Work that today opens a modal window
+   (often on top of another modal) should happen in place, in the main window.
+2. **One consistent workflow across the app.** The same task looks and works
+   the same wherever it appears, so this touches every area: Observations,
+   Measure, Analysis, Live Lab, Camera Import, Calibration, references,
+   publishing and preferences.
+
+Agents verify each stage themselves: behavior through tests, layout through
+inspected screenshots. The owner approves the concept and each design
+contract up front and gives a layout opinion on each finished stage (see the
+verification tiers in `AGENTS.md`).
 
 Out of scope: sync behavior, SQLite schema, the cloud contract, and
-taxonomy data. A redesign stage that finds it needs one of these stops and
-reports.
+taxonomy data. A stage that finds it needs one of these stops and reports.
 
-## Owner decisions
+## Owner decisions (2026-11-08)
 
-1. **Screens in scope, and their order.** Candidates: main window shell,
-   Observations tab, Analysis, Measure, Prepare Images, Live Lab, Ingestion
-   Hub (Camera Import), Calibration, Species plate, reference dialogs. The
-   backlog below groups the INBOX items by screen.
-2. **Visual direction.** Continue the existing Clinical Nocturne (dark) and
-   Slate Lab (light) themes in `ui/styles.py`, or define a new one.
-3. **Mockup source.** Who draws the mockups for each design contract
-   (owner, agent-drafted HTML/PNG mockups for the owner to edit, or both).
+1. **Scope:** dialog reduction first, then a consistent workflow; expected to
+   touch all areas of the app.
+2. **Themes:** keep Clinical Nocturne (dark) and Slate Lab (light) from
+   `ui/styles.py`.
+3. **Mockups:** agents draft them; the owner reacts and edits.
+4. **Current-state screenshots:** the owner's captures are in
+   `docs/plans/november-ui/` (gitignored, local only; they contain personal
+   profile data and paths, so never commit or publish them).
+
+## Current state (2026-11-08)
+
+### Dialog inventory
+
+- 34 `QDialog` subclasses in `ui/`, plus 17 inline `QDialog(...)` builds.
+- 176 `QMessageBox` calls (112 in `ui/main_window.py`, 30 in
+  `ui/calibration_dialog.py`) and 35 `QFileDialog`/`QInputDialog` uses.
+- Workflow dialogs (full windows for core work): `ObservationDetailsDialog`
+  (Rediger observasjon), `ImageImportDialog` (Legg til bilder / Prepare
+  Images), `CalibrationDialog`, `SpeciesPlateDialog`, `AddReferenceDialog`,
+  `ReferenceLibraryManagerDialog`, `CloudConflictDialog`, `CloudSyncDialog`,
+  `PortableImportDialog`, `SettingsHubDialog` (Preferanser) and its pages.
+- Small form dialogs: `NewObjectiveDialog`, `ObservationSelectionDialog`,
+  `RenameObservationDialog`, `ScaleBarImportDialog`, `ScaleBarCalibrationDialog`,
+  `SyncShotDialog`, the three `Export*Dialog`s, `DatabaseBundleOptionsDialog`,
+  the reference-library sub-forms, `MySharedReferencesDialog`,
+  `SharedReferenceCatalogueDialog`, `LoadingDialog`.
+- Legacy dialogs still referenced in `ui/main_window.py`:
+  `ReferenceAddDialog`, `ReferenceValuesDialog`, `CloudReferenceDialog`,
+  `ReferenceLibraryAttachDialog`. Check which are still reachable; dead ones
+  are removed in their area's stage.
+
+### What the screenshots show
+
+- **Stacked modals.** Edit observation is a full-window modal; its
+  “Rediger bilder (⌘E)” opens Prepare Images as a second modal on top.
+  Add Reference and the Reference library open as modals over Analysis;
+  Calibration and Preferences are separate windows.
+- **The same controls built several times.** Slide/prep (mount, stain,
+  condition, source), microscope (objective, contrast) and RAW processing
+  appear in Prepare Images and again in Live Lab, with different layouts and
+  label languages. Measure shows the same tags as chips over the image.
+- **The image strip** appears on Observations, Edit observation, Prepare
+  Images, Measure, Live Lab and Analysis (as a spore gallery), with different
+  sizes, badges and selection behavior.
+- **Three ways to show status:** the bottom status bar (red/blue/green),
+  inline coloured labels, and message boxes.
+- **Untranslated English** in a Norwegian UI: Live Lab (“CURRENT
+  OBSERVATION”, “Start Session”, “Use for calibration”), Camera Import
+  (“MICROSCOPE SESSIONS”, “Browse”, “Scan folder”, actions), Observations
+  (“Show thumbnail”), Preferences (“Bright cutoff”), Reference library
+  (“Close”, the missing-metadata warning), thumbnails (“From raw”,
+  “Preview”).
+
+## Stage D0 — Workflow and dialog-reduction concept
+
+The first owner-facing stage; it decides what the later stages build.
+Read-only for production code.
+
+- **Workflow map:** the owner's main tasks end to end (new observation from
+  the field, microscope session in Live Lab, camera-folder import, measure,
+  analyse and compare with references, publish, sync and conflicts,
+  calibration, preferences), and every dialog and message box each one
+  passes through today.
+- **Classify every dialog:** *inline* (becomes a panel or page in the main
+  window), *sheet* (a lightweight in-window overlay for a short focused
+  task), *keep* (a real modal: destructive confirmation, OS file picker,
+  sync conflict resolution), or *remove* (dead or redundant). Message boxes:
+  information becomes a non-blocking notice in one shared status area;
+  confirmations stay only for destructive or irreversible actions, and
+  cheap actions get undo instead.
+- **Shared components** to build once and reuse: the image strip, the
+  slide/prep and microscope tag controls, the RAW processing panel, the
+  status/notice area, section headers and the action bar.
+- **Mockups:** two or three alternative layouts for the main window and the
+  observation workflow (for example: observation workspace with inline
+  stages, or inspector side panel), as static HTML mockups using the theme
+  colors from `ui/styles.py`, rendered to PNG. Publish them as a private
+  artifact for the owner to compare and annotate. The chosen concept is
+  saved as `docs/design/CONCEPT-desktop-workflow.md` with its images.
+- **Output:** the approved concept, the dialog classification table, the
+  list of shared components, and the order of the area stages below.
 
 ## Blockers: preparation stages
 
-Do these before the first screen stage. P1 is global; P2–P4 apply to the
-screens in scope; P5 and P6 are small. Each is its own PR.
+Each is its own PR. P1, P5 and P6 can run alongside D0. P2–P4 apply to the
+areas the approved concept changes first.
 
 ### P1 — Style tokens
 
@@ -49,7 +127,7 @@ place.
 - Verification: renderer scenarios for both themes before and after are
   visually identical except where intended.
 
-### P2 — Characterization tests for in-scope screens
+### P2 — Characterization tests for the areas being changed
 
 Only 1 of 315 test files uses pytest-qt's `qtbot`. Before a screen is
 redesigned, pin down how it behaves today: selection, editing, saving,
@@ -66,7 +144,7 @@ describe the intended behavior to test against.
   portable-import, raw-processing, reference-library, taxon-picker. No
   scenarios exist for the main window shell, the Observations list, Live Lab,
   Ingestion Hub, Calibration, Prepare Images or the Species plate. Add the
-  in-scope screens' main states, plus dark theme and `de_DE`, and render a
+  main states of the areas being changed, plus dark theme and `de_DE`, and render a
   baseline set for the before/after comparison.
 - The renderer is slow: the 77-scenario reference-library group takes about
   3 min 20 s (about 2.6 s per scenario, CPU-bound), and
@@ -103,9 +181,15 @@ anything into `.venv`.
 
 ## How to organize the work
 
-- **One screen per stage, one stage per PR, landed on `main`.** The owner is
+- **Order:** D0 concept → shared components (built and tested once, before
+  the areas that use them) → area stages in the order D0 sets. Dialog
+  removal happens inside each area's stage: an area is done when its
+  dialogs are inline, sheets or deliberately kept.
+- **One area per stage, one stage per PR, landed on `main`.** The owner is
   the only desktop user, so no feature flags or long-lived redesign branch.
-- **Each screen stage:**
+  If an area is too big for one PR (the observation workflow), split it into
+  stages that each leave the app usable.
+- **Each area stage:**
   1. A design contract in `docs/design/DESIGN-CONTRACT-<screen>.md`: mockup,
      layout rules, states, requirements, and which backlog items it
      includes. The owner approves it before code (the Add Reference contract
@@ -127,7 +211,18 @@ anything into `.venv`.
 
 ## Screen backlog (from INBOX, 2026-11-08)
 
-Items moved here from `INBOX.md`. Marked *bug* or *feature*.
+Items moved here from `INBOX.md`, plus defects seen in the owner's
+screenshots. Marked *bug* or *feature*.
+
+### Seen in the 2026-11-08 screenshots
+- *bug* The new-observation button reads “+ + Ny (N)” (icon plus a literal “+”).
+- *bug* Prepare Images shows two “Lukk” buttons in its footer.
+- *bug* Preferences → Online publishing: the “Spør før observasjoner …
+  gjøres offentlige” checkbox overlaps “Inkluder vannmerke”.
+- *bug* Reference library: the publication list's labels wrap and the year
+  column is misaligned with its rows.
+- *bug* Untranslated English strings (listed under *Current state*); fix in
+  each area's stage and run the translation update.
 
 ### Analysis
 - *feature* Default “Orient” and “Uniform scale” to on.
