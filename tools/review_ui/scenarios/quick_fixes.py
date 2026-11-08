@@ -18,21 +18,26 @@ from PySide6.QtWidgets import QWidget
 from database import schema as db_schema
 
 from ..context import ReviewContext
+from ..live_lab_harness import review_profile, use_database
 from ..registry import ReviewScenario, ScenarioRegistry
 
 
 def _isolate(context: ReviewContext) -> None:
     """Point the database, QSettings and app-data lookups at temp paths."""
     if context.state.get("quick-fixes.isolated"):
+        # Other groups switch the profile's database per scenario; these
+        # scenarios share one of their own.
+        use_database(context.state["quick-fixes.profile"], "quick-fixes")
         return
     import ui.image_import_dialog as image_import_dialog
     import ui.main_window as main_window
     import ui.window_state as geometry
     from utils.cloud_sync import SporelyCloudClient
 
-    assert context.temporary_root is not None
-    root = context.temporary_root / "quick-fixes"
-    (root / "app-data").mkdir(parents=True)
+    # Database, images, thumbnails, objectives and temp folders: the shared
+    # isolated review profile.
+    profile = review_profile(context)
+    root = profile.root
     settings_path = root / "settings.ini"
     factory = lambda *_args: QSettings(str(settings_path), QSettings.IniFormat)
     # Every module that writes QSettings directly gets the temp file, so
@@ -40,23 +45,15 @@ def _isolate(context: ReviewContext) -> None:
     # user's real application settings.
     context.enter_fixture(patch.object(geometry, "QSettings", factory))
     context.enter_fixture(patch.object(image_import_dialog, "QSettings", factory))
-    # Objectives come from (and may be written to) a temp file, not the
-    # user's objectives.json.
-    context.enter_fixture(
-        patch.object(db_schema, "get_objectives_path", lambda: root / "objectives.json")
-    )
-    context.enter_fixture(patch.object(db_schema, "get_database_path", lambda: root / "mushrooms.db"))
-    context.enter_fixture(
-        patch.object(db_schema, "get_reference_database_path", lambda: root / "reference_values.db")
-    )
+    # No bundled reference works, so the reference library shows only the
+    # fixture works below.
     context.enter_fixture(
         patch.object(
             db_schema, "get_bundled_reference_database_path", lambda: root / "no-bundled.db"
         )
     )
-    context.enter_fixture(patch.object(db_schema, "get_images_dir", lambda: root / "images"))
     # Login state and cloud credentials are the user's: never read them here.
-    context.enter_fixture(patch.object(main_window, "app_data_dir", lambda: root / "app-data"))
+    context.enter_fixture(patch.object(main_window, "app_data_dir", lambda: root / "app"))
     context.enter_fixture(
         patch.object(SporelyCloudClient, "from_stored_credentials", classmethod(lambda cls: None))
     )
@@ -70,8 +67,9 @@ def _isolate(context: ReviewContext) -> None:
             main_window.ArtsobservasjonerSettingsDialog, "_refresh_target_status", _no_login_state
         )
     )
-    db_schema.init_database()
     context.state["quick-fixes.isolated"] = True
+    context.state["quick-fixes.profile"] = profile
+    use_database(profile, "quick-fixes")
 
 
 def _preferences_publishing(context: ReviewContext) -> QWidget:
