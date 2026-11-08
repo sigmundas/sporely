@@ -3,7 +3,7 @@ transfer preserve-or-reject and the two rollout gates.
 
 Contract: ``docs/reference-data/measurement-content-contract.md`` sections 6,
 7, 8 and 13. The *Required regression matrix* v1/v2 items in
-``docs/plans/active/2026-09-10-reported-statistics-and-range-semantics.md``
+``docs/plans/completed/2026-09-10-reported-statistics-and-range-semantics.md``
 are covered here: missing-versus-empty equivalence, real-statistics
 difference, frozen evidence unchanged, explicit refresh, unsupported-version
 feed behaviour, transfer round trips and preserve-or-reject.

@@ -967,7 +967,7 @@ every client method, including methods from owner mixins.
 ### Extraction relocation-safety checks (accepted in Stage S2)
 
 The extraction stages of
-`docs/plans/active/2026-10-07-cloud-sync-extraction-and-orchestration.md`
+`docs/plans/completed/2026-10-07-cloud-sync-extraction-and-orchestration.md`
 and their reviewers run these checks. A later stage may extend them, but must
 not weaken their fail-closed rules.
 
@@ -1026,6 +1026,7 @@ not weaken their fail-closed rules.
 
 ## Extraction plan
 
-The behavior-preserving decomposition of `utils/cloud_sync.py` is tracked in
-[the active cloud-sync extraction plan](plans/active/2026-08-23-cloud-sync-extraction.md).
-Stage numbers in that document are local to that plan.
+The behavior-preserving decomposition of `utils/cloud_sync.py` was carried out
+under [the cloud-sync extraction and orchestration plan](plans/completed/2026-10-07-cloud-sync-extraction-and-orchestration.md),
+which replaced [the earlier extraction plan](plans/completed/2026-08-23-cloud-sync-extraction.md).
+Stage numbers in those documents are local to each plan.

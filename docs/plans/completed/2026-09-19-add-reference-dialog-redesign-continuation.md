@@ -9,7 +9,7 @@ Canonical design contract:
 ## Continuation baseline
 
 This is a continuation of
-`docs/plans/active/2026-09-17-add-reference-dialog-redesign.md`. That plan's
+`docs/plans/completed/2026-09-17-add-reference-dialog-redesign.md`. That plan's
 Preflight, Stage 1 and Stage 2 are complete; this plan carries forward only its
 Stages 3–7, renumbered contiguously as Stages 1–5.
 
