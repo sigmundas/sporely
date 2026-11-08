@@ -19,7 +19,7 @@ runtime state owned by Agent Sparring.
 ## Human-gated verification under plan runs
 
 - A stage whose human check (live Supabase write, cross-client sync, live
-  canary, interactive behavior, …) is held by an engine gate of the approved
+  canary, …) is held by an engine gate of the approved
   plan (`gates_before` / `completion_gates`) may be committed, pushed and
   accepted on its automated evidence. The gate holds the next stage or plan
   completion until the user records a pass; a failed check is fixed in a new

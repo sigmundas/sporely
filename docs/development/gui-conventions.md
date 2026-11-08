@@ -5,14 +5,12 @@ These conventions supplement the repository-wide rules in
 Sporely's PySide6 dialogs and widgets; they are not a development plan or a
 standalone set of agent instructions.
 
-# Tech Stack & Libraries
-- **GUI Framework:** PySide6 (STRICT: Do not use PyQt5, PyQt6, or PySide2).
-- **Core Python:** Python 3.10+ (Use native typing like `list[str]`, `dict`, `int | None`).
-- **Image Processing:** `PIL` (Pillow) and `QImageReader`.
-- **Database:** Custom SQLite wrappers (e.g., `ImageDB`, `SettingsDB`, `MeasurementDB`).
+Stack: PySide6 (see `AGENTS.md`), Python 3.10+ native typing (`list[str]`,
+`int | None`), Pillow and `QImageReader` for images, and the project's SQLite
+wrappers (`ImageDB`, `SettingsDB`, `MeasurementDB`).
 
 # Coding Standards & Conventions
-When generating or modifying code, you MUST adhere strictly to the following patterns found in the existing codebase:
+Follow these patterns from the existing codebase when modifying GUI code:
 
 ## 1. File Structure & Imports
 - Always include `from __future__ import annotations` at the top of the file.
