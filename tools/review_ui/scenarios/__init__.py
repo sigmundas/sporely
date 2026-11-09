@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from ..registry import ScenarioRegistry
 from .conflicts import register_conflict_scenarios
+from .live_lab import register_live_lab_scenarios
 from .references import register_reference_scenarios
 from .measure import register_measure_scenarios
 from .observations import register_observation_scenarios
@@ -21,6 +22,7 @@ def create_registry() -> ScenarioRegistry:
     register_raw_processing_scenarios(registry)
     register_portable_import_scenarios(registry)
     register_quick_fix_scenarios(registry)
+    register_live_lab_scenarios(registry)
     register_taxon_picker_scenarios(registry)
     return registry
 

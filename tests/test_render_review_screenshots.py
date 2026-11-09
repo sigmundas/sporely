@@ -146,7 +146,22 @@ QUICK_FIX_IDS = {
     "quick-fixes.image-import-footer",
     "quick-fixes.reference-library-long-labels",
 }
-ALL_IDS = REFERENCE_IDS | CONFLICT_IDS | OTHER_UI_IDS | TAXON_PICKER_IDS | QUICK_FIX_IDS
+LIVE_LAB_IDS = {
+    f"live-lab.{state}{suffix}"
+    for state in (
+        "idle",
+        "session-live",
+        "session-offline",
+        "raw-pending",
+        "uncalibrated",
+        "camera-import-empty",
+        "camera-import-scanned",
+    )
+    for suffix in ("", "-dark")
+} | {"live-lab.idle-small"}
+ALL_IDS = (
+    REFERENCE_IDS | CONFLICT_IDS | OTHER_UI_IDS | TAXON_PICKER_IDS | QUICK_FIX_IDS | LIVE_LAB_IDS
+)
 
 
 def _run(*arguments: str, timeout: int = 120) -> subprocess.CompletedProcess[str]:
@@ -168,7 +183,7 @@ def test_registry_has_unique_semantic_ids_and_expected_groups() -> None:
     ids = [scenario.id for scenario in registry.all()]
     assert len(ids) == len(set(ids))
     assert set(registry.groups()) == {
-        "conflict", "measure", "observations", "portable-import",
+        "conflict", "live-lab", "measure", "observations", "portable-import",
         "quick-fixes", "raw-processing", "reference-library", "taxon-picker",
     }
     assert {scenario.id for scenario in registry.all()} == ALL_IDS
@@ -180,6 +195,7 @@ def test_group_and_explicit_scenario_selection() -> None:
     assert {
         s.id for s in registry.select(groups=("reference-library",))
     } == REFERENCE_IDS
+    assert {s.id for s in registry.select(groups=("live-lab",))} == LIVE_LAB_IDS
     assert [
         s.id
         for s in registry.select(
