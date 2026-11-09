@@ -5796,6 +5796,24 @@ def test_live_lab_review_mode_copy_paste_settings_between_pending(tmp_path, monk
     assert target.raw_settings.tone_curve_enabled is True
     assert target.raw_settings.tone_curve_strength == pytest.approx(0.80, rel=1e-3)
     assert target.raw_settings.tone_curve_midpoint == pytest.approx(0.20, rel=1e-3)
-    # ...but WB stays with the target image (multipliers belong to the target).
-    assert target.raw_settings.white_balance_mode == target_wb_before
+    # ...and WB comes along as a mode (owner, 2026-11-09): auto WB is worked
+    # out for each image when it renders, so no source multipliers come along.
+    assert target_wb_before != "auto"
+    assert target.raw_settings.white_balance_mode == "auto"
+    assert target.raw_settings.wb_multipliers is None
     assert add_image_calls == []
+
+    # A picked (custom) WB cannot be redone per image: its multipliers are copied.
+    state._raw_copied_settings = replace(
+        RawRenderSettings.from_dict(state._raw_copied_settings),
+        white_balance_mode="custom",
+        wb_multipliers=(1.8, 1.0, 1.3),
+        wb_multiplier_space="post_decode_rgb",
+        wb_selection=(0.1, 0.1, 0.2, 0.2),
+    )
+    # Only the stored settings matter here; no second re-render in this fake tab.
+    state._refresh_selected_pending_raw_preview = lambda: None
+    state._paste_copied_settings_to_selected_pending()
+    assert target.raw_settings.white_balance_mode == "custom"
+    assert tuple(target.raw_settings.wb_multipliers) == pytest.approx((1.8, 1.0, 1.3))
+    assert target.raw_settings.wb_selection is None  # the source's patch does not apply here

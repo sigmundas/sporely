@@ -5031,21 +5031,13 @@ class LiveLabRawMixin:
         capture = self._current_pending_raw_capture()
         if capture is None:
             return
-        target_settings = RawRenderSettings.from_dict(capture.raw_settings)
-        pasted = self._pending_raw_settings_for_copy(RawRenderSettings.from_dict(copied))
-        # WB stays with the target image; only tone/levels and other RAW
-        # processing parameters come from the copied capture.
-        pasted = replace(
-            pasted,
-            white_balance_mode=target_settings.white_balance_mode,
-            wb_multipliers=target_settings.wb_multipliers,
-            wb_multiplier_space=target_settings.wb_multiplier_space,
-            wb_sample_point=target_settings.wb_sample_point,
-            wb_sample_size=target_settings.wb_sample_size,
-            wb_sample_base_mode=target_settings.wb_sample_base_mode,
-            wb_selection=target_settings.wb_selection,
-            wb_selection_space=target_settings.wb_selection_space,
-        )
+        source = RawRenderSettings.from_dict(copied)
+        pasted = self._pending_raw_settings_for_copy(source)
+        # White balance comes with the paste as multi-select applies it
+        # (owner, 2026-11-09): auto or camera WB stays a mode, so each image
+        # gets its own; a picked (custom) WB cannot be redone per image, so the
+        # source's multipliers are copied.
+        pasted = LiveLabRawMixin._replace_capture_wb(pasted, source)
         capture.raw_settings = pasted
         capture.auto_level_settings = None
         capture.rendered_settings = None
