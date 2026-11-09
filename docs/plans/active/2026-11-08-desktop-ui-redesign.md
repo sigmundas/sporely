@@ -548,7 +548,10 @@ sorts everything else, read-only, into a table the owner approves:
 
 ## Open decisions (settle before the stage named)
 
-- [ ] Shortcut keys for objectives and contrast methods (before stage 2).
+- [x] Decided 2026-11-09: 1–6 choose the objectives in magnification order,
+      B/D/I/P the contrast methods BF/DF/DIC/Phase; they act only when no text
+      field has focus. P also means “previous image” in Measure: revisit when
+      stage 9 merges the screens.
 - [ ] RAW preset on contrast change: automatic with a lock, or suggested only
       (before stage 5).
 - [ ] Unsaved edits in Rediger: autosave, or ask when switching (before 9;
@@ -673,6 +676,7 @@ landed through PRs before the branch existed), the commit that brought it into
 | P3 | `e279277` | — | Agent-verified: the global stylesheet, design tokens and button icon colours are byte-identical in both themes; ring colour, outline and token tests; renders identical except the intended objective colour changes; Codex review: 3 findings fixed (Measure tag colour from the profile, NA-first names, outlined badge size). Owner's layout opinion 2026-11-09: looks good |
 | 1a | `c03845e` | — | Agent-verified: collapsible Preparation and Notes sections (summary line, warning for unset values, open state remembered); qtbot tests for mouse, keyboard, restart, summaries and layout; renders change only Live Lab's left panel; Codex review: 5 findings, 4 fixed, 1 not reproducible but guarded. |
 | 1b | `e52bc3b` | — | Agent-verified: Preparation rows as chips (click to choose, click again to clear, “+ N more” in place; arrows move, Space/Enter choose; Norwegian labels Medium, Farging, Tilstand, Kilde); qtbot tests; renders change only Live Lab's Preparation rows; Codex review: 3 bugs fixed (idle layout loop, arrow keys clearing a chip, over-wide chip), 1 test gap closed. Stage 1 done; owner's layout opinion 2026-11-09: looks good |
+| 2 | `ui/redesign` | — | Agent-verified: capture-state bar (objective and contrast with ring colours, 1–6 and B/D/I/P shortcuts), live-view label, Microscope card removed; the P1 objective-restore bug fixed; qtbot tests; cocoa real-input run 20/20 (`tools/review_ui/live_lab_mac_check.py`); renders change only Live Lab; Codex review: 6 findings, 5 fixed, 1 kept as designed. Waiting for the owner's layout opinion |
 
 Found during stage 0, not fixed there (rule 1):
 
@@ -702,7 +706,7 @@ Found during stage 0, not fixed there (rule 1):
 Found during P1, not fixed there (rule 1); the first two are pinned as
 `xfail(strict=True)` tests in `tests/test_live_lab_behaviour.py`:
 
-- Live Lab forgets the last objective on restart unless it sorts first:
+- Fixed in stage 2: Live Lab forgot the last objective on restart unless it sorted first:
   `_populate_objective_combo` fills the list while
   `currentIndexChanged → _save_objective_selection` is connected, so the
   first objective is saved over the stored choice before it is read back.
@@ -776,6 +780,24 @@ Found during stage 1b, not fixed there (rule 1):
   a RAW capture is under review.
 - No cocoa real-input run was made for the chip and heading keyboard
   handling; it is tested offscreen with Live Lab's real shortcuts installed.
+
+Found during stage 2, not fixed there (rule 1):
+
+- The live-view label follows the sidebar controls, as the old viewer tag
+  did: after a capture, changing the objective relabels the image on screen
+  with the next capture's objective, and a mixed multi-selection hides the
+  label. Whether the label should describe the displayed image or the
+  microscope is a design question for stage 9's staging strip.
+- Pinch (native gesture) events over the floating bars reach the viewer with
+  the bar's own coordinates; wheel events are re-anchored since stage 2.
+- On macOS a click does not give a button keyboard focus (platform
+  convention), so chips and bar buttons are reached with Tab only under Full
+  Keyboard Access.
+- The cocoa real-input harnesses post keys with `CGEventPostToPid`, which
+  needs the running app to be trusted for Accessibility; this session is
+  not, so `taxon_picker_mac_check` cannot type here. `live_lab_mac_check`
+  posts its keys as NSEvents in its own queue instead, which needs no
+  permission.
 
 Baseline renders for the pilot's before/after comparisons (P1, 2026-11-08):
 `/Users/sigmundas/Documents/Code/sporely/sporely-py/docs/plans/november-ui/baseline-p1/`

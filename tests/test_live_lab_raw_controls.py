@@ -676,6 +676,8 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state._refresh_main_window_after_import = lambda *args, **kwargs: None
     state._update_session_controls = lambda: None
     state._update_notes_summary = lambda **kwargs: None
+    state.live_state_label = QLabel()
+    state._reposition_pending_raw_floating_tab = lambda: None
     state._show_session_image = lambda image_id: None
     state._update_observation_thumbnail = lambda: None
     state._refresh_session_gallery = lambda: live_lab_tab.LiveLabTab._refresh_session_gallery(state)
@@ -1513,10 +1515,15 @@ def test_live_lab_viewer_objective_tag_tracks_current_controls(monkeypatch):
         set_objective_text=lambda text: captured.__setitem__("text", text),
         set_objective_color=lambda color: captured.__setitem__("color", QColor(color).name()),
     )
+    state.live_state_label = QLabel()
+    state._reposition_pending_raw_floating_tab = lambda: None
 
     live_lab_tab.LiveLabTab._save_objective_selection(state)
 
-    assert captured["text"] == "40x"
+    # Stage 2: the live-state label replaces the viewer's own corner tag.
+    assert captured["text"] == ""
+    assert state.live_state_label.text() == "40x"
+    assert not state.live_state_label.isHidden()
 
 
 def test_live_lab_ingest_uses_current_raw_settings_and_keeps_prior_snapshot(tmp_path, monkeypatch):
@@ -4369,7 +4376,7 @@ def test_live_lab_review_mode_multi_select_preserves_selection_and_applies_micro
     live_lab_tab.LiveLabTab._show_pending_raw_capture(state, 0)
     assert state.session_gallery.selected_keys() == expected_selected_keys
     assert {capture.source_path for capture in state._selected_pending_raw_captures()} == {source_one, source_two}
-    assert state.live_image_label.objective_text == "4x BF"
+    assert state.live_state_label.text().startswith("4x · BF")
 
     state.objective_combo.setCurrentIndex(1)
     state.contrast_combo.setCurrentIndex(1)
@@ -4400,8 +4407,8 @@ def test_live_lab_review_mode_multi_select_preserves_selection_and_applies_micro
     assert state.session_gallery.items[1]["microscope_tag_text"] == "100x DIC"
     assert state.session_gallery.items[2]["microscope_tag_text"] == "63x Phase"
     assert state.session_gallery.items[0]["microscope_tag_color"] == "#f7f1e5"
-    assert state.live_image_label.objective_text == "100x DIC"
-    assert state.live_image_label.objective_color == "#f7f1e5"
+    assert state.live_state_label.text().startswith("100x · DIC")
+    assert "background-color: #f7f1e5;" in state.live_state_label.styleSheet()
 
 
 def test_live_lab_finalize_session_stop_preserves_pending_raw_gallery_and_preview(tmp_path, monkeypatch):

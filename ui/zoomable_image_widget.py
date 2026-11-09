@@ -1,6 +1,6 @@
 """Zoomable and pannable image widget with measurement overlays."""
 from PySide6.QtWidgets import QLabel, QWidget, QVBoxLayout
-from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QTransform, QPolygonF, QImageReader, QFont, QPainterPath
+from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QTransform, QPolygonF, QImageReader, QFont, QFontMetrics, QPainterPath
 from PySide6.QtCore import Qt, QPoint, QRect, QPointF, Signal, QRectF, QSize
 from PySide6.QtSvg import QSvgGenerator
 import math
@@ -1019,6 +1019,32 @@ class ZoomableImageLabel(QLabel):
         """Set the objective tag text."""
         self.objective_text = text
         self.update()
+
+    def bottom_left_readout_rect(self) -> QRect:
+        """Where the zoom readout (and a preview tag above it) are painted.
+
+        Overlays placed on the viewer use it to stay clear of them.
+        """
+        font = QFont(self.font())
+        font.setPointSize(9)
+        metrics = QFontMetrics(font)
+        margin, pad_x, pad_y = 10, 6, 3
+        zoom_text = f"Zoom: {self.zoom_level * 100:.0f}%"
+        height = metrics.height() + pad_y * 2
+        rect = QRect(margin, self.height() - height - margin, metrics.horizontalAdvance(zoom_text) + pad_x * 2, height)
+        if self._preview_tag_text:
+            bold = QFont(font)
+            bold.setBold(True)
+            bold_metrics = QFontMetrics(bold)
+            preview_height = bold_metrics.height() + pad_y * 2
+            preview = QRect(
+                margin,
+                max(margin, rect.top() - preview_height - 6),
+                bold_metrics.horizontalAdvance(self._preview_tag_text) + pad_x * 2,
+                preview_height,
+            )
+            rect = rect.united(preview)
+        return rect
 
     def set_objective_color(self, color):
         """Set the objective tag color."""

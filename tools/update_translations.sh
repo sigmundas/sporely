@@ -35,6 +35,7 @@ files=(
   "ui/live_lab_raw.py"
   "ui/live_lab_prep_panel.py"
   "ui/adaptive_choice_selector.py"
+  "ui/capture_state_bar.py"
   "ui/ingestion_hub_tab.py"
   "ui/sync_shot_dialog.py"
   "ui/image_gallery_widget.py"

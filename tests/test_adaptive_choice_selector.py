@@ -556,3 +556,26 @@ def test_non_chip_selectors_show_pills_when_wide_and_a_dropdown_when_narrow(qapp
     selector.currentIndexChanged.connect(seen.append)
     selector.combo().setCurrentIndex(selector.findData("BF"))
     assert selector.selected_value() == "BF" and seen
+
+
+def test_chip_row_keeps_its_natural_width_in_a_form_that_does_not_stretch_fields(qapp):
+    """macOS's native style keeps form fields at their size hint; the chip row's
+    hint must be the row's own width, not whatever width it had before."""
+    from PySide6.QtWidgets import QFormLayout, QWidget
+
+    page = QWidget()
+    form = QFormLayout(page)
+    form.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
+    selector = AdaptiveChoiceSelector(compact=True)
+    selector.addItem("Not set", "Not_set", pillText="—")
+    for value in ("Water", "KOH", "L4"):
+        selector.addItem(value, value)
+    selector.set_chip_mode(clear_value="Not_set")
+    selector.resize(60, 30)  # a narrow width it once had
+    form.addRow("Mount:", selector)
+    page.resize(600, 120)
+    page.show()
+    for _ in range(5):
+        qapp.processEvents()
+    assert selector.visible_chip_values() == ["Water", "KOH", "L4"]
+    assert not selector.more_chip().isVisible()

@@ -38,20 +38,21 @@ class LiveLabPrepPanelMixin:
     SETTING_PREP_SECTION_EXPANDED = "live_lab_prep_section_expanded"
     SETTING_NOTES_SECTION_EXPANDED = "live_lab_notes_section_expanded"
 
-    def _build_microscope_card(self) -> None:
-        """Build the Microscope card (objective, contrast) as ``self.microscope_group``."""
-        self.microscope_group, micro_form = create_section_card(
-            self.tr("Microscope"),
-            QFormLayout,
-            body_margins=(10, 12, 10, 10),
-        )
-        micro_form.setSpacing(8)
+    def _build_microscope_selectors(self) -> None:
+        """Build the objective and contrast selectors (``objective_combo``, ``contrast_combo``).
+
+        They have no card since stage 2: they stay hidden in
+        ``self.microscope_selectors`` as the runtime binding, and the
+        capture-state bar over the viewer shows and drives them.
+        """
+        self.microscope_selectors = QWidget(self)
+        self.microscope_selectors.hide()
         self.objective_combo = self._make_combo()
+        self.objective_combo.setParent(self.microscope_selectors)
         self.objective_combo.set_unselected_border_visible(False)
         self.objective_combo.currentIndexChanged.connect(self._save_objective_selection)
         self.contrast_combo = self._build_term_combo("contrast")
-        micro_form.addRow(self.tr("Objective:"), self.objective_combo)
-        micro_form.addRow(self.tr("Contrast:"), self.contrast_combo)
+        self.contrast_combo.setParent(self.microscope_selectors)
 
     def _build_slide_prep_card(self) -> None:
         """Build the collapsible Preparation section (mount, stain, condition, source) as ``self.slide_prep_group``."""
@@ -440,6 +441,20 @@ class LiveLabPrepPanelMixin:
         )
 
     def _populate_objective_combo(self) -> None:
+        # Signals stay blocked while the list is refilled and the stored choice
+        # restored: otherwise selecting the first new item saves it over the
+        # stored choice before it is read (the P1 "objective forgotten" bug).
+        blocked = self.objective_combo.blockSignals(True)
+        try:
+            self._fill_objective_combo()
+        finally:
+            self.objective_combo.blockSignals(blocked)
+        self._update_lab_state_combo_alerts()
+        refresh = getattr(self, "_refresh_viewer_objective_tag_from_current_state", None)
+        if callable(refresh):
+            refresh()
+
+    def _fill_objective_combo(self) -> None:
         self.objective_combo.clear()
         adder = getattr(self, "_add_choice_item", None)
         objectives = load_objectives()
@@ -467,7 +482,6 @@ class LiveLabPrepPanelMixin:
             index = self.objective_combo.findData(saved)
             if index >= 0:
                 self.objective_combo.setCurrentIndex(index)
-        self._update_lab_state_combo_alerts()
 
     def _save_objective_selection(self) -> None:
         objective_value = self._selected_combo_value(self.objective_combo)

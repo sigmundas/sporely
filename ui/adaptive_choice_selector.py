@@ -176,6 +176,7 @@ class AdaptiveChoiceSelector(QWidget):
             self._apply_index(0, emit=False)
         else:
             self._sync_button_states()
+            self._notify_display_listeners()
         self._schedule_fit_update(0)
 
     def add_option(self, *args, **kwargs) -> None:
@@ -312,6 +313,18 @@ class AdaptiveChoiceSelector(QWidget):
         self._refresh_theme_styles()
         self._layout_chips()
 
+    def item_at(self, index: int) -> ChoiceItem | None:
+        return self._item_at(index)
+
+    def is_unset_item(self, index: int) -> bool:
+        """True for the "not set" choice ("Not_set", "—")."""
+        item = self._item_at(index)
+        return item is not None and self._is_unset_choice_item(item)
+
+    def is_mixed_present(self, index: int) -> bool:
+        """True when a mixed selection contains the item at ``index``."""
+        return self._index_is_mixed_present(index)
+
     def is_chip_mode(self) -> bool:
         return self._chip_mode
 
@@ -431,8 +444,18 @@ class AdaptiveChoiceSelector(QWidget):
 
     def sizeHint(self):  # type: ignore[override]
         if self._chip_mode and self._chip_layout is not None:
-            width = max(1, self.width() if self.width() > 40 else 240)
-            return QSize(width, self._chip_layout.heightForWidth(width))
+            # The natural width of the whole row on one line; the height is
+            # what that width needs. (Not the current width: a layout that
+            # keeps fields at their size hint would otherwise never grow it.)
+            spacing = self._chip_layout.spacing()
+            widths = [
+                button.sizeHint().width()
+                for index, button in enumerate(self._buttons)
+                if button is not None and not self._chip_is_hidden_choice(index)
+            ]
+            width = max(40, sum(widths) + spacing * max(0, len(widths) - 1))
+            current = self.width() if self.width() > 40 else width
+            return QSize(width, self._chip_layout.heightForWidth(current))
         combo_hint = self._combo.sizeHint()
         pill_hint = self._pill_container.sizeHint()
         return QSize(combo_hint.width(), max(combo_hint.height(), pill_hint.height()))

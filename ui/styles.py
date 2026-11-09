@@ -95,6 +95,16 @@ def get_design_tokens(theme: str = "auto") -> dict[str, str]:
     }
 
 
+# The Live Lab capture-state bar sits on the image, not on the app's surfaces,
+# so it uses the same dark bar in both themes.
+HUD_COLORS: dict[str, str] = {
+    "background": "rgba(18, 18, 18, 214)",
+    "border": "rgba(255, 255, 255, 31)",
+    "text": "#e0e0e0",
+    "selected_background": "#e8e8e8",
+    "focus": "#7cc4bd",
+}
+
 # Images not yet saved to an observation (Live Lab pending captures,
 # Kameraimport) carry this border colour.
 STAGING_BORDER = "#e67e22"

@@ -168,14 +168,6 @@ def test_objective_choice_is_saved(qtbot, profile):
     assert SettingsDB.get_setting(tab.SETTING_LAST_OBJECTIVE) == "100X"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Open question (P1): filling the objective list selects the first "
-        "objective and saves it over the stored choice before reading it, so "
-        "only an objective that sorts first survives a restart."
-    ),
-)
 def test_objective_choice_survives_a_restart(qtbot, profile):
     tab = _make_tab(qtbot)
     _choose(qtbot, tab.objective_combo, "100X")
@@ -769,3 +761,188 @@ def test_chip_rows_are_quiet_when_nothing_changes(qtbot, profile):
     for _ in range(40):
         qtbot.wait(5)
     assert counts["layouts"] <= 2
+
+
+# ---------------------------------------------------------------------------
+# Stage 2: capture-state bar, live-view label and shortcuts
+# ---------------------------------------------------------------------------
+
+
+def _bar_button(tab, kind: str, value: str):
+    segments = tab.capture_state_bar.objective_segments if kind == "objective" else tab.capture_state_bar.contrast_segments
+    button = segments.button_for_value(value)
+    assert button is not None and button.isVisible(), (kind, value, list(segments.buttons()))
+    return button
+
+
+def test_bar_buttons_choose_and_log_objective_and_contrast(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_OFFLINE)
+
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "Phase"), Qt.LeftButton)
+    assert tab.objective_combo.selected_value() == "40X"
+    assert tab.contrast_combo.selected_value() == "Phase"
+    assert _bar_button(tab, "objective", "40X").property("selected") is True
+    assert _bar_button(tab, "objective", "100X").property("selected") is False
+    assert tab.live_state_label.text() == "40x · Phase · KOH"
+    changes = [
+        (event.get("attribute_name"), event.get("value"))
+        for event in _events(obs)
+        if event.get("event_type") == "dropdown_change"
+    ]
+    assert changes[-2:] == [("objective_name", "40X"), ("contrast", "Phase")]
+    assert SettingsDB.get_setting(tab.SETTING_LAST_OBJECTIVE) == "40X"
+
+
+def test_bar_label_and_thumbnail_badge_share_the_objective_colour(qtbot, profile):
+    from ui.adaptive_choice_selector import objective_color
+    from database.schema import load_objectives
+
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "63X"})
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    _capture(qtbot, profile, obs, "P1010001.JPG")
+    qtbot.waitUntil(lambda: bool(tab.session_gallery._items), timeout=3000)
+
+    ring = objective_color(load_objectives()["63X"], "63X")
+    assert f"background-color: {ring};" in tab.live_state_label.styleSheet()
+    assert ring in _bar_button(tab, "objective", "63X").styleSheet()
+    badge_colors = {item.get("microscope_tag_color") for item in tab.session_gallery._items}
+    assert badge_colors == {ring}
+
+
+def test_the_microscope_card_is_gone_and_its_choices_live_on_the_bar(qtbot, profile):
+    tab = _make_tab(qtbot)
+    assert getattr(tab, "microscope_group", None) is None
+    assert not tab.objective_combo.isVisible() and not tab.contrast_combo.isVisible()
+    assert tab.capture_state_bar.isVisible()
+    assert list(tab.capture_state_bar.objective_segments.buttons()) == ["40X", "63X", "100X"]
+
+
+def test_number_and_letter_shortcuts_choose_objective_and_contrast(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_OFFLINE)
+    tab.live_image_label.setFocus(Qt.OtherFocusReason)
+    qtbot.waitUntil(tab.live_image_label.hasFocus, timeout=1000)
+
+    for key, expected in ((Qt.Key_1, "40X"), (Qt.Key_2, "63X"), (Qt.Key_3, "100X")):
+        qtbot.keyClick(tab.live_image_label, key)
+        assert tab.objective_combo.selected_value() == expected
+    qtbot.keyClick(tab.live_image_label, Qt.Key_6)  # no sixth objective: nothing happens
+    assert tab.objective_combo.selected_value() == "100X"
+    for key, expected in ((Qt.Key_B, "BF"), (Qt.Key_D, "DF"), (Qt.Key_P, "Phase"), (Qt.Key_I, "DIC")):
+        qtbot.keyClick(tab.live_image_label, key)
+        assert tab.contrast_combo.selected_value() == expected
+    assert _bar_button(tab, "objective", "63X").toolTip().endswith("(2)")
+    assert _bar_button(tab, "contrast", "DIC").toolTip().endswith("(I)")
+    changes = [e.get("value") for e in _events(obs) if e.get("event_type") == "dropdown_change"]
+    assert changes[-7:] == ["40X", "63X", "100X", "BF", "DF", "Phase", "DIC"]
+
+
+def test_shortcut_letters_type_into_text_fields(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_OFFLINE)
+    tab.session_note_input.setFocus(Qt.OtherFocusReason)
+    qtbot.waitUntil(tab.session_note_input.hasFocus, timeout=1000)
+    qtbot.keyClicks(tab.session_note_input, "Bip 12")
+    assert tab.session_note_input.text() == "Bip 12"
+    assert tab.contrast_combo.selected_value() == "DIC"
+    assert tab.objective_combo.selected_value() == "100X"
+
+
+def test_overlays_stack_without_overlapping(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    qtbot.waitUntil(tab.live_state_label.isVisible, timeout=2000)
+    session = tab.session_action_frame.geometry()
+    label = tab.live_state_label.geometry()
+    bar = tab.capture_state_bar.geometry()
+    calibration = tab.calibration_action_frame.geometry()
+    assert label.top() > session.bottom()  # label under the session button
+    assert not label.intersects(calibration)
+    viewer = tab.live_image_label.rect()
+    assert viewer.contains(bar)
+    assert abs(bar.center().x() - viewer.center().x()) <= 1  # bottom centre
+    tab.pending_raw_frame.setVisible(True)
+    tab._reposition_pending_raw_floating_tab()
+    assert tab.pending_raw_frame.geometry().bottom() < bar.top()  # pending bar sits above it
+
+
+def test_bar_stacks_its_groups_when_the_viewer_is_narrow(qtbot, profile):
+    tab = _make_tab(qtbot)
+    bar = tab.capture_state_bar
+    tab._reposition_pending_raw_floating_tab()
+    assert not bar.is_stacked()
+    wide = bar.sizeHint().width()
+    bar.fit_to_width(wide - 20)
+    assert bar.is_stacked()
+    assert bar.sizeHint().width() < wide
+    bar.fit_to_width(wide + 20)
+    assert not bar.is_stacked()
+
+
+def test_bar_shows_an_unset_contrast_as_a_warning_and_a_mixed_selection(qtbot, profile):
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _choose(qtbot, tab.contrast_combo, "Not_set")
+    segments = tab.capture_state_bar.contrast_segments
+    assert "Not_set" not in segments.buttons()
+    assert not any(button.property("selected") for button in segments.buttons().values())
+    assert "#d64545" in segments.styleSheet() or "#d65a63" in segments.styleSheet()
+    tab.objective_combo.set_mixed_values(["40X", "100X"])
+    objective_buttons = tab.capture_state_bar.objective_segments.buttons()
+    assert "dashed" in objective_buttons["40X"].styleSheet()
+    assert "dashed" not in objective_buttons["63X"].styleSheet()
+
+
+def test_bar_follows_a_changed_choice_list_and_forwards_wheel_events_from_new_buttons(qtbot, profile, monkeypatch):
+    from PySide6.QtCore import QPoint, QPointF
+    from PySide6.QtGui import QWheelEvent
+
+    tab = _make_tab(qtbot)
+    bar = tab.capture_state_bar
+    before = bar.width()
+    tab.contrast_combo.addItem("Extra wide contrast method", "Extra_wide", pillText="Extra wide contrast method")
+    qtbot.waitUntil(lambda: bar.width() > before, timeout=2000)  # repositioned after the rebuild
+    assert bar.geometry().width() == bar.sizeHint().width()
+
+    anchors: list[QPointF] = []
+    monkeypatch.setattr(tab.live_image_label, "_apply_zoom_around", lambda pos, factor: anchors.append(QPointF(pos)))
+    from PySide6.QtGui import QPixmap
+
+    pixmap = QPixmap(64, 48)
+    pixmap.fill(Qt.white)
+    tab.live_image_label.set_image(pixmap)
+    button = bar.contrast_segments.button_for_value("Extra_wide")  # created after the tab was built
+    local = QPoint(5, 5)
+    event = QWheelEvent(
+        QPointF(local), QPointF(button.mapToGlobal(local)), QPoint(0, 0), QPoint(0, 120),
+        Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False,
+    )
+    QApplication.sendEvent(button, event)
+    assert anchors, "the wheel event did not reach the viewer"
+    expected = tab.live_image_label.mapFromGlobal(button.mapToGlobal(local))
+    assert (round(anchors[0].x()), round(anchors[0].y())) == (expected.x(), expected.y())
+
+
+def test_a_narrow_viewer_gets_a_stacked_compact_bar_clear_of_the_zoom_readout(qtbot, profile):
+    tab = _make_tab(qtbot, width=900, height=720)
+    label = tab.live_image_label
+    bar = tab.capture_state_bar
+    for value in ("Extra_1", "Extra_2"):
+        tab.objective_combo.addItem(value, value, pillText="999x")
+    label.resize(360, label.height())
+    tab._reposition_pending_raw_floating_tab()
+    assert bar.is_stacked()
+    assert bar.geometry().right() <= label.width() or bar.is_compact()
+    assert not bar.geometry().intersects(label.bottom_left_readout_rect())

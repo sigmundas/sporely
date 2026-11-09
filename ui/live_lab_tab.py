@@ -16,6 +16,8 @@ from PySide6.QtCore import (
     QTimer,
     QSignalBlocker,
     QEvent,
+    QPointF,
+    QRect,
 )
 from PySide6.QtGui import (
     QColor,
@@ -25,6 +27,8 @@ from PySide6.QtGui import (
     QPainter,
     QPixmap,
     QShortcut,
+    QKeySequence,
+    QWheelEvent,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -43,6 +47,10 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QToolButton,
     QWidget,
+    QAbstractSpinBox,
+    QComboBox,
+    QPlainTextEdit,
+    QTextEdit,
 )
 
 from config import (
@@ -96,6 +104,8 @@ from .splitter_state import (
     install_persistent_splitter,
 )
 from .zoomable_image_widget import ZoomableImageLabel
+from .capture_state_bar import CaptureStateBar, readable_text_color
+from .styles import objective_ring_outline
 from .live_lab_prep_panel import LiveLabPrepPanelMixin
 from .live_lab_raw import LiveLabRawMixin
 # The RAW edit/preview machinery lives in ui/live_lab_raw.py; these names stay
@@ -141,6 +151,11 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
     VIEWER_PREVIEW_MAX_DIM = 1600
     VIEWER_SCALE_BAR_UM = 10.0
     OBSERVATION_PREVIEW_SIZE = 116
+    # Keyboard shortcuts on the capture-state bar (decided 2026-11-09): 1-6
+    # choose the objectives in magnification order, letters the contrast
+    # methods. They act only when no text field has focus.
+    OBJECTIVE_SHORTCUT_KEYS = ("1", "2", "3", "4", "5", "6")
+    CONTRAST_SHORTCUT_KEYS = {"BF": "B", "DF": "D", "DIC": "I", "Phase": "P"}
     SESSION_BUTTON_BASE_STYLE = "font-weight: bold; padding: 4px 10px;"
     SESSION_BUTTON_ACTIVE_STYLE = (
         "font-weight: bold; padding: 4px 10px; background-color: #e74c3c; color: white;"
@@ -246,6 +261,7 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         )
         self._build_ui()
         self._install_raw_review_shortcuts()
+        self._install_capture_shortcuts()
         self._populate_objective_combo()
         self._restore_term_selection(self.contrast_combo, "contrast")
         self._restore_term_selection(self.mount_combo, "mount")
@@ -374,14 +390,12 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         self.browse_btn.setMinimumWidth(72)
         watch_layout.addWidget(self.browse_btn, 0, Qt.AlignVCenter)
 
-        # MICROSCOPE = optical path only (Objective, Contrast).
-        # SLIDE / PREP = everything about the mounted specimen: mount medium,
-        # stain, specimen condition, and where the material was sampled from.
-        # Mount and Stain are properties of the slide, not the microscope path.
-        self._build_microscope_card()
+        # Objective and contrast (the optical path) are chosen on the
+        # capture-state bar over the viewer; PREPARATION holds everything about
+        # the mounted specimen: mount medium, stain, condition and source.
+        self._build_microscope_selectors()
         self._build_slide_prep_card()
         left_layout.addWidget(self.slide_prep_group)
-        left_layout.addWidget(self.microscope_group)
 
         self._build_notes_card()
         left_layout.addWidget(self.notes_group)
@@ -521,10 +535,7 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             "QFrame#sectionCard {"
             " background-color: rgba(255, 255, 255, 215);"
             " border: 1px solid rgba(0, 0, 0, 40);"
-            " border-bottom-left-radius: 0px;"
-            " border-bottom-right-radius: 0px;"
-            " border-top-left-radius: 8px;"
-            " border-top-right-radius: 8px;"
+            " border-radius: 8px;"
             "}"
         )
         self.pending_raw_frame.raise_()
@@ -552,12 +563,31 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             "}"
         )
         self.session_action_frame.raise_()
+        # Capture-state bar (stage 2): objective and contrast as large segments
+        # at the bottom of the viewer, and a label at the top-left showing the
+        # state of what is on screen, coloured by the objective's ring colour.
+        self.capture_state_bar = CaptureStateBar(
+            self.objective_combo,
+            self.contrast_combo,
+            objective_key=lambda _value, position: str(position + 1) if position < len(self.OBJECTIVE_SHORTCUT_KEYS) else None,
+            contrast_key=lambda value, _position: self._contrast_shortcut_key(value),
+            parent=self.live_image_label,
+        )
+        self.capture_state_bar.raise_()
+        self.live_state_label = QLabel(self.live_image_label)
+        self.live_state_label.setObjectName("liveStateLabel")
+        self.live_state_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.live_state_label.setVisible(False)
         # Forward wheel and native pinch-gesture events that land on either
         # floating action bar down to the image viewer beneath, so zooming
         # while the controls are visible still works.
         self._install_viewer_gesture_forwarding(self.pending_raw_frame)
         self._install_viewer_gesture_forwarding(self.calibration_action_frame)
         self._install_viewer_gesture_forwarding(self.session_action_frame)
+        self._install_viewer_gesture_forwarding(self.capture_state_bar)
+        # New buttons (objectives loaded, contrast list changed in Preferences)
+        # need the forwarding too, and a new size means a new position.
+        self.capture_state_bar.rebuilt.connect(self._on_capture_state_bar_rebuilt)
 
         self.session_gallery = ImageGalleryWidget(
             self.tr("Session Gallery"),
@@ -1161,19 +1191,48 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
                     metadata = current_lab_metadata()
                 except Exception:
                     metadata = None
+        # The viewer's own corner tag is replaced by the live-state label.
         set_text = getattr(label, "set_objective_text", None)
-        set_color = getattr(label, "set_objective_color", None)
-        tag_text, tag_color = LiveLabTab._microscope_tag_for_metadata(self, metadata)
         if callable(set_text):
             try:
-                set_text(tag_text or "")
+                set_text("")
             except Exception:
                 pass
-        if callable(set_color):
-            try:
-                set_color(tag_color or objective_color(None, None))
-            except Exception:
-                pass
+        state_label = getattr(self, "live_state_label", None)
+        if state_label is None:
+            return
+        text, color = LiveLabTab._live_state_label_parts(self, metadata)
+        if not text:
+            state_label.setVisible(False)
+            return
+        outline = objective_ring_outline(color)
+        state_label.setText(text)
+        state_label.setStyleSheet(
+            "QLabel#liveStateLabel {"
+            f" background-color: {color}; color: {readable_text_color(color)};"
+            f" border: 1px solid {outline or color};"
+            " border-radius: 8px; padding: 6px 12px; font-size: 18px; font-weight: 700;"
+            " }"
+        )
+        state_label.setVisible(True)
+        self._reposition_pending_raw_floating_tab()
+
+    def _live_state_label_parts(self, metadata: dict | None) -> tuple[str | None, str | None]:
+        """Text ("63x · DIC · Water") and ring colour of the live-view label."""
+        data = dict(metadata or {})
+        objective_name = LiveLabTab._objective_key_from_metadata(self, data)
+        if not objective_name:
+            return None, None
+        objective = load_objectives().get(str(objective_name))
+        parts = [
+            objective_short_label(objective, str(objective_name))
+            or (objective_display_name(objective, str(objective_name)) if objective else str(objective_name))
+        ]
+        for category, key in (("contrast", "contrast"), ("mount", "mount_medium")):
+            value = DatabaseTerms.canonicalize(category, data.get(key))
+            if value and str(value).strip().lower() not in {"not_set", "not set"}:
+                parts.append(DatabaseTerms.translate(category, value))
+        return " · ".join(part for part in parts if part), objective_color(objective, str(objective_name))
 
     def _session_gallery_selected_keys(self) -> list[object]:
         gallery = getattr(self, "session_gallery", None)
@@ -1298,26 +1357,109 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             getattr(self, "pending_raw_frame", None),
             getattr(self, "calibration_action_frame", None),
             getattr(self, "session_action_frame", None),
+            getattr(self, "capture_state_bar", None),
         ]
         for frame in frames:
             if frame is None:
                 continue
             if obj is frame or (isinstance(obj, QWidget) and frame.isAncestorOf(obj)):
+                if event.type() == QEvent.Wheel and isinstance(obj, QWidget):
+                    # Re-anchor the wheel at the same point in viewer
+                    # coordinates, so zoom centres where the pointer is.
+                    position = QPointF(image_label.mapFromGlobal(obj.mapToGlobal(event.position().toPoint())))
+                    event = QWheelEvent(
+                        position,
+                        event.globalPosition(),
+                        event.pixelDelta(),
+                        event.angleDelta(),
+                        event.buttons(),
+                        event.modifiers(),
+                        event.phase(),
+                        event.inverted(),
+                        event.source(),
+                    )
                 QApplication.sendEvent(image_label, event)
                 return True
         return False
+
+    def _on_capture_state_bar_rebuilt(self) -> None:
+        self._install_viewer_gesture_forwarding(self.capture_state_bar)
+        self._reposition_pending_raw_floating_tab()
+
+    def _contrast_shortcut_key(self, value) -> str | None:
+        return self.CONTRAST_SHORTCUT_KEYS.get(str(value or ""))
+
+    def _install_capture_shortcuts(self) -> None:
+        """1-6 choose objectives, B/D/I/P contrast methods (the capture-state bar)."""
+        self._capture_shortcuts = []
+        for position, key in enumerate(self.OBJECTIVE_SHORTCUT_KEYS):
+            shortcut = QShortcut(QKeySequence(key), self)
+            shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(lambda _checked=False, p=position: self._choose_objective_by_position(p))
+            self._capture_shortcuts.append(shortcut)
+        for value, key in self.CONTRAST_SHORTCUT_KEYS.items():
+            shortcut = QShortcut(QKeySequence(key), self)
+            shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(lambda _checked=False, v=value: self._choose_contrast_by_shortcut(v))
+            self._capture_shortcuts.append(shortcut)
+
+    def _capture_shortcut_allowed(self) -> bool:
+        focus = QApplication.focusWidget()
+        if isinstance(focus, (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox)):
+            return False
+        if isinstance(focus, QComboBox) and focus.isEditable():
+            return False
+        return True
+
+    def _choose_objective_by_position(self, position: int) -> None:
+        if not self._capture_shortcut_allowed():
+            return
+        selector = self.objective_combo
+        values = [
+            selector.itemData(index)
+            for index in range(selector.count())
+            if not selector.is_unset_item(index)
+        ]
+        if 0 <= position < len(values) and (selector.selected_value() != values[position] or selector.is_mixed()):
+            selector.set_selected_value(values[position], emit=True)
+
+    def _choose_contrast_by_shortcut(self, value: str) -> None:
+        if not self._capture_shortcut_allowed():
+            return
+        selector = self.contrast_combo
+        if selector.findData(value) < 0:
+            return
+        if selector.selected_value() != value or selector.is_mixed():
+            selector.set_selected_value(value, emit=True)
 
     def _reposition_pending_raw_floating_tab(self) -> None:
         image_label = getattr(self, "live_image_label", None)
         if image_label is None:
             return
+        # Capture-state bar: bottom centre. The pending-RAW bar sits just above it.
+        bottom = image_label.height() - 12
+        bar = getattr(self, "capture_state_bar", None)
+        if bar is not None and bar.parentWidget() is image_label:
+            bar.fit_to_width(max(0, image_label.width() - 16))
+            hint = bar.sizeHint()
+            x = max(0, (image_label.width() - hint.width()) // 2)
+            y = max(0, bottom - hint.height())
+            readout_rect = getattr(image_label, "bottom_left_readout_rect", None)
+            if callable(readout_rect):
+                readout = readout_rect()
+                if QRect(x, y, hint.width(), hint.height()).intersects(readout.adjusted(-6, -6, 6, 6)):
+                    y = max(0, readout.top() - 8 - hint.height())  # sit above the zoom readout
+            bar.setGeometry(x, y, hint.width(), hint.height())
+            bar.raise_()
+            if not bar.isHidden():
+                bottom = y - 8
         frame = getattr(self, "pending_raw_frame", None)
         if frame is not None and frame.parentWidget() is image_label:
             hint = frame.sizeHint()
             width = max(hint.width(), frame.minimumSizeHint().width())
             height = max(hint.height(), frame.minimumSizeHint().height())
             x = max(0, (image_label.width() - width) // 2)
-            y = max(0, image_label.height() - height)
+            y = max(0, bottom - height)
             frame.setGeometry(x, y, width, height)
             frame.raise_()
         calibration_frame = getattr(self, "calibration_action_frame", None)
@@ -1337,6 +1479,14 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             height = max(hint.height(), session_frame.minimumSizeHint().height())
             session_frame.setGeometry(8, 8, width, height)
             session_frame.raise_()
+        state_label = getattr(self, "live_state_label", None)
+        if state_label is not None and state_label.parentWidget() is image_label:
+            top = 8
+            if session_frame is not None and session_frame.parentWidget() is image_label and not session_frame.isHidden():
+                top = session_frame.geometry().bottom() + 8
+            state_label.adjustSize()
+            state_label.move(8, top)
+            state_label.raise_()
 
     _SESSION_IMAGE_TOP_LEVEL_METADATA_KEYS = (
         ("objective_name", "objective_name"),
@@ -3437,7 +3587,9 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             frame.setVisible(False)
         update_viewer_objective_tag = getattr(self, "_update_viewer_objective_tag", None)
         if callable(update_viewer_objective_tag):
-            update_viewer_objective_tag(None)
+            # An empty viewer waits for the next capture: label it with the
+            # current state.
+            update_viewer_objective_tag(None, use_current_state=True)
         update_raw_processing_visibility = getattr(self, "_update_raw_processing_visibility", None)
         if callable(update_raw_processing_visibility):
             update_raw_processing_visibility()
