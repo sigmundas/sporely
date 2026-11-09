@@ -714,6 +714,26 @@ QPushButton#outlineButton:disabled {{
     border: 1.5px solid {dis_fg};
 }}
 
+/* Opens a drawer page: outlined while closed, filled while its page shows (stage 6). */
+QPushButton#drawerToggle {{
+    background-color: {surface};
+    color: {text};
+    border: 1.5px solid {accent};
+    border-radius: {radius_xl};
+    padding: 5px 14px;
+    font-weight: bold;
+}}
+
+QPushButton#drawerToggle:hover:!checked {{
+    background-color: {surface_low};
+    border-color: {accent_h};
+}}
+
+QPushButton#drawerToggle:checked {{
+    background-color: {accent};
+    color: white;
+}}
+
 QPushButton#dataButton {{
     background-color: {surface_low};
     color: {text};

@@ -87,6 +87,36 @@ def register_measure_tab_scenarios(registry: ScenarioRegistry) -> None:
                 theme=theme,
             )
         )
+    for page, label in (("view", "Visning"), ("info", "Info")):
+        for theme in ("light", "dark"):
+            suffix = "" if theme == "light" else "-dark"
+            registry.register(
+                ReviewScenario(
+                    id=f"measure.{page}-drawer{suffix}",
+                    group="measure",
+                    title=f"Measure tab, {label} drawer open (nb{', dark' if theme == 'dark' else ''})",
+                    description=f"The right drawer shows {label} over the image's right edge (stage 6).",
+                    build=lambda context, page=page: _measure_tab(
+                        context,
+                        note="Klemmeforbindelser ved septa",
+                        after=lambda window: window.measure_drawer.open_page(page),
+                    ),
+                    viewport=(1500, 950),
+                    locale="nb_NO",
+                    theme=theme,
+                )
+            )
+    registry.register(
+        ReviewScenario(
+            id="measure.view-drawer-de",
+            group="measure",
+            title="Measure tab, View drawer open (de)",
+            description="The View drawer with German strings, the longest labels.",
+            build=lambda context: _measure_tab(context, after=lambda window: window.measure_drawer.open_page("view")),
+            viewport=(1500, 950),
+            locale="de_DE",
+        )
+    )
     registry.register(
         ReviewScenario(
             id="measure.tab-de",

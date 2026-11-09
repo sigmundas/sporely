@@ -33,13 +33,27 @@ _MAX_HEIGHT = 16777215  # QWIDGETSIZE_MAX
 
 
 class _ElidedLabel(QLabel):
-    """Single-line label that elides its text to the width it gets."""
+    """Single-line label that elides its text to the width it gets.
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    With ``text_setter`` its ``setText`` and ``text`` take and return the
+    full text, so code written for a plain ``QLabel`` can use it as is.
+    """
+
+    def __init__(self, parent: QWidget | None = None, *, text_setter: bool = False) -> None:
         super().__init__(parent)
         self._full_text = ""
+        self._text_setter = bool(text_setter)
         self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self.setTextFormat(Qt.PlainText)
+
+    def setText(self, text) -> None:  # noqa: N802 - Qt override
+        if self._text_setter:
+            self.set_full_text(text)
+        else:
+            super().setText(text)
+
+    def text(self) -> str:
+        return self._full_text if self._text_setter else super().text()
 
     def set_full_text(self, text: str) -> None:
         self._full_text = str(text or "")
@@ -56,6 +70,9 @@ class _ElidedLabel(QLabel):
     def _refresh(self) -> None:
         metrics = QFontMetrics(self.font())
         super().setText(metrics.elidedText(self._full_text, Qt.ElideRight, max(0, self.width())))
+
+
+ElidedLabel = _ElidedLabel
 
 
 class _SectionHeader(QFrame):

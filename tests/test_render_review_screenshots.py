@@ -161,6 +161,11 @@ LIVE_LAB_IDS = {
     for suffix in ("", "-dark")
 } | {"live-lab.idle-small", "live-lab.idle-de", "live-lab.sections-collapsed-de"}
 STYLE_TOKEN_IDS = {"style-tokens.objective-rings", "style-tokens.objective-rings-dark"}
+MEASURE_TAB_IDS = {
+    f"measure.{state}{suffix}"
+    for state in ("tab", "view-drawer", "info-drawer")
+    for suffix in ("", "-dark")
+} | {"measure.tab-de", "measure.tab-small", "measure.view-drawer-de"}
 ALL_IDS = (
     REFERENCE_IDS
     | CONFLICT_IDS
@@ -169,6 +174,7 @@ ALL_IDS = (
     | QUICK_FIX_IDS
     | LIVE_LAB_IDS
     | STYLE_TOKEN_IDS
+    | MEASURE_TAB_IDS
 )
 
 

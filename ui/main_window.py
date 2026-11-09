@@ -30,6 +30,7 @@ from PySide6.QtGui import (
     QPolygonF,
     QCursor,
     QPalette,
+    QTextDocumentFragment,
 )
 from PySide6.QtCore import (
     Qt,
@@ -253,6 +254,8 @@ from .comparison_panel import ComparisonListWidget, ComparisonRow
 from .reference_entry_editor import ReferenceEntryEditor, SporeDataTable
 from .reference_library_attach_dialog import ReferenceLibraryAttachDialog
 from .section_card import create_section_card
+from .collapsible_section import CollapsibleSection as SummarySection, ElidedLabel
+from .side_drawer import SideDrawer
 from .segmented_selector import SegmentedSelector
 from .styles import get_style, apply_palette, pt, _is_dark
 from .window_state import GeometryMixin
@@ -377,6 +380,20 @@ class _CloudOAuthLoginWorker(QThread):
             self.fail.emit(str(e))
         except Exception as e:
             self.fail.emit(str(e))
+
+
+class _NotifyingLabel(QLabel):
+    """A QLabel that says when its text or visibility changes (for summary lines)."""
+
+    changed = Signal()
+
+    def setText(self, text) -> None:  # noqa: N802 - Qt override
+        super().setText(text)
+        self.changed.emit()
+
+    def setVisible(self, visible: bool) -> None:  # noqa: N802 - Qt override
+        super().setVisible(visible)
+        self.changed.emit()
 
 
 class AnalysisGalleryTile(QWidget):
@@ -5698,6 +5715,7 @@ class MainWindow(GeometryMixin, QMainWindow):
     _geometry_key = "MainWindow"
     _ROLE_TAXON_CHOICE = Qt.UserRole + 4
     SETTING_MEASURE_SHOW_LABELS = "measure_view_show_labels"
+    SETTING_MEASURE_SCALE_SECTION_EXPANDED = "measure_scale_section_expanded"
     SETTING_MEASURE_SHOW_OVERLAYS = "measure_view_show_overlays"
     SETTING_MEASURE_SHOW_SCALE_BAR = "measure_view_show_scale_bar"
     SETTING_MEASURE_SHOW_COPYRIGHT = "measure_view_show_copyright"
@@ -7008,17 +7026,24 @@ class MainWindow(GeometryMixin, QMainWindow):
             QDesktopServices.openUrl(QUrl(url))
 
     def create_control_panel(self):
-        """Create the left control panel."""
-        panel = QWidget()
-        layout = QVBoxLayout(panel)
-        layout.setSpacing(10)
+        """Build the Measure tab's controls; ``create_measure_tab`` places them (stage 6).
 
-        # Image loading group
-        # Import/Export now available from the top menus
-
-        # Scale group
-        calib_group, calib_layout = create_section_card(self.tr("Scale"))
-        self.calib_group = calib_group
+        - ``measure_scale_section``: Skala, a collapsed section whose summary
+          line names the objective and calibration, warnings in the alert colour;
+        - ``measure_toolbar``: category, Line/Rectangle/Multi-line, start/stop
+          and status above the image, with buttons for the drawer pages;
+        - ``measure_view_page`` and ``measure_info_page``: Visning and Info,
+          shown in the right drawer.
+        """
+        self.measure_scale_section = SummarySection(
+            self.tr("Scale"),
+            QVBoxLayout,
+            settings_key=self.SETTING_MEASURE_SCALE_SECTION_EXPANDED,
+            expanded=False,
+            body_margins=(12, 10, 12, 10),
+        )
+        self.calib_group = self.measure_scale_section
+        calib_layout = self.measure_scale_section.body_layout
 
         self.scale_combo = QComboBox()
         self.scale_combo.currentIndexChanged.connect(self.on_scale_combo_changed)
@@ -7044,7 +7069,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         scale_inline_layout.addWidget(self.scale_bar_horizontal_checkbox, 0)
         calib_layout.addWidget(self.scale_bar_inline)
 
-        self.calib_info_label = QLabel(self.tr("Calibration: --"))
+        self.calib_info_label = _NotifyingLabel(self.tr("Calibration: --"))
         self.calib_info_label.setWordWrap(True)
         self.calib_info_label.setStyleSheet(f"color: #7f8c8d; font-size: {pt(9)}pt;")
         self.calib_info_label.setTextFormat(Qt.RichText)
@@ -7053,26 +7078,32 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.calib_info_label.linkActivated.connect(self._on_calibration_link_clicked)
         calib_layout.addWidget(self.calib_info_label)
 
-        self.scale_warning_label = QLabel("")
+        self.scale_warning_label = _NotifyingLabel("")
         self.scale_warning_label.setWordWrap(True)
         self.scale_warning_label.setStyleSheet(f"color: #e74c3c; font-weight: bold; font-size: {pt(9)}pt;")
         self.scale_warning_label.setVisible(False)
         calib_layout.addWidget(self.scale_warning_label)
+        self.scale_combo.currentIndexChanged.connect(self._update_measure_scale_summary)
+        self.calib_info_label.changed.connect(self._update_measure_scale_summary)
+        self.scale_warning_label.changed.connect(self._update_measure_scale_summary)
 
-        layout.addWidget(calib_group)
-
-        # Measurement group (category dropdown lives at the top)
-        measure_group, measure_layout = create_section_card(self.tr("Measure"))
+        # The measuring tools: one row above the image.
+        self.measure_toolbar = QWidget()
+        self.measure_toolbar.setObjectName("measureToolbar")
+        measure_layout = QHBoxLayout(self.measure_toolbar)
+        measure_layout.setContentsMargins(0, 0, 0, 0)
+        measure_layout.setSpacing(8)
 
         self.measure_category_combo = QComboBox()
         self._populate_measure_categories()
         self.measure_category_combo.currentIndexChanged.connect(self.on_measure_category_changed)
+        self.measure_category_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         measure_layout.addWidget(self.measure_category_combo)
 
         mode_row = QHBoxLayout()
         mode_row.setContentsMargins(0, 0, 0, 0)
         mode_row.setSpacing(8)
-        self.measure_mode_selector = SegmentedSelector(self, compact=True, fill_width=True)
+        self.measure_mode_selector = SegmentedSelector(self, compact=True)
         self.mode_lines = self.measure_mode_selector.add_option(self.tr("Line"), "lines")
         self.mode_rect = self.measure_mode_selector.add_option(self.tr("Rectangle"), "rectangle", checked=True)
         self.mode_multiline = self.measure_mode_selector.add_option(self.tr("Multi-line"), "multiline")
@@ -7080,27 +7111,40 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.mode_lines.toggled.connect(self.on_measure_mode_changed)
         self.mode_rect.toggled.connect(self.on_measure_mode_changed)
         self.mode_multiline.toggled.connect(self.on_measure_mode_changed)
-        mode_row.addWidget(self.measure_mode_selector, 1)
+        mode_row.addWidget(self.measure_mode_selector, 0)
         measure_layout.addLayout(mode_row)
 
         self.measure_button = QPushButton(self.tr("Start measuring (M)"))
         self.measure_button.setCheckable(True)
-        self.measure_button.setMinimumHeight(35)
-        self.measure_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.measure_button.setMinimumHeight(32)
+        self.measure_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.measure_button.setStyleSheet("font-weight: bold; padding: 6px 10px;")
         self.measure_button.clicked.connect(self._on_measure_button_clicked)
         measure_layout.addWidget(self.measure_button)
 
-        self.measure_status_label = QLabel("")
-        self.measure_status_label.setWordWrap(True)
+        # One line; a long status is elided, in full as the tooltip.
+        self.measure_status_label = ElidedLabel(text_setter=True)
         self.measure_status_label.setStyleSheet(f"color: #27ae60; font-weight: bold; font-size: {pt(9)}pt;")
         self.measure_status_label.setVisible(True)
-        measure_layout.addWidget(self.measure_status_label)
+        measure_layout.addWidget(self.measure_status_label, 1)
 
-        layout.addWidget(measure_group)
+        self.measure_view_drawer_btn = QPushButton(self.tr("View"))
+        self.measure_info_drawer_btn = QPushButton(self.tr("Info"))
+        for button in (self.measure_view_drawer_btn, self.measure_info_drawer_btn):
+            button.setObjectName("drawerToggle")
+            button.setCheckable(True)
+            button.setMinimumHeight(32)
+            button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            measure_layout.addWidget(button, 0)
+        self.measure_view_drawer_btn.clicked.connect(lambda _checked=False: self._toggle_measure_drawer("view"))
+        self.measure_info_drawer_btn.clicked.connect(lambda _checked=False: self._toggle_measure_drawer("info"))
 
-        # Zoom controls
-        zoom_group, zoom_layout = create_section_card(self.tr("View"))
+        # Visning: a page of the right drawer.
+        zoom_group = QWidget()
+        zoom_layout = QVBoxLayout(zoom_group)
+        zoom_layout.setContentsMargins(14, 6, 14, 14)
+        zoom_layout.setSpacing(8)
+        self.measure_view_page = zoom_group
         view_buttons_row = QHBoxLayout()
 
         reset_btn = QPushButton(self.tr("Reset"))
@@ -7249,10 +7293,14 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.scale_bar_container.setToolTip(self.tr("Settings for the 'Show scale bar' option."))
         self.scale_bar_container.setVisible(False)
         zoom_layout.addWidget(self.scale_bar_container)
+        zoom_layout.addStretch(1)
 
-        layout.addWidget(zoom_group)
-
-        info_group, info_layout = create_section_card(self.tr("Info"))
+        # Info: a page of the right drawer.
+        info_group = QWidget()
+        info_layout = QVBoxLayout(info_group)
+        info_layout.setContentsMargins(14, 6, 14, 14)
+        info_layout.setSpacing(8)
+        self.measure_info_page = info_group
         self.exif_info_label = QLabel(self.tr("No image loaded"))
         self.exif_info_label.setWordWrap(True)
         self.exif_info_label.setStyleSheet(f"font-size: {pt(8)}pt;")
@@ -7265,12 +7313,55 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.measure_image_note_input.setMaximumHeight(78)
         self.measure_image_note_input.setEnabled(False)
         self.measure_image_note_input.textChanged.connect(self._queue_measure_image_note_save)
+        self.measure_image_note_input.textChanged.connect(self._update_measure_info_button)
         info_layout.addWidget(self.measure_image_note_input)
-        layout.addWidget(info_group)
+        info_layout.addStretch(1)
 
-        layout.addStretch()
         self.update_measurement_button_state()
-        return panel
+        self._update_measure_scale_summary()
+
+    def _update_measure_scale_summary(self, *_args) -> None:
+        """Skala's summary line: objective and calibration; a scale warning as its alert."""
+        section = getattr(self, "measure_scale_section", None)
+        if section is None:
+            return
+        parts = []
+        combo = getattr(self, "scale_combo", None)
+        if combo is not None and combo.currentText().strip():
+            parts.append(combo.currentText().strip())
+        info = getattr(self, "calib_info_label", None)
+        if info is not None:
+            info_text = QTextDocumentFragment.fromHtml(info.text()).toPlainText().strip()
+            if info_text:
+                parts.append(info_text)
+        warning = getattr(self, "scale_warning_label", None)
+        alert = ""
+        if warning is not None and not warning.isHidden():
+            alert = warning.text().strip()
+        section.set_summary(" \u00b7 ".join(parts), alert=alert)
+
+    def _toggle_measure_drawer(self, page: str) -> None:
+        drawer = getattr(self, "measure_drawer", None)
+        if drawer is not None:
+            drawer.toggle_page(page)
+
+    def _sync_measure_drawer_buttons(self, *_args) -> None:
+        drawer = getattr(self, "measure_drawer", None)
+        page = drawer.current_page() if drawer is not None else None
+        for key, button in (("view", getattr(self, "measure_view_drawer_btn", None)),
+                            ("info", getattr(self, "measure_info_drawer_btn", None))):
+            if button is not None:
+                button.setChecked(page == key)
+
+    def _update_measure_info_button(self, *_args) -> None:
+        """Info shows a dot while the image has a note, so a note is not hidden in the drawer."""
+        button = getattr(self, "measure_info_drawer_btn", None)
+        editor = getattr(self, "measure_image_note_input", None)
+        if button is None:
+            return
+        has_note = bool(editor is not None and editor.toPlainText().strip())
+        button.setText(self.tr("Info") + (" \u2022" if has_note else ""))
+        button.setToolTip(self.tr("This image has a note.") if has_note else "")
 
     @staticmethod
     def _measure_view_setting_enabled(key: str, default: bool = False) -> bool:
@@ -7537,34 +7628,39 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         self.measure_tab = tab
 
-        left_panel = self.create_control_panel()
-        left_scroll = QScrollArea()
-        left_scroll.setWidgetResizable(True)
-        left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        left_scroll.setFrameShape(QFrame.NoFrame)
-        left_scroll.setWidget(left_panel)
-        configure_sidebar_scroll(left_scroll, left_panel, SIDEBAR_MIN_WIDTH)
-
+        # Stage 6: no left column. Skala and the tools sit above the image;
+        # Visning and Info open in a drawer over the image's right edge.
+        self.create_control_panel()
         image_panel = self.create_image_panel()
-        configure_splitter_pane(image_panel, min_width=360)
+        image_layout = image_panel.layout()
+        image_layout.setSpacing(8)
+        image_layout.insertWidget(0, self.measure_scale_section)
+        image_layout.insertWidget(1, self.measure_toolbar)
+        # No fixed minimum: the splitter keeps the pane at least as wide as its
+        # layout needs, so the toolbar never overlaps itself (it follows the
+        # button texts, e.g. Start/Stop measuring, and the language).
+        configure_splitter_pane(image_panel, horizontal_policy=QSizePolicy.Expanding)
+        self.measure_drawer = SideDrawer(self.measure_image_area, side="right")
+        self.measure_drawer.add_page("view", self.tr("View"), self.measure_view_page)
+        self.measure_drawer.add_page("info", self.tr("Info"), self.measure_info_page)
+        self.measure_drawer.opened.connect(self._sync_measure_drawer_buttons)
+        self.measure_drawer.closed.connect(self._sync_measure_drawer_buttons)
 
         right_panel = self.create_right_panel()
         configure_splitter_pane(right_panel, min_width=SECONDARY_PANEL_MIN_WIDTH)
 
         self.measure_main_splitter = QSplitter(Qt.Horizontal)
         self.measure_main_splitter.setChildrenCollapsible(False)
-        self.measure_main_splitter.addWidget(left_scroll)
         self.measure_main_splitter.addWidget(image_panel)
         self.measure_main_splitter.addWidget(right_panel)
-        self.measure_main_splitter.setStretchFactor(0, 0)
-        self.measure_main_splitter.setStretchFactor(1, 1)
-        self.measure_main_splitter.setStretchFactor(2, 0)
+        self.measure_main_splitter.setStretchFactor(0, 1)
+        self.measure_main_splitter.setStretchFactor(1, 0)
         install_persistent_splitter(
             self.measure_main_splitter,
-            key="measure_main_splitter_sizes",
-            default_sizes=[SIDEBAR_DEFAULT_WIDTH, 900, 340],
-            minimum_sizes=[SIDEBAR_MIN_WIDTH, 360, SECONDARY_PANEL_MIN_WIDTH],
+            # A new key: the old one held three panes (with the left column).
+            key="measure_main_splitter_sizes_v2",
+            default_sizes=[1160, 340],
+            minimum_sizes=[360, SECONDARY_PANEL_MIN_WIDTH],
         )
         layout.addWidget(self.measure_main_splitter, 1)
 
@@ -7648,7 +7744,12 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.measure_image_splitter = QSplitter(Qt.Vertical)
         self.measure_image_splitter.setObjectName("gallerySplitter")
         self.measure_image_splitter.setChildrenCollapsible(False)
-        self.measure_image_splitter.addWidget(self.image_label)
+        # The image area hosts the right drawer (stage 6), which overlays it.
+        self.measure_image_area = QWidget()
+        image_area_layout = QVBoxLayout(self.measure_image_area)
+        image_area_layout.setContentsMargins(0, 0, 0, 0)
+        image_area_layout.addWidget(self.image_label)
+        self.measure_image_splitter.addWidget(self.measure_image_area)
         self.measure_image_splitter.addWidget(self.measure_gallery)
         self.measure_image_splitter.setStretchFactor(0, 4)
         self.measure_image_splitter.setStretchFactor(1, 1)
@@ -14781,7 +14882,11 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.measure_status_label.setStyleSheet(f"color: #27ae60; font-weight: bold; font-size: {pt(9)}pt;")
 
     def _cancel_measurement_shortcut(self) -> None:
-        """Cancel the current in-progress measurement without leaving measure mode."""
+        """Esc: close the open drawer; else cancel the in-progress measurement without leaving measure mode."""
+        drawer = getattr(self, "measure_drawer", None)
+        if drawer is not None and drawer.is_open():
+            drawer.close_drawer()
+            return
         if not self.measurement_active:
             self._clear_measurement_selection()
             return
@@ -15521,6 +15626,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         finally:
             self.measure_image_note_input.blockSignals(False)
             self._loading_measure_image_note = False
+        self._update_measure_info_button()
 
     def _queue_measure_image_note_save(self) -> None:
         if self._loading_measure_image_note:
