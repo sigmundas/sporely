@@ -417,3 +417,25 @@ def test_microscope_lists_persist_and_are_read_by_prepare_images_and_live_lab(tm
         combo = LiveLabTab._build_term_combo(dummy, category)
         expected_values = values
         assert [combo.itemData(i) for i in range(combo.count())] == expected_values
+
+
+def test_display_listeners_follow_every_visible_change(qapp):
+    selector = AdaptiveChoiceSelector(compact=True)
+    seen: list[str] = []
+    selector.add_display_listener(lambda: seen.append(selector.itemText(selector.currentIndex())))
+    selector.addItem("KOH", "KOH")
+    selector.addItem("Water", "Water")
+    assert seen[-1] == "KOH"
+    blocked = selector.blockSignals(True)
+    selector.setCurrentIndex(1)
+    selector.blockSignals(blocked)
+    assert seen[-1] == "Water"  # also while signals are blocked
+    selector.setItemText(1, "Vann")
+    assert seen[-1] == "Vann"  # renaming the shown item
+    count = len(seen)
+    selector.setItemText(0, "Kalilut")
+    assert len(seen) == count  # renaming another item changes nothing shown
+    selector.set_mixed_values(["KOH", "Water"])
+    assert selector.is_mixed() and len(seen) == count + 1
+    selector.clear()
+    assert seen[-1] == ""  # cleared

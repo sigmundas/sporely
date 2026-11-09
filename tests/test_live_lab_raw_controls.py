@@ -675,6 +675,7 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state._load_viewer_pixmap = lambda path: (QPixmap(10, 10), False)
     state._refresh_main_window_after_import = lambda *args, **kwargs: None
     state._update_session_controls = lambda: None
+    state._update_notes_summary = lambda **kwargs: None
     state._show_session_image = lambda image_id: None
     state._update_observation_thumbnail = lambda: None
     state._refresh_session_gallery = lambda: live_lab_tab.LiveLabTab._refresh_session_gallery(state)

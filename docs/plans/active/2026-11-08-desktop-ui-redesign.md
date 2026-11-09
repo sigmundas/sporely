@@ -670,7 +670,8 @@ landed through PRs before the branch existed), the commit that brought it into
 | 0 | sigmundas/sporely#65 | `a682f6c` | Agent-verified (tests, inspected renderer screenshots); owner tested it 2026-11-08 and said to go on; merged 2026-11-09 |
 | P1 | sigmundas/sporely#67 | `3162501` | Agent-verified (tests, inspected renderer screenshots); no production code; merged 2026-11-09 |
 | P2 | `adb561f` | — | Agent-verified: Live Lab, RAW and main-window tests green; `live-lab` renders pixel-identical to the P1 baseline in both themes; translations moved to the new contexts with none lost |
-| P3 | `ui/redesign` | — | Agent-verified: the global stylesheet, design tokens and button icon colours are byte-identical in both themes; ring colour, outline and token tests; renders identical except the intended objective colour changes; Codex review: 3 findings fixed (Measure tag colour from the profile, NA-first names, outlined badge size). Waiting for the owner's layout opinion on the ring colours (`style-tokens` renderer group) |
+| P3 | `e279277` | — | Agent-verified: the global stylesheet, design tokens and button icon colours are byte-identical in both themes; ring colour, outline and token tests; renders identical except the intended objective colour changes; Codex review: 3 findings fixed (Measure tag colour from the profile, NA-first names, outlined badge size). Owner's layout opinion 2026-11-09: looks good |
+| 1a | `ui/redesign` | — | Agent-verified: collapsible Preparation and Notes sections (summary line, warning for unset values, open state remembered); qtbot tests for mouse, keyboard, restart, summaries and layout; renders change only Live Lab's left panel; Codex review: 5 findings, 4 fixed, 1 not reproducible but guarded. Chip rows follow as 1b |
 
 Found during stage 0, not fixed there (rule 1):
 
@@ -751,6 +752,18 @@ Found during P3, not fixed there (rule 1):
 - Inline colours elsewhere still repeat token values (for example the
   `#e67e22` measure status text in `ui/main_window.py`); they move to tokens
   as each stage touches their screen.
+
+Found during stage 1a, not fixed there (rule 1):
+
+- Live Lab's image-note field keeps the last selected image's note after the
+  viewer is cleared or a new session starts (`_clear_session_viewer` does not
+  reset it); typing into it then edits nothing. The Notes summary only counts
+  the field while an image is selected.
+- The Notes summary's clock time comes from the real session log, so the
+  `live-lab.sections-collapsed*` renders differ in that time from run to run.
+- On macOS, Tab reaches the section headings (and other buttons) only with
+  Full Keyboard Access on; clicking and Space/Enter on a focused heading work
+  everywhere.
 
 Baseline renders for the pilot's before/after comparisons (P1, 2026-11-08):
 `/Users/sigmundas/Documents/Code/sporely/sporely-py/docs/plans/november-ui/baseline-p1/`

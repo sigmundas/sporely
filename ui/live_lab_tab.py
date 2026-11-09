@@ -2585,6 +2585,7 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         self._log_initial_lab_state()
         self._show_status(status_text, tone="success", timeout_ms=4000)
         self._update_session_controls()
+        self._update_notes_summary(refresh_log=True)
         self._update_pending_raw_controls()
         if self._current_pending_raw_capture() is not None:
             self._show_pending_raw_capture(self._selected_pending_raw_index)
@@ -2663,6 +2664,7 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         self._cancel_raw_edit_session(restore_selection=False)
         self._reset_companion_dedupe_state()
         self._update_session_controls()
+        self._update_notes_summary(refresh_log=True)
         self._update_pending_raw_controls()
         if self._current_pending_raw_capture() is not None:
             self._show_pending_raw_capture(self._selected_pending_raw_index)

@@ -517,3 +517,128 @@ def test_raw_section_is_hidden_without_raw_and_not_remembered(qtbot, profile):
     restarted = _make_tab(qtbot)
     assert not restarted.raw_processing_toggle_btn.isChecked()
     assert not restarted.raw_processing_card.isVisible()
+
+
+# ---------------------------------------------------------------------------
+# Stage 1: collapsible Preparation and Notes sections with summary lines
+# ---------------------------------------------------------------------------
+
+
+def _settle(qtbot, section) -> None:
+    qtbot.waitUntil(lambda: section._animation.state() != section._animation.State.Running, timeout=2000)
+
+
+def test_preparation_summary_follows_each_choice_immediately(qtbot, profile):
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    assert tab.slide_prep_group.summary() == "KOH · Dried · Melzer · Hymenium"
+    assert tab.slide_prep_group.summary_alert() == ""
+    _choose(qtbot, tab.mount_combo, "Water")
+    assert tab.slide_prep_group.summary() == "Water · Dried · Melzer · Hymenium"
+    _choose(qtbot, tab.sample_source_combo, "Stipe")
+    assert tab.slide_prep_group.summary() == "Water · Dried · Melzer · Stipe"
+
+
+def test_preparation_summary_follows_changes_made_with_signals_blocked(qtbot, profile):
+    """Selecting gallery images fills the sidebar with signals blocked."""
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    blocked = tab.mount_combo.blockSignals(True)
+    try:
+        tab.mount_combo.setCurrentIndex(tab.mount_combo.findData("L4"))
+    finally:
+        tab.mount_combo.blockSignals(blocked)
+    assert tab.slide_prep_group.summary().startswith("L4 · ")
+    tab.stain_combo.set_mixed_values(["Melzer", "Congo_Red"])
+    assert "Stain: mixed" in tab.slide_prep_group.summary()
+
+
+def test_preparation_summary_names_an_unset_value_as_a_warning(qtbot, profile):
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _choose(qtbot, tab.stain_combo, "Not_set")
+    assert tab.slide_prep_group.summary() == "KOH · Dried · Hymenium"
+    assert tab.slide_prep_group.summary_alert() == "Stain not set"
+    _choose(qtbot, tab.mount_combo, "Not_set")
+    assert tab.slide_prep_group.summary() == "Dried · Hymenium"
+    assert tab.slide_prep_group.summary_alert() == "2 not set"
+    _choose(qtbot, tab.stain_combo, "Melzer")
+    _choose(qtbot, tab.mount_combo, "KOH")
+    assert tab.slide_prep_group.summary_alert() == ""
+
+
+def test_sections_open_state_survives_a_restart(qtbot, profile):
+    tab = _make_tab(qtbot)
+    assert tab.slide_prep_group.is_expanded() and tab.notes_group.is_expanded()
+    qtbot.mouseClick(tab.slide_prep_group.header, Qt.LeftButton)
+    tab.notes_group.header.setFocus(Qt.TabFocusReason)
+    qtbot.waitUntil(tab.notes_group.header.hasFocus, timeout=1000)
+    qtbot.keyClick(tab.notes_group.header, Qt.Key_Space)
+    _settle(qtbot, tab.slide_prep_group)
+    _settle(qtbot, tab.notes_group)
+    assert not tab.slide_prep_group.body.isVisible() and not tab.notes_group.body.isVisible()
+    assert tab.mount_combo.isHidden() or not tab.mount_combo.isVisible()
+    tab.close()
+
+    restarted = _make_tab(qtbot)
+    assert not restarted.slide_prep_group.is_expanded()
+    assert not restarted.notes_group.is_expanded()
+    assert not restarted.slide_prep_group.body.isVisible()
+    qtbot.mouseClick(restarted.slide_prep_group.header, Qt.LeftButton)
+    _settle(qtbot, restarted.slide_prep_group)
+    assert restarted.mount_combo.isVisible()
+    restarted.close()
+
+    again = _make_tab(qtbot)
+    assert again.slide_prep_group.is_expanded() and not again.notes_group.is_expanded()
+
+
+def test_notes_summary_shows_session_notes_and_the_selected_images_note(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    assert tab.notes_group.summary() == "No notes"
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+
+    tab.session_note_input.setText("Spores Melzer-negative")
+    qtbot.keyClick(tab.session_note_input, Qt.Key_Return)
+    first = tab.notes_group.summary()
+    assert first.startswith("1 note · ") and first.endswith(" Spores Melzer-negative")
+
+    tab.session_note_input.setText("Basidia 4-spored")
+    qtbot.mouseClick(tab.add_note_btn, Qt.LeftButton)
+    second = tab.notes_group.summary()
+    assert second.startswith("2 notes · last ") and second.endswith(" Basidia 4-spored")
+
+    image = _capture(qtbot, profile, obs, "P1010001.JPG")
+    tab._on_session_gallery_clicked(image["id"], image.get("filepath") or "")
+    qtbot.waitUntil(lambda: tab._selected_session_image_id == image["id"], timeout=3000)
+    tab.image_note_input.setPlainText("Clamp at septum")
+    assert tab.notes_group.summary().endswith(" · Image: Clamp at septum")
+
+    _stop_session(qtbot, tab)
+    # A new session starts with nothing selected: the note field may still hold
+    # the last image's text, but the summary must not present it as current.
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_OFFLINE)
+    assert tab._selected_session_image_id is None
+    assert tab.notes_group.summary() == "No notes"
+
+
+def test_enter_on_a_section_header_toggles_it_and_triggers_no_review_shortcut(qtbot, profile):
+    """Live Lab binds Return/Enter to "save current" in RAW review; a focused
+    section header must take those keys itself."""
+    tab = _make_tab(qtbot)
+    calls: list[str] = []
+    tab._handle_raw_review_shortcut = lambda action: calls.append(action)
+    header = tab.slide_prep_group.header
+    header.setFocus(Qt.TabFocusReason)
+    qtbot.waitUntil(header.hasFocus, timeout=1000)
+    for key in (Qt.Key_Return, Qt.Key_Enter):
+        before = tab.slide_prep_group.is_expanded()
+        qtbot.keyClick(header, key)
+        _settle(qtbot, tab.slide_prep_group)
+        assert tab.slide_prep_group.is_expanded() is not before
+    assert calls == []
+    # The same key elsewhere in the tab still reaches the review shortcut.
+    tab.setFocus(Qt.OtherFocusReason)
+    qtbot.keyClick(tab, Qt.Key_Return)
+    assert calls == ["save"]

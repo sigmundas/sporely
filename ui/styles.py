@@ -325,6 +325,7 @@ _COLOR_TOKENS: dict[str, dict[str, str]] = {
         "crop_image_active": "#b94a42",
         "crop_ai_active": "#b86b20",
         "dialog_brd": "#e2e8f0",
+        "lab_alert": "#d64545",           # unset lab state (ui.combo_alerts)
         "load_button_bg": "#4f7080",      # QPushButton#loadButton
         "load_button_bg_h": "#3d5a68",
         "map_button_bg": "#334155",
@@ -369,6 +370,7 @@ _COLOR_TOKENS: dict[str, dict[str, str]] = {
         "crop_image_active": "#b85a52",
         "crop_ai_active": "#b9702b",
         "dialog_brd": "transparent",
+        "lab_alert": "#d65a63",           # unset lab state (ui.combo_alerts)
         "load_button_bg": "#4f7080",      # QPushButton#loadButton
         "load_button_bg_h": "#3d5a68",
         "map_button_bg": "#334155",
@@ -475,6 +477,37 @@ QFrame#boxHeader {{
     border-bottom: 1px solid {data_brd};
     border-top-left-radius: 11px;
     border-top-right-radius: 11px;
+}}
+
+QFrame#boxHeader[sectionToggle="true"] {{
+    background-color: {surface_low};
+}}
+
+QFrame#boxHeader[sectionToggle="true"][collapsed="true"] {{
+    border-bottom: none;
+    border-bottom-left-radius: 11px;
+    border-bottom-right-radius: 11px;
+}}
+
+QFrame#boxHeader[sectionToggle="true"]:hover,
+QFrame#boxHeader[sectionToggle="true"]:focus {{
+    background-color: {surface_hover};
+}}
+
+QLabel#sectionArrowLabel {{
+    color: {text_dim};
+    font-size: {base_pt}pt;
+}}
+
+QLabel#sectionSummaryLabel {{
+    color: {text_dim};
+    font-size: {small_pt}pt;
+}}
+
+QLabel#sectionSummaryAlertLabel {{
+    color: {lab_alert};
+    font-size: {small_pt}pt;
+    font-weight: 600;
 }}
 
 QFrame#segmentedControl {{

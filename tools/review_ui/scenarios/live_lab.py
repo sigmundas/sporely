@@ -133,6 +133,18 @@ def _session_offline(context: ReviewContext) -> QWidget:
     return _DrainingHost(tab, context.host)
 
 
+def _sections_collapsed(context: ReviewContext) -> QWidget:
+    """Preparation and Notes closed: their summaries carry the values, one of them unset."""
+    tab, _profile_ = _live_lab_tab(context, session_mode="offline")
+    _start(tab)
+    tab.stain_combo.setCurrentIndex(tab.stain_combo.findData("Not_set"))
+    tab.session_note_input.setText("Amyloide sporer, tydelig plage")
+    tab._add_session_note()
+    tab.slide_prep_group.set_expanded(False, animate=False)
+    tab.notes_group.set_expanded(False, animate=False)
+    return _DrainingHost(tab, context.host)
+
+
 def _raw_pending(context: ReviewContext) -> QWidget:
     tab, profile = _live_lab_tab(context, raw_mode="review", lab_state={**LAB_STATE, "contrast_combo": "Phase"})
     _start(tab)
@@ -288,6 +300,13 @@ _LIVE_LAB_STATES = (
         "A capture with an objective that has no calibration (63x): no scale bar on the viewer.",
         _uncalibrated,
     ),
+    (
+        "sections-collapsed",
+        "Preparation and Notes closed",
+        "Stage 1: Preparation and Notes closed to their summary lines during an offline session; "
+        "the stain is unset, so the Preparation summary warns.",
+        _sections_collapsed,
+    ),
 )
 
 _CAMERA_IMPORT_STATES = (
@@ -322,6 +341,17 @@ def register_live_lab_scenarios(registry: ScenarioRegistry) -> None:
                     theme=theme,
                 )
             )
+    registry.register(
+        ReviewScenario(
+            id="live-lab.sections-collapsed-de",
+            group="live-lab",
+            title="Live Lab — Preparation and Notes closed (de)",
+            description="The closed sections in German, the longest of the shipped translations.",
+            build=_sections_collapsed,
+            viewport=(1440, 900),
+            locale="de_DE",
+        )
+    )
     registry.register(
         ReviewScenario(
             id="live-lab.idle-small",

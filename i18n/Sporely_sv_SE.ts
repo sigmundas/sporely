@@ -4059,7 +4059,7 @@ Släktnamnet måste skrivas ut fullständigt: gemenskapssökningen matchar exakt
         <translation>Uppladdad till Sporely Cloud</translation>
     </message>
     <message>
-        <location filename="../ui/image_gallery_widget.py" line="2140"/>
+        <location filename="../ui/image_gallery_widget.py" line="2149"/>
         <source>Open in Measure tab</source>
         <translation>Öppna i fliken Mät</translation>
     </message>
@@ -5372,99 +5372,159 @@ Saknas skala: {missing}</translation>
 <context>
     <name>LiveLabPrepPanelMixin</name>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="37"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="44"/>
         <source>Microscope</source>
         <translation>Mikroskop</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="46"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="53"/>
         <source>Objective:</source>
         <translation>Objektiv:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="47"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="54"/>
         <source>Contrast:</source>
         <translation>Kontrast:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="52"/>
-        <source>Slide / prep</source>
-        <translation>Objektglas / prep</translation>
+        <location filename="../ui/live_lab_prep_panel.py" line="59"/>
+        <source>Preparation</source>
+        <translation>Preparat</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="65"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="74"/>
         <source>Specimen condition</source>
         <translation>Tillstånd</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="66"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="75"/>
         <source>Sample source</source>
         <translation>Exempelkälla</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="67"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="76"/>
         <source>Mount:</source>
         <translation>Monteringsmedium:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="68"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="77"/>
         <source>Stain:</source>
         <translation>Färgämne:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="69"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="78"/>
         <source>Condition:</source>
         <translation>Tillstånd:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="70"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="79"/>
         <source>Source:</source>
         <translation>Källa:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="75"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="87"/>
+        <source>Mount</source>
+        <translation>Medium</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="88"/>
+        <source>Condition</source>
+        <translation>Tillstånd</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="89"/>
+        <source>Stain</source>
+        <translation>Färgning</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="90"/>
+        <source>Source</source>
+        <translation>Källa</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="101"/>
+        <source>{field}: mixed</source>
+        <translation>{field}: blandat</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="109"/>
+        <source>{field} not set</source>
+        <translation>{field} inte angivet</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="111"/>
+        <source>{count} not set</source>
+        <translation>{count} inte angivna</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="124"/>
         <source>Notes</source>
         <translation>Anteckningar</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="85"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="136"/>
         <source>Add a timestamped session note</source>
         <translation>Lägg till en tidsstämplad anteckning för sessionen</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="88"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="139"/>
         <source>Add</source>
         <translation>Lägg till</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="91"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="142"/>
         <source>Note:</source>
         <translation>Anteckning:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="99"/>
-        <location filename="../ui/live_lab_prep_panel.py" line="117"/>
-        <location filename="../ui/live_lab_prep_panel.py" line="141"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="150"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="241"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="266"/>
         <source>Optional note for the selected image</source>
         <translation>Valfri anteckning för den valda bilden</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="101"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="152"/>
         <source>Image note:</source>
         <translation>Bildanteckning:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="145"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="196"/>
+        <source>1 note · {time} {text}</source>
+        <translation>1 anteckning · {time} {text}</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="199"/>
+        <source>{count} notes · last {time} {text}</source>
+        <translation>{count} anteckningar · senaste {time} {text}</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="208"/>
+        <source>Image: (Multiple notes)</source>
+        <translation>Bild: (Flera anteckningar)</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="212"/>
+        <source>Image: {note}</source>
+        <translation>Bild: {note}</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="213"/>
+        <source>No notes</source>
+        <translation>Inga anteckningar</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="270"/>
         <source>(Multiple notes)</source>
         <translation>(Flera anteckningar)</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="355"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="482"/>
         <source>Start a Live Lab session before adding notes.</source>
         <translation>Starta en Live Lab-session innan du lägger till anteckningar.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="363"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="491"/>
         <source>Added session note.</source>
         <translation>Lade till anteckning i sessionen.</translation>
     </message>
@@ -5472,441 +5532,441 @@ Saknas skala: {missing}</translation>
 <context>
     <name>LiveLabRawMixin</name>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="880"/>
-        <location filename="../ui/live_lab_raw.py" line="889"/>
+        <location filename="../ui/live_lab_raw.py" line="881"/>
+        <location filename="../ui/live_lab_raw.py" line="890"/>
         <source>Auto WB</source>
         <translation>Automatisk VB</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="882"/>
+        <location filename="../ui/live_lab_raw.py" line="883"/>
         <source>Custom WB</source>
         <translation>Anpassad VB</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="883"/>
-        <location filename="../ui/live_lab_raw.py" line="898"/>
+        <location filename="../ui/live_lab_raw.py" line="884"/>
+        <location filename="../ui/live_lab_raw.py" line="899"/>
         <source>Camera WB</source>
         <translation>Kamera-VB</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="891"/>
+        <location filename="../ui/live_lab_raw.py" line="892"/>
         <source>Custom WB {r:.2f} / {g:.2f} / {b:.2f}</source>
         <translation>Anpassad VB {r:.2f} / {g:.2f} / {b:.2f}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="897"/>
+        <location filename="../ui/live_lab_raw.py" line="898"/>
         <source>Custom WB set</source>
         <translation>Anpassad VB inställd</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="903"/>
+        <location filename="../ui/live_lab_raw.py" line="904"/>
         <source>Auto levels</source>
         <translation>Automatiska nivåer</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="903"/>
+        <location filename="../ui/live_lab_raw.py" line="904"/>
         <source>levels off</source>
         <translation>nivåer av</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="905"/>
+        <location filename="../ui/live_lab_raw.py" line="906"/>
         <source>Curve {strength} / mid {midpoint}</source>
         <translation>Kurva {strength} / mitt {midpoint}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="910"/>
+        <location filename="../ui/live_lab_raw.py" line="911"/>
         <source>Curve off</source>
         <translation>Kurva av</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="927"/>
+        <location filename="../ui/live_lab_raw.py" line="928"/>
         <source>on</source>
         <translation>på</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="927"/>
+        <location filename="../ui/live_lab_raw.py" line="928"/>
         <source>off</source>
         <translation>av</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="933"/>
+        <location filename="../ui/live_lab_raw.py" line="934"/>
         <source>Dark cutoff {value}</source>
         <translation>Mörk avskärning {value}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="934"/>
+        <location filename="../ui/live_lab_raw.py" line="935"/>
         <source>Bright cutoff {value}</source>
         <translation>Ljus avskärning {value}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="935"/>
+        <location filename="../ui/live_lab_raw.py" line="936"/>
         <source>Soft tails {state}</source>
         <translation>Mjuka ändar {state}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="936"/>
+        <location filename="../ui/live_lab_raw.py" line="937"/>
         <source>Curve strength {value}</source>
         <translation>Kurvstyrka {value}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="937"/>
+        <location filename="../ui/live_lab_raw.py" line="938"/>
         <source>Curve midpoint {value}</source>
         <translation>Kurvans mittpunkt {value}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="946"/>
+        <location filename="../ui/live_lab_raw.py" line="947"/>
         <source>Pick Camera, Auto, or Custom WB, then click Pick to sample a neutral patch from the preview. Low midpoint values lift shadows.</source>
         <translation>Välj Kamera-, Automatisk eller Anpassad VB och klicka på Välj för att hämta en neutral yta från förhandsvisningen. Låga mittpunktsvärden lyfter skuggorna.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="952"/>
+        <location filename="../ui/live_lab_raw.py" line="953"/>
         <source>Review mode: use ←/→ to move between RAW captures, Delete/Backspace/Cmd/Ctrl+D to remove the current image, and Enter to save current.</source>
         <translation>Granskning: använd ←/→ för att bläddra mellan RAW-tagningar, Delete/Backspace/Cmd/Ctrl+D för att ta bort aktuell bild och Enter för att spara aktuell.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="957"/>
+        <location filename="../ui/live_lab_raw.py" line="958"/>
         <source>Delete/Backspace/Cmd/Ctrl+D remove the selected saved image.</source>
         <translation>Delete/Backspace/Cmd/Ctrl+D tar bort den valda sparade bilden.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="961"/>
+        <location filename="../ui/live_lab_raw.py" line="962"/>
         <source>Editing mode: choose a WB mode, use Pick to sample the preview, then click Apply re-render when ready.</source>
         <translation>Redigering: välj ett VB-läge, använd Välj för att hämta från förhandsvisningen och klicka på Tillämpa ny rendering när du är klar.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="972"/>
+        <location filename="../ui/live_lab_raw.py" line="973"/>
         <source>Settings will be applied to selected images.</source>
         <translation>Inställningarna tillämpas på valda bilder.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="1370"/>
-        <location filename="../ui/live_lab_raw.py" line="2717"/>
-        <location filename="../ui/live_lab_raw.py" line="4279"/>
+        <location filename="../ui/live_lab_raw.py" line="1371"/>
+        <location filename="../ui/live_lab_raw.py" line="2718"/>
+        <location filename="../ui/live_lab_raw.py" line="4280"/>
         <source>RAW preview unavailable for {name}: {error}</source>
         <translation>RAW-förhandsvisning är inte tillgänglig för {name}: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="1380"/>
-        <location filename="../ui/live_lab_raw.py" line="2726"/>
+        <location filename="../ui/live_lab_raw.py" line="1381"/>
+        <location filename="../ui/live_lab_raw.py" line="2727"/>
         <source>Could not render RAW preview for {name}: {error}</source>
         <translation>Kunde inte skapa RAW-förhandsvisning för {name}: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="1451"/>
-        <location filename="../ui/live_lab_raw.py" line="2784"/>
+        <location filename="../ui/live_lab_raw.py" line="1452"/>
+        <location filename="../ui/live_lab_raw.py" line="2785"/>
         <source>Thumbnail refresh warning for {name}: {error}</source>
         <translation>Varning vid uppdatering av miniatyr för {name}: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="1462"/>
-        <location filename="../ui/live_lab_raw.py" line="2818"/>
+        <location filename="../ui/live_lab_raw.py" line="1463"/>
+        <location filename="../ui/live_lab_raw.py" line="2819"/>
         <source>RAW re-render unavailable for {name}: {error}</source>
         <translation>Ny RAW-rendering är inte tillgänglig för {name}: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="1471"/>
-        <location filename="../ui/live_lab_raw.py" line="2827"/>
+        <location filename="../ui/live_lab_raw.py" line="1472"/>
+        <location filename="../ui/live_lab_raw.py" line="2828"/>
         <source>Could not re-render RAW image {name}: {error}</source>
         <translation>Kunde inte rendera om RAW-bilden {name}: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="2242"/>
+        <location filename="../ui/live_lab_raw.py" line="2243"/>
         <source>Choose a pending RAW capture or a RAW edit session before sampling background WB.</source>
         <translation>Välj en väntande RAW-tagning eller en RAW-redigering innan du hämtar bakgrunds-VB.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="2256"/>
+        <location filename="../ui/live_lab_raw.py" line="2257"/>
         <source>RAW processing {arrow} {summary}</source>
         <translation>RAW-bearbetning {arrow} {summary}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="2406"/>
-        <location filename="../ui/live_lab_raw.py" line="2902"/>
-        <location filename="../ui/live_lab_raw.py" line="3491"/>
+        <location filename="../ui/live_lab_raw.py" line="2407"/>
+        <location filename="../ui/live_lab_raw.py" line="2903"/>
+        <location filename="../ui/live_lab_raw.py" line="3492"/>
         <source>Click neutral background to set WB</source>
         <translation>Klicka på neutral bakgrund för att ställa in VB</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="2411"/>
+        <location filename="../ui/live_lab_raw.py" line="2412"/>
         <source>{readout} · ←/→ select · Delete/Backspace/Cmd/Ctrl+D remove current image · Enter save current</source>
         <translation>{readout} · ←/→ välj · Delete/Backspace/Cmd/Ctrl+D ta bort aktuell bild · Enter spara aktuell</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="2413"/>
+        <location filename="../ui/live_lab_raw.py" line="2414"/>
         <source>←/→ select · Delete/Backspace/Cmd/Ctrl+D remove current image · Enter save current</source>
         <translation>←/→ välj · Delete/Backspace/Cmd/Ctrl+D ta bort aktuell bild · Enter spara aktuell</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="2517"/>
-        <location filename="../ui/live_lab_raw.py" line="2905"/>
+        <location filename="../ui/live_lab_raw.py" line="2518"/>
+        <location filename="../ui/live_lab_raw.py" line="2906"/>
         <source>Editing RAW: {name} · {summary}</source>
         <translation>Redigerar RAW: {name} · {summary}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="2524"/>
+        <location filename="../ui/live_lab_raw.py" line="2525"/>
         <source>RAW-backed image: {name} · {summary}</source>
         <translation>Bild med RAW-källa: {name} · {summary}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="2531"/>
+        <location filename="../ui/live_lab_raw.py" line="2532"/>
         <source>Select a RAW-backed image to re-render it in place.</source>
         <translation>Välj en bild med RAW-källa för att rendera om den.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="2550"/>
+        <location filename="../ui/live_lab_raw.py" line="2551"/>
         <source>Choose a committed RAW-backed image with an available RAW source first.</source>
         <translation>Välj först en sparad bild med tillgänglig RAW-källa.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="2576"/>
+        <location filename="../ui/live_lab_raw.py" line="2577"/>
         <source>Editing RAW-backed image {name}.</source>
         <translation>Redigerar bilden {name} med RAW-källa.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="2586"/>
+        <location filename="../ui/live_lab_raw.py" line="2587"/>
         <source>Copy RAW settings from another RAW-backed image first.</source>
         <translation>Kopiera först RAW-inställningar från en annan bild med RAW-källa.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="2619"/>
+        <location filename="../ui/live_lab_raw.py" line="2620"/>
         <source>RAW preview changes discarded.</source>
         <translation>Ändringarna i RAW-förhandsvisningen har förkastats.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="2635"/>
+        <location filename="../ui/live_lab_raw.py" line="2636"/>
         <source>Select a RAW-backed image before copying RAW settings.</source>
         <translation>Välj en bild med RAW-källa innan du kopierar RAW-inställningar.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="2643"/>
+        <location filename="../ui/live_lab_raw.py" line="2644"/>
         <source>The selected image is not a RAW-backed image that can be copied.</source>
         <translation>Den valda bilden har ingen RAW-källa som kan kopieras.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="2657"/>
-        <location filename="../ui/live_lab_raw.py" line="4964"/>
+        <location filename="../ui/live_lab_raw.py" line="2658"/>
+        <location filename="../ui/live_lab_raw.py" line="4965"/>
         <source>Copied RAW settings from {name}.</source>
         <translation>Kopierade RAW-inställningar från {name}.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="2657"/>
+        <location filename="../ui/live_lab_raw.py" line="2658"/>
         <source>the selected image</source>
         <translation>den valda bilden</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="2811"/>
+        <location filename="../ui/live_lab_raw.py" line="2812"/>
         <source>Updated RAW rendering for {name}.</source>
         <translation>Uppdaterade RAW-renderingen för {name}.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="2892"/>
+        <location filename="../ui/live_lab_raw.py" line="2893"/>
         <source>Cancel background WB</source>
         <translation>Avbryt bakgrunds-VB</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="2892"/>
-        <location filename="../ui/live_lab_raw.py" line="3872"/>
+        <location filename="../ui/live_lab_raw.py" line="2893"/>
+        <location filename="../ui/live_lab_raw.py" line="3873"/>
         <source>Pick background WB</source>
         <translation>Välj bakgrunds-VB</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="3177"/>
-        <location filename="../ui/live_lab_raw.py" line="3311"/>
-        <location filename="../ui/live_lab_raw.py" line="3385"/>
+        <location filename="../ui/live_lab_raw.py" line="3178"/>
+        <location filename="../ui/live_lab_raw.py" line="3312"/>
+        <location filename="../ui/live_lab_raw.py" line="3386"/>
         <source>Choose a pending RAW capture before sampling background WB.</source>
         <translation>Välj en väntande RAW-tagning innan du hämtar bakgrunds-VB.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="3243"/>
-        <location filename="../ui/live_lab_raw.py" line="3252"/>
-        <location filename="../ui/live_lab_raw.py" line="3334"/>
-        <location filename="../ui/live_lab_raw.py" line="3343"/>
+        <location filename="../ui/live_lab_raw.py" line="3244"/>
+        <location filename="../ui/live_lab_raw.py" line="3253"/>
+        <location filename="../ui/live_lab_raw.py" line="3335"/>
+        <location filename="../ui/live_lab_raw.py" line="3344"/>
         <source>The stable preview is not available for background WB sampling.</source>
         <translation>Den stabila förhandsvisningen är inte tillgänglig för att hämta bakgrunds-VB.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="3295"/>
+        <location filename="../ui/live_lab_raw.py" line="3296"/>
         <source>Could not sample background WB from the selected region: {error}</source>
         <translation>Kunde inte hämta bakgrunds-VB från det valda området: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="3359"/>
+        <location filename="../ui/live_lab_raw.py" line="3360"/>
         <source>Could not sample background WB from the clicked point.</source>
         <translation>Kunde inte hämta bakgrunds-VB från den klickade punkten.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="3369"/>
+        <location filename="../ui/live_lab_raw.py" line="3370"/>
         <source>Could not sample background WB from the clicked point: {error}</source>
         <translation>Kunde inte hämta bakgrunds-VB från den klickade punkten: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="3474"/>
+        <location filename="../ui/live_lab_raw.py" line="3475"/>
         <source>Background WB sampling is only available in RAW review mode.</source>
         <translation>Bakgrunds-VB kan bara hämtas vid granskning av RAW.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="3483"/>
+        <location filename="../ui/live_lab_raw.py" line="3484"/>
         <source>Choose a pending RAW capture with a preview before sampling background WB.</source>
         <translation>Välj en väntande RAW-tagning med förhandsvisning innan du hämtar bakgrunds-VB.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="3581"/>
+        <location filename="../ui/live_lab_raw.py" line="3582"/>
         <source>Review</source>
         <translation>Granskning</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="3581"/>
+        <location filename="../ui/live_lab_raw.py" line="3582"/>
         <source>Review RAW before saving</source>
         <translation>Granska RAW innan du sparar</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="3582"/>
+        <location filename="../ui/live_lab_raw.py" line="3583"/>
         <source>Auto-save</source>
         <translation>Autospara</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="3582"/>
+        <location filename="../ui/live_lab_raw.py" line="3583"/>
         <source>Auto-save RAW captures</source>
         <translation>Spara RAW-tagningar automatiskt</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="3756"/>
+        <location filename="../ui/live_lab_raw.py" line="3757"/>
         <source>UNSAVED RAW</source>
         <translation>OSPARAD RAW</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="3756"/>
+        <location filename="../ui/live_lab_raw.py" line="3757"/>
         <source>UNSAVED</source>
         <translation>OSPARAD</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="3758"/>
+        <location filename="../ui/live_lab_raw.py" line="3759"/>
         <source>Preview failed</source>
         <translation>Förhandsvisningen misslyckades</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="3760"/>
+        <location filename="../ui/live_lab_raw.py" line="3761"/>
         <source>Preview pending</source>
         <translation>Förhandsvisning väntar</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="3814"/>
+        <location filename="../ui/live_lab_raw.py" line="3815"/>
         <source>Pending RAW captures: {count}</source>
         <translation>Väntande RAW-tagningar: {count}</translation>
-    </message>
-    <message>
-        <location filename="../ui/live_lab_raw.py" line="3889"/>
-        <location filename="../ui/live_lab_raw.py" line="4820"/>
-        <location filename="../ui/live_lab_raw.py" line="4870"/>
-        <source>Waiting for first import</source>
-        <translation>Väntar på första importen</translation>
     </message>
     <message>
         <location filename="../ui/live_lab_raw.py" line="3890"/>
         <location filename="../ui/live_lab_raw.py" line="4821"/>
         <location filename="../ui/live_lab_raw.py" line="4871"/>
+        <source>Waiting for first import</source>
+        <translation>Väntar på första importen</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_raw.py" line="3891"/>
+        <location filename="../ui/live_lab_raw.py" line="4822"/>
+        <location filename="../ui/live_lab_raw.py" line="4872"/>
         <source>New microscope captures from the watched folder will appear here automatically.</source>
         <translation>Nya mikroskopbilder från den bevakade mappen visas här automatiskt.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="3959"/>
-        <location filename="../ui/live_lab_raw.py" line="4314"/>
+        <location filename="../ui/live_lab_raw.py" line="3960"/>
+        <location filename="../ui/live_lab_raw.py" line="4315"/>
         <source>Pending RAW {current} of {total}: {name}</source>
         <translation>Väntande RAW {current} av {total}: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="4001"/>
-        <location filename="../ui/live_lab_raw.py" line="4061"/>
-        <location filename="../ui/live_lab_raw.py" line="4191"/>
-        <location filename="../ui/live_lab_raw.py" line="4208"/>
+        <location filename="../ui/live_lab_raw.py" line="4002"/>
+        <location filename="../ui/live_lab_raw.py" line="4062"/>
+        <location filename="../ui/live_lab_raw.py" line="4192"/>
+        <location filename="../ui/live_lab_raw.py" line="4209"/>
         <source>Preparing RAW preview…</source>
         <translation>Förbereder RAW-förhandsvisning …</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="4012"/>
+        <location filename="../ui/live_lab_raw.py" line="4013"/>
         <source>Pending RAW preview unavailable</source>
         <translation>Förhandsvisning av väntande RAW är inte tillgänglig</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="4013"/>
-        <location filename="../ui/live_lab_raw.py" line="4016"/>
+        <location filename="../ui/live_lab_raw.py" line="4014"/>
+        <location filename="../ui/live_lab_raw.py" line="4017"/>
         <source>Could not load the temporary preview for {name}.</source>
         <translation>Kunde inte läsa in den tillfälliga förhandsvisningen för {name}.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="4277"/>
+        <location filename="../ui/live_lab_raw.py" line="4278"/>
         <source>RAW preview failed.</source>
         <translation>RAW-förhandsvisningen misslyckades.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="4584"/>
+        <location filename="../ui/live_lab_raw.py" line="4585"/>
         <source>Saving RAW {current} of {total}: {name}</source>
         <translation>Sparar RAW {current} av {total}: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="4595"/>
+        <location filename="../ui/live_lab_raw.py" line="4596"/>
         <source>Saving RAW: {name}</source>
         <translation>Sparar RAW: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="4645"/>
-        <location filename="../ui/live_lab_raw.py" line="4682"/>
-        <location filename="../ui/live_lab_raw.py" line="4705"/>
+        <location filename="../ui/live_lab_raw.py" line="4646"/>
+        <location filename="../ui/live_lab_raw.py" line="4683"/>
+        <location filename="../ui/live_lab_raw.py" line="4706"/>
         <source>Could not save pending RAW capture {name}: {error}</source>
         <translation>Kunde inte spara den väntande RAW-tagningen {name}: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="4703"/>
+        <location filename="../ui/live_lab_raw.py" line="4704"/>
         <source>RAW save failed.</source>
         <translation>RAW-sparandet misslyckades.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="4745"/>
+        <location filename="../ui/live_lab_raw.py" line="4746"/>
         <source>RAW save cancelled. Saved {saved}, skipped {skipped}.</source>
         <translation>RAW-sparandet avbröts. Sparade {saved}, hoppade över {skipped}.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="4751"/>
+        <location filename="../ui/live_lab_raw.py" line="4752"/>
         <source>Saved {saved} RAW captures.</source>
         <translation>Sparade {saved} RAW-tagningar.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="4755"/>
+        <location filename="../ui/live_lab_raw.py" line="4756"/>
         <source>Saved {saved} RAW captures, {failed} failed, {skipped} skipped.</source>
         <translation>Sparade {saved} RAW-tagningar, {failed} misslyckades, {skipped} hoppades över.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="4763"/>
+        <location filename="../ui/live_lab_raw.py" line="4764"/>
         <source>Saved {saved} RAW captures, {failed} failed.</source>
         <translation>Sparade {saved} RAW-tagningar, {failed} misslyckades.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="4767"/>
+        <location filename="../ui/live_lab_raw.py" line="4768"/>
         <source>Saved {saved} RAW captures, {skipped} skipped.</source>
         <translation>Sparade {saved} RAW-tagningar, {skipped} hoppades över.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="4782"/>
+        <location filename="../ui/live_lab_raw.py" line="4783"/>
         <source>selected capture</source>
         <translation>vald tagning</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="4784"/>
+        <location filename="../ui/live_lab_raw.py" line="4785"/>
         <source>Saved pending RAW capture {name}.</source>
         <translation>Sparade den väntande RAW-tagningen {name}.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="4924"/>
+        <location filename="../ui/live_lab_raw.py" line="4925"/>
         <source>Wait for RAW saving to finish before removing this capture.</source>
         <translation>Vänta tills RAW-sparandet är klart innan du tar bort den här tagningen.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="4932"/>
+        <location filename="../ui/live_lab_raw.py" line="4933"/>
         <source>Removed pending RAW capture {name}.</source>
         <translation>Tog bort den väntande RAW-tagningen {name}.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_raw.py" line="5000"/>
+        <location filename="../ui/live_lab_raw.py" line="5001"/>
         <source>Pasted RAW settings to {name}.</source>
         <translation>Klistrade in RAW-inställningar till {name}.</translation>
     </message>
@@ -5995,8 +6055,8 @@ session</translation>
     </message>
     <message>
         <location filename="../ui/live_lab_tab.py" line="495"/>
-        <location filename="../ui/live_lab_tab.py" line="3427"/>
-        <location filename="../ui/live_lab_tab.py" line="3580"/>
+        <location filename="../ui/live_lab_tab.py" line="3429"/>
+        <location filename="../ui/live_lab_tab.py" line="3582"/>
         <source>Last import</source>
         <translation>Senaste import</translation>
     </message>
@@ -6187,14 +6247,14 @@ session</translation>
     <message>
         <location filename="../ui/live_lab_tab.py" line="1761"/>
         <location filename="../ui/live_lab_tab.py" line="2557"/>
-        <location filename="../ui/live_lab_tab.py" line="3412"/>
+        <location filename="../ui/live_lab_tab.py" line="3414"/>
         <source>Waiting for first import</source>
         <translation>Väntar på första importen</translation>
     </message>
     <message>
         <location filename="../ui/live_lab_tab.py" line="1762"/>
         <location filename="../ui/live_lab_tab.py" line="2558"/>
-        <location filename="../ui/live_lab_tab.py" line="3413"/>
+        <location filename="../ui/live_lab_tab.py" line="3415"/>
         <source>New microscope captures from the watched folder will appear here automatically.</source>
         <translation>Nya mikroskopbilder från den bevakade mappen visas här automatiskt.</translation>
     </message>
@@ -6209,12 +6269,12 @@ session</translation>
         <translation>Ingen bild att skicka till kalibreringsdialogen.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3375"/>
+        <location filename="../ui/live_lab_tab.py" line="3377"/>
         <source>Wait for RAW saving to finish before removing this capture.</source>
         <translation>Vänta tills RAW-sparandet är klart innan du tar bort den här tagningen.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3417"/>
+        <location filename="../ui/live_lab_tab.py" line="3419"/>
         <source>Removed pending RAW capture {name}.</source>
         <translation>Tog bort den väntande RAW-tagningen {name}.</translation>
     </message>
@@ -6342,104 +6402,104 @@ loggsession</translation>
         <translation>Frånkopplad session startad för {name}.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2620"/>
+        <location filename="../ui/live_lab_tab.py" line="2621"/>
         <source>Stopping Live Lab session...</source>
         <translation>Stoppar Live Lab-sessionen …</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2679"/>
+        <location filename="../ui/live_lab_tab.py" line="2681"/>
         <source>Offline session stopped. Logged {count} imported image(s).</source>
         <translation>Frånkopplad session stoppad. Loggade {count} importerad(e) bild(er).</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2681"/>
+        <location filename="../ui/live_lab_tab.py" line="2683"/>
         <source>Live Lab session stopped. Imported {count} image(s).</source>
         <translation>Live Lab-sessionen har stoppats. Importerade {count} bild(er).</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2701"/>
+        <location filename="../ui/live_lab_tab.py" line="2703"/>
         <source>The Live Lab watcher stopped unexpectedly.</source>
         <translation>Live Lab-bevakningen stoppades oväntat.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2842"/>
+        <location filename="../ui/live_lab_tab.py" line="2844"/>
         <source>Thumbnail generation warning for {name}: {error}</source>
         <translation>Varning vid skapande av miniatyr för {name}: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2891"/>
+        <location filename="../ui/live_lab_tab.py" line="2893"/>
         <source>Imported {name} into the current observation.</source>
         <translation>Importerade {name} till aktuell observation.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2962"/>
+        <location filename="../ui/live_lab_tab.py" line="2964"/>
         <source>RAW image {name} cannot be imported yet: {error}</source>
         <translation>RAW-bilden {name} kan inte importeras ännu: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2972"/>
+        <location filename="../ui/live_lab_tab.py" line="2974"/>
         <source>Could not prepare {name}: {error}</source>
         <translation>Kunde inte förbereda {name}: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3249"/>
+        <location filename="../ui/live_lab_tab.py" line="3251"/>
         <source>Selected images will be edited</source>
         <translation>Valda bilder kommer att redigeras</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3428"/>
+        <location filename="../ui/live_lab_tab.py" line="3430"/>
         <source>The next imported microscope image will appear here.</source>
         <translation>Nästa importerade mikroskopbild visas här.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3458"/>
-        <location filename="../ui/live_lab_tab.py" line="3507"/>
+        <location filename="../ui/live_lab_tab.py" line="3460"/>
+        <location filename="../ui/live_lab_tab.py" line="3509"/>
         <source>Selected image unavailable</source>
         <translation>Den valda bilden är inte tillgänglig</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3459"/>
+        <location filename="../ui/live_lab_tab.py" line="3461"/>
         <source>This session image does not have a stored file path.</source>
         <translation>Den här bilden från sessionen har ingen sparad filsökväg.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3488"/>
+        <location filename="../ui/live_lab_tab.py" line="3490"/>
         <source>RAW edit preview unavailable</source>
         <translation>Förhandsvisning av RAW-redigering är inte tillgänglig</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3489"/>
+        <location filename="../ui/live_lab_tab.py" line="3491"/>
         <source>The temporary RAW edit preview for {name} is not available.</source>
         <translation>Den tillfälliga förhandsvisningen av RAW-redigeringen för {name} är inte tillgänglig.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3508"/>
-        <location filename="../ui/live_lab_tab.py" line="3511"/>
+        <location filename="../ui/live_lab_tab.py" line="3510"/>
+        <location filename="../ui/live_lab_tab.py" line="3513"/>
         <source>Could not load {name}.</source>
         <translation>Kunde inte läsa in {name}.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3557"/>
+        <location filename="../ui/live_lab_tab.py" line="3559"/>
         <source>Editing RAW: {name}</source>
         <translation>Redigerar RAW: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3582"/>
+        <location filename="../ui/live_lab_tab.py" line="3584"/>
         <source>Selected image</source>
         <translation>Vald bild</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3584"/>
+        <location filename="../ui/live_lab_tab.py" line="3586"/>
         <source>{prefix}: {name}</source>
         <translation>{prefix}: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3685"/>
+        <location filename="../ui/live_lab_tab.py" line="3687"/>
         <source>{scale:.4g} μm/px</source>
         <translation>{scale:.4g} μm/px</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3686"/>
+        <location filename="../ui/live_lab_tab.py" line="3688"/>
         <source>Scroll to zoom and drag to pan.</source>
         <translation>Scrolla för att zooma och dra för att panorera.</translation>
     </message>
@@ -6625,7 +6685,7 @@ Senaste version: {latest}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7256"/>
-        <location filename="../ui/main_window.py" line="15502"/>
+        <location filename="../ui/main_window.py" line="15489"/>
         <source>No image loaded</source>
         <translation>Ingen bild inläst</translation>
     </message>
@@ -6652,61 +6712,61 @@ Senaste version: {latest}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7732"/>
-        <location filename="../ui/main_window.py" line="21160"/>
+        <location filename="../ui/main_window.py" line="21147"/>
         <source>Bins:</source>
         <translation>Klasser:</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7912"/>
-        <location filename="../ui/main_window.py" line="21281"/>
+        <location filename="../ui/main_window.py" line="21268"/>
         <source>Image color</source>
         <translation>Bildfärg</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7917"/>
-        <location filename="../ui/main_window.py" line="21285"/>
+        <location filename="../ui/main_window.py" line="21272"/>
         <source>Plot Avg Q</source>
         <translation>Diagram för medel-Q</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7922"/>
-        <location filename="../ui/main_window.py" line="21289"/>
+        <location filename="../ui/main_window.py" line="21276"/>
         <source>Plot Q inner range</source>
         <translation>Visa inre Q-intervall</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7923"/>
-        <location filename="../ui/main_window.py" line="21290"/>
+        <location filename="../ui/main_window.py" line="21277"/>
         <source>Show the measured 5th–95th percentile interval and each reference&apos;s published inner Q interval</source>
         <translation>Visa det uppmätta intervallet mellan 5:e och 95:e percentilen och varje referens publicerade inre Q-intervall</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7928"/>
-        <location filename="../ui/main_window.py" line="21294"/>
+        <location filename="../ui/main_window.py" line="21281"/>
         <source>Plot Q min/max</source>
         <translation>Diagram för Q min/max</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7929"/>
-        <location filename="../ui/main_window.py" line="21295"/>
+        <location filename="../ui/main_window.py" line="21282"/>
         <source>Show Q lines for the true minimum and maximum values</source>
         <translation>Show Q lines for the true minimum and maximum values</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7934"/>
-        <location filename="../ui/main_window.py" line="21313"/>
+        <location filename="../ui/main_window.py" line="21300"/>
         <source>Axis equal</source>
         <translation>Lika axlar</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7935"/>
-        <location filename="../ui/main_window.py" line="21314"/>
+        <location filename="../ui/main_window.py" line="21301"/>
         <source>Use the same scale on X and Y axes</source>
         <translation>Använd samma skala på X- och Y-axeln</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7965"/>
-        <location filename="../ui/main_window.py" line="21149"/>
+        <location filename="../ui/main_window.py" line="21136"/>
         <source>Plot settings</source>
         <translation>Diagraminställningar</translation>
     </message>
@@ -7147,13 +7207,13 @@ Senaste version: {latest}</translation>
         <translation>Inga AI-förslag</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21303"/>
+        <location filename="../ui/main_window.py" line="21290"/>
         <source>Shape:</source>
         <translation>Form:</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7952"/>
-        <location filename="../ui/main_window.py" line="21306"/>
+        <location filename="../ui/main_window.py" line="21293"/>
         <source>Square</source>
         <translation>Kvadrat</translation>
     </message>
@@ -7447,7 +7507,7 @@ Senaste version: {latest}</translation>
         <location filename="../ui/main_window.py" line="10632"/>
         <location filename="../ui/main_window.py" line="10635"/>
         <location filename="../ui/main_window.py" line="10647"/>
-        <location filename="../ui/main_window.py" line="19447"/>
+        <location filename="../ui/main_window.py" line="19434"/>
         <source>Observation</source>
         <translation>Observation</translation>
     </message>
@@ -7737,7 +7797,7 @@ Senaste version: {latest}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="13496"/>
-        <location filename="../ui/main_window.py" line="22953"/>
+        <location filename="../ui/main_window.py" line="22940"/>
         <source>Load an image first to calibrate</source>
         <translation>Ladda först in en bild för att kalibrera</translation>
     </message>
@@ -7830,7 +7890,7 @@ Senaste version: {latest}</translation>
     <message>
         <location filename="../ui/main_window.py" line="14923"/>
         <location filename="../ui/main_window.py" line="15026"/>
-        <location filename="../ui/main_window.py" line="16432"/>
+        <location filename="../ui/main_window.py" line="16419"/>
         <source>Click to measure next</source>
         <translation>Klicka för att mäta nästa</translation>
     </message>
@@ -7850,187 +7910,187 @@ Senaste version: {latest}</translation>
         <translation>Rektangel: Juster startlinje, klicka punkt 4</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="15737"/>
+        <location filename="../ui/main_window.py" line="15724"/>
         <source>Auto: Edge not found</source>
         <translation>Auto: Kant inte funnet</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="15784"/>
+        <location filename="../ui/main_window.py" line="15771"/>
         <source>Auto Measure Debug</source>
         <translation>Felsökning för automatisk mätning</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="15806"/>
+        <location filename="../ui/main_window.py" line="15793"/>
         <source>Threshold:</source>
         <translation>Terskel:</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="15812"/>
+        <location filename="../ui/main_window.py" line="15799"/>
         <source>Show grayscale</source>
         <translation>Visa gråskala</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="16475"/>
+        <location filename="../ui/main_window.py" line="16462"/>
         <source>Changing calibration</source>
         <translation>Endrer kalibrering</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="16477"/>
+        <location filename="../ui/main_window.py" line="16464"/>
         <source>You changed the calibration measurement. Do you want to rescale all other measurements for this image to match the new scale?</source>
         <translation>Du ändrade kalibreringsmätningen. Vill du skala om alla andra mätningar för den här bilden så att de matchar den nya skalan?</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="16480"/>
+        <location filename="../ui/main_window.py" line="16467"/>
         <source>Rescale</source>
         <translation>Skaler på nytt</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="16481"/>
+        <location filename="../ui/main_window.py" line="16468"/>
         <source>Keep as-is</source>
         <translation>Behold som den er</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="16692"/>
-        <location filename="../ui/main_window.py" line="16720"/>
+        <location filename="../ui/main_window.py" line="16679"/>
+        <location filename="../ui/main_window.py" line="16707"/>
         <source>All except spores</source>
         <translation>Alla utom sporer</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="16925"/>
-        <location filename="../ui/main_window.py" line="20837"/>
+        <location filename="../ui/main_window.py" line="16912"/>
+        <location filename="../ui/main_window.py" line="20824"/>
         <source>Refreshing spore plot and gallery...</source>
         <translation>Uppdaterar sporplott och galleri...</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="17063"/>
+        <location filename="../ui/main_window.py" line="17050"/>
         <source>Rendering spore thumbnails {done}/{total}...</source>
         <translation>Renderar sporminiatyrer {done}/{total}...</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="17451"/>
+        <location filename="../ui/main_window.py" line="17438"/>
         <source>Rotate 180</source>
         <translation>Roter 180</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="17941"/>
-        <location filename="../ui/main_window.py" line="19048"/>
+        <location filename="../ui/main_window.py" line="17928"/>
+        <location filename="../ui/main_window.py" line="19035"/>
         <source>Length (μm)</source>
         <translation>Lengde (μm)</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="17942"/>
-        <location filename="../ui/main_window.py" line="19050"/>
+        <location filename="../ui/main_window.py" line="17929"/>
+        <location filename="../ui/main_window.py" line="19037"/>
         <source>Width (μm)</source>
         <translation>Bredde (μm)</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21660"/>
+        <location filename="../ui/main_window.py" line="21647"/>
         <source>Preparing backup…</source>
         <translation>Förbereder säkerhetskopia…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21661"/>
+        <location filename="../ui/main_window.py" line="21648"/>
         <source>Checking backup size and free space…</source>
         <translation>Kontrollerar säkerhetskopians storlek och ledigt utrymme…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21662"/>
+        <location filename="../ui/main_window.py" line="21649"/>
         <source>Checking backup files…</source>
         <translation>Kontrollerar säkerhetskopieringsfiler…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21663"/>
+        <location filename="../ui/main_window.py" line="21650"/>
         <source>Writing backup…</source>
         <translation>Skriver säkerhetskopia…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21664"/>
+        <location filename="../ui/main_window.py" line="21651"/>
         <source>Verifying backup…</source>
         <translation>Verifierar säkerhetskopia…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21665"/>
+        <location filename="../ui/main_window.py" line="21652"/>
         <source>Backup complete.</source>
         <translation>Säkerhetskopieringen är klar.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21753"/>
+        <location filename="../ui/main_window.py" line="21740"/>
         <source>Preparing observation export…</source>
         <translation>Förbereder observationsexport…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21754"/>
+        <location filename="../ui/main_window.py" line="21741"/>
         <source>Checking export size and free space…</source>
         <translation>Kontrollerar exportstorlek och ledigt utrymme…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21755"/>
+        <location filename="../ui/main_window.py" line="21742"/>
         <source>Checking export files…</source>
         <translation>Kontrollerar exportfiler…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21756"/>
+        <location filename="../ui/main_window.py" line="21743"/>
         <source>Writing observation export…</source>
         <translation>Skriver observationsexport…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21757"/>
+        <location filename="../ui/main_window.py" line="21744"/>
         <source>Verifying observation export…</source>
         <translation>Verifierar observationsexport…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21758"/>
+        <location filename="../ui/main_window.py" line="21745"/>
         <source>Observation export complete.</source>
         <translation>Observationsexport klar.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21775"/>
+        <location filename="../ui/main_window.py" line="21762"/>
         <source>Observation export created: {name}. Missing referenced source files: {count}.</source>
         <translation>Observationsexport skapad: {name}. Saknade refererade källfiler: {count}.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21819"/>
+        <location filename="../ui/main_window.py" line="21806"/>
         <source>The archive could not be identified safely: {error}</source>
         <translation>Arkivet kunde inte identifieras på ett säkert sätt: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21830"/>
-        <location filename="../ui/main_window.py" line="21967"/>
+        <location filename="../ui/main_window.py" line="21817"/>
+        <location filename="../ui/main_window.py" line="21954"/>
         <source>Wrong Archive Type</source>
         <translation>Fel arkivtyp</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21832"/>
+        <location filename="../ui/main_window.py" line="21819"/>
         <source>This is a full Sporely backup. Use Restore Sporely Backup instead.</source>
         <translation>Detta är en fullständig Sporely-säkerhetskopia. Använd Återställ Sporely-säkerhetskopia i stället.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21935"/>
+        <location filename="../ui/main_window.py" line="21922"/>
         <source>A Sporely restore is already being prepared.</source>
         <translation>En Sporely-återställning förbereds redan.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21952"/>
+        <location filename="../ui/main_window.py" line="21939"/>
         <source>The backup could not be identified safely: {error}</source>
         <translation>Säkerhetskopian kunde inte identifieras på ett säkert sätt: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21960"/>
+        <location filename="../ui/main_window.py" line="21947"/>
         <source>Legacy Sporely data packages are not full backups and cannot be restored here.</source>
         <translation>Äldre Sporely-datapaket är inte fullständiga säkerhetskopior och kan inte återställas här.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21964"/>
+        <location filename="../ui/main_window.py" line="21951"/>
         <source>Observation archives are not full backups and cannot be restored here.</source>
         <translation>Observationsarkiv är inte fullständiga säkerhetskopior och kan inte återställas här.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21977"/>
+        <location filename="../ui/main_window.py" line="21964"/>
         <source>Preparing and validating Sporely backup…</source>
         <translation>Förbereder och validerar Sporely-säkerhetskopia…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22100"/>
+        <location filename="../ui/main_window.py" line="22087"/>
         <source>Created: {created}
 App version: {version}
 Observations: {observations}
@@ -8040,97 +8100,97 @@ The backup is validated. A fresh safety backup will be created before replacemen
         <translation>Säkerhetskopian har validerats. En ny säkerhetskopia skapas före ersättningen. Återställa nu?</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22118"/>
+        <location filename="../ui/main_window.py" line="22105"/>
         <source>Creating safety backup and restoring Sporely…</source>
         <translation>Skapar säkerhetskopia och återställer Sporely…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22185"/>
+        <location filename="../ui/main_window.py" line="22172"/>
         <source>Restore preparation failed.</source>
         <translation>Förberedelsen av återställningen misslyckades.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22195"/>
+        <location filename="../ui/main_window.py" line="22182"/>
         <source>Restore rollback completed.</source>
         <translation>Återställningens återgång har slutförts.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22228"/>
+        <location filename="../ui/main_window.py" line="22215"/>
         <source>The restore could not be rolled back safely. Recovery copies were preserved. Restart Sporely before continuing: {error}</source>
         <translation>Återställningen kunde inte återtas på ett säkert sätt. Återställningskopiorna sparades. Starta om Sporely innan du fortsätter: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22273"/>
-        <location filename="../ui/main_window.py" line="22281"/>
+        <location filename="../ui/main_window.py" line="22260"/>
+        <location filename="../ui/main_window.py" line="22268"/>
         <source>Import Legacy Sporely Data Package</source>
         <translation>Importera äldre Sporely-datapaket</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22275"/>
+        <location filename="../ui/main_window.py" line="22262"/>
         <source>Legacy Sporely Data Packages (*.zip)</source>
         <translation>Äldre Sporely-datapaket (*.zip)</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7990"/>
-        <location filename="../ui/main_window.py" line="19326"/>
+        <location filename="../ui/main_window.py" line="19313"/>
         <source>Length</source>
         <translation>Lengde</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7989"/>
-        <location filename="../ui/main_window.py" line="19326"/>
+        <location filename="../ui/main_window.py" line="19313"/>
         <source>Width</source>
         <translation>Bredde</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19526"/>
-        <location filename="../ui/main_window.py" line="19534"/>
+        <location filename="../ui/main_window.py" line="19513"/>
+        <location filename="../ui/main_window.py" line="19521"/>
         <source>No Observation</source>
         <translation>Inga observation</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19526"/>
-        <location filename="../ui/main_window.py" line="19534"/>
+        <location filename="../ui/main_window.py" line="19513"/>
+        <location filename="../ui/main_window.py" line="19521"/>
         <source>Select an observation first.</source>
         <translation>Välj en observation først.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19546"/>
+        <location filename="../ui/main_window.py" line="19533"/>
         <source>Save stats</source>
         <translation>Spara statistikk</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19558"/>
+        <location filename="../ui/main_window.py" line="19545"/>
         <source>Save Failed</source>
         <translation>Lagring mislyktes</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20566"/>
+        <location filename="../ui/main_window.py" line="20553"/>
         <source>Profile</source>
         <translation>Profil</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20570"/>
+        <location filename="../ui/main_window.py" line="20557"/>
         <source>Name is used for the copyright watermark on images.
 Name and email (optional) are added to observations in the database, useful if you share your observations with others.</source>
         <translation>Namnet används för upphovsrättsvattenstämpeln på bilder.
 Namn och e-post (valfritt) läggs till observationer i databasn, vilket är användbart om du delar dina observationer med andra.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20579"/>
+        <location filename="../ui/main_window.py" line="20566"/>
         <source>Name</source>
         <translation>Namn</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20580"/>
+        <location filename="../ui/main_window.py" line="20567"/>
         <source>Email</source>
         <translation>E-post</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20014"/>
-        <location filename="../ui/main_window.py" line="20583"/>
-        <location filename="../ui/main_window.py" line="21319"/>
-        <location filename="../ui/main_window.py" line="22547"/>
+        <location filename="../ui/main_window.py" line="20001"/>
+        <location filename="../ui/main_window.py" line="20570"/>
+        <location filename="../ui/main_window.py" line="21306"/>
+        <location filename="../ui/main_window.py" line="22534"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
@@ -8147,33 +8207,33 @@ Namn och e-post (valfritt) läggs till observationer i databasn, vilket är anv�
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7746"/>
-        <location filename="../ui/main_window.py" line="21166"/>
+        <location filename="../ui/main_window.py" line="21153"/>
         <source>Plot:</source>
         <translation>Plot:</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7749"/>
         <location filename="../ui/main_window.py" line="7951"/>
-        <location filename="../ui/main_window.py" line="21168"/>
-        <location filename="../ui/main_window.py" line="21305"/>
+        <location filename="../ui/main_window.py" line="21155"/>
+        <location filename="../ui/main_window.py" line="21292"/>
         <source>Ellipse</source>
         <translation>Ellips</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7750"/>
-        <location filename="../ui/main_window.py" line="21169"/>
+        <location filename="../ui/main_window.py" line="21156"/>
         <source>Kernel density</source>
         <translation>Kernel density</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7751"/>
-        <location filename="../ui/main_window.py" line="21170"/>
+        <location filename="../ui/main_window.py" line="21157"/>
         <source>Mean range</source>
         <translation>Mean range</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7773"/>
-        <location filename="../ui/main_window.py" line="21172"/>
+        <location filename="../ui/main_window.py" line="21159"/>
         <source>Show data ellipses for the current specimen and any spore-point reference sets. Coverage is set by the slider below.</source>
         <translation>Show data ellipses for the current specimen and any spore-point reference sets. Coverage is set by the slider below.</translation>
     </message>
@@ -8190,8 +8250,8 @@ Namn och e-post (valfritt) läggs till observationer i databasn, vilket är anv�
     <message>
         <location filename="../ui/main_window.py" line="7789"/>
         <location filename="../ui/main_window.py" line="7869"/>
-        <location filename="../ui/main_window.py" line="21196"/>
-        <location filename="../ui/main_window.py" line="21249"/>
+        <location filename="../ui/main_window.py" line="21183"/>
+        <location filename="../ui/main_window.py" line="21236"/>
         <source>Coverage:</source>
         <translation>Coverage:</translation>
     </message>
@@ -8203,13 +8263,13 @@ Namn och e-post (valfritt) läggs till observationer i databasn, vilket är anv�
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7821"/>
-        <location filename="../ui/main_window.py" line="21213"/>
+        <location filename="../ui/main_window.py" line="21200"/>
         <source>Bandwidth:</source>
         <translation>Bandwidth:</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7846"/>
-        <location filename="../ui/main_window.py" line="21232"/>
+        <location filename="../ui/main_window.py" line="21219"/>
         <source>Contours:</source>
         <translation>Contours:</translation>
     </message>
@@ -8247,236 +8307,236 @@ Namn och e-post (valfritt) läggs till observationer i databasn, vilket är anv�
         <translation>Arten som anges i panelen ({panel}) skiljer sig från observationens taxonpost ({observation}). Om du vill registrera det publicerade namnet som en synonym eller ett historiskt namn klickar du på Ja. Om detta är en oavsiktlig ändring klickar du på Nej — det normaliserade biblioteket förblir oförändrat.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19364"/>
+        <location filename="../ui/main_window.py" line="19351"/>
         <source>Spores</source>
         <translation>Sporer</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="17875"/>
-        <location filename="../ui/main_window.py" line="19471"/>
+        <location filename="../ui/main_window.py" line="17862"/>
+        <location filename="../ui/main_window.py" line="19458"/>
         <source>No measurements</source>
         <translation>Inga mätningar</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19615"/>
+        <location filename="../ui/main_window.py" line="19602"/>
         <source>Edit photo</source>
         <translation>Redigera foto</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19985"/>
+        <location filename="../ui/main_window.py" line="19972"/>
         <source>Parmasto specimen: Lm={lm}, Wm={wm}, Qm={qm}</source>
         <translation>Parmasto specimen: Lm={lm}, Wm={wm}, Qm={qm}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19992"/>
+        <location filename="../ui/main_window.py" line="19979"/>
         <source>Parmasto variation: VindL={vindl}%, VindW={vindw}%, VindE={vinde}%</source>
         <translation>Parmasto variation: VindL={vindl}%, VindW={vindw}%, VindE={vinde}%</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20014"/>
+        <location filename="../ui/main_window.py" line="20001"/>
         <source>Outlier</source>
         <translation>Outlier</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20027"/>
+        <location filename="../ui/main_window.py" line="20014"/>
         <source>Parmasto warning: specimen spore shape is more variable than typical (VindE {specimen}% &gt; reference {reference}%).</source>
         <translation>Parmasto warning: specimen spore shape is more variable than typical (VindE {specimen}% &gt; reference {reference}%).</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20584"/>
-        <location filename="../ui/main_window.py" line="21320"/>
-        <location filename="../ui/main_window.py" line="22548"/>
+        <location filename="../ui/main_window.py" line="20571"/>
+        <location filename="../ui/main_window.py" line="21307"/>
+        <location filename="../ui/main_window.py" line="22535"/>
         <source>Cancel</source>
         <translation>Avbryt</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20839"/>
+        <location filename="../ui/main_window.py" line="20826"/>
         <source>Resorting spore thumbnails...</source>
         <translation>Sorterar om sporminiatyrer...</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20841"/>
+        <location filename="../ui/main_window.py" line="20828"/>
         <source>Rotating spore thumbnails...</source>
         <translation>Roterar sporminiatyrer...</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20843"/>
+        <location filename="../ui/main_window.py" line="20830"/>
         <source>Filtering measurements and refreshing gallery...</source>
         <translation>Filtrerar mätningar och uppdaterar galleri...</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20850"/>
-        <location filename="../ui/main_window.py" line="21609"/>
+        <location filename="../ui/main_window.py" line="20837"/>
+        <location filename="../ui/main_window.py" line="21596"/>
         <source>Updating spore plot...</source>
         <translation>Uppdaterar sporplott...</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20884"/>
+        <location filename="../ui/main_window.py" line="20871"/>
         <source>Updating reference overlays...</source>
         <translation>Uppdaterar referensöverlägg...</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21175"/>
+        <location filename="../ui/main_window.py" line="21162"/>
         <source>Show Gaussian KDE filled density bands for the measured spore distribution.</source>
         <translation>Show Gaussian KDE filled density bands for the measured spore distribution.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21178"/>
+        <location filename="../ui/main_window.py" line="21165"/>
         <source>Parmasto-style mean comparison with mean point, mean Q line, and expected mean range.</source>
         <translation>Parmasto-style mean comparison with mean point, mean Q line, and expected mean range.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21628"/>
+        <location filename="../ui/main_window.py" line="21615"/>
         <source>A Sporely backup is already running.</source>
         <translation>En säkerhetskopiering av Sporely pågår redan.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21635"/>
+        <location filename="../ui/main_window.py" line="21622"/>
         <source>Back Up Sporely</source>
         <translation>Säkerhetskopiera Sporely</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21637"/>
-        <location filename="../ui/main_window.py" line="21942"/>
+        <location filename="../ui/main_window.py" line="21624"/>
+        <location filename="../ui/main_window.py" line="21929"/>
         <source>Sporely Backups (*.sporely)</source>
         <translation>Sporely-säkerhetskopior (*.sporely)</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21645"/>
-        <location filename="../ui/main_window.py" line="21673"/>
+        <location filename="../ui/main_window.py" line="21632"/>
+        <location filename="../ui/main_window.py" line="21660"/>
         <source>Creating Sporely backup…</source>
         <translation>Skapar Sporely-säkerhetskopia…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21689"/>
+        <location filename="../ui/main_window.py" line="21676"/>
         <source>Backup created: {name}. {count} referenced files were missing.</source>
         <translation>Säkerhetskopian skapades: {name}. {count} refererade filer saknades.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21693"/>
+        <location filename="../ui/main_window.py" line="21680"/>
         <source>Backup created: {name}.</source>
         <translation>Säkerhetskopian skapades: {name}.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21700"/>
+        <location filename="../ui/main_window.py" line="21687"/>
         <source>Backup failed: {error}</source>
         <translation>Säkerhetskopieringen misslyckades: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21722"/>
+        <location filename="../ui/main_window.py" line="21709"/>
         <source>An observation export is already running.</source>
         <translation>En observationsexport körs redan.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21728"/>
+        <location filename="../ui/main_window.py" line="21715"/>
         <source>Export Selected Observations</source>
         <translation>Exportera valda observationer</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21730"/>
+        <location filename="../ui/main_window.py" line="21717"/>
         <source>Sporely Archives (*.sporely)</source>
         <translation>Sporely-arkiv (*.sporely)</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21738"/>
-        <location filename="../ui/main_window.py" line="21766"/>
+        <location filename="../ui/main_window.py" line="21725"/>
+        <location filename="../ui/main_window.py" line="21753"/>
         <source>Exporting selected observations…</source>
         <translation>Exporterar valda observationer…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21779"/>
+        <location filename="../ui/main_window.py" line="21766"/>
         <source>Observation export created: {name}.</source>
         <translation>Observationsexport skapad: {name}.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21788"/>
+        <location filename="../ui/main_window.py" line="21775"/>
         <source>Observation export failed: {error}</source>
         <translation>Observationsexporten misslyckades: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21805"/>
+        <location filename="../ui/main_window.py" line="21792"/>
         <source>Import Observations</source>
         <translation>Importera observationer</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21808"/>
+        <location filename="../ui/main_window.py" line="21795"/>
         <source>Sporely Archives (*.sporely);;Legacy Sporely Data Packages (*.zip)</source>
         <translation>Sporely-arkiv (*.sporely);;Äldre Sporely-datapaket (*.zip)</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21840"/>
+        <location filename="../ui/main_window.py" line="21827"/>
         <source>Validating observation archive…</source>
         <translation>Validerar observationsarkiv…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21818"/>
-        <location filename="../ui/main_window.py" line="21859"/>
-        <location filename="../ui/main_window.py" line="21884"/>
+        <location filename="../ui/main_window.py" line="21805"/>
+        <location filename="../ui/main_window.py" line="21846"/>
+        <location filename="../ui/main_window.py" line="21871"/>
         <source>Invalid Sporely Archive</source>
         <translation>Ogiltigt Sporely-arkiv</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21860"/>
-        <location filename="../ui/main_window.py" line="21885"/>
+        <location filename="../ui/main_window.py" line="21847"/>
+        <location filename="../ui/main_window.py" line="21872"/>
         <source>The archive could not be validated: {error}</source>
         <translation>Arkivet kunde inte valideras: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21869"/>
+        <location filename="../ui/main_window.py" line="21856"/>
         <source>Importing observations…</source>
         <translation>Importerar observationer…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21913"/>
+        <location filename="../ui/main_window.py" line="21900"/>
         <source>Import Failed</source>
         <translation>Importen misslyckades</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21914"/>
+        <location filename="../ui/main_window.py" line="21901"/>
         <source>The observations could not be imported: {error}</source>
         <translation>Observationerna kunde inte importeras: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21903"/>
+        <location filename="../ui/main_window.py" line="21890"/>
         <source>Observation import complete: {imported} new, {reused} already imported.</source>
         <translation>Observationsimporten är klar: {imported} nya, {reused} redan importerade.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21929"/>
-        <location filename="../ui/main_window.py" line="21934"/>
-        <location filename="../ui/main_window.py" line="21940"/>
-        <location filename="../ui/main_window.py" line="21971"/>
-        <location filename="../ui/main_window.py" line="22110"/>
+        <location filename="../ui/main_window.py" line="21916"/>
+        <location filename="../ui/main_window.py" line="21921"/>
+        <location filename="../ui/main_window.py" line="21927"/>
+        <location filename="../ui/main_window.py" line="21958"/>
+        <location filename="../ui/main_window.py" line="22097"/>
         <source>Restore Sporely Backup</source>
         <translation>Återställ Sporely-säkerhetskopia</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21929"/>
+        <location filename="../ui/main_window.py" line="21916"/>
         <source>Wait for the current backup to finish before restoring.</source>
         <translation>Vänta tills den pågående säkerhetskopieringen är klar innan du återställer.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21951"/>
+        <location filename="../ui/main_window.py" line="21938"/>
         <source>Invalid Sporely Backup</source>
         <translation>Ogiltig Sporely-säkerhetskopia</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21971"/>
+        <location filename="../ui/main_window.py" line="21958"/>
         <source>Wait for background work to finish before restoring.</source>
         <translation>Vänta tills bakgrundsarbetet är klart innan du återställer.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22254"/>
+        <location filename="../ui/main_window.py" line="22241"/>
         <source>Sporely backup restored.</source>
         <translation>Sporely-säkerhetskopian har återställts.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22257"/>
+        <location filename="../ui/main_window.py" line="22244"/>
         <source>Restore Complete</source>
         <translation>Återställningen är klar</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22258"/>
+        <location filename="../ui/main_window.py" line="22245"/>
         <source>The backup was restored successfully. Restart Sporely to load the restored installation.
 
 Safety backup: {path}</source>
@@ -8485,78 +8545,78 @@ Safety backup: {path}</source>
 Säkerhetskopia: {path}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22226"/>
-        <location filename="../ui/main_window.py" line="22265"/>
+        <location filename="../ui/main_window.py" line="22213"/>
+        <location filename="../ui/main_window.py" line="22252"/>
         <source>Restore Failed</source>
         <translation>Återställningen misslyckades</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22265"/>
+        <location filename="../ui/main_window.py" line="22252"/>
         <source>The backup was not restored: {error}</source>
         <translation>Säkerhetskopian återställdes inte: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22266"/>
+        <location filename="../ui/main_window.py" line="22253"/>
         <source>Restore failed.</source>
         <translation>Återställningen misslyckades.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22309"/>
+        <location filename="../ui/main_window.py" line="22296"/>
         <source>Updated DB.</source>
         <translation>Databasn uppdaterades.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22316"/>
+        <location filename="../ui/main_window.py" line="22303"/>
         <source>; and {count} more</source>
         <translation>; och {count} till</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22317"/>
+        <location filename="../ui/main_window.py" line="22304"/>
         <source>Warnings: {text}</source>
         <translation>Varningar: {text}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22335"/>
+        <location filename="../ui/main_window.py" line="22322"/>
         <source>Import failed: {error}</source>
         <translation>Import mislyktes: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22389"/>
+        <location filename="../ui/main_window.py" line="22376"/>
         <source>Measurement deleted</source>
         <translation>Mätning slettet</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22545"/>
+        <location filename="../ui/main_window.py" line="22532"/>
         <source>Changing image scale</source>
         <translation>Endrer bildeskala</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22546"/>
+        <location filename="../ui/main_window.py" line="22533"/>
         <source>Changing image scale: This will update previous measurements to match the new scale.</source>
         <translation>Ändring av bildskala: detta kommer att uppdatera tidigare mätningar så att de matchar den nya skalan.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22966"/>
+        <location filename="../ui/main_window.py" line="22953"/>
         <source>CALIBRATION: Click first point on scale bar</source>
         <translation>KALIBRERING: Klicka første punkt på skalalinjen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22980"/>
+        <location filename="../ui/main_window.py" line="22967"/>
         <source>CALIBRATION: Click second point on scale bar</source>
         <translation>KALIBRERING: Klicka andre punkt på skalalinjen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22999"/>
+        <location filename="../ui/main_window.py" line="22986"/>
         <source>Calibration failed: zero-length line. Try again.</source>
         <translation>Kalibrering mislyktes: linjen har null lengde. Prøv igen.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="23045"/>
+        <location filename="../ui/main_window.py" line="23032"/>
         <source>Scale set: {scale:.4f} mm/px</source>
         <translation>Skala satt: {scale:.4f} mm/px</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="23047"/>
+        <location filename="../ui/main_window.py" line="23034"/>
         <source>Scale set: {scale:.2f} nm/px</source>
         <translation>Skala satt: {scale:.2f} nm/px</translation>
     </message>
@@ -15243,12 +15303,12 @@ Detta kommer att skriva över molnets metadatafält som anges nedan.
 <context>
     <name>ZoomableImageLabel</name>
     <message>
-        <location filename="../ui/zoomable_image_widget.py" line="124"/>
+        <location filename="../ui/zoomable_image_widget.py" line="126"/>
         <source>Preview</source>
         <translation>Förhandsvisning</translation>
     </message>
     <message>
-        <location filename="../ui/zoomable_image_widget.py" line="2328"/>
+        <location filename="../ui/zoomable_image_widget.py" line="2330"/>
         <source>Load an image to begin</source>
         <translation>Läs in en bild för att börja</translation>
     </message>

@@ -60,6 +60,7 @@ class AdaptiveChoiceSelector(QWidget):
         self._lab_state_alert = False
         self._mixed_values: list[Any] = []
         self._has_measured_width = False
+        self._display_listeners: list = []
         self._fit_timer = QTimer(self)
         self._fit_timer.setSingleShot(True)
         self._fit_timer.timeout.connect(self._refresh_mode_for_width)
@@ -109,6 +110,7 @@ class AdaptiveChoiceSelector(QWidget):
                 widget.deleteLater()
         self._buttons.clear()
         self._schedule_fit_update(0)
+        self._notify_display_listeners()
 
     def addItem(
         self,
@@ -216,6 +218,8 @@ class AdaptiveChoiceSelector(QWidget):
             if item.pill_text is None and item.value is not None:
                 button.setText(item.display_text)
         self._schedule_fit_update(0)
+        if index == self._current_index:
+            self._notify_display_listeners()
 
     def buttons(self) -> list[QPushButton]:
         return [button for button in self._buttons if button is not None]
@@ -249,6 +253,19 @@ class AdaptiveChoiceSelector(QWidget):
     def combo(self) -> QComboBox:
         return self._combo
 
+    def add_display_listener(self, callback) -> None:
+        """Call ``callback()`` whenever the shown selection changes.
+
+        Unlike ``currentIndexChanged`` this also fires for changes made while
+        signals are blocked (a gallery selection loading its values), so a
+        summary that mirrors the selector never goes stale.
+        """
+        self._display_listeners.append(callback)
+
+    def _notify_display_listeners(self) -> None:
+        for callback in list(self._display_listeners):
+            callback()
+
     def set_lab_state_alert(self, alert: bool) -> None:
         self._lab_state_alert = bool(alert)
         self.setProperty("labStateAlert", self._lab_state_alert)
@@ -281,6 +298,7 @@ class AdaptiveChoiceSelector(QWidget):
             return
         self._mixed_values = []
         self._refresh_theme_styles()
+        self._notify_display_listeners()
 
     def is_mixed(self) -> bool:
         return bool(self._mixed_values)
@@ -638,6 +656,7 @@ class AdaptiveChoiceSelector(QWidget):
                 widget.blockSignals(False)
             if was_exclusive:
                 self._button_group.setExclusive(True)
+        self._notify_display_listeners()
 
     def _on_combo_index_changed(self, index: int) -> None:
         if self._syncing_from_user():

@@ -1,6 +1,8 @@
 """Microscope, Slide / prep and Notes cards for the Live Lab tab (split out of ``ui/live_lab_tab.py``)."""
 from __future__ import annotations
 
+from datetime import datetime
+
 from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
@@ -10,7 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from database.database_tags import DatabaseTerms
-from database.models import SettingsDB
+from database.models import SessionLogDB, SettingsDB
 from database.schema import load_objectives, objective_display_name, objective_sort_value
 
 from .combo_alerts import combo_is_unset, lab_state_combo_alert_stylesheet, update_combo_alert, update_combo_alerts
@@ -21,6 +23,7 @@ from .adaptive_choice_selector import (
     objective_is_macro_profile,
     stain_color,
 )
+from .collapsible_section import CollapsibleSection
 from .section_card import create_section_card
 from .live_lab_raw import PendingRawCapture
 
@@ -30,6 +33,10 @@ class LiveLabPrepPanelMixin:
 
     Mixed into ``LiveLabTab``; the methods use the tab's widgets and state through ``self``.
     """
+
+    # Open/closed state of the collapsible sections, remembered across restarts.
+    SETTING_PREP_SECTION_EXPANDED = "live_lab_prep_section_expanded"
+    SETTING_NOTES_SECTION_EXPANDED = "live_lab_notes_section_expanded"
 
     def _build_microscope_card(self) -> None:
         """Build the Microscope card (objective, contrast) as ``self.microscope_group``."""
@@ -47,12 +54,14 @@ class LiveLabPrepPanelMixin:
         micro_form.addRow(self.tr("Contrast:"), self.contrast_combo)
 
     def _build_slide_prep_card(self) -> None:
-        """Build the Slide / prep card (mount, stain, condition, source) as ``self.slide_prep_group``."""
-        self.slide_prep_group, prep_form = create_section_card(
-            self.tr("Slide / prep"),
+        """Build the collapsible Preparation section (mount, stain, condition, source) as ``self.slide_prep_group``."""
+        self.slide_prep_group = CollapsibleSection(
+            self.tr("Preparation"),
             QFormLayout,
+            settings_key=self.SETTING_PREP_SECTION_EXPANDED,
             body_margins=(10, 12, 10, 10),
         )
+        prep_form = self.slide_prep_group.body_layout
         prep_form.setSpacing(8)
         self.mount_combo = self._build_term_combo("mount")
         self.stain_combo = self._build_term_combo("stain")
@@ -68,14 +77,56 @@ class LiveLabPrepPanelMixin:
         prep_form.addRow(self.tr("Stain:"), self.stain_combo)
         prep_form.addRow(self.tr("Condition:"), self.sample_combo)
         prep_form.addRow(self.tr("Source:"), self.sample_source_combo)
+        for combo in (self.mount_combo, self.stain_combo, self.sample_combo, self.sample_source_combo):
+            combo.add_display_listener(self._update_prep_summary)
+        self._update_prep_summary()
+
+    def _prep_summary_fields(self) -> tuple[tuple[str, object, bool], ...]:
+        """(field label, selector, flagged when unset) in the order the summary reads."""
+        return (
+            (self.tr("Mount"), getattr(self, "mount_combo", None), True),
+            (self.tr("Condition"), getattr(self, "sample_combo", None), True),
+            (self.tr("Stain"), getattr(self, "stain_combo", None), True),
+            (self.tr("Source"), getattr(self, "sample_source_combo", None), False),
+        )
+
+    def _prep_summary(self) -> tuple[str, str]:
+        """The Preparation summary line and its unset-value warning ("" when none)."""
+        parts: list[str] = []
+        unset: list[str] = []
+        for label, combo, flagged in self._prep_summary_fields():
+            if combo is None:
+                continue
+            if combo.is_mixed():
+                parts.append(self.tr("{field}: mixed").format(field=label))
+            elif combo_is_unset(combo):
+                if flagged:
+                    unset.append(label)
+            else:
+                parts.append(str(combo.itemText(combo.currentIndex()) or ""))
+        alert = ""
+        if len(unset) == 1:
+            alert = self.tr("{field} not set").format(field=unset[0])
+        elif unset:
+            alert = self.tr("{count} not set").format(count=len(unset))
+        return " · ".join(part for part in parts if part), alert
+
+    def _update_prep_summary(self) -> None:
+        section = getattr(self, "slide_prep_group", None)
+        if not isinstance(section, CollapsibleSection):
+            return
+        text, alert = self._prep_summary()
+        section.set_summary(text, alert=alert)
 
     def _build_notes_card(self) -> None:
-        """Build the Notes card (session note, image note) as ``self.notes_group``."""
-        self.notes_group, notes_form = create_section_card(
+        """Build the collapsible Notes section (session note, image note) as ``self.notes_group``."""
+        self.notes_group = CollapsibleSection(
             self.tr("Notes"),
             QFormLayout,
+            settings_key=self.SETTING_NOTES_SECTION_EXPANDED,
             body_margins=(10, 12, 10, 10),
         )
+        notes_form = self.notes_group.body_layout
         notes_form.setSpacing(8)
         note_row = QWidget()
         note_row_layout = QHBoxLayout(note_row)
@@ -101,6 +152,79 @@ class LiveLabPrepPanelMixin:
             notes_form.addRow(self.tr("Image note:"), self.image_note_input)
             self._image_note_mixed = False
             self._image_note_loading = False
+        self._update_notes_summary()
+
+    def _session_note_events(self, *, refresh: bool = False) -> list[dict]:
+        """Manual notes logged in the running session, oldest first.
+
+        Read from ``session_logs`` and cached per session; ``refresh`` rereads
+        them (after a note is added or a session starts or stops).
+        """
+        session_id = str(getattr(self, "_session_id", None) or "")
+        cached = getattr(self, "_session_note_cache", None)
+        if not refresh and cached is not None and cached[0] == session_id:
+            return cached[1]
+        events: list[dict] = []
+        if session_id:
+            try:
+                events = [
+                    event
+                    for event in SessionLogDB.get_events(session_id=session_id)
+                    if str(event.get("event_type") or "") == "manual_note"
+                ]
+            except Exception:
+                events = []
+        self._session_note_cache = (session_id, events)
+        return events
+
+    @staticmethod
+    def _note_time_text(recorded_at) -> str:
+        text = str(recorded_at or "").strip()
+        try:
+            return datetime.fromisoformat(text).strftime("%H:%M")
+        except ValueError:
+            return text[11:16] if len(text) >= 16 else text
+
+    def _notes_summary(self, *, refresh_log: bool = False) -> str:
+        parts: list[str] = []
+        notes = self._session_note_events(refresh=refresh_log)
+        if notes:
+            last = notes[-1]
+            time_text = self._note_time_text(last.get("recorded_at"))
+            note_text = " ".join(str(last.get("value") or "").split())
+            if len(notes) == 1:
+                parts.append(self.tr("1 note · {time} {text}").format(time=time_text, text=note_text))
+            else:
+                parts.append(
+                    self.tr("{count} notes · last {time} {text}").format(
+                        count=len(notes), time=time_text, text=note_text
+                    )
+                )
+        widget = getattr(self, "image_note_input", None)
+        # The note field keeps its last text when nothing is selected (a new
+        # session, a cleared viewer), so it only counts while an image is.
+        if widget is not None and self._has_selected_image():
+            if getattr(self, "_image_note_mixed", False):
+                parts.append(self.tr("Image: (Multiple notes)"))
+            else:
+                image_note = " ".join(str(widget.toPlainText() or "").split())
+                if image_note:
+                    parts.append(self.tr("Image: {note}").format(note=image_note))
+        return " · ".join(parts) if parts else self.tr("No notes")
+
+    def _has_selected_image(self) -> bool:
+        if getattr(self, "_selected_session_image_id", None) is not None:
+            return True
+        current_pending = getattr(self, "_current_pending_raw_capture", None)
+        if callable(current_pending) and current_pending() is not None:
+            return True
+        selected_keys = getattr(self, "_session_gallery_selected_keys", None)
+        return bool(callable(selected_keys) and selected_keys())
+
+    def _update_notes_summary(self, *, refresh_log: bool = False) -> None:
+        section = getattr(self, "notes_group", None)
+        if isinstance(section, CollapsibleSection):
+            section.set_summary(self._notes_summary(refresh_log=refresh_log))
 
     def _load_image_note_from_metadata(self, metadata: dict | None) -> None:
         widget = getattr(self, "image_note_input", None)
@@ -118,6 +242,7 @@ class LiveLabPrepPanelMixin:
         finally:
             widget.blockSignals(False)
             self._image_note_loading = False
+        self._update_notes_summary()
 
     def _load_image_note_from_metadatas(self, metadatas: list) -> None:
         widget = getattr(self, "image_note_input", None)
@@ -147,6 +272,7 @@ class LiveLabPrepPanelMixin:
         finally:
             widget.blockSignals(False)
             self._image_note_loading = False
+        self._update_notes_summary()
 
     def _on_image_note_text_changed(self) -> None:
         if getattr(self, "_image_note_loading", False):
@@ -155,6 +281,7 @@ class LiveLabPrepPanelMixin:
         if widget is None:
             return
         self._image_note_mixed = False
+        self._update_notes_summary()
         text = str(widget.toPlainText() or "")
         captures = getattr(self, "_pending_raw_captures", []) or []
         selected_keys = set(self._session_gallery_selected_keys() or [])
@@ -359,6 +486,7 @@ class LiveLabPrepPanelMixin:
             return
         self._log_session_event("manual_note", value=note_text, metadata={"note_length": len(note_text)})
         self.session_note_input.clear()
+        self._update_notes_summary(refresh_log=True)
         self._show_status(
             self.tr("Added session note."),
             tone="success",
