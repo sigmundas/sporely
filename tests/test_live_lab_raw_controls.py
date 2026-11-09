@@ -595,7 +595,9 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state._handle_raw_review_shortcut = lambda action: live_lab_tab.LiveLabTab._handle_raw_review_shortcut(state, action)
     state._install_raw_review_shortcuts = lambda: live_lab_tab.LiveLabTab._install_raw_review_shortcuts(state)
     state._finalize_pending_raw_background_wb_from_preview = lambda: live_lab_tab.LiveLabTab._finalize_pending_raw_background_wb_from_preview(state)
-    state._raw_processing_settings_key = lambda: live_lab_tab.LiveLabTab._raw_processing_settings_key(state)
+    state._raw_processing_settings_key = lambda context=None: live_lab_tab.LiveLabTab._raw_processing_settings_key(state, context)
+    state._raw_processing_combo_key = lambda context=None: live_lab_tab.LiveLabTab._raw_processing_combo_key(state, context)
+    state._stored_raw_settings_for_context = lambda context=None: live_lab_tab.LiveLabTab._stored_raw_settings_for_context(state, context)
     state._ingest_detected_image = (
         lambda source_path, raw_settings=None, lab_metadata=None, observation_id=None: live_lab_tab.LiveLabTab._ingest_detected_image(
             state,
@@ -923,7 +925,7 @@ def test_live_lab_raw_summary_and_slider_state(monkeypatch):
     live_lab_tab.LiveLabTab._on_raw_processing_controls_changed(state)
 
     assert live_lab_tab.LiveLabTab._raw_processing_summary_text(state) == "Auto WB · levels off · Curve 45 / mid 48"
-    assert saved_settings[-1][0] == state._raw_processing_settings_key()
+    assert saved_settings[-1][0] == state._raw_processing_combo_key()
     assert json.loads(saved_settings[-1][1])["white_balance_mode"] == "auto"
 
 
@@ -1649,7 +1651,7 @@ def test_live_lab_ingest_uses_current_raw_settings_and_keeps_prior_snapshot(tmp_
     assert first_snapshot["auto_levels"] is True
     assert first_snapshot["tone_curve_enabled"] is False
     assert set_setting_calls
-    assert set_setting_calls[-1][0] == state._raw_processing_settings_key()
+    assert set_setting_calls[-1][0] == state._raw_processing_combo_key()
     assert json.loads(set_setting_calls[-1][1])["white_balance_mode"] == "auto"
 
 
@@ -1921,7 +1923,7 @@ def test_live_lab_raw_control_change_saves_current_context_settings(monkeypatch)
     live_lab_tab.LiveLabTab._on_raw_processing_controls_changed(state)
 
     assert saved_settings
-    assert saved_settings[-1][0] == state._raw_processing_settings_key()
+    assert saved_settings[-1][0] == state._raw_processing_combo_key()
     saved_payload = json.loads(saved_settings[-1][1])
     assert saved_payload["white_balance_mode"] == "auto"
     assert saved_payload["auto_levels"] is False

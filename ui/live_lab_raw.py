@@ -695,15 +695,54 @@ class LiveLabRawMixin:
         serialized_context = json.dumps(key_context, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
         return f"{prefix}::{serialized_context}"
 
+    def _raw_processing_combo_key(self, context: dict[str, str | None] | None = None) -> str:
+        """Settings key for the objective + contrast combination (decided 2026-11-09)."""
+        context = dict(context or self._raw_processing_preset_context())
+        prefix = getattr(self, "SETTING_RAW_PROCESSING_PRESET_PREFIX", None) or LiveLabRawMixin.SETTING_RAW_PROCESSING_PRESET_PREFIX
+        key_context = {"objective_name": context.get("objective_name"), "contrast": context.get("contrast")}
+        return f"{prefix}::combo::" + json.dumps(key_context, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+    def _stored_raw_settings_for_context(self, context: dict[str, str | None] | None = None) -> RawRenderSettings | None:
+        """The settings last used with this objective + contrast, or None.
+
+        Falls back to the older key, which also held mount, stain and
+        condition, so settings saved before stage 5 still apply.
+        """
+        for key in (self._raw_processing_combo_key(context), self._raw_processing_settings_key(context)):
+            raw_value = str(SettingsDB.get_setting(key, "") or "").strip()
+            if not raw_value:
+                continue
+            try:
+                return RawRenderSettings.from_dict(json.loads(raw_value))
+            except Exception:
+                continue
+        return None
+
+    def _apply_raw_settings_for_combination(self, *_args) -> None:
+        """Changing objective or contrast brings back that combination's RAW settings.
+
+        Only while preparing the next capture (not while the side panel edits
+        selected images, nor for a mixed selection, nor in a RAW edit). The
+        panel shows them unless it is showing a capture's own settings.
+        """
+        if getattr(self, "_sidebar_binds_to_selection", False) or getattr(self, "_raw_edit_session", None) is not None:
+            return
+        if self.objective_combo.is_mixed() or self.contrast_combo.is_mixed():
+            return
+        settings = self._stored_raw_settings_for_context()
+        if settings is None:
+            return
+        self._raw_render_settings = settings
+        if self._visible_raw_processing_target() is None:
+            sync_helper = getattr(self, "_sync_raw_processing_controls_from_settings", None)
+            if callable(sync_helper):
+                sync_helper(settings)
+            self._refresh_raw_processing_context_ui()
+
     def _load_raw_processing_settings_for_current_context(self) -> RawRenderSettings:
-        raw_value = str(SettingsDB.get_setting(self._raw_processing_settings_key(), "") or "").strip()
-        if not raw_value:
+        settings = self._stored_raw_settings_for_context()
+        if settings is None:
             return self._raw_render_settings
-        try:
-            payload = json.loads(raw_value)
-        except Exception:
-            return self._raw_render_settings
-        settings = RawRenderSettings.from_dict(payload)
         sync_helper = getattr(self, "_sync_raw_processing_controls_from_settings", None)
         if callable(sync_helper):
             sync_helper(settings)
@@ -714,7 +753,7 @@ class LiveLabRawMixin:
     def _save_raw_processing_settings_for_current_context(self, settings: RawRenderSettings | None = None) -> None:
         resolved_settings = RawRenderSettings.from_dict(settings or self._raw_settings_from_controls())
         SettingsDB.set_setting(
-            self._raw_processing_settings_key(),
+            self._raw_processing_combo_key(),
             json.dumps(resolved_settings.to_dict(), sort_keys=True),
         )
         self._raw_render_settings = resolved_settings
@@ -2383,10 +2422,11 @@ class LiveLabRawMixin:
         )
 
     def _current_raw_render_settings(self) -> RawRenderSettings:
-        _preset_context = self._raw_processing_preset_context()
-        del _preset_context
-        # TODO: resolve a saved preset first using _raw_processing_preset_context().
-        return self._raw_settings_from_controls(update_session_settings=False)
+        """Settings for the next capture: its objective + contrast's stored ones, else the panel's."""
+        if self._visible_raw_processing_target() is None:
+            return self._raw_settings_from_controls(update_session_settings=False)
+        stored = self._stored_raw_settings_for_context()
+        return stored if stored is not None else self._raw_settings_from_controls(update_session_settings=False)
 
     @staticmethod
     def _raw_settings_has_sampled_background_wb(settings: RawRenderSettings | None) -> bool:

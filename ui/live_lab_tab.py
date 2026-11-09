@@ -285,6 +285,9 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         # the contrast it brings back.
         self.objective_combo.currentIndexChanged.connect(self._restore_contrast_for_objective)
         self.contrast_combo.currentIndexChanged.connect(self._remember_contrast_for_objective)
+        # RAW settings follow the objective + contrast combination (stage 5).
+        self.objective_combo.currentIndexChanged.connect(self._apply_raw_settings_for_combination)
+        self.contrast_combo.currentIndexChanged.connect(self._apply_raw_settings_for_combination)
         self.capture_state_bar.contrast_segments.chosen.connect(self._on_contrast_chosen)
         self._clear_session_viewer()
         self._update_target_display()

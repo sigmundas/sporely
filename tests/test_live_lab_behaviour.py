@@ -1230,3 +1230,83 @@ def test_notes_log_lines_never_hide_and_removed_objectives_keep_their_name(qtbot
     )
     tab._update_notes_summary(refresh_log=True)
     assert tab.session_log_list.item(0).text().endswith("Objective 100x → Custom 2025 objective")
+
+
+# ---------------------------------------------------------------------------
+# Stage 5a: RAW settings follow the objective + contrast combination
+# ---------------------------------------------------------------------------
+
+
+def _wb(tab) -> str:
+    return tab.raw_controls.white_balance_selector.selected_value()
+
+
+def test_raw_settings_follow_the_objective_and_contrast_combination(qtbot, profile):
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "40X", "contrast_combo": "BF"})
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "auto")  # a manual tweak for 40X · BF
+    qtbot.mouseClick(_bar_button(tab, "objective", "100X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "DIC"), Qt.LeftButton)
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "camera")  # and for 100X · DIC
+    assert _wb(tab) == "camera"
+
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)
+    assert _wb(tab) == "auto"  # 40X · BF's settings came back
+    assert tab._current_raw_render_settings().white_balance_mode == "auto"
+    tab.close()
+
+    restarted = _make_tab(qtbot)
+    _choose(qtbot, restarted.objective_combo, "100X")
+    _choose(qtbot, restarted.contrast_combo, "DIC")
+    assert _wb(restarted) == "camera"
+
+
+def test_settings_saved_before_stage_5_still_apply(qtbot, profile):
+    from utils.raw_render import RawRenderSettings
+
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "40X", "contrast_combo": "BF"})
+    context = {**tab._raw_processing_preset_context(), "objective_name": "63X", "contrast": "Phase"}
+    legacy = RawRenderSettings.default()
+    legacy = RawRenderSettings.from_dict({**legacy.to_dict(), "white_balance_mode": "auto"})
+    SettingsDB.set_setting(tab._raw_processing_settings_key(context), json.dumps(legacy.to_dict()))
+    qtbot.mouseClick(_bar_button(tab, "objective", "63X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "Phase"), Qt.LeftButton)
+    assert _wb(tab) == "auto"
+
+
+def test_a_new_raw_capture_gets_its_combinations_settings(qtbot, profile):
+    obs = create_observation(profile)
+    SettingsDB.set_setting(LiveLabTab_SETTING_RAW_CAPTURE_MODE(), "review")
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "40X", "contrast_combo": "BF"})
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "auto")
+    qtbot.mouseClick(_bar_button(tab, "contrast", "DIC"), Qt.LeftButton)
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "camera")
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    _watcher().drop(profile.raw("P1010101.ORF"))
+    qtbot.waitUntil(lambda: len(tab._pending_raw_captures) == 1, timeout=5000)
+    assert tab._pending_raw_captures[0].raw_settings.white_balance_mode == "auto"
+    qtbot.waitUntil(tab.pending_raw_frame.isVisible, timeout=5000)  # its preview is done
+    qtbot.mouseClick(tab.pending_raw_save_btn, Qt.LeftButton)
+    qtbot.waitUntil(lambda: not tab._pending_raw_captures and not tab._pending_raw_commit_is_busy(), timeout=10000)
+    _stop_session(qtbot, tab)
+
+
+def test_raw_settings_leave_a_selected_image_alone(qtbot, profile):
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "40X", "contrast_combo": "BF"})
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "auto")
+    qtbot.mouseClick(_bar_button(tab, "contrast", "DIC"), Qt.LeftButton)
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "camera")
+    tab._sidebar_binds_to_selection = True  # the side panel edits a selected image
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)
+    assert _wb(tab) == "camera"
+
+
+def LiveLabTab_SETTING_RAW_CAPTURE_MODE():
+    from ui.live_lab_tab import LiveLabTab
+
+    return LiveLabTab.SETTING_RAW_CAPTURE_MODE
