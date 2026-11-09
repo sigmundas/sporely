@@ -1732,6 +1732,13 @@ class LiveLabRawMixin:
     ) -> None:
         if pixmap is None or pixmap.isNull():
             return
+        if image is None:
+            # A pending capture's preview: from now on the overlays describe it
+            # (not earlier, while the previous image is still on screen).
+            capture = self._current_pending_raw_capture()
+            if capture is not None:
+                self._viewer_subject = ("pending", capture)
+                self._viewer_subject_metadata = None
         actual_preserve_view = bool(preserve_view)
         if not actual_preserve_view:
             preserve_view_checker = getattr(self, "_should_preserve_live_image_view", None)
@@ -1759,6 +1766,9 @@ class LiveLabRawMixin:
         else:
             self.live_image_label.set_microns_per_pixel(0.0)
             self.live_image_label.set_scale_bar(False, 0.0)
+        refresh_overlays = getattr(self, "_refresh_viewer_overlays", None)
+        if callable(refresh_overlays):
+            refresh_overlays()
         self.viewer_title_label.setText(title)
         self.viewer_meta_label.setText(meta)
         update_calibration_action_visibility = getattr(self, "_update_calibration_action_visibility", None)
@@ -3691,6 +3701,8 @@ class LiveLabRawMixin:
             refresh_viewer_objective_tag = getattr(self, "_refresh_viewer_objective_tag_from_current_state", None)
             if callable(refresh_viewer_objective_tag):
                 refresh_viewer_objective_tag()
+        if changed:
+            self._refresh_viewer_overlays()
         return changed
 
     def _pending_raw_gallery_key(self, capture: PendingRawCapture | None) -> str | None:

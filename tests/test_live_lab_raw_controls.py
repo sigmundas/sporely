@@ -520,6 +520,10 @@ def _build_raw_controls_state() -> SimpleNamespace:
         state,
         *_args,
     )
+    state._viewer_subject = None
+    state._refresh_viewer_overlays = lambda *_args: live_lab_tab.LiveLabTab._refresh_viewer_overlays(state)
+    state._displayed_lab_metadata = lambda: live_lab_tab.LiveLabTab._displayed_lab_metadata(state)
+    state._update_calibration_notice = lambda metadata: live_lab_tab.LiveLabTab._update_calibration_notice(state, metadata)
     state._selected_combo_value = lambda combo: live_lab_tab.LiveLabTab._selected_combo_value(combo)
     state._update_raw_processing_section_label = lambda expanded: live_lab_tab.LiveLabTab._update_raw_processing_section_label(state, expanded)
     state._lab_state_combo_alert_stylesheet = lambda: live_lab_tab.LiveLabTab._lab_state_combo_alert_stylesheet(state)

@@ -381,6 +381,12 @@ screens are inspected in `nb_NO` and one other language; existing tests pass.
 
 ### 3 — Live scale bar
 
+- Decided 2026-11-09 (owner): Live Lab shows captured images, not a camera
+  feed, so the scale bar, the live-view label and the calibration notice
+  describe the image on screen (its stored scale and objective; an unsaved
+  RAW's objective); with no image shown they follow the selected objective.
+  Changing the objective after a capture leaves that capture's label and bar
+  alone. This replaces stage 2's label-follows-controls behaviour.
 - Scope: a 10 µm scale bar on the live view from the selected objective's
   active calibration and the current zoom; “Ikke kalibrert” with a
   “Kalibrer…” link when there is none.
@@ -401,10 +407,11 @@ screens are inspected in `nb_NO` and one other language; existing tests pass.
 - Scope: white balance mode, Lys, Mørk and Kontrast stay visible; tone curve,
   its sliders and the histogram go into a collapsed “Mer” section. One preset
   per contrast method (automatic with a lock, or suggested only: open decision
-  below). Hold a key (mockup: B) to see the image before processing. RAW panel
+  below). Hold a key (to be decided; not B) to see the image before processing. RAW panel
   docked by default, pin toggles overlay, choice remembered. “Kopier
   innstillinger” moves from the pending-RAW bar on the image into the RAW
-  panel. The before/after key cannot be B, which chooses BF since stage 2.
+  panel. The mockup's B for before/after is dropped (owner, 2026-11-09): B
+  chooses BF since stage 2.
 - Done when: changing contrast switches (or suggests) the preset; manual
   tweaks stay until the next contrast change; the before/after key works.
 
@@ -563,6 +570,8 @@ sorts everything else, read-only, into a table the owner approves:
       stage 9 merges the screens.
 - [ ] RAW preset on contrast change: automatic with a lock, or suggested only
       (before stage 5).
+- [ ] The hold-to-compare key for RAW before/after processing; not B (before
+      stage 5).
 - [ ] Unsaved edits in Rediger: autosave, or ask when switching (before 9;
       neither is built until decided).
 - [ ] Switching observation with unsaved images in Bilder: ask, or save them to
@@ -686,6 +695,7 @@ landed through PRs before the branch existed), the commit that brought it into
 | 1a | `c03845e` | — | Agent-verified: collapsible Preparation and Notes sections (summary line, warning for unset values, open state remembered); qtbot tests for mouse, keyboard, restart, summaries and layout; renders change only Live Lab's left panel; Codex review: 5 findings, 4 fixed, 1 not reproducible but guarded. |
 | 1b | `e52bc3b` | — | Agent-verified: Preparation rows as chips (click to choose, click again to clear, “+ N more” in place; arrows move, Space/Enter choose; Norwegian labels Medium, Farging, Tilstand, Kilde); qtbot tests; renders change only Live Lab's Preparation rows; Codex review: 3 bugs fixed (idle layout loop, arrow keys clearing a chip, over-wide chip), 1 test gap closed. Stage 1 done; owner's layout opinion 2026-11-09: looks good |
 | 2 | `194b4f6` | — | Agent-verified: capture-state bar (objective and contrast with ring colours, 1–6 and B/D/I/P shortcuts), live-view label, Microscope card removed; the P1 objective-restore bug fixed; qtbot tests; cocoa real-input run 20/20 (`tools/review_ui/live_lab_mac_check.py`); renders change only Live Lab; Codex review: 6 findings, 5 fixed, 1 kept as designed. Owner's layout opinion 2026-11-09: looks good; the pending-RAW bar should leave the image (stages 5 and 9) |
+| 3 | `ui/redesign` | — | Agent-verified: the scale bar, live-view label and a new “Ikke kalibrert · {objektiv}  Kalibrer…” notice describe what the viewer shows (owner's decision 2026-11-09); bar length tested at five zoom levels; renders change only Live Lab's uncalibrated states; Codex review: 7 findings fixed |
 
 Found during stage 0, not fixed there (rule 1):
 
@@ -807,6 +817,15 @@ Found during stage 2, not fixed there (rule 1):
   not, so `taxon_picker_mac_check` cannot type here. `live_lab_mac_check`
   posts its keys as NSEvents in its own queue instead, which needs no
   permission.
+
+Found during stage 3, not fixed there (rule 1):
+
+- A pending RAW preview shows no scale bar: the preview is downscaled and the
+  capture does not know its full image size, which the calibration refers
+  to. It gets one once saved. Reading the RAW header's size would allow it.
+- The “Kalibrer…” link opens the main window's calibration dialog; Live Lab
+  then reloads the objectives. The dialog does not report a cancelled run,
+  so the reload also happens after Cancel (harmless: the selection is kept).
 
 Baseline renders for the pilot's before/after comparisons (P1, 2026-11-08):
 `/Users/sigmundas/Documents/Code/sporely/sporely-py/docs/plans/november-ui/baseline-p1/`

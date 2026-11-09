@@ -946,3 +946,167 @@ def test_a_narrow_viewer_gets_a_stacked_compact_bar_clear_of_the_zoom_readout(qt
     assert bar.is_stacked()
     assert bar.geometry().right() <= label.width() or bar.is_compact()
     assert not bar.geometry().intersects(label.bottom_left_readout_rect())
+
+
+# ---------------------------------------------------------------------------
+# Stage 3: scale bar and calibration notice for what the viewer shows
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("zoom", "expected"), [(0.25, 25.0), (0.5, 50.0), (1.0, 100.0), (2.0, 200.0), (0.05, 10.0)])
+def test_scale_bar_length_follows_the_zoom(qtbot, zoom, expected):
+    from ui.zoomable_image_widget import ZoomableImageLabel
+
+    label = ZoomableImageLabel()
+    qtbot.addWidget(label)
+    label.set_microns_per_pixel(0.1)  # 10 µm = 100 image pixels
+    label.set_scale_bar(True, 10.0)
+    label.zoom_level = zoom
+    assert label.scale_bar_screen_length() == pytest.approx(expected)  # never under 10 px
+    assert label.scale_bar_screen_length(available_width=100) == pytest.approx(min(expected, 60.0))
+
+
+def test_a_capture_keeps_its_own_label_and_scale_when_the_objective_changes(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)  # 100X, calibrated
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    image = _capture(qtbot, profile, obs, "P1010001.JPG")
+    qtbot.waitUntil(lambda: tab._viewer_subject == ("image", image["id"]), timeout=3000)
+    label = tab.live_image_label
+    assert label.show_scale_bar and label.microns_per_pixel == pytest.approx(image["scale_microns_per_pixel"])
+    assert tab.live_state_label.text().startswith("100x · DIC")
+
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)  # the next capture's objective
+    assert tab.objective_combo.selected_value() == "40X"
+    assert tab.live_state_label.text().startswith("100x · DIC")  # still the image on screen
+    assert label.microns_per_pixel == pytest.approx(image["scale_microns_per_pixel"])
+    assert not tab.calibration_notice.isVisible()
+
+
+def test_an_empty_viewer_warns_at_once_when_the_chosen_objective_is_not_calibrated(qtbot, profile):
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    assert tab._viewer_subject is None
+    assert not tab.calibration_notice.isVisible()
+    tab.live_image_label.setFocus(Qt.OtherFocusReason)
+    qtbot.waitUntil(tab.live_image_label.hasFocus, timeout=1000)
+    qtbot.keyClick(tab.live_image_label, Qt.Key_2)  # 63X has no calibration
+    assert tab.objective_combo.selected_value() == "63X"
+    assert tab.calibration_notice.isVisible()
+    assert tab.calibration_notice_label.text() == "Not calibrated · 63x"
+    assert tab.live_state_label.text().startswith("63x")
+    qtbot.keyClick(tab.live_image_label, Qt.Key_1)
+    assert not tab.calibration_notice.isVisible()
+
+
+def test_an_uncalibrated_capture_shows_the_notice_and_no_scale_bar(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "63X"})
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    image = _capture(qtbot, profile, obs, "P1010002.JPG")
+    qtbot.waitUntil(lambda: tab._viewer_subject == ("image", image["id"]), timeout=3000)
+    assert not tab.live_image_label.show_scale_bar
+    assert tab.calibration_notice.isVisible()
+    notice = tab.calibration_notice.geometry()
+    assert not notice.intersects(tab.live_image_label.bottom_left_readout_rect())
+    assert not notice.intersects(tab.capture_state_bar.geometry())
+
+
+def test_calibrate_link_opens_calibration_for_that_objective(qtbot, profile):
+    tab = _make_tab(qtbot)
+    opened: list[dict] = []
+    tab._main_window.open_calibration_dialog = lambda **kwargs: opened.append(kwargs) or False
+    _choose(qtbot, tab.objective_combo, "63X")
+    assert tab.calibration_notice.isVisible()
+    qtbot.mouseClick(tab.calibrate_link_btn, Qt.LeftButton)
+    assert opened == [{"objective_key": "63X"}]
+
+
+def _show_unscaled_image(qtbot, profile, tab, obs, *, objective_name):
+    """A saved image with no stored scale, shown in the viewer."""
+    image = _capture(qtbot, profile, obs, f"P10{abs(hash(objective_name)) % 10000:04d}.JPG")
+    ImageDB.update_image(image["id"], objective_name=objective_name, scale=0.0)
+    tab._show_session_image(image["id"])
+    qtbot.waitUntil(lambda: tab._viewer_subject == ("image", image["id"]), timeout=3000)
+    return image
+
+
+def test_calibrating_from_the_notice_keeps_the_current_selection(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "63X"})
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    _capture(qtbot, profile, obs, "P1010003.JPG")
+    SettingsDB.set_setting(tab.SETTING_LAST_OBJECTIVE, "100X")  # a different stored choice
+    opened: list[dict] = []
+    tab._main_window.open_calibration_dialog = lambda **kwargs: opened.append(kwargs) or False
+    assert tab.calibration_notice.isVisible()
+    qtbot.mouseClick(tab.calibrate_link_btn, Qt.LeftButton)  # the dialog is "cancelled"
+    assert opened == [{"objective_key": "63X"}]
+    assert tab.objective_combo.selected_value() == "63X"
+
+
+def test_the_notice_offers_calibrate_only_for_a_known_objective(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    _show_unscaled_image(qtbot, profile, tab, obs, objective_name="Removed 20X")
+    assert tab.calibration_notice.isVisible()
+    assert not tab.calibrate_link_btn.isVisible()
+    # A legacy image row with neither an objective nor a scale.
+    tab._viewer_subject = ("image", 999999)
+    tab._update_calibration_notice({"id": 999999, "image_type": "microscope"})
+    assert tab.calibration_notice.isVisible()
+    assert tab.calibration_notice_label.text() == "Not calibrated"
+    assert not tab.calibrate_link_btn.isVisible()
+
+
+def test_control_changes_do_not_read_the_shown_image_again(qtbot, profile, monkeypatch):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    image = _capture(qtbot, profile, obs, "P1010004.JPG")
+    qtbot.waitUntil(lambda: tab._viewer_subject == ("image", image["id"]), timeout=3000)
+    reads: list[int] = []
+    original = ImageDB.get_image
+    monkeypatch.setattr(ImageDB, "get_image", staticmethod(lambda image_id: reads.append(image_id) or original(image_id)))
+    for value in ("40X", "63X", "100X"):
+        qtbot.mouseClick(_bar_button(tab, "objective", value), Qt.LeftButton)
+    _choose(qtbot, tab.contrast_combo, "Phase")
+    assert reads == []
+    assert tab.live_state_label.text().startswith("100x · DIC")
+
+
+def test_the_notice_clears_the_pending_bar_in_a_narrow_viewer(qtbot, profile):
+    tab = _make_tab(qtbot)
+    _choose(qtbot, tab.objective_combo, "63X")  # empty viewer, uncalibrated: notice shown
+    label = tab.live_image_label
+    label.resize(620, 400)
+    tab.pending_raw_frame.setVisible(True)
+    tab._reposition_pending_raw_floating_tab()
+    notice = tab.calibration_notice.geometry()
+    for widget in (tab.capture_state_bar, tab.pending_raw_frame):
+        assert not notice.intersects(widget.geometry()), widget.objectName()
+
+
+def test_the_drawn_scale_bar_uses_the_length_helper(qtbot, monkeypatch):
+    from PySide6.QtGui import QPixmap
+    from ui.zoomable_image_widget import ZoomableImageLabel
+
+    label = ZoomableImageLabel()
+    qtbot.addWidget(label)
+    pixmap = QPixmap(400, 300)
+    pixmap.fill(Qt.white)
+    label.resize(500, 400)
+    label.set_image(pixmap)
+    label.set_microns_per_pixel(0.1)
+    label.set_scale_bar(True, 10.0)
+    calls: list[float] = []
+    original = label.scale_bar_screen_length
+    monkeypatch.setattr(label, "scale_bar_screen_length", lambda width=None: calls.append(width) or original(width))
+    label.grab()
+    assert calls, "painting did not ask the helper for the bar length"

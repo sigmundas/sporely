@@ -105,7 +105,7 @@ from .splitter_state import (
 )
 from .zoomable_image_widget import ZoomableImageLabel
 from .capture_state_bar import CaptureStateBar, readable_text_color
-from .styles import objective_ring_outline
+from .styles import HUD_COLORS, objective_ring_outline
 from .live_lab_prep_panel import LiveLabPrepPanelMixin
 from .live_lab_raw import LiveLabRawMixin
 # The RAW edit/preview machinery lives in ui/live_lab_raw.py; these names stay
@@ -181,6 +181,13 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         #   - True: user explicitly clicked a thumbnail; sidebar changes are
         #     an edit of that image (or the currently multi-selected images).
         self._sidebar_binds_to_selection: bool = False
+        # What the viewer shows: ("image", image_id), ("pending", capture) or
+        # None (empty: waiting for the next capture). The live-view label, the
+        # scale bar and the calibration notice describe this subject.
+        self._viewer_subject: tuple | None = None
+        # The shown image's DB row, read when it is shown and after edits of its
+        # metadata, so control changes do not hit the database.
+        self._viewer_subject_metadata: dict | None = None
         # Snapshot of the microscope state used for the next capture. Kept in
         # sync with the sidebar while unbound, and reset to the most recent
         # capture's metadata after each ingest.
@@ -578,6 +585,36 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         self.live_state_label.setObjectName("liveStateLabel")
         self.live_state_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.live_state_label.setVisible(False)
+        # "Not calibrated · 63x  Calibrate…" bottom-left, above the zoom readout.
+        self.calibration_notice = QFrame(self.live_image_label)
+        self.calibration_notice.setObjectName("calibrationNotice")
+        self.calibration_notice.setAttribute(Qt.WA_StyledBackground, True)
+        notice_layout = QHBoxLayout(self.calibration_notice)
+        notice_layout.setContentsMargins(12, 7, 10, 7)
+        notice_layout.setSpacing(10)
+        self.calibration_notice_label = QLabel(self.calibration_notice)
+        self.calibration_notice_label.setObjectName("calibrationNoticeText")
+        self.calibrate_link_btn = QPushButton(self.tr("Calibrate…"), self.calibration_notice)
+        self.calibrate_link_btn.setObjectName("calibrationNoticeLink")
+        self.calibrate_link_btn.setCursor(Qt.PointingHandCursor)
+        self.calibrate_link_btn.setFlat(True)
+        self.calibrate_link_btn.clicked.connect(self._on_calibrate_notice_clicked)
+        notice_layout.addWidget(self.calibration_notice_label)
+        notice_layout.addWidget(self.calibrate_link_btn)
+        self.calibration_notice.setStyleSheet(
+            "QFrame#calibrationNotice {"
+            f" background-color: {HUD_COLORS['alert_background']};"
+            f" border: 1px solid {HUD_COLORS['alert_border']}; border-radius: 8px;"
+            " }"
+            "QLabel#calibrationNoticeText {"
+            f" color: {HUD_COLORS['alert_text']}; font-size: 13px; font-weight: 700; background: transparent; border: none;"
+            " }"
+            "QPushButton#calibrationNoticeLink {"
+            f" color: {HUD_COLORS['alert_text']}; font-size: 13px; text-decoration: underline; background: transparent;"
+            " border: none; padding: 0px;"
+            " }"
+        )
+        self.calibration_notice.setVisible(False)
         # Forward wheel and native pinch-gesture events that land on either
         # floating action bar down to the image viewer beneath, so zooming
         # while the controls are visible still works.
@@ -1176,9 +1213,92 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         return metadatas
 
     def _refresh_viewer_objective_tag_from_current_state(self, *_args) -> None:
+        # Kept for its callers: the overlays now follow what the viewer shows.
+        self._refresh_viewer_overlays()
+
+    def _displayed_lab_metadata(self) -> dict | None:
+        """Lab metadata of what the viewer shows; the current state when empty."""
+        subject = getattr(self, "_viewer_subject", None)
+        if subject and subject[0] == "image":
+            cached = getattr(self, "_viewer_subject_metadata", None)
+            if cached is None:
+                try:
+                    cached = ImageDB.get_image(int(subject[1])) or {}
+                except Exception:
+                    cached = {}
+                self._viewer_subject_metadata = cached
+            return cached or None
+        if subject and subject[0] == "pending":
+            # Its preview stays on screen while a batch save removes it.
+            return dict(getattr(subject[1], "lab_metadata", None) or {})
+        current_lab_metadata = getattr(self, "_current_lab_metadata", None)
+        if callable(current_lab_metadata):
+            try:
+                return current_lab_metadata()
+            except Exception:
+                return None
+        return None
+
+    def _refresh_viewer_overlays(self, *_args) -> None:
+        """Live-view label and calibration notice for what the viewer shows."""
+        metadata = self._displayed_lab_metadata()
         update_viewer_objective_tag = getattr(self, "_update_viewer_objective_tag", None)
         if callable(update_viewer_objective_tag):
-            update_viewer_objective_tag(None, use_current_state=True)
+            update_viewer_objective_tag(metadata)
+        update_notice = getattr(self, "_update_calibration_notice", None)
+        if callable(update_notice):
+            update_notice(metadata)
+
+    def _subject_is_uncalibrated(self, metadata: dict | None) -> tuple[bool, str | None]:
+        """(no scale for what the viewer shows, its objective key)."""
+        data = dict(metadata or {})
+        objective_key = LiveLabTab._objective_key_from_metadata(self, data)
+        subject = getattr(self, "_viewer_subject", None)
+        if subject and subject[0] == "image":
+            return self._image_microns_per_pixel(data) is None, objective_key
+        if not objective_key:
+            return False, None
+        objective = load_objectives().get(str(objective_key)) or {}
+        try:
+            scale = float(objective.get("microns_per_pixel") or 0.0)
+        except (TypeError, ValueError):
+            scale = 0.0
+        return scale <= 0, objective_key
+
+    def _update_calibration_notice(self, metadata: dict | None) -> None:
+        notice = getattr(self, "calibration_notice", None)
+        if notice is None:
+            return
+        uncalibrated, objective_key = self._subject_is_uncalibrated(metadata)
+        if not uncalibrated:
+            notice.setVisible(False)
+            return
+        objective = load_objectives().get(str(objective_key)) if objective_key else None
+        if objective_key:
+            name = objective_short_label(objective, str(objective_key)) or str(objective_key)
+            text = self.tr("Not calibrated · {objective}").format(objective=name)
+        else:
+            text = self.tr("Not calibrated")
+        # "Calibrate…" only for an objective that exists: the dialog would
+        # otherwise open on another one.
+        self._calibration_notice_objective = objective_key if objective is not None else None
+        self.calibration_notice_label.setText(text)
+        self.calibrate_link_btn.setVisible(objective is not None)
+        notice.setVisible(True)
+        notice.adjustSize()
+        self._reposition_pending_raw_floating_tab()
+
+    def _on_calibrate_notice_clicked(self) -> None:
+        objective_key = getattr(self, "_calibration_notice_objective", None)
+        opener = getattr(self._main_window, "open_calibration_dialog", None)
+        if not callable(opener):
+            return
+        opener(objective_key=objective_key)
+        # A new calibration changes the objectives' scales; keep what is chosen.
+        self._populate_objective_combo(keep_current=True)
+        if self._viewer_subject and self._viewer_subject[0] == "image":
+            self._viewer_subject_metadata = None  # re-read: its scale may be stored now
+        self._refresh_viewer_overlays()
 
     def _update_viewer_objective_tag(self, metadata: dict | None, *, use_current_state: bool = False) -> None:
         label = getattr(self, "live_image_label", None)
@@ -1479,6 +1599,30 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             height = max(hint.height(), session_frame.minimumSizeHint().height())
             session_frame.setGeometry(8, 8, width, height)
             session_frame.raise_()
+        notice = getattr(self, "calibration_notice", None)
+        if notice is not None and notice.parentWidget() is image_label:
+            hint = notice.sizeHint()
+            top = image_label.height() - 12 - hint.height()
+            readout_rect = getattr(image_label, "bottom_left_readout_rect", None)
+            if callable(readout_rect):
+                top = readout_rect().top() - 8 - hint.height()
+            notice.setGeometry(8, max(0, top), hint.width(), hint.height())
+            notice.raise_()
+            # A narrow viewer: lift the notice above the capture bar and the
+            # pending-RAW bar, whichever it would cover.
+            obstacles = [
+                widget
+                for widget in (getattr(self, "capture_state_bar", None), getattr(self, "pending_raw_frame", None))
+                if widget is not None and widget.parentWidget() is image_label and not widget.isHidden()
+            ]
+            moved = True
+            while moved and not notice.isHidden():
+                moved = False
+                for widget in obstacles:
+                    if notice.geometry().intersects(widget.geometry()):
+                        notice.move(8, max(0, widget.geometry().top() - 8 - hint.height()))
+                        moved = notice.geometry().top() > 0
+                        break
         state_label = getattr(self, "live_state_label", None)
         if state_label is not None and state_label.parentWidget() is image_label:
             top = 8
@@ -1598,6 +1742,9 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
                     refresh_main(image_ids[0])
                 except Exception:
                     pass
+        if changed_any:
+            self._viewer_subject_metadata = None  # its row changed: read it again
+            self._refresh_viewer_overlays()
         return changed_any
 
     def _session_gallery_items(self) -> tuple[list[dict[str, object]], str | int | None]:
@@ -3585,11 +3732,13 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         frame = getattr(self, "calibration_action_frame", None)
         if frame is not None:
             frame.setVisible(False)
-        update_viewer_objective_tag = getattr(self, "_update_viewer_objective_tag", None)
-        if callable(update_viewer_objective_tag):
-            # An empty viewer waits for the next capture: label it with the
-            # current state.
-            update_viewer_objective_tag(None, use_current_state=True)
+        # An empty viewer waits for the next capture: its overlays describe
+        # the current state.
+        self._viewer_subject = None
+        self._viewer_subject_metadata = None
+        refresh_overlays = getattr(self, "_refresh_viewer_overlays", None)
+        if callable(refresh_overlays):
+            refresh_overlays()
         update_raw_processing_visibility = getattr(self, "_update_raw_processing_visibility", None)
         if callable(update_raw_processing_visibility):
             update_raw_processing_visibility()
@@ -3605,6 +3754,8 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             _raw_timing_log("show session image", start, detail=f"image_id={image_id} missing")
             return
         self._selected_session_image_id = int(image_id)
+        self._viewer_subject = ("image", int(image_id))
+        self._viewer_subject_metadata = dict(image)
 
         image_path = str(image.get("filepath") or "").strip()
         if not image_path:
@@ -3705,6 +3856,7 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             self.live_image_label.set_scale_bar(True, scale_bar_microns, unit=scale_bar_unit)
         else:
             self.live_image_label.set_scale_bar(False, 0.0)
+        self._refresh_viewer_overlays()
 
         if edit_mode:
             self.viewer_title_label.setText(

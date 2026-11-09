@@ -440,15 +440,27 @@ class LiveLabPrepPanelMixin:
             )
         )
 
-    def _populate_objective_combo(self) -> None:
-        # Signals stay blocked while the list is refilled and the stored choice
+    def _populate_objective_combo(self, *, keep_current: bool = False) -> None:
+        """Refill the objective list and restore the stored choice.
+
+        ``keep_current`` restores what is selected now instead (and a mixed
+        selection), for a reload while working, such as after calibrating.
+        """
+        selector = self.objective_combo
+        current = selector.selected_value() if keep_current else None
+        mixed = list(getattr(selector, "_mixed_values", []) or []) if keep_current and selector.is_mixed() else []
+        # Signals stay blocked while the list is refilled and the choice
         # restored: otherwise selecting the first new item saves it over the
         # stored choice before it is read (the P1 "objective forgotten" bug).
-        blocked = self.objective_combo.blockSignals(True)
+        blocked = selector.blockSignals(True)
         try:
             self._fill_objective_combo()
+            if mixed:
+                selector.set_mixed_values(mixed)
+            elif current is not None and selector.findData(current) >= 0:
+                selector.setCurrentIndex(selector.findData(current))
         finally:
-            self.objective_combo.blockSignals(blocked)
+            selector.blockSignals(blocked)
         self._update_lab_state_combo_alerts()
         refresh = getattr(self, "_refresh_viewer_objective_tag_from_current_state", None)
         if callable(refresh):

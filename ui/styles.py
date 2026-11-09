@@ -103,6 +103,10 @@ HUD_COLORS: dict[str, str] = {
     "text": "#e0e0e0",
     "selected_background": "#e8e8e8",
     "focus": "#7cc4bd",
+    # "Not calibrated" notice on the viewer (mockup Bilder-Live)
+    "alert_background": "#3a1416",
+    "alert_border": "#ff7a7a",
+    "alert_text": "#ffd0d0",
 }
 
 # Images not yet saved to an observation (Live Lab pending captures,

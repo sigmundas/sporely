@@ -1020,6 +1020,20 @@ class ZoomableImageLabel(QLabel):
         self.objective_text = text
         self.update()
 
+    def scale_bar_screen_length(self, available_width: float | None = None) -> float:
+        """On-screen length of the scale bar in pixels at the current zoom.
+
+        ``scale_bar_um`` microns span ``scale_bar_um / microns_per_pixel`` image
+        pixels, shown at ``zoom_level``; never under 10 px, and capped at 60 %
+        of ``available_width`` when given. 0 without a scale.
+        """
+        if self.microns_per_pixel <= 0:
+            return 0.0
+        length = max(10.0, (float(self.scale_bar_um) / float(self.microns_per_pixel)) * float(self.zoom_level))
+        if available_width is not None:
+            length = min(length, float(available_width) * 0.6)
+        return length
+
     def bottom_left_readout_rect(self) -> QRect:
         """Where the zoom readout (and a preview tag above it) are painted.
 
@@ -3100,11 +3114,8 @@ class ZoomableImageLabel(QLabel):
         scale_bar_box = None
         if self.show_scale_bar and self.microns_per_pixel > 0:
             bar_um = self.scale_bar_um
-            bar_pixels = bar_um / self.microns_per_pixel
-            bar_screen = bar_pixels * self.zoom_level
-            bar_screen = max(10.0, bar_screen)
             anchor_rect = visible_view_rect if preview_crop_active else QRectF(display_rect)
-            bar_screen = min(bar_screen, anchor_rect.width() * 0.6)
+            bar_screen = self.scale_bar_screen_length(anchor_rect.width())
 
             font = painter.font()
             font.setPointSize(9)
