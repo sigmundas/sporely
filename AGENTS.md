@@ -54,6 +54,12 @@ Verification has three tiers:
    - Layout, proven by renderer screenshots that the agent has opened and
      inspected, as described in `.claude/rules/ui-screenshots.md`.
 
+   Local test scope: run the stage's own tests and the tests of the modules it
+   touches. Leave the full suite to CI on the pull request, unless the change
+   touches shared fixtures or harnesses that many tests import (such as
+   `tests/conftest.py` or `tools/review_ui/live_lab_harness.py`); then run the
+   full suite locally as well.
+
    A screenshot proves layout, never behavior. A claim about what happens when
    the user interacts needs a test or a real-input run that exercises it.
 2. **The user's layout opinion — does not block commits.** For visible UI
