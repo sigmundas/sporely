@@ -662,7 +662,7 @@ test status.
 | --- | --- | --- | --- |
 | 0 | sigmundas/sporely#65 | `a682f6c` | Agent-verified (tests, inspected renderer screenshots); owner tested it 2026-11-08 and said to go on; merged 2026-11-09 |
 | P1 | sigmundas/sporely#67 | `3162501` | Agent-verified (tests, inspected renderer screenshots); no production code; merged 2026-11-09 |
-| P2 | — | — | Agent-verified: Live Lab, RAW and main-window tests green; `live-lab` renders pixel-identical to the P1 baseline in both themes; translations moved to the new contexts with none lost |
+| P2 | sigmundas/sporely#69 | — | Agent-verified: Live Lab, RAW and main-window tests green; `live-lab` renders pixel-identical to the P1 baseline in both themes; translations moved to the new contexts with none lost |
 
 Found during stage 0, not fixed there (rule 1):
 
