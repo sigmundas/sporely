@@ -74,6 +74,11 @@ approved to change.
   objective's default colour by magnification; an objective's own stored
   colour still overrides it; macro profiles are neutral grey (P3).
 - **Motion:** 150–250 ms ease-out; animation never blocks input.
+- **The image frame shows only what you need while looking through the
+  microscope** (owner, 2026-11-09): the live-view label, the scale bar, the
+  capture-state bar and the session control. Actions on captures stay off
+  the image: copying RAW settings goes to the RAW panel (stage 5), saving to
+  the staging strip (stage 9).
 
 ## Target structure
 
@@ -397,7 +402,9 @@ screens are inspected in `nb_NO` and one other language; existing tests pass.
   its sliders and the histogram go into a collapsed “Mer” section. One preset
   per contrast method (automatic with a lock, or suggested only: open decision
   below). Hold a key (mockup: B) to see the image before processing. RAW panel
-  docked by default, pin toggles overlay, choice remembered.
+  docked by default, pin toggles overlay, choice remembered. “Kopier
+  innstillinger” moves from the pending-RAW bar on the image into the RAW
+  panel. The before/after key cannot be B, which chooses BF since stage 2.
 - Done when: changing contrast switches (or suggests) the preset; manual
   tweaks stay until the next contrast change; the before/after key works.
 
@@ -454,6 +461,8 @@ owner has answered these:
 
 ### 9 — Observation workspace (the structural change)
 
+- The pending-RAW bar leaves the image: saving becomes “Lagre til
+  observasjon” in the staging strip under the viewer (mockup Bilder-Live).
 - Scope: modes in the Observasjoner tab (Vis, Rediger, Bilder, Mål, Analyse)
   with one shared image strip; the list collapses to a rail in Bilder, Mål and
   Analyse with a left drawer; Tabell as a sortable overview sharing data and
@@ -676,7 +685,7 @@ landed through PRs before the branch existed), the commit that brought it into
 | P3 | `e279277` | — | Agent-verified: the global stylesheet, design tokens and button icon colours are byte-identical in both themes; ring colour, outline and token tests; renders identical except the intended objective colour changes; Codex review: 3 findings fixed (Measure tag colour from the profile, NA-first names, outlined badge size). Owner's layout opinion 2026-11-09: looks good |
 | 1a | `c03845e` | — | Agent-verified: collapsible Preparation and Notes sections (summary line, warning for unset values, open state remembered); qtbot tests for mouse, keyboard, restart, summaries and layout; renders change only Live Lab's left panel; Codex review: 5 findings, 4 fixed, 1 not reproducible but guarded. |
 | 1b | `e52bc3b` | — | Agent-verified: Preparation rows as chips (click to choose, click again to clear, “+ N more” in place; arrows move, Space/Enter choose; Norwegian labels Medium, Farging, Tilstand, Kilde); qtbot tests; renders change only Live Lab's Preparation rows; Codex review: 3 bugs fixed (idle layout loop, arrow keys clearing a chip, over-wide chip), 1 test gap closed. Stage 1 done; owner's layout opinion 2026-11-09: looks good |
-| 2 | `ui/redesign` | — | Agent-verified: capture-state bar (objective and contrast with ring colours, 1–6 and B/D/I/P shortcuts), live-view label, Microscope card removed; the P1 objective-restore bug fixed; qtbot tests; cocoa real-input run 20/20 (`tools/review_ui/live_lab_mac_check.py`); renders change only Live Lab; Codex review: 6 findings, 5 fixed, 1 kept as designed. Waiting for the owner's layout opinion |
+| 2 | `194b4f6` | — | Agent-verified: capture-state bar (objective and contrast with ring colours, 1–6 and B/D/I/P shortcuts), live-view label, Microscope card removed; the P1 objective-restore bug fixed; qtbot tests; cocoa real-input run 20/20 (`tools/review_ui/live_lab_mac_check.py`); renders change only Live Lab; Codex review: 6 findings, 5 fixed, 1 kept as designed. Owner's layout opinion 2026-11-09: looks good; the pending-RAW bar should leave the image (stages 5 and 9) |
 
 Found during stage 0, not fixed there (rule 1):
 
