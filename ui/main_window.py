@@ -256,6 +256,7 @@ from .reference_library_attach_dialog import ReferenceLibraryAttachDialog
 from .section_card import create_section_card
 from .collapsible_section import CollapsibleSection as SummarySection, ElidedLabel
 from .side_drawer import SideDrawer
+from .reference_picker_drawer import ReferencePickerPage
 from .segmented_selector import SegmentedSelector
 from .styles import get_style, apply_palette, pt, _is_dark
 from .window_state import GeometryMixin
@@ -6044,6 +6045,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         # Analysis tab
         gallery_tab = self.create_gallery_panel()
         self.analysis_tab = gallery_tab
+        # Esc anywhere in Analysis closes the reference drawer (stage 7).
+        self._reference_drawer_esc = QShortcut(QKeySequence(Qt.Key_Escape), gallery_tab)
+        self._reference_drawer_esc.setContext(Qt.WidgetWithChildrenShortcut)
+        self._reference_drawer_esc.activated.connect(self.reference_drawer.close_drawer)
         self.tab_widget.addTab(gallery_tab, self.tr("Analysis ({alt}A)").format(alt=_ALT_LABEL))
         self.refresh_gallery_filter_options()
 
@@ -8241,7 +8246,20 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.plot_width_splitter.setStretchFactor(1, 0)
         self.plot_width_splitter.setSizes([760, 280])
         self.plot_width_splitter.splitterMoved.connect(self._on_plot_width_splitter_moved)
-        plot_layout.addWidget(self.plot_width_splitter)
+        # The plot area hosts the reference drawer (stage 7), which overlays
+        # the statistics column and the plot's right edge.
+        self.analysis_plot_area = QWidget()
+        plot_area_layout = QVBoxLayout(self.analysis_plot_area)
+        plot_area_layout.setContentsMargins(0, 0, 0, 0)
+        plot_area_layout.addWidget(self.plot_width_splitter)
+        plot_layout.addWidget(self.analysis_plot_area)
+        self.reference_drawer = SideDrawer(self.analysis_plot_area, side="right", width=400)
+        self.reference_picker_page = ReferencePickerPage(self)
+        self.reference_drawer.add_page("references", self.tr("Add reference"), self.reference_picker_page)
+        self.reference_picker_page.other_source_requested.connect(self._on_reference_picker_other_source)
+        self.reference_picker_page.details_requested.connect(self._on_reference_picker_details)
+        self.reference_drawer.opened.connect(lambda _page: self.ref_add_reference_btn.setChecked(True))
+        self.reference_drawer.closed.connect(lambda: self.ref_add_reference_btn.setChecked(False))
 
         gallery_panel = QWidget()
         gallery_layout = QVBoxLayout(gallery_panel)
@@ -8773,7 +8791,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         action_row = QVBoxLayout()
         action_row.setSpacing(6)
         self.ref_add_reference_btn = QPushButton(self.tr("Add reference…"))
-        self.ref_add_reference_btn.clicked.connect(self._on_add_reference_clicked)
+        # Opens the reference drawer over the plot (stage 7); the dialog
+        # (_on_add_reference_clicked) remains for the sources not moved yet.
+        self.ref_add_reference_btn.setCheckable(True)
+        self.ref_add_reference_btn.setObjectName("drawerToggle")  # filled while the drawer is open
+        self.ref_add_reference_btn.clicked.connect(lambda _checked=False: self._toggle_reference_drawer())
         self._register_gallery_hint_widget(
             self.ref_add_reference_btn,
             self.tr("Search the reference library, community data, or your own observations for a reference to plot"),
@@ -9424,6 +9446,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         """
         if not hasattr(self, "comparison_list"):
             return
+        drawer = getattr(self, "reference_drawer", None)
+        if drawer is not None and drawer.is_open():
+            # A reference removed or added elsewhere (the comparison list, the
+            # dialog): the drawer's ticks follow, after the current event.
+            QTimer.singleShot(0, self.reference_picker_page.sync_attached)
         references_suppressed = not self._reference_overlays_allowed_for_category()
         resolved_entries = self._resolved_reference_series_entries(self._is_dark_theme())
         rows = ComparisonListWidget.rows_from_resolved_entries(
@@ -10100,9 +10127,149 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self.tr("Skipped {count} malformed reference attachment(s).").format(count=malformed)
             )
 
-    def _on_add_reference_clicked(self) -> None:
+    # -- Reference drawer (stage 7) -------------------------------------------
+
+    def _toggle_reference_drawer(self) -> None:
+        drawer = getattr(self, "reference_drawer", None)
+        if drawer is None:
+            return
+        if drawer.is_open():
+            drawer.close_drawer()
+            return
+        self.reference_picker_page.load()
+        drawer.open_page("references")
+
+    def _reload_reference_drawer_if_open(self) -> None:
+        drawer = getattr(self, "reference_drawer", None)
+        if drawer is not None and drawer.is_open():
+            self.reference_picker_page.load()
+
+    def _reference_picker_observation_is_active(self, observation_id: int) -> bool:
+        current = getattr(self, "active_observation_id", None)
+        return current is not None and int(current) == int(observation_id)
+
+    def _reference_picker_drift_reason(self) -> str:
+        return self.tr("The active observation changed. Nothing was changed; the list now shows the current observation.")
+
+    def reference_picker_context(self) -> dict | None:
+        observation_id = getattr(self, "active_observation_id", None)
+        if not observation_id:
+            return None
+        observation = ObservationDB.get_observation(int(observation_id)) or {}
+        return {
+            "observation_id": int(observation_id),
+            "taxon_id": self._active_sporely_taxon_id(observation),
+            "genus": self._clean_ref_genus_text(observation.get("genus")),
+            "species": self._clean_ref_species_text(observation.get("species") or observation.get("species_guess")),
+        }
+
+    @staticmethod
+    def _reference_picker_uses(observation_id: int) -> dict[str, object]:
+        """The observation's persisted uses by measurement-set id: the drawer's
+        source of truth (the in-memory series can lag an observation switch)."""
+        try:
+            uses = ObservationReferenceUseRepository.list_for_observation(int(observation_id))
+        except Exception:
+            return {}
+        return {str(use.reference_measurement_set_id): use for use in uses}
+
+    def reference_picker_attached(self, observation_id: int) -> dict[str, str]:
+        """Measurement sets attached to the observation, with their roles."""
+        if not self._reference_picker_observation_is_active(observation_id):
+            return {}
+        return {
+            set_id: str(getattr(use, "role", None) or "compared")
+            for set_id, use in self._reference_picker_uses(observation_id).items()
+        }
+
+    def reference_picker_confirm_attach(self, observation_id: int) -> bool:
+        return self._confirm_picker_batch_attach(int(observation_id), ["compared"])
+
+    def reference_picker_attach(self, observation_id: int, set_id: str, role: str) -> tuple[str, str | None]:
+        if not self._reference_picker_observation_is_active(observation_id):
+            QTimer.singleShot(0, self._reload_reference_drawer_if_open)
+            return "observation_changed", self._reference_picker_drift_reason()
+        try:
+            status, reason, _severity = self._attach_normalized_reference_outcome(int(observation_id), str(set_id), role)
+        except Exception as exc:  # e.g. a locked database
+            return "failed", self.tr("Could not attach reference: {error}").format(error=str(exc))
+        return status, reason
+
+    def _reference_series_entry_for_use(self, use_id: str) -> dict | None:
+        for entry in self.reference_series or []:
+            data = entry.get("data") if isinstance(entry, dict) else None
+            if isinstance(data, dict) and str(data.get("observation_reference_use_id") or "").strip() == str(use_id):
+                return entry
+        return None
+
+    def reference_picker_detach(self, observation_id: int, set_id: str) -> tuple[bool, str | None]:
+        if not self._reference_picker_observation_is_active(observation_id):
+            QTimer.singleShot(0, self._reload_reference_drawer_if_open)
+            return False, self._reference_picker_drift_reason()
+        use = self._reference_picker_uses(observation_id).get(str(set_id))
+        if use is None:
+            return True, None  # already detached
+        use_id = str(use.id)
+        entry = self._reference_series_entry_for_use(use_id)
+        if entry is not None:
+            # Detaches this exact use and drops its plot row.
+            self._remove_reference_series_key(entry.get("key"))
+        else:
+            try:
+                ObservationReferenceUseRepository.detach(use_id)
+            except Exception as exc:
+                return False, self.tr("Could not detach library reference: {error}").format(error=str(exc))
+        if str(set_id) in self._reference_picker_uses(observation_id):
+            return False, self.tr("The reference could not be detached.")
+        return True, None
+
+    def reference_picker_set_role(self, observation_id: int, set_id: str, role: str) -> tuple[bool, str | None]:
+        if not self._reference_picker_observation_is_active(observation_id):
+            QTimer.singleShot(0, self._reload_reference_drawer_if_open)
+            return False, self._reference_picker_drift_reason()
+        use = self._reference_picker_uses(observation_id).get(str(set_id))
+        if use is None:
+            return False, self.tr("The role could not be changed.")
+        use_id = str(use.id)
+        try:
+            ObservationReferenceUseRepository.update(use_id, role=role)
+        except Exception as exc:  # also a locked database
+            return False, self.tr("The role could not be changed: {error}").format(error=str(exc))
+        entry = self._reference_series_entry_for_use(use_id)
+        if isinstance(entry, dict) and isinstance(entry.get("data"), dict):
+            entry["data"]["role"] = role
+            self._refresh_reference_series_table()
+        return True, None
+
+    def _on_reference_picker_other_source(self, source: str) -> None:
+        """Community, My observations and New reference still use the dialog (until 7c/7d)."""
+        self._on_add_reference_clicked(initial_source=source)
+        self._reload_reference_drawer_if_open()
+
+    def _on_reference_picker_details(self, candidate) -> None:
+        from .reference_library_manager_dialog import ReferenceLibraryManagerDialog
+
+        observation_id = getattr(self, "active_observation_id", None)
+        dialog = ReferenceLibraryManagerDialog(
+            self,
+            active_observation_id=int(observation_id) if observation_id else None,
+            cloud_client=self._cached_cloud_client(),
+            sporely_taxon_id=self._active_sporely_taxon_id(),
+        )
+        dialog.attach_requested.connect(self._attach_normalized_reference_from_manager)
+        dialog.focus_measurement_set(
+            str(candidate.reference_work_id), str(candidate.reference_treatment_id), str(candidate.measurement_set_id)
+        )
+        dialog.exec()
+        self._reload_reference_drawer_if_open()
+
+    def _on_add_reference_clicked(self, initial_source: str | None = None) -> None:
         """Open the unified Add-reference picker (Library + Community + My
         observations).
+
+        ``initial_source`` ("community", "my_observations" or "new") opens it
+        on that tab; the reference drawer uses it for the sources it does not
+        hold yet (stage 7b).
 
         Mirrors ``_on_attach_library_reference_clicked``'s observation-drift
         guard: the working taxon and excluded ids are captured at open time,
@@ -10275,6 +10442,14 @@ class MainWindow(GeometryMixin, QMainWindow):
                 captured_observation_id
             ),
         )
+        index_attribute = {
+            "community": "_community_tab_index",
+            "my_observations": "_my_observations_tab_index",
+            "new": "_manual_tab_index",
+        }.get(str(initial_source or ""))
+        tab_index = getattr(dialog, index_attribute, -1) if index_attribute else -1
+        if tab_index is not None and tab_index >= 0:
+            dialog.tabs.setCurrentIndex(tab_index)
         dialog.exec()
 
     def _attach_personal_observation_reference_to_active_observation(
@@ -22850,6 +23025,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self._suppress_gallery_update = previous_suppress
         if suppress_gallery and self.is_analysis_visible():
             self.schedule_gallery_refresh()
+        # An open reference drawer follows the new observation.
+        self._reload_reference_drawer_if_open()
 
     def on_observation_deleted(self, observation_id: int):
         if observation_id != getattr(self, "active_observation_id", None):

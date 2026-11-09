@@ -2369,6 +2369,22 @@ class ReferenceLibraryManagerDialog(QDialog):
 
     # --- Data refresh helpers ---
 
+    def focus_measurement_set(self, work_id: str, treatment_id: str, measurement_set_id: str) -> None:
+        """Select one measurement set (the reference drawer's "Details…" link)."""
+        self.refresh_works(select_id=work_id)
+        if self._current_work is None or str(self._current_work.id) != str(work_id):
+            # Not among the first search results: search for that publication.
+            work = ReferenceWorkRepository.get(str(work_id))
+            if work is not None and hasattr(self, "search_input"):
+                blocked = self.search_input.blockSignals(True)
+                self.search_input.setText(str(work.title or work.short_label or ""))
+                self.search_input.blockSignals(blocked)
+                self.refresh_works(select_id=work_id)
+        if self._current_work is not None and str(self._current_work.id) == str(work_id):
+            self._refresh_hierarchy_for_current_work(
+                select_treatment_id=treatment_id, select_set_id=measurement_set_id,
+            )
+
     def refresh_works(self, *, select_id: str | None = None) -> None:
         query = self.search_input.text().strip() if hasattr(self, "search_input") else ""
         try:

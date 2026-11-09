@@ -33,10 +33,13 @@ from PySide6.QtGui import QColor, QFont, QFontDatabase, QPainter
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFormLayout,
     QHBoxLayout,
     QLabel,
     QListWidget,
+    QPushButton,
     QSizePolicy,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -150,6 +153,10 @@ class LibrarySourceRow(QWidget):
     check_toggled = Signal(str, bool)
     #: ``(measurement_set_id, role)`` when the user picks a role for this row.
     role_changed = Signal(str, str)
+    # An expandable row opened or closed: its height changed.
+    expanded_changed = Signal(bool)
+    # An expandable row's "Details…" link: open this set in the library.
+    details_requested = Signal(str)
 
     def __init__(
         self,
@@ -160,14 +167,29 @@ class LibrarySourceRow(QWidget):
         measurement: str,
         relevance_badge: str = "",
         semantic_badge: str = "",
+        summary_lines: tuple[str, ...] | None = None,
         parent: QWidget | None = None,
     ) -> None:
+        """``summary_lines`` makes the row expandable (the Analysis reference
+        drawer, stage 7): an arrow opens those lines, the role selector and
+        a "Details…" link under the row, instead of the role selector beside it."""
         super().__init__(parent)
         self._measurement_set_id = measurement_set_id
         self._selected = False
+        self._expandable = summary_lines is not None
+        self.details_widget: QWidget | None = None
+        self.expand_button: QToolButton | None = None
 
-        root = QHBoxLayout(self)
-        root.setContentsMargins(SELECTED_BAR_WIDTH + 5, 3, 6, 3)
+        if self._expandable:
+            outer = QVBoxLayout(self)
+            outer.setContentsMargins(SELECTED_BAR_WIDTH + 5, 3, 6, 3)
+            outer.setSpacing(4)
+            root = QHBoxLayout()
+            root.setContentsMargins(0, 0, 0, 0)
+            outer.addLayout(root)
+        else:
+            root = QHBoxLayout(self)
+            root.setContentsMargins(SELECTED_BAR_WIDTH + 5, 3, 6, 3)
         root.setSpacing(6)
 
         self.checkbox = QCheckBox(self)
@@ -236,7 +258,64 @@ class LibrarySourceRow(QWidget):
         )
         self.role_combo.setVisible(False)
         self.role_combo.currentIndexChanged.connect(self._on_role_index_changed)
-        root.addWidget(self.role_combo, 0, Qt.AlignVCenter)
+        if not self._expandable:
+            root.addWidget(self.role_combo, 0, Qt.AlignVCenter)
+            return
+
+        self.expand_button = QToolButton(self)
+        self.expand_button.setAutoRaise(True)
+        self.expand_button.setCheckable(True)
+        self.expand_button.setText("\u25b8")
+        self.expand_button.setToolTip(QCoreApplication.translate("LibrarySourceRow", "Show summary"))
+        self.expand_button.toggled.connect(self.set_expanded)
+        root.addWidget(self.expand_button, 0, Qt.AlignTop)
+
+        self.details_widget = QWidget(self)
+        details = QVBoxLayout(self.details_widget)
+        details.setContentsMargins(self.checkbox.sizeHint().width() + 6, 0, 0, 2)
+        details.setSpacing(4)
+        for line in summary_lines or ():
+            label = QLabel(line, self.details_widget)
+            label.setWordWrap(True)
+            label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            details.addWidget(label)
+        self.role_row = QWidget(self.details_widget)
+        role_form = QFormLayout(self.role_row)
+        role_form.setContentsMargins(0, 0, 0, 0)
+        role_form.addRow(QCoreApplication.translate("LibrarySourceRow", "Role:"), self.role_combo)
+        self.role_combo.setVisible(True)
+        self.role_row.setVisible(False)  # only for an attached (ticked) reference
+        details.addWidget(self.role_row)
+        self.details_link = QPushButton(QCoreApplication.translate("LibrarySourceRow", "Details…"), self.details_widget)
+        self.details_link.setObjectName("linkButton")
+        self.details_link.setCursor(Qt.PointingHandCursor)
+        self.details_link.clicked.connect(lambda: self.details_requested.emit(self._measurement_set_id))
+        details.addWidget(self.details_link, 0, Qt.AlignLeft)
+        self.details_widget.setVisible(False)
+        outer.addWidget(self.details_widget)
+
+    def is_expanded(self) -> bool:
+        return bool(self.details_widget is not None and not self.details_widget.isHidden())
+
+    def set_expanded(self, expanded: bool) -> None:
+        if self.details_widget is None or self.is_expanded() == bool(expanded):
+            return
+        self.details_widget.setVisible(bool(expanded))
+        self.expand_button.setText("\u25be" if expanded else "\u25b8")
+        if self.expand_button.isChecked() != bool(expanded):
+            was_blocked = self.expand_button.blockSignals(True)
+            self.expand_button.setChecked(bool(expanded))
+            self.expand_button.blockSignals(was_blocked)
+        self.adjustSize()
+        self.expanded_changed.emit(bool(expanded))
+
+    def _show_role(self, checked: bool) -> None:
+        if self._expandable:
+            self.role_row.setVisible(bool(checked))
+            self.adjustSize()
+            self.expanded_changed.emit(self.is_expanded())
+        else:
+            self.role_combo.setVisible(bool(checked))
 
     # -- state ---------------------------------------------------------
 
@@ -253,7 +332,7 @@ class LibrarySourceRow(QWidget):
             self.checkbox.setChecked(checked)
         finally:
             self.checkbox.blockSignals(was_blocked)
-        self.role_combo.setVisible(bool(checked))
+        self._show_role(bool(checked))
 
     def role(self) -> str:
         return str(self.role_combo.currentData() or DEFAULT_REFERENCE_USE_ROLE)
@@ -281,7 +360,7 @@ class LibrarySourceRow(QWidget):
         self.update()
 
     def _on_toggled(self, checked: bool) -> None:
-        self.role_combo.setVisible(bool(checked))
+        self._show_role(bool(checked))
         self.check_toggled.emit(self._measurement_set_id, bool(checked))
 
     # -- painting ------------------------------------------------------

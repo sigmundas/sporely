@@ -69,6 +69,15 @@ def _analysis_tab(context: ReviewContext, *, size: tuple[int, int] = (1500, 950)
     return window
 
 
+def _open_drawer(window) -> None:
+    window._toggle_reference_drawer()
+    page = window.reference_picker_page
+    rows = [page.results_list.itemWidget(page.results_list.item(i)) for i in range(page.results_list.count())]
+    ticked = [row for row in rows if row is not None and row.is_checked()]
+    if ticked:
+        ticked[0].set_expanded(True)
+
+
 def register_analysis_tab_scenarios(registry: ScenarioRegistry) -> None:
     for theme in ("light", "dark"):
         suffix = "" if theme == "light" else "-dark"
@@ -84,6 +93,31 @@ def register_analysis_tab_scenarios(registry: ScenarioRegistry) -> None:
                 theme=theme,
             )
         )
+    for theme in ("light", "dark"):
+        suffix = "" if theme == "light" else "-dark"
+        registry.register(
+            ReviewScenario(
+                id=f"analysis.reference-drawer{suffix}",
+                group="analysis",
+                title=f"Analysis tab, reference drawer open (nb{', dark' if theme == 'dark' else ''})",
+                description="The reference drawer over the plot: one set attached (ticked), one row expanded (stage 7).",
+                build=lambda context: _analysis_tab(context, after=_open_drawer),
+                viewport=(1500, 950),
+                locale="nb_NO",
+                theme=theme,
+            )
+        )
+    registry.register(
+        ReviewScenario(
+            id="analysis.reference-drawer-de",
+            group="analysis",
+            title="Analysis tab, reference drawer open (de)",
+            description="The reference drawer with German strings.",
+            build=lambda context: _analysis_tab(context, after=_open_drawer),
+            viewport=(1500, 950),
+            locale="de_DE",
+        )
+    )
     registry.register(
         ReviewScenario(
             id="analysis.tab-small",

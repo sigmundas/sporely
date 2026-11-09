@@ -166,7 +166,10 @@ MEASURE_TAB_IDS = {
     for state in ("tab", "view-drawer", "info-drawer")
     for suffix in ("", "-dark")
 } | {"measure.tab-de", "measure.tab-small", "measure.view-drawer-de"}
-ANALYSIS_TAB_IDS = {"analysis.tab", "analysis.tab-dark", "analysis.tab-small"}
+ANALYSIS_TAB_IDS = {
+    "analysis.tab", "analysis.tab-dark", "analysis.tab-small",
+    "analysis.reference-drawer", "analysis.reference-drawer-dark", "analysis.reference-drawer-de",
+}
 ALL_IDS = (
     REFERENCE_IDS
     | CONFLICT_IDS

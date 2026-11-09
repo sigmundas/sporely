@@ -714,6 +714,20 @@ QPushButton#outlineButton:disabled {{
     border: 1.5px solid {dis_fg};
 }}
 
+/* A command that reads as a link (the reference drawer, stage 7). */
+QPushButton#linkButton {{
+    background-color: transparent;
+    border: none;
+    color: {accent};
+    padding: 0px 2px;
+    font-weight: normal;
+    text-decoration: underline;
+}}
+
+QPushButton#linkButton:hover {{
+    color: {accent_h};
+}}
+
 /* Opens a drawer page: outlined while closed, filled while its page shows (stage 6). */
 QPushButton#drawerToggle {{
     background-color: {surface};
