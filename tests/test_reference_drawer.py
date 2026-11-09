@@ -85,6 +85,16 @@ def test_add_reference_opens_the_drawer_over_the_plot_and_esc_closes_it(qtbot, p
     assert window.analysis_plot_area.isAncestorOf(window.reference_drawer)
     qtbot.wait(300)
     assert window.plot_width_splitter.size() == plot_size  # overlays, does not resize
+    # Beside the button that opened it: at the plot's left edge, full height.
+    drawer = window.reference_drawer
+    assert drawer.geometry().left() == 0
+    assert drawer.height() == window.analysis_plot_area.height()
+    button_right = window.ref_add_reference_btn.mapTo(window, window.ref_add_reference_btn.rect().topRight()).x()
+    drawer_left = drawer.mapTo(window, drawer.rect().topLeft()).x()
+    assert 0 <= drawer_left - button_right < 60
+    window.resize(1200, 800)
+    qtbot.waitUntil(lambda: drawer.height() == window.analysis_plot_area.height(), timeout=2000)
+    assert drawer.geometry().left() == 0
     window.activateWindow()
     qtbot.waitActive(window)
     window.reference_picker_page.search_input.setFocus()

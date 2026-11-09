@@ -58,9 +58,11 @@ approved to change.
 
 - **Summary lines are complete:** a value someone opens a section only to read
   belongs in its summary.
-- **Drawers:** left = navigation, right = tools. They overlay the content
-  without resizing the layout, one at a time, and close with Esc, the close
-  button, or by finishing the task.
+- **Drawers:** they slide in next to what opened them (owner, 2026-11-09:
+  the Analyse reference drawer opens at the plot's left edge, beside “Legg
+  til referanse…”; Mål's Visning and Info open at the right, beside their
+  buttons). They overlay the content without resizing the layout, one at a
+  time, and close with Esc, the close button, or by finishing the task.
 - **Hide what doesn't apply:** microscope fields are hidden for field images;
   warnings appear only when true.
 - **Staging vs. saved:** images not yet part of an observation (Live,
@@ -149,7 +151,7 @@ rest):
 | --- | --- | --- |
 | Rediger observasjon (`ObservationDetailsDialog`) | Rediger mode; AI-forslag inline next to Taksonomi; both comment fields always visible | 9 |
 | Legg til bilder (`ImageImportDialog`) | Bilder mode, source Filer og SD-kort; EXIF to an Info drawer shown only when EXIF exists; Tid og GPS one line for field images; Nyquist resizing to Preferanser › Bildeimport, off by default | 9 |
-| Legg til referanse (`AddReferenceDialog`) | Picking: right drawer over the Analyse plot. Creating: two-step dialog | 7 |
+| Legg til referanse (`AddReferenceDialog`) | Picking: a drawer over the Analyse plot, beside “Legg til referanse…”. Creating: two-step dialog | 7 |
 | Kalibrer objektiv, Preferanser, Sync Shot | Stay dialogs | — |
 | Live Lab, Mål and Analyse tabs | Modes in Observasjoner; Live Lab becomes the Live source of Bilder | 9 |
 | Referansebibliotek | Stays a dialog; UUID, citation key and range IDs move behind “Tekniske detaljer” | 10 |
@@ -437,7 +439,8 @@ screens are inspected in `nb_NO` and one other language; existing tests pass.
 
 ### 7 — Reference picker and create dialog
 
-- Scope: picking becomes a right drawer over the Analyse plot, with search, a
+- Scope: picking becomes a drawer over the Analyse plot (from its left edge,
+  beside the button; owner 2026-11-09), with search, a
   Bibliotek / Fellesskap filter (Mine observasjoner as a less prominent third
   option), “Kun denne taksonen” on by default, and an expandable row with
   summary and a Detaljer link. Ticking a reference adds it to the plot

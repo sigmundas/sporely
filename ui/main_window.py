@@ -8246,14 +8246,15 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.plot_width_splitter.setStretchFactor(1, 0)
         self.plot_width_splitter.setSizes([760, 280])
         self.plot_width_splitter.splitterMoved.connect(self._on_plot_width_splitter_moved)
-        # The plot area hosts the reference drawer (stage 7), which overlays
-        # the statistics column and the plot's right edge.
+        # The plot area hosts the reference drawer (stage 7). It slides in at
+        # the plot's left edge, next to "Add reference…" and the comparison
+        # list that opened it (owner, 2026-11-09).
         self.analysis_plot_area = QWidget()
         plot_area_layout = QVBoxLayout(self.analysis_plot_area)
         plot_area_layout.setContentsMargins(0, 0, 0, 0)
         plot_area_layout.addWidget(self.plot_width_splitter)
         plot_layout.addWidget(self.analysis_plot_area)
-        self.reference_drawer = SideDrawer(self.analysis_plot_area, side="right", width=400)
+        self.reference_drawer = SideDrawer(self.analysis_plot_area, side="left", width=400)
         self.reference_picker_page = ReferencePickerPage(self)
         self.reference_drawer.add_page("references", self.tr("Add reference"), self.reference_picker_page)
         self.reference_picker_page.other_source_requested.connect(self._on_reference_picker_other_source)
