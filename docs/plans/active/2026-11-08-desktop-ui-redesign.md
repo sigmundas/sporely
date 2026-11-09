@@ -406,12 +406,20 @@ screens are inspected in `nb_NO` and one other language; existing tests pass.
 
 - Scope: white balance mode, Lys, Mørk and Kontrast stay visible; tone curve,
   its sliders and the histogram go into a collapsed “Mer” section. One preset
-  per contrast method (automatic with a lock, or suggested only: open decision
-  below). Hold a key (to be decided; not B) to see the image before processing. RAW panel
+  per objective + contrast combination, applied automatically: the RAW
+  settings last used with that combination (decided 2026-11-09; today's
+  stored settings are keyed by objective, contrast, mount, stain and
+  condition and are read as a fallback). No before/after key. RAW panel
   docked by default, pin toggles overlay, choice remembered. “Kopier
   innstillinger” moves from the pending-RAW bar on the image into the RAW
   panel. The mockup's B for before/after is dropped (owner, 2026-11-09): B
   chooses BF since stage 2.
+- Owner note 2026-11-09 (white balance with copy/paste and multi-select;
+  in stage 5 if it fits, otherwise a follow-up): pasting settings that use
+  automatic white balance runs AWB for each target image rather than
+  copying the source's multipliers, and copies the source's values only
+  where per-image AWB is not possible. The same for a multi-selection: AWB
+  per image, or the current image's values where that is not possible.
 - Done when: changing contrast switches (or suggests) the preset; manual
   tweaks stay until the next contrast change; the before/after key works.
 
@@ -568,10 +576,10 @@ sorts everything else, read-only, into a table the owner approves:
       B/D/I/P the contrast methods BF/DF/DIC/Phase; they act only when no text
       field has focus. P also means “previous image” in Measure: revisit when
       stage 9 merges the screens.
-- [ ] RAW preset on contrast change: automatic with a lock, or suggested only
-      (before stage 5).
-- [ ] The hold-to-compare key for RAW before/after processing; not B (before
-      stage 5).
+- [x] Decided 2026-11-09: changing objective or contrast applies, by default,
+      the RAW settings last used with that objective + contrast combination.
+- [x] Decided 2026-11-09: no hold-to-compare key for RAW before/after in
+      stage 5.
 - [ ] Unsaved edits in Rediger: autosave, or ask when switching (before 9;
       neither is built until decided).
 - [ ] Switching observation with unsaved images in Bilder: ask, or save them to
