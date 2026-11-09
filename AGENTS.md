@@ -24,8 +24,8 @@ repository Git restriction.
 - The top-level session implements. Use subagents only for parallel read-only
   scouting, or for an independent review when Codex is unavailable. Never
   delegate concurrent implementation writes.
-- At each stopping point (before opening or merging a PR, or at the end of a
-  stage), run a Codex review (`/codex:review`; `/codex:challenge` for risky
+- At each stopping point (the end of a stage or step, before reporting), run
+  a Codex review (`/codex:review`; `/codex:challenge` for risky
   changes such as migrations, deletion or sync identity). Verify each finding
   against the code, then fix it or state why it does not apply.
 - Always ask the user before: product or UX direction choices, SQLite
@@ -54,11 +54,17 @@ Verification has three tiers:
    - Layout, proven by renderer screenshots that the agent has opened and
      inspected, as described in `.claude/rules/ui-screenshots.md`.
 
+   Local test scope: run only the stage's tests and the tests for the modules
+   it touches. CI runs the full suite on every push. When a change touches
+   shared fixtures or harnesses that many tests import (such as
+   `tests/conftest.py` or `tools/review_ui/live_lab_harness.py`), run the full
+   suite locally as well.
+
    A screenshot proves layout, never behavior. A claim about what happens when
    the user interacts needs a test or a real-input run that exercises it.
 2. **The user's layout opinion — does not block commits.** For visible UI
-   changes, include before/after screenshots in the PR or report and ask whether
-   the layout is what the user wants before merging. Requested changes are new commits.
+   changes, include before/after screenshots in the report and ask whether the
+   layout is what the user wants. Requested changes are new commits.
 3. **Human-gated — do not commit until the user confirms.** Camera/microscope
    hardware, live Supabase writes, RLS behavior, cross-client sync with real
    accounts, performance on real data, and judgment about whether output reads
@@ -95,18 +101,19 @@ manual-test status, and deferred work.
 
 ## Git policy
 
-Agents may create branches, commit, push, open PRs, merge, and delete branches as
-needed to complete the task. Keep history understandable.
+Commit each completed step and push it to the current branch. Do not open pull
+requests unless the user asks, or unless the work spans several worktrees. Never
+merge into or push to `main`; the user does that. Agents may create branches and
+merge `main` into the working branch when `main` has changed. Keep history
+understandable.
 
 Do not:
 - force-push unless the user explicitly asks for it;
 - rewrite published history unnecessarily;
 - push secrets or credentials;
-- merge obviously unrelated work;
-- merge visible UI changes before the user has given their layout opinion;
 - deploy, publish a release, or modify production systems without explicit user approval for the specific operation under **Production access** above.
 
-This permission does not weaken **Verification and commits** above.
+These rules do not weaken **Verification and commits** above.
 
 ## Subsystem rules (read before touching these areas)
 

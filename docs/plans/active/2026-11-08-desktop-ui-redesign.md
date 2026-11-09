@@ -199,8 +199,13 @@ real microscopy work before they spread. The pilot stages (1–5) run in
 today's Live Lab tab; the structural change (modes, Bilder with Live, Kun logg
 and Filer sources, Kameraimport as its own screen) is stage 9.
 
-- **One stage at a time,** each on its own branch and PR. The app builds, runs
-  and is usable after every stage. No big-bang rewrite.
+- **One stage at a time,** each a commit on the `ui/redesign` branch, with its
+  plan and doc updates on the same branch. No pull requests. The owner merges
+  `ui/redesign` into `main` at milestones; when `main` changes, merge `main`
+  into `ui/redesign`. The app builds, runs and is usable after every stage. No
+  big-bang rewrite.
+- **Tests:** locally, run only the stage's tests and the tests for the modules
+  it touches. CI runs the full suite on every push.
 - **The owner tests each stage on real work** before the next one starts;
   feedback can change later stages.
 - **Commit rule (decided 2026-11-08):** a stage whose claims can be verified
@@ -234,8 +239,9 @@ Rules for the implementing agent (the doc's rules, adapted to `AGENTS.md`):
    renderer before/after screenshots (inspected), verification as exact
    copy-pasteable commands from the repo root, open questions, and a separate
    “Manual tests” heading for what the owner must do by hand.
-7. Codex review at each stopping point; visible UI changes wait for the
-   owner's layout opinion before merge.
+7. Codex review at each stopping point. The report for a visible UI change
+   includes before/after screenshots and asks for the owner's layout opinion;
+   requested changes are new commits.
 
 ## Stage order
 
@@ -655,14 +661,15 @@ screen unless it blocks daily use. Screenshot defects moved to stage 0.
 
 ## Progress
 
-Record each stage as it lands: PR, merge commit, verification tier, manual
-test status.
+Record each stage as it lands: its commit on `ui/redesign` (stages 0 and P1
+landed through PRs before the branch existed), the commit that brought it into
+`main`, verification tier, manual test status.
 
-| Stage | PR | Merge | Status |
+| Stage | Commit or PR | On `main` | Status |
 | --- | --- | --- | --- |
 | 0 | sigmundas/sporely#65 | `a682f6c` | Agent-verified (tests, inspected renderer screenshots); owner tested it 2026-11-08 and said to go on; merged 2026-11-09 |
 | P1 | sigmundas/sporely#67 | `3162501` | Agent-verified (tests, inspected renderer screenshots); no production code; merged 2026-11-09 |
-| P2 | `ui/redesign` | — | Agent-verified: Live Lab, RAW and main-window tests green; `live-lab` renders pixel-identical to the P1 baseline in both themes; translations moved to the new contexts with none lost |
+| P2 | `adb561f` | — | Agent-verified: Live Lab, RAW and main-window tests green; `live-lab` renders pixel-identical to the P1 baseline in both themes; translations moved to the new contexts with none lost |
 
 Found during stage 0, not fixed there (rule 1):
 
