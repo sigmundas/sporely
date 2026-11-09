@@ -281,6 +281,11 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         self._restore_watch_dir()
         self._restore_session_mode()
         self._connect_session_logging_signals()
+        # After the logging handlers, so an objective change is logged before
+        # the contrast it brings back.
+        self.objective_combo.currentIndexChanged.connect(self._restore_contrast_for_objective)
+        self.contrast_combo.currentIndexChanged.connect(self._remember_contrast_for_objective)
+        self.capture_state_bar.contrast_segments.chosen.connect(self._on_contrast_chosen)
         self._clear_session_viewer()
         self._update_target_display()
         self._update_session_controls()
@@ -1551,6 +1556,7 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             return
         if selector.selected_value() != value or selector.is_mixed():
             selector.set_selected_value(value, emit=True)
+        self._on_contrast_chosen()
 
     def _reposition_pending_raw_floating_tab(self) -> None:
         image_label = getattr(self, "live_image_label", None)
@@ -2732,12 +2738,17 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         metadata = {
             "display_value": str(display_value or "").strip() or None,
         }
+        if getattr(self, "_restoring_remembered_contrast", False) and attribute_name == "contrast":
+            metadata["remembered"] = True
         self._log_session_event(
             "dropdown_change",
             attribute_name=attribute_name,
             value=value,
             metadata=metadata,
         )
+        update_notes = getattr(self, "_update_notes_summary", None)
+        if callable(update_notes):
+            update_notes(refresh_log=True)
 
     def _log_initial_lab_state(self) -> None:
         self._log_dropdown_change("objective_name", self._selected_combo_value(self.objective_combo), self.objective_combo.currentText())

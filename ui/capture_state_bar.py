@@ -33,6 +33,7 @@ class SelectorSegments(QFrame):
     """Large segmented buttons that mirror (and drive) an ``AdaptiveChoiceSelector``."""
 
     rebuilt = Signal()  # the buttons were recreated (new items, new size)
+    chosen = Signal(object)  # a button was clicked (also when already selected)
 
     def __init__(
         self,
@@ -126,9 +127,9 @@ class SelectorSegments(QFrame):
             self._buttons[index] = button
 
     def _choose(self, value: Any) -> None:
-        if self._selector.selected_value() == value and not self._selector.is_mixed():
-            return
-        self._selector.set_selected_value(value, emit=True)
+        if self._selector.selected_value() != value or self._selector.is_mixed():
+            self._selector.set_selected_value(value, emit=True)
+        self.chosen.emit(value)
 
     def _restyle(self) -> None:
         selector = self._selector

@@ -594,12 +594,12 @@ def test_notes_summary_shows_session_notes_and_the_selected_images_note(qtbot, p
     tab.session_note_input.setText("Spores Melzer-negative")
     qtbot.keyClick(tab.session_note_input, Qt.Key_Return)
     first = tab.notes_group.summary()
-    assert first.startswith("1 note · ") and first.endswith(" Spores Melzer-negative")
+    assert first.startswith("1 line · ") and first.endswith(" Spores Melzer-negative")
 
     tab.session_note_input.setText("Basidia 4-spored")
     qtbot.mouseClick(tab.add_note_btn, Qt.LeftButton)
     second = tab.notes_group.summary()
-    assert second.startswith("2 notes · last ") and second.endswith(" Basidia 4-spored")
+    assert second.startswith("2 lines · last ") and second.endswith(" Basidia 4-spored")
 
     image = _capture(qtbot, profile, obs, "P1010001.JPG")
     tab._on_session_gallery_clicked(image["id"], image.get("filepath") or "")
@@ -1110,3 +1110,123 @@ def test_the_drawn_scale_bar_uses_the_length_helper(qtbot, monkeypatch):
     monkeypatch.setattr(label, "scale_bar_screen_length", lambda width=None: calls.append(width) or original(width))
     label.grab()
     assert calls, "painting did not ask the helper for the bar length"
+
+
+# ---------------------------------------------------------------------------
+# Stage 4: contrast memory per objective and change lines in Notes
+# ---------------------------------------------------------------------------
+
+
+def test_switching_objective_brings_back_its_last_contrast_also_after_a_restart(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_OFFLINE)
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "objective", "100X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "DIC"), Qt.LeftButton)
+
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)
+    assert tab.contrast_combo.selected_value() == "BF"
+    qtbot.mouseClick(_bar_button(tab, "objective", "63X"), Qt.LeftButton)  # nothing remembered yet
+    assert tab.contrast_combo.selected_value() == "BF"
+    changes = [
+        (e.get("attribute_name"), e.get("value"), bool((e.get("metadata_json") or {}).get("remembered")))
+        for e in _events(obs) if e.get("event_type") == "dropdown_change"
+    ]
+    assert changes[-3:] == [("objective_name", "40X", False), ("contrast", "BF", True), ("objective_name", "63X", False)]
+    _stop_session(qtbot, tab)
+    tab.close()
+
+    restarted = _make_tab(qtbot)
+    _choose(qtbot, restarted.objective_combo, "100X")
+    assert restarted.contrast_combo.selected_value() == "DIC"
+    _choose(qtbot, restarted.objective_combo, "40X")
+    assert restarted.contrast_combo.selected_value() == "BF"
+
+
+def test_contrast_memory_leaves_selected_images_alone(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "objective", "100X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "DIC"), Qt.LeftButton)
+    image = _capture(qtbot, profile, obs, "P1010011.JPG")  # 100X · DIC
+    memory_before = SettingsDB.get_setting(tab.SETTING_CONTRAST_BY_OBJECTIVE)
+
+    # A click on the thumbnail binds the side panel to that image (the real path).
+    qtbot.waitUntil(lambda: bool(tab.session_gallery._frames), timeout=3000)
+    frame = tab.session_gallery._frames[-1]
+    qtbot.mouseClick(frame, Qt.LeftButton, pos=frame.rect().center())
+    qtbot.waitUntil(lambda: tab._sidebar_binds_to_selection, timeout=2000)
+    assert tab._selected_session_image_id == image["id"]
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)  # an edit of the image
+    qtbot.mouseClick(_bar_button(tab, "contrast", "Phase"), Qt.LeftButton)
+    stored = ImageDB.get_image(image["id"])
+    assert stored["objective_name"] == "40X"
+    assert _lab_metadata(stored)["contrast"] == "Phase"  # not replaced by 40X's remembered BF
+    assert SettingsDB.get_setting(tab.SETTING_CONTRAST_BY_OBJECTIVE) == memory_before
+
+
+def test_choosing_the_shown_contrast_again_remembers_it(qtbot, profile):
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "40X", "contrast_combo": "BF"})
+    qtbot.mouseClick(_bar_button(tab, "objective", "63X"), Qt.LeftButton)  # nothing remembered: stays BF
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)   # chosen again for 63X
+    qtbot.mouseClick(_bar_button(tab, "objective", "100X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "DIC"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "objective", "63X"), Qt.LeftButton)
+    assert tab.contrast_combo.selected_value() == "BF"
+
+
+def test_notes_lists_the_sessions_changes_and_notes_newest_first(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    assert not tab.session_log_list.isVisible()
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_OFFLINE)
+    assert tab.session_log_list.count() == 0  # the starting state is not a change
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)
+    _choose(qtbot, tab.mount_combo, "Water")
+    tab.session_note_input.setText("Spores Melzer-negative")
+    qtbot.keyClick(tab.session_note_input, Qt.Key_Return)
+    _choose(qtbot, tab.stain_combo, "Congo_Red")
+    lines = [tab.session_log_list.item(i).text().split("  ", 1)[1] for i in range(tab.session_log_list.count())]
+    assert lines == [
+        "Stain Melzer → Congo Red",
+        "Spores Melzer-negative",
+        "Mount KOH → Water",
+        "Objective 100x → 40x",
+    ]
+    assert tab.session_log_list.isVisible()
+    assert tab.notes_group.summary().startswith("4 lines · last ")
+    assert tab.notes_group.summary().endswith(" Stain Melzer → Congo Red")
+    # The lines are the session log itself: rebuilt from the database.
+    tab._session_log_cache = None
+    assert [text for _t, text in tab._session_log_lines()][-1] == "Stain Melzer → Congo Red"
+
+
+def test_notes_log_lines_never_hide_and_removed_objectives_keep_their_name(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_OFFLINE)
+    tab.session_note_input.setText("A very long observation about the spores " * 6)
+    qtbot.keyClick(tab.session_note_input, Qt.Key_Return)
+    log_list = tab.session_log_list
+    assert log_list.viewport().height() >= log_list.sizeHintForRow(0)  # the line is visible
+    assert log_list.horizontalScrollBar().isHidden() or not log_list.horizontalScrollBar().isVisible()
+    assert log_list.item(0).toolTip().endswith("about the spores")
+
+    # An objective that is no longer defined keeps the name it was logged with.
+    SessionLogDB.add_event(
+        obs, tab._session_id, "dropdown_change", session_kind="offline",
+        attribute_name="objective_name", value="custom-objective-2025",
+        metadata_json={"display_value": "Custom 2025 objective"},
+    )
+    tab._update_notes_summary(refresh_log=True)
+    assert tab.session_log_list.item(0).text().endswith("Objective 100x → Custom 2025 objective")

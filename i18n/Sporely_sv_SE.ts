@@ -2518,12 +2518,12 @@ Vil du uppdatera disse bildene til å bruke den nye kalibreringen och beregne m�
 <context>
     <name>CaptureStateBar</name>
     <message>
-        <location filename="../ui/capture_state_bar.py" line="208"/>
+        <location filename="../ui/capture_state_bar.py" line="209"/>
         <source>Objective</source>
         <translation>Objektiv</translation>
     </message>
     <message>
-        <location filename="../ui/capture_state_bar.py" line="215"/>
+        <location filename="../ui/capture_state_bar.py" line="216"/>
         <source>Contrast</source>
         <translation>Kontrast</translation>
     </message>
@@ -5394,144 +5394,171 @@ Saknas skala: {missing}</translation>
 <context>
     <name>LiveLabPrepPanelMixin</name>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="60"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="67"/>
         <source>Preparation</source>
         <translation>Preparat</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="75"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="82"/>
         <source>Specimen condition</source>
         <translation>Tillstånd</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="76"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="83"/>
         <source>Sample source</source>
         <translation>Exempelkälla</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="77"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="84"/>
         <source>Mount:</source>
         <translation>Monteringsmedium:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="78"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="85"/>
         <source>Stain:</source>
         <translation>Färgämne:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="79"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="86"/>
         <source>Condition:</source>
         <translation>Tillstånd:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="80"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="87"/>
         <source>Source:</source>
         <translation>Källa:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="91"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="98"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="247"/>
         <source>Mount</source>
         <translation>Medium</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="92"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="99"/>
         <source>Condition</source>
         <translation>Tillstånd</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="93"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="100"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="248"/>
         <source>Stain</source>
         <translation>Färgning</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="94"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="101"/>
         <source>Source</source>
         <translation>Källa</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="105"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="112"/>
         <source>{field}: mixed</source>
         <translation>{field}: blandat</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="113"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="120"/>
         <source>{field} not set</source>
         <translation>{field} inte angivet</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="115"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="122"/>
         <source>{count} not set</source>
         <translation>{count} inte angivna</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="128"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="135"/>
         <source>Notes</source>
         <translation>Anteckningar</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="140"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="147"/>
         <source>Add a timestamped session note</source>
         <translation>Lägg till en tidsstämplad anteckning för sessionen</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="143"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="150"/>
         <source>Add</source>
         <translation>Lägg till</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="146"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="153"/>
         <source>Note:</source>
         <translation>Anteckning:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="154"/>
-        <location filename="../ui/live_lab_prep_panel.py" line="245"/>
-        <location filename="../ui/live_lab_prep_panel.py" line="270"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="170"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="321"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="346"/>
         <source>Optional note for the selected image</source>
         <translation>Valfri anteckning för den valda bilden</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="156"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="172"/>
         <source>Image note:</source>
         <translation>Bildanteckning:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="200"/>
-        <source>1 note · {time} {text}</source>
-        <translation>1 anteckning · {time} {text}</translation>
+        <location filename="../ui/live_lab_prep_panel.py" line="225"/>
+        <source>{change} (remembered)</source>
+        <translation>{change} (ihågkommen)</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="203"/>
-        <source>{count} notes · last {time} {text}</source>
-        <translation>{count} anteckningar · senaste {time} {text}</translation>
+        <location filename="../ui/live_lab_prep_panel.py" line="233"/>
+        <source>not set</source>
+        <translation>inte angiven</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="212"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="245"/>
+        <source>Objective</source>
+        <translation>Objektiv</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="246"/>
+        <source>Contrast</source>
+        <translation>Kontrast</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="219"/>
+        <source>{field} {old} → {new}</source>
+        <translation>{field} {old} → {new}</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="265"/>
+        <source>1 line · {time} {text}</source>
+        <translation>1 rad · {time} {text}</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="268"/>
+        <source>{count} lines · last {time} {text}</source>
+        <translation>{count} rader · senaste {time} {text}</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="275"/>
         <source>Image: (Multiple notes)</source>
         <translation>Bild: (Flera anteckningar)</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="216"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="279"/>
         <source>Image: {note}</source>
         <translation>Bild: {note}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="217"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="280"/>
         <source>No notes</source>
         <translation>Inga anteckningar</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="274"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="350"/>
         <source>(Multiple notes)</source>
         <translation>(Flera anteckningar)</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="511"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="633"/>
         <source>Start a Live Lab session before adding notes.</source>
         <translation>Starta en Live Lab-session innan du lägger till anteckningar.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="520"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="642"/>
         <source>Added session note.</source>
         <translation>Lade till anteckning i sessionen.</translation>
     </message>
@@ -5986,542 +6013,542 @@ Saknas skala: {missing}</translation>
         <translation>Bevaka mikroskopkamerans mapp här. Scrolla för att zooma, dra för att panorera och klicka på en miniatyr från sessionen för att granska den.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="309"/>
+        <location filename="../ui/live_lab_tab.py" line="314"/>
         <source>Current observation</source>
         <translation>Aktuell observation</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="315"/>
-        <location filename="../ui/live_lab_tab.py" line="2597"/>
+        <location filename="../ui/live_lab_tab.py" line="320"/>
+        <location filename="../ui/live_lab_tab.py" line="2603"/>
         <source>No image</source>
         <translation>Ingen bild</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="336"/>
-        <location filename="../ui/live_lab_tab.py" line="2564"/>
+        <location filename="../ui/live_lab_tab.py" line="341"/>
+        <location filename="../ui/live_lab_tab.py" line="2570"/>
         <source>Date: —</source>
         <translation>Datum: —</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="356"/>
-        <location filename="../ui/live_lab_tab.py" line="2784"/>
+        <location filename="../ui/live_lab_tab.py" line="361"/>
+        <location filename="../ui/live_lab_tab.py" line="2795"/>
         <source>Start
 Session</source>
         <translation>Starta
 session</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="372"/>
+        <location filename="../ui/live_lab_tab.py" line="377"/>
         <source>Live capture (watch folder)</source>
         <translation>Direktinsamling (bevakad mapp)</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="377"/>
+        <location filename="../ui/live_lab_tab.py" line="382"/>
         <source>Offline (log only)</source>
         <translation>Offline (endast logg)</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="389"/>
+        <location filename="../ui/live_lab_tab.py" line="394"/>
         <source>Choose the microscope capture folder</source>
         <translation>Välj mapp för mikroskopbilder</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="394"/>
+        <location filename="../ui/live_lab_tab.py" line="399"/>
         <source>Browse</source>
         <translation>Bla gjennom</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="451"/>
+        <location filename="../ui/live_lab_tab.py" line="456"/>
         <source>Pending RAW captures: 0</source>
         <translation>Väntande RAW-tagningar: 0</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="455"/>
+        <location filename="../ui/live_lab_tab.py" line="460"/>
         <source>Save current</source>
         <translation>Spara aktuell</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="458"/>
+        <location filename="../ui/live_lab_tab.py" line="463"/>
         <source>Save all</source>
         <translation>Spara alla</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="461"/>
+        <location filename="../ui/live_lab_tab.py" line="466"/>
         <source>Copy settings</source>
         <translation>Kopiera inställningar</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="464"/>
+        <location filename="../ui/live_lab_tab.py" line="469"/>
         <source>Paste settings</source>
         <translation>Klistra in inställningar</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="481"/>
+        <location filename="../ui/live_lab_tab.py" line="486"/>
         <source>Use for calibration</source>
         <translation>Använd för kalibrering</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="516"/>
-        <location filename="../ui/live_lab_tab.py" line="3726"/>
-        <location filename="../ui/live_lab_tab.py" line="3886"/>
+        <location filename="../ui/live_lab_tab.py" line="521"/>
+        <location filename="../ui/live_lab_tab.py" line="3737"/>
+        <location filename="../ui/live_lab_tab.py" line="3897"/>
         <source>Last import</source>
         <translation>Senaste import</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="523"/>
+        <location filename="../ui/live_lab_tab.py" line="528"/>
         <source>Reset view</source>
         <translation>Återställ vy</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="597"/>
+        <location filename="../ui/live_lab_tab.py" line="602"/>
         <source>Calibrate…</source>
         <translation>Kalibrera…</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="630"/>
+        <location filename="../ui/live_lab_tab.py" line="635"/>
         <source>Session Gallery</source>
         <translation>Sessionsgalleri</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="701"/>
+        <location filename="../ui/live_lab_tab.py" line="706"/>
         <source>Stop RAW save after current file</source>
         <translation>Stoppa RAW-sparandet efter aktuell fil</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="744"/>
+        <location filename="../ui/live_lab_tab.py" line="749"/>
         <source>Choose between live folder watching and retrospective log-only capture.</source>
         <translation>Välj mellan bevakning av mapp i realtid och loggning för senare import.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="745"/>
-        <location filename="../ui/live_lab_tab.py" line="2767"/>
+        <location filename="../ui/live_lab_tab.py" line="750"/>
+        <location filename="../ui/live_lab_tab.py" line="2778"/>
         <source>Stop the current session before changing capture mode.</source>
         <translation>Stoppa den pågående sessionen innan du byter tagningsläge.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="749"/>
+        <location filename="../ui/live_lab_tab.py" line="754"/>
         <source>Folder that Sporely watches for new microscope captures.</source>
         <translation>Mappen som Sporely bevakar för nya mikroskopbilder.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="753"/>
+        <location filename="../ui/live_lab_tab.py" line="758"/>
         <source>Choose the folder your microscope camera saves into.</source>
         <translation>Välj mappen som mikroskopkameran sparar i.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="757"/>
+        <location filename="../ui/live_lab_tab.py" line="762"/>
         <source>Objective stored on newly imported microscope images.</source>
         <translation>Objektiv som sparas på nyimporterade mikroskopbilder.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="761"/>
+        <location filename="../ui/live_lab_tab.py" line="766"/>
         <source>Contrast method stored on newly imported microscope images.</source>
         <translation>Kontrastmetod som sparas på nyimporterade mikroskopbilder.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="765"/>
+        <location filename="../ui/live_lab_tab.py" line="770"/>
         <source>Mount medium stored on newly imported microscope images.</source>
         <translation>Monteringsmedium som sparas på nyimporterade mikroskopbilder.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="769"/>
+        <location filename="../ui/live_lab_tab.py" line="774"/>
         <source>Stain stored on newly imported microscope images.</source>
         <translation>Färgning som sparas på nyimporterade mikroskopbilder.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="773"/>
+        <location filename="../ui/live_lab_tab.py" line="778"/>
         <source>Specimen condition (Fresh/Dried) stored on newly imported microscope images.</source>
         <translation>Tillstånd (färsk/torkad) som sparas på nyimporterade mikroskopbilder.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="777"/>
+        <location filename="../ui/live_lab_tab.py" line="782"/>
         <source>Where the observed material came from (spore print, stipe, hymenium, ...).</source>
         <translation>Varifrån materialet kommer (sporavtryck, fot, hymenium, …).</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="781"/>
+        <location filename="../ui/live_lab_tab.py" line="786"/>
         <source>Write a timestamped note into the current lab session log.</source>
         <translation>Skriv en tidsstämplad anteckning i loggen för aktuell labbsession.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="782"/>
-        <location filename="../ui/live_lab_tab.py" line="842"/>
+        <location filename="../ui/live_lab_tab.py" line="787"/>
+        <location filename="../ui/live_lab_tab.py" line="847"/>
         <source>Start a Live Lab session before adding notes.</source>
         <translation>Starta en Live Lab-session innan du lägger till anteckningar.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="786"/>
+        <location filename="../ui/live_lab_tab.py" line="791"/>
         <source>Show or hide the simplified RAW processing controls for future session-level captures.</source>
         <translation>Visa eller dölj de förenklade RAW-inställningarna för kommande tagningar i sessionen.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="790"/>
+        <location filename="../ui/live_lab_tab.py" line="795"/>
         <source>Shared RAW processing controls for future session-level captures.</source>
         <translation>Gemensamma RAW-inställningar för kommande tagningar i sessionen.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="794"/>
+        <location filename="../ui/live_lab_tab.py" line="799"/>
         <source>Choose the white balance mode for future RAW captures.</source>
         <translation>Välj vitbalansläge för kommande RAW-tagningar.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="798"/>
+        <location filename="../ui/live_lab_tab.py" line="803"/>
         <source>Apply automatic levels to the current RAW capture.</source>
         <translation>Tillämpa automatiska nivåer på aktuell RAW-tagning.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="802"/>
+        <location filename="../ui/live_lab_tab.py" line="807"/>
         <source>Enable the luminance tone curve for future RAW captures.</source>
         <translation>Aktivera tonkurvan för luminans för kommande RAW-tagningar.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="806"/>
+        <location filename="../ui/live_lab_tab.py" line="811"/>
         <source>Adjust the tone curve strength.</source>
         <translation>Justera tonkurvans styrka.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="810"/>
+        <location filename="../ui/live_lab_tab.py" line="815"/>
         <source>Adjust the tone curve midpoint. Lower values automatically increase dark boost.</source>
         <translation>Justera tonkurvans mittpunkt. Lägre värden lyfter automatiskt mörka partier.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="814"/>
+        <location filename="../ui/live_lab_tab.py" line="819"/>
         <source>Sample a neutral point from the preview and set the current RAW white balance.</source>
         <translation>Välj en neutral punkt i förhandsvisningen och ställ in vitbalansen för aktuell RAW.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="818"/>
+        <location filename="../ui/live_lab_tab.py" line="823"/>
         <source>Commit the selected pending RAW capture using the current RAW settings.</source>
         <translation>Spara den valda väntande RAW-tagningen med aktuella RAW-inställningar.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="819"/>
-        <location filename="../ui/live_lab_tab.py" line="833"/>
+        <location filename="../ui/live_lab_tab.py" line="824"/>
+        <location filename="../ui/live_lab_tab.py" line="838"/>
         <source>Choose a pending RAW capture first.</source>
         <translation>Välj en väntande RAW-tagning först.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="823"/>
+        <location filename="../ui/live_lab_tab.py" line="828"/>
         <source>Commit every pending RAW capture using its current RAW settings.</source>
         <translation>Spara alla väntande RAW-tagningar med deras aktuella RAW-inställningar.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="824"/>
+        <location filename="../ui/live_lab_tab.py" line="829"/>
         <source>No pending RAW captures are waiting to be saved.</source>
         <translation>Inga väntande RAW-tagningar väntar på att sparas.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="828"/>
+        <location filename="../ui/live_lab_tab.py" line="833"/>
         <source>Open the currently displayed image in the Calibration dialog.</source>
         <translation>Öppna den visade bilden i kalibreringsdialogen.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="832"/>
+        <location filename="../ui/live_lab_tab.py" line="837"/>
         <source>Copy the current RAW processing settings so you can paste them onto another pending capture.</source>
         <translation>Kopiera aktuella RAW-inställningar så att du kan klistra in dem på en annan väntande tagning.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="837"/>
+        <location filename="../ui/live_lab_tab.py" line="842"/>
         <source>Apply the copied RAW processing settings to this pending capture.</source>
         <translation>Tillämpa de kopierade RAW-inställningarna på den här väntande tagningen.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="841"/>
+        <location filename="../ui/live_lab_tab.py" line="846"/>
         <source>Append the note to the current session log with the current timestamp.</source>
         <translation>Lägg till anteckningen i loggen för aktuell session med aktuell tidpunkt.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="846"/>
+        <location filename="../ui/live_lab_tab.py" line="851"/>
         <source>Start or stop watching the folder for new microscope captures.</source>
         <translation>Starta eller stoppa bevakningen av mappen för nya mikroskopbilder.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="847"/>
-        <location filename="../ui/live_lab_tab.py" line="2790"/>
+        <location filename="../ui/live_lab_tab.py" line="852"/>
+        <location filename="../ui/live_lab_tab.py" line="2801"/>
         <source>Choose a current observation and an existing watched folder first.</source>
         <translation>Välj en aktuell observation och en befintlig bevakad mapp först.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="851"/>
+        <location filename="../ui/live_lab_tab.py" line="856"/>
         <source>Fit the selected session image back into view.</source>
         <translation>Anpassa den valda bilden från sessionen till vyn igen.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="860"/>
+        <location filename="../ui/live_lab_tab.py" line="865"/>
         <source>Click a thumbnail to inspect it here. Pending RAW items appear here with an UNSAVED badge and use their preview render.</source>
         <translation>Klicka på en miniatyr för att granska den här. Väntande RAW-bilder visas här med märket OSPARAD och använder sin förhandsvisning.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="1279"/>
+        <location filename="../ui/live_lab_tab.py" line="1284"/>
         <source>Not calibrated · {objective}</source>
         <translation>Inte kalibrerad · {objective}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="1281"/>
+        <location filename="../ui/live_lab_tab.py" line="1286"/>
         <source>Not calibrated</source>
         <translation>Inte kalibrerad</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2210"/>
+        <location filename="../ui/live_lab_tab.py" line="2216"/>
         <source>RAW preview unavailable for {name}: {error}</source>
         <translation>RAW-förhandsvisning är inte tillgänglig för {name}: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2058"/>
-        <location filename="../ui/live_lab_tab.py" line="2854"/>
-        <location filename="../ui/live_lab_tab.py" line="3711"/>
+        <location filename="../ui/live_lab_tab.py" line="2064"/>
+        <location filename="../ui/live_lab_tab.py" line="2865"/>
+        <location filename="../ui/live_lab_tab.py" line="3722"/>
         <source>Waiting for first import</source>
         <translation>Väntar på första importen</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2059"/>
-        <location filename="../ui/live_lab_tab.py" line="2855"/>
-        <location filename="../ui/live_lab_tab.py" line="3712"/>
+        <location filename="../ui/live_lab_tab.py" line="2065"/>
+        <location filename="../ui/live_lab_tab.py" line="2866"/>
+        <location filename="../ui/live_lab_tab.py" line="3723"/>
         <source>New microscope captures from the watched folder will appear here automatically.</source>
         <translation>Nya mikroskopbilder från den bevakade mappen visas här automatiskt.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="1887"/>
+        <location filename="../ui/live_lab_tab.py" line="1893"/>
         <source>Could not render RAW for calibration: {error}</source>
         <translation>Kunde inte rendera RAW för kalibrering: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="1908"/>
+        <location filename="../ui/live_lab_tab.py" line="1914"/>
         <source>No image to send to the Calibration dialog.</source>
         <translation>Ingen bild att skicka till kalibreringsdialogen.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3674"/>
+        <location filename="../ui/live_lab_tab.py" line="3685"/>
         <source>Wait for RAW saving to finish before removing this capture.</source>
         <translation>Vänta tills RAW-sparandet är klart innan du tar bort den här tagningen.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3716"/>
+        <location filename="../ui/live_lab_tab.py" line="3727"/>
         <source>Removed pending RAW capture {name}.</source>
         <translation>Tog bort den väntande RAW-tagningen {name}.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="1998"/>
+        <location filename="../ui/live_lab_tab.py" line="2004"/>
         <source>selected image</source>
         <translation>vald bild</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2005"/>
+        <location filename="../ui/live_lab_tab.py" line="2011"/>
         <source>Could not delete local processed image {name}: {error}</source>
         <translation>Kunde inte ta bort den lokala bearbetade bilden {name}: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2076"/>
+        <location filename="../ui/live_lab_tab.py" line="2082"/>
         <source>Deleted local processed image {name}.</source>
         <translation>Tog bort den lokala bearbetade bilden {name}.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2078"/>
+        <location filename="../ui/live_lab_tab.py" line="2084"/>
         <source>Deleted {count} local processed images.</source>
         <translation>Tog bort {count} lokala bearbetade bilder.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2225"/>
+        <location filename="../ui/live_lab_tab.py" line="2231"/>
         <source>Could not render preview for {name}: {error}</source>
         <translation>Kunde inte skapa förhandsvisning för {name}: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2372"/>
+        <location filename="../ui/live_lab_tab.py" line="2378"/>
         <source>Offline</source>
         <translation>Frånkopplad</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2373"/>
+        <location filename="../ui/live_lab_tab.py" line="2379"/>
         <source>Live capture</source>
         <translation>Direktinspelning</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2469"/>
+        <location filename="../ui/live_lab_tab.py" line="2475"/>
         <source>Choose microscope capture folder</source>
         <translation>Välj mapp för mikroskopbilder</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2534"/>
+        <location filename="../ui/live_lab_tab.py" line="2540"/>
         <source>{vernacular} — {scientific}</source>
         <translation>{vernacular} — {scientific}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2538"/>
+        <location filename="../ui/live_lab_tab.py" line="2544"/>
         <source>Unknown observation</source>
         <translation>Okänd observation</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2551"/>
+        <location filename="../ui/live_lab_tab.py" line="2557"/>
         <source>Date: {date}</source>
         <translation>Datum: {date}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2555"/>
+        <location filename="../ui/live_lab_tab.py" line="2561"/>
         <source>Location: {location}</source>
         <translation>Plats: {location}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2562"/>
+        <location filename="../ui/live_lab_tab.py" line="2568"/>
         <source>No current observation selected</source>
         <translation>Ingen aktuell observation vald</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2777"/>
+        <location filename="../ui/live_lab_tab.py" line="2788"/>
         <source>Stopping...</source>
         <translation>Stoppar …</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2779"/>
+        <location filename="../ui/live_lab_tab.py" line="2790"/>
         <source>Stop Session</source>
         <translation>Stoppa session</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2782"/>
+        <location filename="../ui/live_lab_tab.py" line="2793"/>
         <source>Start Log
 Session</source>
         <translation>Starta
 loggsession</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2788"/>
-        <location filename="../ui/live_lab_tab.py" line="2794"/>
+        <location filename="../ui/live_lab_tab.py" line="2799"/>
+        <location filename="../ui/live_lab_tab.py" line="2805"/>
         <source>Choose a current observation before starting the session.</source>
         <translation>Välj en aktuell observation innan du startar sessionen.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2792"/>
+        <location filename="../ui/live_lab_tab.py" line="2803"/>
         <source>Choose an existing watched folder before starting the session.</source>
         <translation>Välj en befintlig bevakad mapp innan du startar sessionen.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2813"/>
+        <location filename="../ui/live_lab_tab.py" line="2824"/>
         <source>Choose a current observation before starting a Live Lab session.</source>
         <translation>Välj en aktuell observation innan du startar en Live Lab-session.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2825"/>
+        <location filename="../ui/live_lab_tab.py" line="2836"/>
         <source>Choose an existing microscope capture folder before starting the session.</source>
         <translation>Välj en befintlig mapp för mikroskopbilder innan du startar sessionen.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2862"/>
+        <location filename="../ui/live_lab_tab.py" line="2873"/>
         <source>Live capture session started for {name}.</source>
         <translation>Session med direktinspelning startad för {name}.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2867"/>
+        <location filename="../ui/live_lab_tab.py" line="2878"/>
         <source>Offline session</source>
         <translation>Frånkopplad session</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2868"/>
+        <location filename="../ui/live_lab_tab.py" line="2879"/>
         <source>Log microscope-state changes now and match images later in Camera import.</source>
         <translation>Logga ändringar av mikroskopinställningarna nu och matcha bilderna senare i Kameraimport.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2870"/>
+        <location filename="../ui/live_lab_tab.py" line="2881"/>
         <source>Offline session started for {name}.</source>
         <translation>Frånkopplad session startad för {name}.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2918"/>
+        <location filename="../ui/live_lab_tab.py" line="2929"/>
         <source>Stopping Live Lab session...</source>
         <translation>Stoppar Live Lab-sessionen …</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2978"/>
+        <location filename="../ui/live_lab_tab.py" line="2989"/>
         <source>Offline session stopped. Logged {count} imported image(s).</source>
         <translation>Frånkopplad session stoppad. Loggade {count} importerad(e) bild(er).</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2980"/>
+        <location filename="../ui/live_lab_tab.py" line="2991"/>
         <source>Live Lab session stopped. Imported {count} image(s).</source>
         <translation>Live Lab-sessionen har stoppats. Importerade {count} bild(er).</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3000"/>
+        <location filename="../ui/live_lab_tab.py" line="3011"/>
         <source>The Live Lab watcher stopped unexpectedly.</source>
         <translation>Live Lab-bevakningen stoppades oväntat.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3141"/>
+        <location filename="../ui/live_lab_tab.py" line="3152"/>
         <source>Thumbnail generation warning for {name}: {error}</source>
         <translation>Varning vid skapande av miniatyr för {name}: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3190"/>
+        <location filename="../ui/live_lab_tab.py" line="3201"/>
         <source>Imported {name} into the current observation.</source>
         <translation>Importerade {name} till aktuell observation.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3261"/>
+        <location filename="../ui/live_lab_tab.py" line="3272"/>
         <source>RAW image {name} cannot be imported yet: {error}</source>
         <translation>RAW-bilden {name} kan inte importeras ännu: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3271"/>
+        <location filename="../ui/live_lab_tab.py" line="3282"/>
         <source>Could not prepare {name}: {error}</source>
         <translation>Kunde inte förbereda {name}: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3548"/>
+        <location filename="../ui/live_lab_tab.py" line="3559"/>
         <source>Selected images will be edited</source>
         <translation>Valda bilder kommer att redigeras</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3727"/>
+        <location filename="../ui/live_lab_tab.py" line="3738"/>
         <source>The next imported microscope image will appear here.</source>
         <translation>Nästa importerade mikroskopbild visas här.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3763"/>
-        <location filename="../ui/live_lab_tab.py" line="3812"/>
+        <location filename="../ui/live_lab_tab.py" line="3774"/>
+        <location filename="../ui/live_lab_tab.py" line="3823"/>
         <source>Selected image unavailable</source>
         <translation>Den valda bilden är inte tillgänglig</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3764"/>
+        <location filename="../ui/live_lab_tab.py" line="3775"/>
         <source>This session image does not have a stored file path.</source>
         <translation>Den här bilden från sessionen har ingen sparad filsökväg.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3793"/>
+        <location filename="../ui/live_lab_tab.py" line="3804"/>
         <source>RAW edit preview unavailable</source>
         <translation>Förhandsvisning av RAW-redigering är inte tillgänglig</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3794"/>
+        <location filename="../ui/live_lab_tab.py" line="3805"/>
         <source>The temporary RAW edit preview for {name} is not available.</source>
         <translation>Den tillfälliga förhandsvisningen av RAW-redigeringen för {name} är inte tillgänglig.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3813"/>
-        <location filename="../ui/live_lab_tab.py" line="3816"/>
+        <location filename="../ui/live_lab_tab.py" line="3824"/>
+        <location filename="../ui/live_lab_tab.py" line="3827"/>
         <source>Could not load {name}.</source>
         <translation>Kunde inte läsa in {name}.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3863"/>
+        <location filename="../ui/live_lab_tab.py" line="3874"/>
         <source>Editing RAW: {name}</source>
         <translation>Redigerar RAW: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3888"/>
+        <location filename="../ui/live_lab_tab.py" line="3899"/>
         <source>Selected image</source>
         <translation>Vald bild</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3890"/>
+        <location filename="../ui/live_lab_tab.py" line="3901"/>
         <source>{prefix}: {name}</source>
         <translation>{prefix}: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3991"/>
+        <location filename="../ui/live_lab_tab.py" line="4002"/>
         <source>{scale:.4g} μm/px</source>
         <translation>{scale:.4g} μm/px</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3992"/>
+        <location filename="../ui/live_lab_tab.py" line="4003"/>
         <source>Scroll to zoom and drag to pan.</source>
         <translation>Scrolla för att zooma och dra för att panorera.</translation>
     </message>

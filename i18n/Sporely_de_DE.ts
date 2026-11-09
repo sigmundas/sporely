@@ -2516,12 +2516,12 @@ Möchten Sie diese Bilder auf die neue Kalibrierung aktualisieren und die Messun
 <context>
     <name>CaptureStateBar</name>
     <message>
-        <location filename="../ui/capture_state_bar.py" line="208"/>
+        <location filename="../ui/capture_state_bar.py" line="209"/>
         <source>Objective</source>
         <translation>Objektiv</translation>
     </message>
     <message>
-        <location filename="../ui/capture_state_bar.py" line="215"/>
+        <location filename="../ui/capture_state_bar.py" line="216"/>
         <source>Contrast</source>
         <translation>Kontrast</translation>
     </message>
@@ -5392,144 +5392,171 @@ Maßstab fehlt: {missing}</translation>
 <context>
     <name>LiveLabPrepPanelMixin</name>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="60"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="67"/>
         <source>Preparation</source>
         <translation>Präparat</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="75"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="82"/>
         <source>Specimen condition</source>
         <translation>Zustand</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="76"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="83"/>
         <source>Sample source</source>
         <translation>Probenquelle</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="77"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="84"/>
         <source>Mount:</source>
         <translation>Montagemedium:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="78"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="85"/>
         <source>Stain:</source>
         <translation>Färbung:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="79"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="86"/>
         <source>Condition:</source>
         <translation>Zustand:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="80"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="87"/>
         <source>Source:</source>
         <translation>Quelle:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="91"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="98"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="247"/>
         <source>Mount</source>
         <translation>Medium</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="92"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="99"/>
         <source>Condition</source>
         <translation>Zustand</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="93"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="100"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="248"/>
         <source>Stain</source>
         <translation>Färbung</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="94"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="101"/>
         <source>Source</source>
         <translation>Quelle</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="105"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="112"/>
         <source>{field}: mixed</source>
         <translation>{field}: gemischt</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="113"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="120"/>
         <source>{field} not set</source>
         <translation>{field} nicht gesetzt</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="115"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="122"/>
         <source>{count} not set</source>
         <translation>{count} nicht gesetzt</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="128"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="135"/>
         <source>Notes</source>
         <translation>Notizen</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="140"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="147"/>
         <source>Add a timestamped session note</source>
         <translation>Zeitgestempelte Notiz zur Sitzung hinzufügen</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="143"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="150"/>
         <source>Add</source>
         <translation>Hinzufügen</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="146"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="153"/>
         <source>Note:</source>
         <translation>Notiz:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="154"/>
-        <location filename="../ui/live_lab_prep_panel.py" line="245"/>
-        <location filename="../ui/live_lab_prep_panel.py" line="270"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="170"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="321"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="346"/>
         <source>Optional note for the selected image</source>
         <translation>Optionale Notiz für das ausgewählte Bild</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="156"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="172"/>
         <source>Image note:</source>
         <translation>Bildnotiz:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="200"/>
-        <source>1 note · {time} {text}</source>
-        <translation>1 Notiz · {time} {text}</translation>
+        <location filename="../ui/live_lab_prep_panel.py" line="225"/>
+        <source>{change} (remembered)</source>
+        <translation>{change} (gemerkt)</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="203"/>
-        <source>{count} notes · last {time} {text}</source>
-        <translation>{count} Notizen · zuletzt {time} {text}</translation>
+        <location filename="../ui/live_lab_prep_panel.py" line="233"/>
+        <source>not set</source>
+        <translation>nicht gesetzt</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="212"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="245"/>
+        <source>Objective</source>
+        <translation>Objektiv</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="246"/>
+        <source>Contrast</source>
+        <translation>Kontrast</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="219"/>
+        <source>{field} {old} → {new}</source>
+        <translation>{field} {old} → {new}</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="265"/>
+        <source>1 line · {time} {text}</source>
+        <translation>1 Zeile · {time} {text}</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="268"/>
+        <source>{count} lines · last {time} {text}</source>
+        <translation>{count} Zeilen · zuletzt {time} {text}</translation>
+    </message>
+    <message>
+        <location filename="../ui/live_lab_prep_panel.py" line="275"/>
         <source>Image: (Multiple notes)</source>
         <translation>Bild: (Mehrere Notizen)</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="216"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="279"/>
         <source>Image: {note}</source>
         <translation>Bild: {note}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="217"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="280"/>
         <source>No notes</source>
         <translation>Keine Notizen</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="274"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="350"/>
         <source>(Multiple notes)</source>
         <translation>(Mehrere Notizen)</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="511"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="633"/>
         <source>Start a Live Lab session before adding notes.</source>
         <translation>Starte eine Live-Lab-Sitzung, bevor du Notizen hinzufügst.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="520"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="642"/>
         <source>Added session note.</source>
         <translation>Notiz zur Sitzung hinzugefügt.</translation>
     </message>
@@ -5984,542 +6011,542 @@ Maßstab fehlt: {missing}</translation>
         <translation>Beobachte hier den Ordner deiner Mikroskopkamera. Scrolle zum Zoomen, ziehe zum Verschieben und klicke auf ein Vorschaubild der Sitzung, um es anzusehen.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="309"/>
+        <location filename="../ui/live_lab_tab.py" line="314"/>
         <source>Current observation</source>
         <translation>Aktuelle Beobachtung</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="315"/>
-        <location filename="../ui/live_lab_tab.py" line="2597"/>
+        <location filename="../ui/live_lab_tab.py" line="320"/>
+        <location filename="../ui/live_lab_tab.py" line="2603"/>
         <source>No image</source>
         <translation>Kein Bild</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="336"/>
-        <location filename="../ui/live_lab_tab.py" line="2564"/>
+        <location filename="../ui/live_lab_tab.py" line="341"/>
+        <location filename="../ui/live_lab_tab.py" line="2570"/>
         <source>Date: —</source>
         <translation>Datum: —</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="356"/>
-        <location filename="../ui/live_lab_tab.py" line="2784"/>
+        <location filename="../ui/live_lab_tab.py" line="361"/>
+        <location filename="../ui/live_lab_tab.py" line="2795"/>
         <source>Start
 Session</source>
         <translation>Sitzung
 starten</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="372"/>
+        <location filename="../ui/live_lab_tab.py" line="377"/>
         <source>Live capture (watch folder)</source>
         <translation>Live-Aufnahme (überwachter Ordner)</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="377"/>
+        <location filename="../ui/live_lab_tab.py" line="382"/>
         <source>Offline (log only)</source>
         <translation>Offline (nur protokollieren)</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="389"/>
+        <location filename="../ui/live_lab_tab.py" line="394"/>
         <source>Choose the microscope capture folder</source>
         <translation>Ordner für Mikroskopaufnahmen auswählen</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="394"/>
+        <location filename="../ui/live_lab_tab.py" line="399"/>
         <source>Browse</source>
         <translation>Durchsuchen</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="451"/>
+        <location filename="../ui/live_lab_tab.py" line="456"/>
         <source>Pending RAW captures: 0</source>
         <translation>Ausstehende RAW-Aufnahmen: 0</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="455"/>
+        <location filename="../ui/live_lab_tab.py" line="460"/>
         <source>Save current</source>
         <translation>Aktuelle speichern</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="458"/>
+        <location filename="../ui/live_lab_tab.py" line="463"/>
         <source>Save all</source>
         <translation>Alle speichern</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="461"/>
+        <location filename="../ui/live_lab_tab.py" line="466"/>
         <source>Copy settings</source>
         <translation>Einstellungen kopieren</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="464"/>
+        <location filename="../ui/live_lab_tab.py" line="469"/>
         <source>Paste settings</source>
         <translation>Einstellungen einfügen</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="481"/>
+        <location filename="../ui/live_lab_tab.py" line="486"/>
         <source>Use for calibration</source>
         <translation>Zur Kalibrierung verwenden</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="516"/>
-        <location filename="../ui/live_lab_tab.py" line="3726"/>
-        <location filename="../ui/live_lab_tab.py" line="3886"/>
+        <location filename="../ui/live_lab_tab.py" line="521"/>
+        <location filename="../ui/live_lab_tab.py" line="3737"/>
+        <location filename="../ui/live_lab_tab.py" line="3897"/>
         <source>Last import</source>
         <translation>Letzter Import</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="523"/>
+        <location filename="../ui/live_lab_tab.py" line="528"/>
         <source>Reset view</source>
         <translation>Ansicht zurücksetzen</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="597"/>
+        <location filename="../ui/live_lab_tab.py" line="602"/>
         <source>Calibrate…</source>
         <translation>Kalibrieren…</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="630"/>
+        <location filename="../ui/live_lab_tab.py" line="635"/>
         <source>Session Gallery</source>
         <translation>Sitzungsgalerie</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="701"/>
+        <location filename="../ui/live_lab_tab.py" line="706"/>
         <source>Stop RAW save after current file</source>
         <translation>RAW-Speichern nach der aktuellen Datei stoppen</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="744"/>
+        <location filename="../ui/live_lab_tab.py" line="749"/>
         <source>Choose between live folder watching and retrospective log-only capture.</source>
         <translation>Wähle zwischen Live-Ordnerüberwachung und reiner Protokollierung für späteren Import.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="745"/>
-        <location filename="../ui/live_lab_tab.py" line="2767"/>
+        <location filename="../ui/live_lab_tab.py" line="750"/>
+        <location filename="../ui/live_lab_tab.py" line="2778"/>
         <source>Stop the current session before changing capture mode.</source>
         <translation>Beende die laufende Sitzung, bevor du den Aufnahmemodus wechselst.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="749"/>
+        <location filename="../ui/live_lab_tab.py" line="754"/>
         <source>Folder that Sporely watches for new microscope captures.</source>
         <translation>Ordner, den Sporely auf neue Mikroskopaufnahmen überwacht.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="753"/>
+        <location filename="../ui/live_lab_tab.py" line="758"/>
         <source>Choose the folder your microscope camera saves into.</source>
         <translation>Wähle den Ordner, in dem deine Mikroskopkamera speichert.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="757"/>
+        <location filename="../ui/live_lab_tab.py" line="762"/>
         <source>Objective stored on newly imported microscope images.</source>
         <translation>Objektiv, das bei neu importierten Mikroskopbildern gespeichert wird.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="761"/>
+        <location filename="../ui/live_lab_tab.py" line="766"/>
         <source>Contrast method stored on newly imported microscope images.</source>
         <translation>Kontrastmethode, die bei neu importierten Mikroskopbildern gespeichert wird.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="765"/>
+        <location filename="../ui/live_lab_tab.py" line="770"/>
         <source>Mount medium stored on newly imported microscope images.</source>
         <translation>Einbettungsmedium, das bei neu importierten Mikroskopbildern gespeichert wird.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="769"/>
+        <location filename="../ui/live_lab_tab.py" line="774"/>
         <source>Stain stored on newly imported microscope images.</source>
         <translation>Färbung, die bei neu importierten Mikroskopbildern gespeichert wird.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="773"/>
+        <location filename="../ui/live_lab_tab.py" line="778"/>
         <source>Specimen condition (Fresh/Dried) stored on newly imported microscope images.</source>
         <translation>Zustand (frisch/getrocknet), der bei neu importierten Mikroskopbildern gespeichert wird.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="777"/>
+        <location filename="../ui/live_lab_tab.py" line="782"/>
         <source>Where the observed material came from (spore print, stipe, hymenium, ...).</source>
         <translation>Woher das untersuchte Material stammt (Sporenabdruck, Stiel, Hymenium, …).</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="781"/>
+        <location filename="../ui/live_lab_tab.py" line="786"/>
         <source>Write a timestamped note into the current lab session log.</source>
         <translation>Schreibe eine zeitgestempelte Notiz ins Protokoll der aktuellen Laborsitzung.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="782"/>
-        <location filename="../ui/live_lab_tab.py" line="842"/>
+        <location filename="../ui/live_lab_tab.py" line="787"/>
+        <location filename="../ui/live_lab_tab.py" line="847"/>
         <source>Start a Live Lab session before adding notes.</source>
         <translation>Starte eine Live-Lab-Sitzung, bevor du Notizen hinzufügst.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="786"/>
+        <location filename="../ui/live_lab_tab.py" line="791"/>
         <source>Show or hide the simplified RAW processing controls for future session-level captures.</source>
         <translation>Vereinfachte RAW-Einstellungen für künftige Aufnahmen der Sitzung ein- oder ausblenden.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="790"/>
+        <location filename="../ui/live_lab_tab.py" line="795"/>
         <source>Shared RAW processing controls for future session-level captures.</source>
         <translation>Gemeinsame RAW-Einstellungen für künftige Aufnahmen der Sitzung.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="794"/>
+        <location filename="../ui/live_lab_tab.py" line="799"/>
         <source>Choose the white balance mode for future RAW captures.</source>
         <translation>Wähle den Weißabgleichsmodus für künftige RAW-Aufnahmen.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="798"/>
+        <location filename="../ui/live_lab_tab.py" line="803"/>
         <source>Apply automatic levels to the current RAW capture.</source>
         <translation>Automatische Tonwerte auf die aktuelle RAW-Aufnahme anwenden.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="802"/>
+        <location filename="../ui/live_lab_tab.py" line="807"/>
         <source>Enable the luminance tone curve for future RAW captures.</source>
         <translation>Luminanz-Tonkurve für künftige RAW-Aufnahmen aktivieren.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="806"/>
+        <location filename="../ui/live_lab_tab.py" line="811"/>
         <source>Adjust the tone curve strength.</source>
         <translation>Stärke der Tonkurve anpassen.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="810"/>
+        <location filename="../ui/live_lab_tab.py" line="815"/>
         <source>Adjust the tone curve midpoint. Lower values automatically increase dark boost.</source>
         <translation>Mittelpunkt der Tonkurve anpassen. Niedrigere Werte hellen dunkle Bereiche automatisch auf.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="814"/>
+        <location filename="../ui/live_lab_tab.py" line="819"/>
         <source>Sample a neutral point from the preview and set the current RAW white balance.</source>
         <translation>Wähle einen neutralen Punkt in der Vorschau und setze den Weißabgleich des aktuellen RAW.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="818"/>
+        <location filename="../ui/live_lab_tab.py" line="823"/>
         <source>Commit the selected pending RAW capture using the current RAW settings.</source>
         <translation>Ausgewählte ausstehende RAW-Aufnahme mit den aktuellen RAW-Einstellungen speichern.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="819"/>
-        <location filename="../ui/live_lab_tab.py" line="833"/>
+        <location filename="../ui/live_lab_tab.py" line="824"/>
+        <location filename="../ui/live_lab_tab.py" line="838"/>
         <source>Choose a pending RAW capture first.</source>
         <translation>Wähle zuerst eine ausstehende RAW-Aufnahme.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="823"/>
+        <location filename="../ui/live_lab_tab.py" line="828"/>
         <source>Commit every pending RAW capture using its current RAW settings.</source>
         <translation>Alle ausstehenden RAW-Aufnahmen mit ihren aktuellen RAW-Einstellungen speichern.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="824"/>
+        <location filename="../ui/live_lab_tab.py" line="829"/>
         <source>No pending RAW captures are waiting to be saved.</source>
         <translation>Keine ausstehenden RAW-Aufnahmen warten auf das Speichern.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="828"/>
+        <location filename="../ui/live_lab_tab.py" line="833"/>
         <source>Open the currently displayed image in the Calibration dialog.</source>
         <translation>Das angezeigte Bild im Kalibrierungsdialog öffnen.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="832"/>
+        <location filename="../ui/live_lab_tab.py" line="837"/>
         <source>Copy the current RAW processing settings so you can paste them onto another pending capture.</source>
         <translation>Aktuelle RAW-Einstellungen kopieren, um sie in eine andere ausstehende Aufnahme einzufügen.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="837"/>
+        <location filename="../ui/live_lab_tab.py" line="842"/>
         <source>Apply the copied RAW processing settings to this pending capture.</source>
         <translation>Kopierte RAW-Einstellungen auf diese ausstehende Aufnahme anwenden.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="841"/>
+        <location filename="../ui/live_lab_tab.py" line="846"/>
         <source>Append the note to the current session log with the current timestamp.</source>
         <translation>Notiz mit dem aktuellen Zeitstempel ans Protokoll der aktuellen Sitzung anhängen.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="846"/>
+        <location filename="../ui/live_lab_tab.py" line="851"/>
         <source>Start or stop watching the folder for new microscope captures.</source>
         <translation>Überwachung des Ordners auf neue Mikroskopaufnahmen starten oder stoppen.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="847"/>
-        <location filename="../ui/live_lab_tab.py" line="2790"/>
+        <location filename="../ui/live_lab_tab.py" line="852"/>
+        <location filename="../ui/live_lab_tab.py" line="2801"/>
         <source>Choose a current observation and an existing watched folder first.</source>
         <translation>Wähle zuerst eine aktuelle Beobachtung und einen vorhandenen überwachten Ordner.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="851"/>
+        <location filename="../ui/live_lab_tab.py" line="856"/>
         <source>Fit the selected session image back into view.</source>
         <translation>Ausgewähltes Sitzungsbild wieder in die Ansicht einpassen.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="860"/>
+        <location filename="../ui/live_lab_tab.py" line="865"/>
         <source>Click a thumbnail to inspect it here. Pending RAW items appear here with an UNSAVED badge and use their preview render.</source>
         <translation>Klicke auf ein Vorschaubild, um es hier anzusehen. Ausstehende RAW-Bilder erscheinen hier mit dem Hinweis UNGESPEICHERT und nutzen ihre Vorschau.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="1279"/>
+        <location filename="../ui/live_lab_tab.py" line="1284"/>
         <source>Not calibrated · {objective}</source>
         <translation>Nicht kalibriert · {objective}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="1281"/>
+        <location filename="../ui/live_lab_tab.py" line="1286"/>
         <source>Not calibrated</source>
         <translation>Nicht kalibriert</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2210"/>
+        <location filename="../ui/live_lab_tab.py" line="2216"/>
         <source>RAW preview unavailable for {name}: {error}</source>
         <translation>RAW-Vorschau für {name} nicht verfügbar: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2058"/>
-        <location filename="../ui/live_lab_tab.py" line="2854"/>
-        <location filename="../ui/live_lab_tab.py" line="3711"/>
+        <location filename="../ui/live_lab_tab.py" line="2064"/>
+        <location filename="../ui/live_lab_tab.py" line="2865"/>
+        <location filename="../ui/live_lab_tab.py" line="3722"/>
         <source>Waiting for first import</source>
         <translation>Warte auf den ersten Import</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2059"/>
-        <location filename="../ui/live_lab_tab.py" line="2855"/>
-        <location filename="../ui/live_lab_tab.py" line="3712"/>
+        <location filename="../ui/live_lab_tab.py" line="2065"/>
+        <location filename="../ui/live_lab_tab.py" line="2866"/>
+        <location filename="../ui/live_lab_tab.py" line="3723"/>
         <source>New microscope captures from the watched folder will appear here automatically.</source>
         <translation>Neue Mikroskopaufnahmen aus dem überwachten Ordner erscheinen hier automatisch.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="1887"/>
+        <location filename="../ui/live_lab_tab.py" line="1893"/>
         <source>Could not render RAW for calibration: {error}</source>
         <translation>RAW konnte für die Kalibrierung nicht gerendert werden: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="1908"/>
+        <location filename="../ui/live_lab_tab.py" line="1914"/>
         <source>No image to send to the Calibration dialog.</source>
         <translation>Kein Bild für den Kalibrierungsdialog vorhanden.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3674"/>
+        <location filename="../ui/live_lab_tab.py" line="3685"/>
         <source>Wait for RAW saving to finish before removing this capture.</source>
         <translation>Warte, bis das RAW-Speichern abgeschlossen ist, bevor du diese Aufnahme entfernst.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3716"/>
+        <location filename="../ui/live_lab_tab.py" line="3727"/>
         <source>Removed pending RAW capture {name}.</source>
         <translation>Ausstehende RAW-Aufnahme {name} entfernt.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="1998"/>
+        <location filename="../ui/live_lab_tab.py" line="2004"/>
         <source>selected image</source>
         <translation>ausgewähltes Bild</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2005"/>
+        <location filename="../ui/live_lab_tab.py" line="2011"/>
         <source>Could not delete local processed image {name}: {error}</source>
         <translation>Lokales bearbeitetes Bild {name} konnte nicht gelöscht werden: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2076"/>
+        <location filename="../ui/live_lab_tab.py" line="2082"/>
         <source>Deleted local processed image {name}.</source>
         <translation>Lokales bearbeitetes Bild {name} gelöscht.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2078"/>
+        <location filename="../ui/live_lab_tab.py" line="2084"/>
         <source>Deleted {count} local processed images.</source>
         <translation>{count} lokale bearbeitete Bilder gelöscht.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2225"/>
+        <location filename="../ui/live_lab_tab.py" line="2231"/>
         <source>Could not render preview for {name}: {error}</source>
         <translation>Vorschau für {name} konnte nicht erstellt werden: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2372"/>
+        <location filename="../ui/live_lab_tab.py" line="2378"/>
         <source>Offline</source>
         <translation>Offline</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2373"/>
+        <location filename="../ui/live_lab_tab.py" line="2379"/>
         <source>Live capture</source>
         <translation>Live-Aufnahme</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2469"/>
+        <location filename="../ui/live_lab_tab.py" line="2475"/>
         <source>Choose microscope capture folder</source>
         <translation>Ordner für Mikroskopaufnahmen auswählen</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2534"/>
+        <location filename="../ui/live_lab_tab.py" line="2540"/>
         <source>{vernacular} — {scientific}</source>
         <translation>{vernacular} — {scientific}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2538"/>
+        <location filename="../ui/live_lab_tab.py" line="2544"/>
         <source>Unknown observation</source>
         <translation>Unbekannte Beobachtung</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2551"/>
+        <location filename="../ui/live_lab_tab.py" line="2557"/>
         <source>Date: {date}</source>
         <translation>Datum: {date}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2555"/>
+        <location filename="../ui/live_lab_tab.py" line="2561"/>
         <source>Location: {location}</source>
         <translation>Ort: {location}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2562"/>
+        <location filename="../ui/live_lab_tab.py" line="2568"/>
         <source>No current observation selected</source>
         <translation>Keine aktuelle Beobachtung ausgewählt</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2777"/>
+        <location filename="../ui/live_lab_tab.py" line="2788"/>
         <source>Stopping...</source>
         <translation>Wird gestoppt …</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2779"/>
+        <location filename="../ui/live_lab_tab.py" line="2790"/>
         <source>Stop Session</source>
         <translation>Sitzung beenden</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2782"/>
+        <location filename="../ui/live_lab_tab.py" line="2793"/>
         <source>Start Log
 Session</source>
         <translation>Protokoll-
 sitzung starten</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2788"/>
-        <location filename="../ui/live_lab_tab.py" line="2794"/>
+        <location filename="../ui/live_lab_tab.py" line="2799"/>
+        <location filename="../ui/live_lab_tab.py" line="2805"/>
         <source>Choose a current observation before starting the session.</source>
         <translation>Wähle eine aktuelle Beobachtung, bevor du die Sitzung startest.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2792"/>
+        <location filename="../ui/live_lab_tab.py" line="2803"/>
         <source>Choose an existing watched folder before starting the session.</source>
         <translation>Wähle einen vorhandenen überwachten Ordner, bevor du die Sitzung startest.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2813"/>
+        <location filename="../ui/live_lab_tab.py" line="2824"/>
         <source>Choose a current observation before starting a Live Lab session.</source>
         <translation>Wähle eine aktuelle Beobachtung, bevor du eine Live-Lab-Sitzung startest.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2825"/>
+        <location filename="../ui/live_lab_tab.py" line="2836"/>
         <source>Choose an existing microscope capture folder before starting the session.</source>
         <translation>Wähle einen vorhandenen Ordner für Mikroskopaufnahmen, bevor du die Sitzung startest.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2862"/>
+        <location filename="../ui/live_lab_tab.py" line="2873"/>
         <source>Live capture session started for {name}.</source>
         <translation>Live-Aufnahmesitzung für {name} gestartet.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2867"/>
+        <location filename="../ui/live_lab_tab.py" line="2878"/>
         <source>Offline session</source>
         <translation>Offline-Sitzung</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2868"/>
+        <location filename="../ui/live_lab_tab.py" line="2879"/>
         <source>Log microscope-state changes now and match images later in Camera import.</source>
         <translation>Protokolliere Änderungen der Mikroskopeinstellungen jetzt und ordne die Bilder später im Kameraimport zu.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2870"/>
+        <location filename="../ui/live_lab_tab.py" line="2881"/>
         <source>Offline session started for {name}.</source>
         <translation>Offline-Sitzung für {name} gestartet.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2918"/>
+        <location filename="../ui/live_lab_tab.py" line="2929"/>
         <source>Stopping Live Lab session...</source>
         <translation>Live-Lab-Sitzung wird beendet …</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2978"/>
+        <location filename="../ui/live_lab_tab.py" line="2989"/>
         <source>Offline session stopped. Logged {count} imported image(s).</source>
         <translation>Offline-Sitzung beendet. {count} importierte(s) Bild(er) protokolliert.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="2980"/>
+        <location filename="../ui/live_lab_tab.py" line="2991"/>
         <source>Live Lab session stopped. Imported {count} image(s).</source>
         <translation>Live-Lab-Sitzung beendet. {count} Bild(er) importiert.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3000"/>
+        <location filename="../ui/live_lab_tab.py" line="3011"/>
         <source>The Live Lab watcher stopped unexpectedly.</source>
         <translation>Die Live-Lab-Überwachung wurde unerwartet beendet.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3141"/>
+        <location filename="../ui/live_lab_tab.py" line="3152"/>
         <source>Thumbnail generation warning for {name}: {error}</source>
         <translation>Warnung beim Erstellen des Vorschaubilds für {name}: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3190"/>
+        <location filename="../ui/live_lab_tab.py" line="3201"/>
         <source>Imported {name} into the current observation.</source>
         <translation>{name} in die aktuelle Beobachtung importiert.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3261"/>
+        <location filename="../ui/live_lab_tab.py" line="3272"/>
         <source>RAW image {name} cannot be imported yet: {error}</source>
         <translation>Das RAW-Bild {name} kann noch nicht importiert werden: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3271"/>
+        <location filename="../ui/live_lab_tab.py" line="3282"/>
         <source>Could not prepare {name}: {error}</source>
         <translation>{name} konnte nicht vorbereitet werden: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3548"/>
+        <location filename="../ui/live_lab_tab.py" line="3559"/>
         <source>Selected images will be edited</source>
         <translation>Ausgewählte Bilder werden bearbeitet</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3727"/>
+        <location filename="../ui/live_lab_tab.py" line="3738"/>
         <source>The next imported microscope image will appear here.</source>
         <translation>Das nächste importierte Mikroskopbild erscheint hier.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3763"/>
-        <location filename="../ui/live_lab_tab.py" line="3812"/>
+        <location filename="../ui/live_lab_tab.py" line="3774"/>
+        <location filename="../ui/live_lab_tab.py" line="3823"/>
         <source>Selected image unavailable</source>
         <translation>Ausgewähltes Bild nicht verfügbar</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3764"/>
+        <location filename="../ui/live_lab_tab.py" line="3775"/>
         <source>This session image does not have a stored file path.</source>
         <translation>Für dieses Sitzungsbild ist kein Dateipfad gespeichert.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3793"/>
+        <location filename="../ui/live_lab_tab.py" line="3804"/>
         <source>RAW edit preview unavailable</source>
         <translation>Vorschau der RAW-Bearbeitung nicht verfügbar</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3794"/>
+        <location filename="../ui/live_lab_tab.py" line="3805"/>
         <source>The temporary RAW edit preview for {name} is not available.</source>
         <translation>Die temporäre Vorschau der RAW-Bearbeitung für {name} ist nicht verfügbar.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3813"/>
-        <location filename="../ui/live_lab_tab.py" line="3816"/>
+        <location filename="../ui/live_lab_tab.py" line="3824"/>
+        <location filename="../ui/live_lab_tab.py" line="3827"/>
         <source>Could not load {name}.</source>
         <translation>{name} konnte nicht geladen werden.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3863"/>
+        <location filename="../ui/live_lab_tab.py" line="3874"/>
         <source>Editing RAW: {name}</source>
         <translation>RAW wird bearbeitet: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3888"/>
+        <location filename="../ui/live_lab_tab.py" line="3899"/>
         <source>Selected image</source>
         <translation>Ausgewähltes Bild</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3890"/>
+        <location filename="../ui/live_lab_tab.py" line="3901"/>
         <source>{prefix}: {name}</source>
         <translation>{prefix}: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3991"/>
+        <location filename="../ui/live_lab_tab.py" line="4002"/>
         <source>{scale:.4g} μm/px</source>
         <translation>{scale:.4g} μm/px</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_tab.py" line="3992"/>
+        <location filename="../ui/live_lab_tab.py" line="4003"/>
         <source>Scroll to zoom and drag to pan.</source>
         <translation>Scrolle zum Zoomen und ziehe zum Verschieben.</translation>
     </message>

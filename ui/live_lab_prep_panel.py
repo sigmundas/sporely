@@ -1,9 +1,13 @@
 """Microscope, Slide / prep and Notes cards for the Live Lab tab (split out of ``ui/live_lab_tab.py``)."""
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QListWidget,
     QFormLayout,
     QHBoxLayout,
     QLineEdit,
@@ -33,6 +37,9 @@ class LiveLabPrepPanelMixin:
 
     Mixed into ``LiveLabTab``; the methods use the tab's widgets and state through ``self``.
     """
+
+    # The contrast last used with each objective (JSON {objective: contrast}).
+    SETTING_CONTRAST_BY_OBJECTIVE = "live_lab_contrast_by_objective"
 
     # Open/closed state of the collapsible sections, remembered across restarts.
     SETTING_PREP_SECTION_EXPANDED = "live_lab_prep_section_expanded"
@@ -144,6 +151,15 @@ class LiveLabPrepPanelMixin:
         self.add_note_btn.clicked.connect(self._add_session_note)
         note_row_layout.addWidget(self.add_note_btn, 0)
         notes_form.addRow(self.tr("Note:"), note_row)
+        # The session's notes and lab-state changes, newest first (stage 4).
+        self.session_log_list = QListWidget()
+        self.session_log_list.setObjectName("sessionLogList")
+        self.session_log_list.setFocusPolicy(Qt.NoFocus)
+        self.session_log_list.setSelectionMode(QAbstractItemView.NoSelection)
+        self.session_log_list.setTextElideMode(Qt.ElideRight)
+        self.session_log_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.session_log_list.setVisible(False)
+        notes_form.addRow("", self.session_log_list)
         try:
             from .image_import_dialog import AutoSizingPlainTextEdit
         except Exception:
@@ -158,28 +174,79 @@ class LiveLabPrepPanelMixin:
             self._image_note_loading = False
         self._update_notes_summary()
 
-    def _session_note_events(self, *, refresh: bool = False) -> list[dict]:
-        """Manual notes logged in the running session, oldest first.
+    # Session-log attributes shown as change lines in Notes (stage 4).
+    _LOGGED_CHANGE_FIELDS = ("objective_name", "contrast", "mount_medium", "stain")
 
-        Read from ``session_logs`` and cached per session; ``refresh`` rereads
-        them (after a note is added or a session starts or stops).
+    def _session_log_lines(self, *, refresh: bool = False) -> list[tuple[str, str]]:
+        """(time, text) lines for Notes from the running session's log, oldest first.
+
+        Manual notes, and changes of objective, contrast, mount and stain;
+        the state logged when the session started is the baseline, not a
+        change. Read from ``session_logs`` and cached per session; ``refresh``
+        rereads (after a note or change is logged, or a session starts or stops).
         """
         session_id = str(getattr(self, "_session_id", None) or "")
-        cached = getattr(self, "_session_note_cache", None)
+        cached = getattr(self, "_session_log_cache", None)
         if not refresh and cached is not None and cached[0] == session_id:
             return cached[1]
-        events: list[dict] = []
+        lines: list[tuple[str, str]] = []
         if session_id:
             try:
-                events = [
-                    event
-                    for event in SessionLogDB.get_events(session_id=session_id)
-                    if str(event.get("event_type") or "") == "manual_note"
-                ]
+                events = SessionLogDB.get_events(session_id=session_id)
             except Exception:
                 events = []
-        self._session_note_cache = (session_id, events)
-        return events
+            current: dict[str, str | None] = {}
+            shown: dict[str, str | None] = {}  # the logged display text of each current value
+            objectives = load_objectives()
+            for event in events:
+                event_type = str(event.get("event_type") or "")
+                time_text = self._note_time_text(event.get("recorded_at"))
+                if event_type == "manual_note":
+                    lines.append((time_text, " ".join(str(event.get("value") or "").split())))
+                    continue
+                attribute = str(event.get("attribute_name") or "")
+                if event_type != "dropdown_change" or attribute not in self._LOGGED_CHANGE_FIELDS:
+                    continue
+                value = event.get("value")
+                metadata = event.get("metadata_json") or event.get("metadata") or {}
+                metadata = metadata if isinstance(metadata, dict) else {}
+                display = metadata.get("display_value")
+                if attribute not in current:
+                    current[attribute], shown[attribute] = value, display  # the starting state
+                    continue
+                if value == current[attribute]:
+                    continue
+                text = self.tr("{field} {old} → {new}").format(
+                    field=self._change_field_text(attribute),
+                    old=self._change_value_text(attribute, current[attribute], shown.get(attribute), objectives),
+                    new=self._change_value_text(attribute, value, display, objectives),
+                )
+                if metadata.get("remembered"):
+                    text = self.tr("{change} (remembered)").format(change=text)
+                lines.append((time_text, text))
+                current[attribute], shown[attribute] = value, display
+        self._session_log_cache = (session_id, lines)
+        return lines
+
+    def _change_value_text(self, attribute: str, value, display, objectives: dict) -> str:
+        if value in (None, ""):
+            return self.tr("not set")
+        if attribute == "objective_name":
+            objective = objectives.get(str(value))
+            if objective is None:
+                # A removed objective: its logged name, never digits guessed from the key.
+                return str(display or value)
+            return objective_short_label(objective, str(value)) or str(value)
+        category = {"contrast": "contrast", "mount_medium": "mount", "stain": "stain"}[attribute]
+        return DatabaseTerms.translate(category, str(value))
+
+    def _change_field_text(self, attribute: str) -> str:
+        return {
+            "objective_name": self.tr("Objective"),
+            "contrast": self.tr("Contrast"),
+            "mount_medium": self.tr("Mount"),
+            "stain": self.tr("Stain"),
+        }[attribute]
 
     @staticmethod
     def _note_time_text(recorded_at) -> str:
@@ -191,18 +258,14 @@ class LiveLabPrepPanelMixin:
 
     def _notes_summary(self, *, refresh_log: bool = False) -> str:
         parts: list[str] = []
-        notes = self._session_note_events(refresh=refresh_log)
-        if notes:
-            last = notes[-1]
-            time_text = self._note_time_text(last.get("recorded_at"))
-            note_text = " ".join(str(last.get("value") or "").split())
-            if len(notes) == 1:
-                parts.append(self.tr("1 note · {time} {text}").format(time=time_text, text=note_text))
+        lines = self._session_log_lines(refresh=refresh_log)
+        if lines:
+            time_text, text = lines[-1]
+            if len(lines) == 1:
+                parts.append(self.tr("1 line · {time} {text}").format(time=time_text, text=text))
             else:
                 parts.append(
-                    self.tr("{count} notes · last {time} {text}").format(
-                        count=len(notes), time=time_text, text=note_text
-                    )
+                    self.tr("{count} lines · last {time} {text}").format(count=len(lines), time=time_text, text=text)
                 )
         widget = getattr(self, "image_note_input", None)
         # The note field keeps its last text when nothing is selected (a new
@@ -229,6 +292,19 @@ class LiveLabPrepPanelMixin:
         section = getattr(self, "notes_group", None)
         if isinstance(section, CollapsibleSection):
             section.set_summary(self._notes_summary(refresh_log=refresh_log))
+        log_list = getattr(self, "session_log_list", None)
+        if log_list is not None:
+            lines = self._session_log_lines()
+            log_list.clear()
+            for time_text, text in reversed(lines):  # newest first
+                log_list.addItem(f"{time_text}  {text}")
+                log_list.item(log_list.count() - 1).setToolTip(f"{time_text}  {text}")
+            if lines:
+                # As tall as its lines, up to six; the rest scroll.
+                row = max(1, log_list.sizeHintForRow(0))
+                frame = 2 * log_list.frameWidth()
+                log_list.setFixedHeight(min(len(lines), 6) * row + frame + 2)
+            log_list.setVisible(bool(lines))
 
     def _load_image_note_from_metadata(self, metadata: dict | None) -> None:
         widget = getattr(self, "image_note_input", None)
@@ -439,6 +515,52 @@ class LiveLabPrepPanelMixin:
                 getattr(self, "sample_combo", None),
             )
         )
+
+    def _contrast_memory(self) -> dict[str, str]:
+        try:
+            data = json.loads(SettingsDB.get_setting(self.SETTING_CONTRAST_BY_OBJECTIVE, "") or "{}")
+        except (TypeError, ValueError):
+            return {}
+        return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+
+    def _contrast_memory_applies(self) -> bool:
+        """Only while choosing the state of the next capture: never while the side
+        panel edits selected images, and never for a mixed selection."""
+        if getattr(self, "_sidebar_binds_to_selection", False):
+            return False
+        return not (self.objective_combo.is_mixed() or self.contrast_combo.is_mixed())
+
+    def _on_contrast_chosen(self, *_args) -> None:
+        """An explicit contrast choice (bar click or shortcut), even an unchanged one."""
+        self._remember_contrast_for_objective()
+
+    def _remember_contrast_for_objective(self, *_args) -> None:
+        if not self._contrast_memory_applies():
+            return
+        objective = self.objective_combo.selected_value()
+        contrast = self.contrast_combo.selected_value()
+        if not objective or not contrast or self.contrast_combo.is_unset_item(self.contrast_combo.currentIndex()):
+            return
+        memory = self._contrast_memory()
+        if memory.get(str(objective)) == str(contrast):
+            return
+        memory[str(objective)] = str(contrast)
+        SettingsDB.set_setting(self.SETTING_CONTRAST_BY_OBJECTIVE, json.dumps(memory, sort_keys=True))
+
+    def _restore_contrast_for_objective(self, *_args) -> None:
+        """Switching objective brings back the contrast last used with it."""
+        if not self._contrast_memory_applies():
+            return
+        remembered = self._contrast_memory().get(str(self.objective_combo.selected_value() or ""))
+        if not remembered or remembered == self.contrast_combo.selected_value():
+            return
+        if self.contrast_combo.findData(remembered) < 0:
+            return  # hidden in Preferences since
+        self._restoring_remembered_contrast = True
+        try:
+            self.contrast_combo.set_selected_value(remembered, emit=True)
+        finally:
+            self._restoring_remembered_contrast = False
 
     def _populate_objective_combo(self, *, keep_current: bool = False) -> None:
         """Refill the objective list and restore the stored choice.
