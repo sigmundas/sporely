@@ -20,7 +20,14 @@ from PySide6.QtWidgets import (
 )
 
 from .combo_alerts import lab_state_alert_colors
-from .styles import get_design_tokens
+from .styles import (
+    OBJECTIVE_RING_MACRO,
+    OBJECTIVE_RING_UNKNOWN,
+    REAGENT_COLORS,
+    get_design_tokens,
+    objective_ring_color,
+    objective_ring_outline,
+)
 
 
 @dataclass(slots=True)
@@ -435,7 +442,7 @@ class AdaptiveChoiceSelector(QWidget):
         border_fill = "transparent"
         selected_bg = alert_colors["border"] if is_unset else accent.name()
         selected_text = "#ffffff" if is_unset else self._contrast_text_color(accent)
-        selected_border = alert_colors["border"] if is_unset else border.name()
+        selected_border = alert_colors["border"] if is_unset else (objective_ring_outline(accent) or border.name())
         selected_hover = self._rgba(QColor(alert_colors["border"]), 48) if is_unset else hover_fill
         # Look up whether this button belongs to a value present in the
         # current mixed selection — if so, render dimmed to signal "some of
@@ -676,7 +683,10 @@ def _parse_objective_magnification(obj: Any, fallback_key: str | None = None) ->
         try:
             return float(candidate)
         except (TypeError, ValueError):
-            match = re.search(r"(\d+(?:\.\d+)?)", str(candidate))
+            # Prefer an explicit "40X" over the first number, so a name that
+            # starts with its NA ("NA 0.65 40X Plan") still reads as 40x.
+            text = str(candidate)
+            match = re.search(r"(\d+(?:\.\d+)?)\s*[xX]", text) or re.search(r"(\d+(?:\.\d+)?)", text)
             if match:
                 try:
                     return float(match.group(1))
@@ -731,6 +741,11 @@ def objective_short_label(obj: Any, fallback_key: str | None = None) -> str:
 
 
 def objective_color(obj: Any, fallback_key: str | None = None) -> str:
+    """Return an objective's tag colour: its stored colour, else its ISO 8578 ring colour.
+
+    Macro profiles are neutral grey; an objective with no known magnification
+    gets ``OBJECTIVE_RING_UNKNOWN``. The ring colours live in ``ui.styles``.
+    """
     if isinstance(obj, dict):
         for key in ("color", "colour", "plot_color", "tag_color", "objective_color", "band_color", "display_color"):
             value = obj.get(key)
@@ -740,25 +755,10 @@ def objective_color(obj: Any, fallback_key: str | None = None) -> str:
                     return color.name()
     magnification = _parse_objective_magnification(obj, fallback_key)
     if objective_is_macro_profile(obj, fallback_key):
-        return "#6b7280"
+        return OBJECTIVE_RING_MACRO
     if magnification is None:
-        return "#3498db"
-    mag = int(round(float(magnification)))
-    if mag in (100,):
-        return "#f7f1e5"
-    if mag in (10,):
-        return "#f1c40f"
-    if mag in (16, 20, 25, 32):
-        return "#2ecc71"
-    if mag in (40, 50):
-        return "#3498db"
-    if mag in (63,):
-        return "#1f4ea8"
-    if mag in (4, 5):
-        return "#e74c3c"
-    if mag in (6,):
-        return "#f39c12"
-    return "#3498db"
+        return OBJECTIVE_RING_UNKNOWN
+    return objective_ring_color(magnification)
 
 
 def objective_is_macro_profile(obj: Any, fallback_key: str | None = None) -> bool:
@@ -782,13 +782,4 @@ def stain_color(value: Any) -> str | None:
     if not text:
         return None
     normalized = re.sub(r"[\s_-]+", "", text)
-    mapping = {
-        "melzer": "#9c7b3b",
-        "congored": "#c0392b",
-        "cottonblue": "#2980b9",
-        "lactofuchsin": "#d46a9a",
-        "cresylblue": "#6f63c7",
-        "trypanblue": "#3b82f6",
-        "chlorazolblacke": "#2d3436",
-    }
-    return mapping.get(normalized)
+    return REAGENT_COLORS.get(normalized)

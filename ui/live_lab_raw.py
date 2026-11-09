@@ -82,6 +82,7 @@ from utils.raw_render import (
 from utils.raw_white_balance import estimate_white_balance_from_background
 from utils.thumbnail_generator import generate_all_sizes, get_thumbnail_path
 
+from .styles import STAGING_BORDER
 from .zoomable_image_widget import ZoomableImageLabel
 
 _RAW_DEBUG_TIMING = str(os.environ.get("SPORELY_DEBUG_RAW_TIMING") or "").strip().lower() in {"1", "true", "yes", "on"}
@@ -3767,7 +3768,7 @@ class LiveLabRawMixin:
                 # the newest capture always shows the highest number.
                 "image_number": f"P{number_offset + index + 1}",
                 "badges": badges,
-                "frame_border_color": "#e74c3c" if capture.status == "failed" else "#e67e22",
+                "frame_border_color": "#e74c3c" if capture.status == "failed" else STAGING_BORDER,
                 "raw_halo_color": "#e74c3c",
                 "microscope_tag_text": microscope_tag_text,
                 "microscope_tag_color": microscope_tag_color,

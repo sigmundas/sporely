@@ -6,6 +6,8 @@ from PySide6.QtSvg import QSvgGenerator
 import math
 from app_identity import APP_NAME
 
+from .styles import objective_ring_outline
+
 from .measurement_overlay_style import (
     DEFAULT_RECTANGLE_STYLE,
     DEFAULT_RECTANGLE_THICKNESS,
@@ -2943,7 +2945,8 @@ class ZoomableImageLabel(QLabel):
                 text_width + tag_padding * 2,
                 text_height + tag_padding
             )
-            painter.setPen(Qt.NoPen)
+            outline = objective_ring_outline(bg_color)
+            painter.setPen(QPen(QColor(outline), 1) if outline else Qt.NoPen)
             tag_color = QColor(bg_color)
             tag_color.setAlpha(200)
             text_color = QColor("#000000") if tag_color.isValid() and tag_color.lightness() >= 180 else QColor("#ffffff")
@@ -3000,7 +3003,8 @@ class ZoomableImageLabel(QLabel):
                 )
                 tag_color = QColor(bg_color)
                 tag_color.setAlpha(200)
-                painter.setPen(Qt.NoPen)
+                outline = objective_ring_outline(bg_color)
+                painter.setPen(QPen(QColor(outline), 1) if outline else Qt.NoPen)
                 painter.setBrush(tag_color)
                 painter.drawRoundedRect(tag_rect, 6, 6)
                 painter.setPen(

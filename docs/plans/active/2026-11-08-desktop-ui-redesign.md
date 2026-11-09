@@ -670,6 +670,7 @@ landed through PRs before the branch existed), the commit that brought it into
 | 0 | sigmundas/sporely#65 | `a682f6c` | Agent-verified (tests, inspected renderer screenshots); owner tested it 2026-11-08 and said to go on; merged 2026-11-09 |
 | P1 | sigmundas/sporely#67 | `3162501` | Agent-verified (tests, inspected renderer screenshots); no production code; merged 2026-11-09 |
 | P2 | `adb561f` | — | Agent-verified: Live Lab, RAW and main-window tests green; `live-lab` renders pixel-identical to the P1 baseline in both themes; translations moved to the new contexts with none lost |
+| P3 | `ui/redesign` | — | Agent-verified: the global stylesheet, design tokens and button icon colours are byte-identical in both themes; ring colour, outline and token tests; renders identical except the intended objective colour changes; Codex review: 3 findings fixed (Measure tag colour from the profile, NA-first names, outlined badge size). Waiting for the owner's layout opinion on the ring colours (`style-tokens` renderer group) |
 
 Found during stage 0, not fixed there (rule 1):
 
@@ -730,6 +731,26 @@ Found during P2, not fixed there (rule 1):
   `LiveLabTab`: they decide which file of a capture is ingested and serve JPEG
   captures too. Stage 5 (slimmer RAW panel) may want them next to the RAW
   mixin.
+
+Found during P3, not fixed there (rule 1):
+
+- `apply_palette` in `ui/styles.py` still sets its `QPalette` colours from
+  literals, many of them equal to colour tokens; it should read
+  `_COLOR_TOKENS` too.
+- In the Live Lab viewer the “Bruk til kalibrering” bar covers the objective
+  tag drawn in the viewer's top-right corner (visible since the white 100x
+  tag got its outline). Stage 2 replaces that tag with the live-view label.
+- Several renderer scenarios are not deterministic: clock times
+  (`observations.taxon-*`), random UUIDs and the order of equally sorted rows
+  (`reference.library-manager`, `quick-fixes.reference-library-long-labels`),
+  and a line-edit clear button (`reference.add-dialog-manual-range-dark`).
+  Before/after comparisons have to ignore them until the fixtures pin them.
+- Compact gallery badges (84px thumbnails) clip a tag such as “100x BF”:
+  its text is wider than the badge's width cap (49 vs 44 px on macOS), with
+  or without the new outline.
+- Inline colours elsewhere still repeat token values (for example the
+  `#e67e22` measure status text in `ui/main_window.py`); they move to tokens
+  as each stage touches their screen.
 
 Baseline renders for the pilot's before/after comparisons (P1, 2026-11-08):
 `/Users/sigmundas/Documents/Code/sporely/sporely-py/docs/plans/november-ui/baseline-p1/`

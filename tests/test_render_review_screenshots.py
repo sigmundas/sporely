@@ -159,8 +159,15 @@ LIVE_LAB_IDS = {
     )
     for suffix in ("", "-dark")
 } | {"live-lab.idle-small"}
+STYLE_TOKEN_IDS = {"style-tokens.objective-rings", "style-tokens.objective-rings-dark"}
 ALL_IDS = (
-    REFERENCE_IDS | CONFLICT_IDS | OTHER_UI_IDS | TAXON_PICKER_IDS | QUICK_FIX_IDS | LIVE_LAB_IDS
+    REFERENCE_IDS
+    | CONFLICT_IDS
+    | OTHER_UI_IDS
+    | TAXON_PICKER_IDS
+    | QUICK_FIX_IDS
+    | LIVE_LAB_IDS
+    | STYLE_TOKEN_IDS
 )
 
 
@@ -184,7 +191,8 @@ def test_registry_has_unique_semantic_ids_and_expected_groups() -> None:
     assert len(ids) == len(set(ids))
     assert set(registry.groups()) == {
         "conflict", "live-lab", "measure", "observations", "portable-import",
-        "quick-fixes", "raw-processing", "reference-library", "taxon-picker",
+        "quick-fixes", "raw-processing", "reference-library", "style-tokens",
+        "taxon-picker",
     }
     assert {scenario.id for scenario in registry.all()} == ALL_IDS
 
@@ -196,6 +204,7 @@ def test_group_and_explicit_scenario_selection() -> None:
         s.id for s in registry.select(groups=("reference-library",))
     } == REFERENCE_IDS
     assert {s.id for s in registry.select(groups=("live-lab",))} == LIVE_LAB_IDS
+    assert {s.id for s in registry.select(groups=("style-tokens",))} == STYLE_TOKEN_IDS
     assert [
         s.id
         for s in registry.select(

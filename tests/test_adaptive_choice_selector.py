@@ -50,14 +50,14 @@ def test_objective_short_labels_cover_common_objectives(objective, expected_labe
 @pytest.mark.parametrize(
     ("objective", "expected_color"),
     [
-        ({"magnification": 1.25}, "#3498db"),
-        ({"magnification": 2.5}, "#3498db"),
+        ({"magnification": 1.25}, "#202124"),
+        ({"magnification": 2.5}, "#8b5a2b"),
         ({"magnification": 4.0}, "#e74c3c"),
         ({"magnification": 5.0}, "#e74c3c"),
         ({"magnification": 6.0}, "#f39c12"),
         ({"magnification": 10.0}, "#f1c40f"),
         ({"magnification": 20.0}, "#2ecc71"),
-        ({"magnification": 32.0}, "#2ecc71"),
+        ({"magnification": 32.0}, "#1e8449"),
         ({"magnification": 50.0}, "#3498db"),
         ({"magnification": 63.0}, "#1f4ea8"),
         ({"magnification": 100.0}, "#f7f1e5"),

@@ -217,7 +217,7 @@ from utils.vernacular_utils import (
     list_available_vernacular_languages,
 )
 from .image_gallery_widget import ImageGalleryWidget, center_horizontal_scroll_target, paint_thumbnail_selection_overlay
-from .adaptive_choice_selector import stain_color
+from .adaptive_choice_selector import objective_color, stain_color
 from .splitter_state import (
     GALLERY_DEFAULT_HEIGHT,
     GALLERY_MIN_HEIGHT,
@@ -12845,7 +12845,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         # Update image overlay
         if self.current_pixmap:
             self.image_label.set_objective_text(tag_text)
-            self.image_label.set_objective_color(self._objective_color_for_name(tag_text))
+            self.image_label.set_objective_color(self._objective_color_for_name(objective_key, objective))
         self.image_label.set_microns_per_pixel(self.microns_per_pixel)
 
         if self.current_image_id:
@@ -12958,7 +12958,7 @@ class MainWindow(GeometryMixin, QMainWindow):
 
                 if self.current_pixmap:
                     self.image_label.set_objective_text(tag_text)
-                    self.image_label.set_objective_color(self._objective_color_for_name(tag_text))
+                    self.image_label.set_objective_color(self._objective_color_for_name(objective_name, objective))
                 self.image_label.set_microns_per_pixel(self.microns_per_pixel)
 
                 self.measure_status_label.setText(self.tr("Warning: Older calibration standard used."))
@@ -12978,7 +12978,7 @@ class MainWindow(GeometryMixin, QMainWindow):
 
                 if self.current_pixmap:
                     self.image_label.set_objective_text(tag_text)
-                    self.image_label.set_objective_color(self._objective_color_for_name(tag_text))
+                    self.image_label.set_objective_color(self._objective_color_for_name(objective_name, objective))
                 self.image_label.set_microns_per_pixel(self.microns_per_pixel)
 
                 self._populate_scale_combo(objective_name)
@@ -12994,7 +12994,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             if self.current_pixmap:
                 tag_text = self._objective_tag_text(objective_name, objective_name)
                 self.image_label.set_objective_text(tag_text)
-                self.image_label.set_objective_color(self._objective_color_for_name(tag_text))
+                self.image_label.set_objective_color(self._objective_color_for_name(objective_name))
             self._populate_scale_combo(objective_name)
         else:
             self._populate_scale_combo()
@@ -13637,7 +13637,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._update_scale_mismatch_warning()
         if self.current_objective_name:
             self.image_label.set_objective_color(
-                self._objective_color_for_name(self.current_objective_name)
+                self._objective_color_for_name(self.current_objective_name, self.current_objective)
             )
         stored_color = image_data.get('measure_color')
         if stored_color:
@@ -15370,27 +15370,14 @@ class MainWindow(GeometryMixin, QMainWindow):
             center - width_dir * half_width + length_dir * half_length,
         ]
 
-    def _objective_color_for_name(self, name):
-        """Return the objective tag color based on magnification."""
-        if not name:
-            return QColor(52, 152, 219)
-        match = re.search(r"(\d+)", str(name))
-        mag = int(match.group(1)) if match else None
-        if mag in (100,):
-            return QColor("#f7f1e5")
-        if mag in (10,):
-            return QColor("#f1c40f")
-        if mag in (16, 20, 25, 32):
-            return QColor("#2ecc71")
-        if mag in (40, 50):
-            return QColor("#3498db")
-        if mag in (63,):
-            return QColor("#1f4ea8")
-        if mag in (4, 5):
-            return QColor("#e74c3c")
-        if mag in (6,):
-            return QColor("#f39c12")
-        return QColor("#3498db")
+    def _objective_color_for_name(self, name, objective=None):
+        """Return the tag color for an objective (its stored colour or its ring colour).
+
+        Pass the objective's key and, when known, its profile dict: the short tag
+        text ("1X" for a 1:2 macro profile) loses what the colour depends on.
+        """
+        key = str(name) if name not in (None, "") else None
+        return QColor(objective_color(objective if isinstance(objective, dict) else None, key))
 
     def _objective_tag_text(self, display_name: str | None, objective_key: str | None = None) -> str:
         text = display_name or objective_key or ""

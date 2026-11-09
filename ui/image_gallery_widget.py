@@ -42,7 +42,7 @@ from database.database_tags import DatabaseTerms
 from utils.thumbnail_generator import get_thumbnail_path
 from utils.image_utils import load_oriented_pixmap
 from .adaptive_choice_selector import objective_color, objective_short_label
-from .styles import pt
+from .styles import objective_ring_outline, pt
 
 
 # Padding around every thumbnail's outer selection-backdrop container.
@@ -2014,6 +2014,14 @@ class ImageGalleryWidget(QGroupBox):
             microscope_label = QLabel(str(microscope_tag_text))
             microscope_color = QColor(microscope_tag_color) if microscope_tag_color is not None else QColor("#3498db")
             text_color = _tag_text_color(microscope_color)
+            microscope_outline = objective_ring_outline(microscope_color)
+            microscope_border = f"1px solid {microscope_outline}" if microscope_outline else "none"
+            microscope_pad_v, microscope_pad_h = overlay_label_pad_v, overlay_label_pad_h
+            if microscope_outline:
+                # The 1px outline takes its room from the padding, so an outlined
+                # badge keeps the size (and width cap) of every other badge.
+                microscope_pad_v = max(0, microscope_pad_v - 1)
+                microscope_pad_h = max(0, microscope_pad_h - 1)
             if microscope_color.isValid():
                 microscope_color.setAlpha(220)
                 background = (
@@ -2024,7 +2032,8 @@ class ImageGalleryWidget(QGroupBox):
             microscope_label.setStyleSheet(
                 f"color: {text_color}; background-color: {background};"
                 f"font-size: {overlay_label_font_px}{'px' if self._compact_overlay else 'pt'}; font-weight: bold;"
-                f" padding: {overlay_label_pad_v}px {overlay_label_pad_h}px; border-radius: 3px; border: none;"
+                f" padding: {microscope_pad_v}px {microscope_pad_h}px; border-radius: 3px;"
+                f" border: {microscope_border};"
             )
             if self._compact_overlay:
                 microscope_label.setMaximumWidth(max(30, self._thumb_size - overlay_btn_size - 28))

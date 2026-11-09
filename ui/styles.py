@@ -10,6 +10,7 @@ override has been applied (i.e. call get_style before apply_palette, or
 just rely on the stored setting).
 """
 from __future__ import annotations
+import math as _math
 from pathlib import Path as _Path
 
 # Cached native dark-mode state, captured before any palette override runs.
@@ -68,46 +69,115 @@ def _is_dark(theme: str) -> bool:
 
 def get_button_icon_color(object_name: str | None = None, theme: str = "auto") -> str:
     """Return the correct icon color for a button object name in the current theme."""
-    dark = _is_dark(theme)
-    if dark:
-        text = "#e8e8e8"
-        primary_button_text = "#ffffff"
-        destructive_fg = "#e4a7a1"
-    else:
-        text = "#1e293b"
-        primary_button_text = "#ffffff"
-        destructive_fg = "#9b3d35"
-
+    colors = theme_colors(theme)
     if object_name == "primaryButton":
-        return primary_button_text
+        return colors["primary_button_text"]
     if object_name == "destructiveButton":
-        return destructive_fg
-    return text
+        return colors["destructive_fg"]
+    return colors["text"]
 
 
 def get_design_tokens(theme: str = "auto") -> dict[str, str]:
     """Return shared color tokens used by code-built widgets."""
-    if _is_dark(theme):
-        return {
-            "surface": "#1c1b1b",
-            "surface_low": "#252423",
-            "tab_surface": "#2b2a29",
-            "surface_hover": "#252423",
-            "data_brd": "#334155",
-            "text": "#e8e8e8",
-            "text_dim": "#a1a1aa",
-            "accent": "#4d7c7a",
-        }
+    colors = theme_colors(theme)
     return {
-        "surface": "#ffffff",
-        "surface_low": "#f1f5f9",
-        "tab_surface": "#f1f5f9",
-        "surface_hover": "#e2e8f0",
-        "data_brd": "#cbd5e1",
-        "text": "#1e293b",
-        "text_dim": "#64748b",
-        "accent": "#4d7c7a",
+        name: colors[name]
+        for name in (
+            "surface",
+            "surface_low",
+            "tab_surface",
+            "surface_hover",
+            "data_brd",
+            "text",
+            "text_dim",
+            "accent",
+        )
     }
+
+
+# Images not yet saved to an observation (Live Lab pending captures,
+# Kameraimport) carry this border colour.
+STAGING_BORDER = "#e67e22"
+
+# Reagent (stain) dot colours, keyed by the stain name in lower case without
+# spaces, hyphens or underscores (see ui.adaptive_choice_selector.stain_color).
+REAGENT_COLORS: dict[str, str] = {
+    "melzer": "#9c7b3b",
+    "congored": "#c0392b",
+    "cottonblue": "#2980b9",
+    "lactofuchsin": "#d46a9a",
+    "cresylblue": "#6f63c7",
+    "trypanblue": "#3b82f6",
+    "chlorazolblacke": "#2d3436",
+}
+
+# Objective ring colours, ISO 8578:2012 Table 2 ("Colour of ring"): each band
+# and the standard magnifications it covers. An objective's own stored colour
+# overrides its band (ui.adaptive_choice_selector.objective_color).
+OBJECTIVE_RING_BANDS: tuple[tuple[str, str, tuple[float, ...]], ...] = (
+    ("black", "#202124", (1.0, 1.25)),
+    ("grey", "#9aa0a6", (1.6, 2.0)),
+    ("brown", "#8b5a2b", (2.5, 3.2)),
+    ("red", "#e74c3c", (4.0, 5.0)),
+    ("orange", "#f39c12", (6.3, 8.0)),
+    ("yellow", "#f1c40f", (10.0, 12.5)),
+    ("light green", "#2ecc71", (16.0, 20.0)),
+    ("dark green", "#1e8449", (25.0, 32.0)),
+    ("light blue", "#3498db", (40.0, 50.0)),
+    ("dark blue", "#1f4ea8", (63.0, 80.0)),
+    ("white", "#f7f1e5", (100.0, 125.0, 160.0)),
+)
+OBJECTIVE_RING_MACRO = "#6b7280"    # macro profiles: neutral grey
+OBJECTIVE_RING_UNKNOWN = "#3498db"  # no magnification known
+
+
+def objective_ring_color(magnification: float | str | None) -> str:
+    """Return the ISO 8578 ring colour for an objective magnification.
+
+    A magnification between two standard values takes the nearer one on a
+    logarithmic scale, since the standard series is geometric (60x is nearer
+    63x than 50x). An exact tie goes to the higher magnification. Values below
+    1x or above 160x take the first or last band.
+    """
+    try:
+        mag = float(magnification)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return OBJECTIVE_RING_UNKNOWN
+    if not _math.isfinite(mag) or mag <= 0:
+        return OBJECTIVE_RING_UNKNOWN
+    target = _math.log(mag)
+    best_color = OBJECTIVE_RING_UNKNOWN
+    best_distance = _math.inf
+    best_standard = 0.0
+    for _name, color, standards in OBJECTIVE_RING_BANDS:
+        for standard in standards:
+            distance = abs(_math.log(standard) - target)
+            closer = distance < best_distance - 1e-9
+            tie_higher = abs(distance - best_distance) <= 1e-9 and standard > best_standard
+            if closer or tie_higher:
+                best_color, best_distance, best_standard = color, distance, standard
+    return best_color
+
+
+def objective_ring_outline(color) -> str | None:
+    """Return an outline colour for a ring colour near black or white.
+
+    Black and white rings (and other very dark or very light tag colours)
+    disappear against one of the two themes or against bright or dark images,
+    so they get a mid-grey outline that shows on both. Returns None when the
+    colour stands out on its own.
+    """
+    from PySide6.QtGui import QColor
+
+    qcolor = QColor(color)
+    if not qcolor.isValid():
+        return None
+    lightness = qcolor.lightness()
+    if lightness >= 200:
+        return "#64748b"
+    if lightness <= 60:
+        return "#94a3b8"
+    return None
 
 
 RED_LIST_BADGE_COLORS = {
@@ -211,6 +281,128 @@ def apply_palette(theme: str = "auto") -> None:
         pass
 
 
+# Colour tokens per theme. get_style() renders the global stylesheet from
+# these, and get_design_tokens() / get_button_icon_color() hand the same
+# values to code-built widgets. Inline colours elsewhere move here screen by
+# screen as the UI redesign touches each screen.
+_COLOR_TOKENS: dict[str, dict[str, str]] = {
+    "light": {
+        # Slate Lab — refined for the web-style card layout.
+        "bg": "#f8f9fa",                  # bg-slate-50
+        "surface": "#ffffff",             # pure white cards/inputs
+        "surface_low": "#f1f5f9",         # box headers and soft panels
+        "tab_surface": "#f1f5f9",         # full-width taxonomy tab strip
+        "surface_hover": "#e2e8f0",       # hover on surface_low elements
+        "input_bg": "#ffffff",            # white inputs
+        "brd_focus": "#4d7c7a",           # teal focus ring
+        "text": "#1e293b",                # text-slate-800
+        "text_dim": "#64748b",            # text-slate-500
+        "accent": "#4d7c7a",              # guess/action teal
+        "accent_h": "#466f6d",            # hover: slightly darker
+        "accent_p": "#3d6260",            # pressed: deepest
+        "dis_bg": "#e2e8f0",              # muted disabled background
+        "dis_fg": "#64748b",              # muted disabled text
+        "menubar_bg": "#52796f",
+        "menubar_h": "#486b62",
+        "img_bg": "#f1f5f9",              # matches surface_low
+        "sel_bg": "#dbeafe",              # softer blue selection for light mode
+        "sel_fg": "#1e293b",
+        "sel_inact": "#eff6ff",           # focus tint
+        "inline_brd": "#4d7c7a",
+        "indicator_border": "#64748b",
+        "indicator_checked": "#52796f",   # save green fill for checked state
+        "indicator_bg": "#ffffff",
+        "indicator_disabled": "#e2e8f0",
+        "data_brd": "#cbd5e1",            # border-slate-300
+        "data_fg": "#64748b",
+        "destructive_fg": "#9b3d35",
+        "destructive_border": "#d2938d",
+        "destructive_hover_bg": "#f6e4e2",
+        "destructive_pressed_bg": "#e7c9c6",
+        "primary_button_bg": "#52796f",
+        "primary_button_bg_h": "#486b62",
+        "primary_button_text": "#ffffff",
+        "crop_image_active": "#b94a42",
+        "crop_ai_active": "#b86b20",
+        "dialog_brd": "#e2e8f0",
+        "load_button_bg": "#4f7080",      # QPushButton#loadButton
+        "load_button_bg_h": "#3d5a68",
+        "map_button_bg": "#334155",
+        "objective_tag_bg": "rgba(71, 103, 74, 200)",
+    },
+    "dark": {
+        # Clinical Nocturne — atmospheric, high-contrast, lab-optimised
+        "bg": "#131313",                  # deep charcoal background
+        "surface": "#1c1b1b",             # slightly lighter charcoal for cards
+        "surface_low": "#252423",         # tab bar, header row, side panel
+        "tab_surface": "#2b2a29",         # slightly lighter than box headers
+        "surface_hover": "#252423",       # hover on surface_low elements
+        "input_bg": "#1c1b1b",            # input fields
+        "brd_focus": "#4d7c7a",           # teal focus ring
+        "text": "#e8e8e8",                # off-white primary text
+        "text_dim": "#a1a1aa",            # muted slate secondary text
+        "accent": "#4d7c7a",              # guess/action teal
+        "accent_h": "#5a908d",            # lighter hover
+        "accent_p": "#3f6765",            # pressed teal
+        "dis_bg": "#353534",              # dark grey disabled bg
+        "dis_fg": "#6b7270",              # muted disabled text
+        "menubar_bg": "#131313",
+        "menubar_h": "#1c1b1b",
+        "img_bg": "#1c1b1b",
+        "sel_bg": "#3d5a52",              # deep forest green selection
+        "sel_fg": "#e8e8e8",
+        "sel_inact": "#2a3c38",
+        "inline_brd": "#4d7c7a",
+        "indicator_border": "#4d7c7a",    # teal indicator border
+        "indicator_checked": "#52796f",   # save green fill for checked state
+        "indicator_bg": "#1c1b1b",
+        "indicator_disabled": "#353534",
+        "data_brd": "#334155",
+        "data_fg": "#a1a1aa",
+        "destructive_fg": "#e4a7a1",
+        "destructive_border": "#8b3530",
+        "destructive_hover_bg": "rgba(228, 167, 161, 0.16)",
+        "destructive_pressed_bg": "rgba(228, 167, 161, 0.24)",
+        "primary_button_bg": "#52796f",
+        "primary_button_bg_h": "#486b62",
+        "primary_button_text": "#ffffff",
+        "crop_image_active": "#b85a52",
+        "crop_ai_active": "#b9702b",
+        "dialog_brd": "transparent",
+        "load_button_bg": "#4f7080",      # QPushButton#loadButton
+        "load_button_bg_h": "#3d5a68",
+        "map_button_bg": "#334155",
+        "objective_tag_bg": "rgba(71, 103, 74, 200)",
+    },
+}
+
+# Corner radii used by the global stylesheet (``{radius_md}`` and so on).
+RADIUS: dict[str, str] = {
+    "sm": "4px",
+    "md": "6px",
+    "lg": "8px",
+    "xl": "10px",
+    "xxl": "12px",
+}
+
+# Spacing scale in pixels for layouts built in code (margins, spacing,
+# padding). The global stylesheet's paddings move to it screen by screen.
+SPACING: dict[str, int] = {
+    "xxs": 2,
+    "xs": 4,
+    "sm": 6,
+    "md": 8,
+    "lg": 12,
+    "xl": 16,
+    "xxl": 20,
+}
+
+
+def theme_colors(theme: str = "auto") -> dict[str, str]:
+    """Return a copy of the colour tokens for *theme* ("auto", "light" or "dark")."""
+    return dict(_COLOR_TOKENS["dark" if _is_dark(theme) else "light"])
+
+
 def get_style(theme: str = "auto") -> str:
     """Return the application stylesheet scaled to the current system font.
 
@@ -229,90 +421,18 @@ def get_style(theme: str = "auto") -> str:
     header_pt  = base_pt + 2
     obj_tag_pt = base_pt + 1
 
-    dark = _is_dark(theme)
+    tokens: dict[str, object] = {
+        **theme_colors(theme),
+        **{f"radius_{name}": value for name, value in RADIUS.items()},
+        "base_pt": base_pt,
+        "small_pt": small_pt,
+        "header_pt": header_pt,
+        "title_pt": header_pt + 1,
+        "obj_tag_pt": obj_tag_pt,
+        "chk_url": _CHK_URL,
+    }
 
-    if dark:
-        # Clinical Nocturne — atmospheric, high-contrast, lab-optimised
-        bg           = "#131313"         # deep charcoal background
-        surface      = "#1c1b1b"         # slightly lighter charcoal for cards
-        surface_low   = "#252423"         # tab bar, header row, side panel
-        tab_surface   = "#2b2a29"         # slightly lighter than box headers
-        surface_hover = "#252423"         # hover on surface_low elements
-        input_bg      = "#1c1b1b"         # input fields
-        brd_focus    = "#4d7c7a"         # teal focus ring
-        text         = "#e8e8e8"         # off-white primary text
-        text_dim     = "#a1a1aa"         # muted slate secondary text
-        accent       = "#4d7c7a"         # guess/action teal
-        accent_h     = "#5a908d"         # lighter hover
-        accent_p     = "#3f6765"         # pressed teal
-        dis_bg       = "#353534"         # dark grey disabled bg
-        dis_fg       = "#6b7270"         # muted disabled text
-        menubar_bg   = "#131313"
-        menubar_h    = "#1c1b1b"
-        img_bg       = "#1c1b1b"
-        sel_bg       = "#3d5a52"         # deep forest green selection
-        sel_fg       = "#e8e8e8"
-        sel_inact    = "#2a3c38"
-        inline_brd   = "#4d7c7a"
-        indicator_border   = "#4d7c7a"   # teal indicator border
-        indicator_checked  = "#52796f"   # save green fill for checked state
-        indicator_bg       = "#1c1b1b"
-        indicator_disabled = "#353534"
-        data_brd     = "#334155"
-        data_fg      = "#a1a1aa"
-        destructive_fg = "#e4a7a1"
-        destructive_border = "#8b3530"
-        destructive_hover_bg = "rgba(228, 167, 161, 0.16)"
-        destructive_pressed_bg = "rgba(228, 167, 161, 0.24)"
-        primary_button_bg = "#52796f"
-        primary_button_bg_h = "#486b62"
-        primary_button_text = "#ffffff"
-        crop_image_active = "#b85a52"
-        crop_ai_active = "#b9702b"
-        dialog_brd   = "transparent"
-    else:
-        # Slate Lab — refined for the web-style card layout.
-        bg           = "#f8f9fa"         # bg-slate-50
-        surface      = "#ffffff"         # pure white cards/inputs
-        surface_low   = "#f1f5f9"         # box headers and soft panels
-        tab_surface   = "#f1f5f9"         # full-width taxonomy tab strip
-        surface_hover = "#e2e8f0"         # hover on surface_low elements
-        input_bg      = "#ffffff"         # white inputs
-        brd_focus    = "#4d7c7a"         # teal focus ring
-        text         = "#1e293b"         # text-slate-800
-        text_dim     = "#64748b"         # text-slate-500
-        accent       = "#4d7c7a"         # guess/action teal
-        accent_h     = "#466f6d"         # hover: slightly darker
-        accent_p     = "#3d6260"         # pressed: deepest
-        dis_bg       = "#e2e8f0"         # muted disabled background
-        dis_fg       = "#64748b"         # muted disabled text
-        menubar_bg   = "#52796f"
-        menubar_h    = "#486b62"
-        img_bg       = "#f1f5f9"         # matches surface_low
-        sel_bg       = "#dbeafe"         # softer blue selection for light mode
-        sel_fg       = "#1e293b"
-        sel_inact    = "#eff6ff"         # focus tint
-        inline_brd   = "#4d7c7a"
-        indicator_border   = "#64748b"
-        indicator_checked  = "#52796f"   # save green fill for checked state
-        indicator_bg       = "#ffffff"
-        indicator_disabled = "#e2e8f0"
-        data_brd     = "#cbd5e1"         # border-slate-300
-        data_fg      = "#64748b"
-        destructive_fg = "#9b3d35"
-        destructive_border = "#d2938d"
-        destructive_hover_bg = "#f6e4e2"
-        destructive_pressed_bg = "#e7c9c6"
-        primary_button_bg = "#52796f"
-        primary_button_bg_h = "#486b62"
-        primary_button_text = "#ffffff"
-        crop_image_active = "#b94a42"
-        crop_ai_active = "#b86b20"
-        dialog_brd   = "#e2e8f0"
-
-    chk_url = _CHK_URL
-
-    return f"""
+    return """
 QMainWindow {{
     background-color: {bg};
 }}
@@ -347,7 +467,7 @@ QFrame#sectionCard,
 QFrame#dialogBoxCard {{
     background-color: {surface};
     border: 1px solid {data_brd};
-    border-radius: 12px;
+    border-radius: {radius_xxl};
 }}
 
 QFrame#boxHeader {{
@@ -364,7 +484,7 @@ QFrame#segmentedControl {{
 }}
 
 QFrame#segmentedControl[compact="true"] {{
-    border-radius: 10px;
+    border-radius: {radius_xl};
 }}
 
 QPushButton#segmentedButton {{
@@ -380,7 +500,7 @@ QPushButton#segmentedButton {{
 }}
 
 QPushButton#segmentedButton[compact="true"] {{
-    border-radius: 10px;
+    border-radius: {radius_xl};
     padding: 5px 14px 6px 14px;
     min-height: 0px;
 }}
@@ -451,7 +571,7 @@ QTabBar::tab:hover:!selected {{
 QGroupBox {{
     background-color: {surface};
     border: none;
-    border-radius: 8px;
+    border-radius: {radius_lg};
     margin-top: 16px;
     padding-top: 16px;
     padding-left: 16px;
@@ -468,7 +588,7 @@ QGroupBox::title {{
     left: 12px;
     padding: 4px 8px;
     background-color: {surface};
-    border-radius: 4px;
+    border-radius: {radius_sm};
 }}
 
 QPushButton {{
@@ -476,7 +596,7 @@ QPushButton {{
         stop:0 {accent}, stop:1 {accent_h});
     color: white;
     border: none;
-    border-radius: 8px;
+    border-radius: {radius_lg};
     padding: 6px 16px;
     font-weight: bold;
     font-size: {base_pt}pt;
@@ -505,7 +625,7 @@ QPushButton#primaryButton {{
         stop:0 {primary_button_bg}, stop:1 {primary_button_bg_h});
     color: {primary_button_text};
     border: none;
-    border-radius: 12px;
+    border-radius: {radius_xxl};
     padding: 10px 16px;
     min-height: 35px;
     font-weight: bold;
@@ -525,7 +645,7 @@ QPushButton#outlineButton {{
     background-color: {surface};
     color: {text};
     border: 1.5px solid {accent};
-    border-radius: 10px;
+    border-radius: {radius_xl};
     padding: 8px 14px;
     font-weight: bold;
 }}
@@ -551,7 +671,7 @@ QPushButton#dataButton {{
     background-color: {surface_low};
     color: {text};
     border: 1.5px solid {data_brd};
-    border-radius: 10px;
+    border-radius: {radius_xl};
     padding: 8px 12px;
     font-weight: normal;
 }}
@@ -575,7 +695,7 @@ QPushButton#destructiveButton {{
     background-color: transparent;
     color: {destructive_fg};
     border: 1.5px solid {destructive_border};
-    border-radius: 10px;
+    border-radius: {radius_xl};
     padding: 8px 12px;
     font-weight: normal;
 }}
@@ -606,11 +726,11 @@ QPushButton#measureButton:hover {{
 }}
 
 QPushButton#loadButton {{
-    background-color: #4f7080;
+    background-color: {load_button_bg};
 }}
 
 QPushButton#loadButton:hover {{
-    background-color: #3d5a68;
+    background-color: {load_button_bg_h};
 }}
 
 QPushButton[sourceActive="true"] {{
@@ -631,7 +751,7 @@ QLabel#sectionHeader {{
 QLineEdit {{
     background-color: {input_bg};
     border: 1px solid {data_brd};
-    border-radius: 6px;
+    border-radius: {radius_md};
     padding: 6px 10px;
     font-size: {base_pt}pt;
     color: {text};
@@ -658,7 +778,7 @@ QAbstractItemView QLineEdit {{
 QTextEdit {{
     background-color: {input_bg};
     border: 1px solid {data_brd};
-    border-radius: 6px;
+    border-radius: {radius_md};
     padding: 6px 10px;
     font-family: 'Menlo', 'Consolas', 'Courier New', monospace;
     font-size: {small_pt}pt;
@@ -707,39 +827,39 @@ QCheckBox::indicator {{
     width: 16px;
     height: 16px;
     border: 2px solid {indicator_border};
-    border-radius: 4px;
+    border-radius: {radius_sm};
     background-color: {indicator_bg};
 }}
 
 QCheckBox::indicator:hover {{
     border: 2px solid {accent};
-    border-radius: 4px;
+    border-radius: {radius_sm};
 }}
 
 QCheckBox::indicator:checked {{
     background-color: {indicator_checked};
     border: 2px solid {indicator_checked};
-    border-radius: 4px;
+    border-radius: {radius_sm};
     image: {chk_url};
 }}
 
 QCheckBox::indicator:checked:disabled {{
     background-color: {dis_bg};
     border: 2px solid {indicator_disabled};
-    border-radius: 4px;
+    border-radius: {radius_sm};
     image: {chk_url};
 }}
 
 QCheckBox::indicator:unchecked {{
     background-color: {indicator_bg};
     border: 2px solid {indicator_border};
-    border-radius: 4px;
+    border-radius: {radius_sm};
 }}
 
 QCheckBox::indicator:unchecked:disabled {{
     background-color: {dis_bg};
     border: 2px solid {indicator_disabled};
-    border-radius: 4px;
+    border-radius: {radius_sm};
 }}
 
 QRadioButton {{
@@ -751,31 +871,31 @@ QRadioButton::indicator {{
     width: 16px;
     height: 16px;
     border: 2px solid {indicator_border};
-    border-radius: 8px;
+    border-radius: {radius_lg};
     background-color: {indicator_bg};
 }}
 
 QRadioButton::indicator:hover {{
     border: 2px solid {accent};
-    border-radius: 8px;
+    border-radius: {radius_lg};
 }}
 
 QRadioButton::indicator:checked {{
     background-color: {indicator_checked};
     border: 4px solid {indicator_bg};
-    border-radius: 8px;
+    border-radius: {radius_lg};
 }}
 
 QRadioButton::indicator:unchecked {{
     background-color: {indicator_bg};
     border: 2px solid {indicator_border};
-    border-radius: 8px;
+    border-radius: {radius_lg};
 }}
 
 QRadioButton::indicator:disabled {{
     background-color: {dis_bg};
     border: 2px solid {indicator_disabled};
-    border-radius: 8px;
+    border-radius: {radius_lg};
 }}
 
 QTableView,
@@ -913,7 +1033,7 @@ QTableWidget::item:alternate {{
 QLabel#imageLabel {{
     background-color: {img_bg};
     border: none;
-    border-radius: 6px;
+    border-radius: {radius_md};
 }}
 
 QLabel#headerLabel {{
@@ -925,7 +1045,7 @@ QLabel#headerLabel {{
 
 QLabel#observationHeaderLabel {{
     font-family: 'Manrope', sans-serif;
-    font-size: {header_pt + 1}pt;
+    font-size: {title_pt}pt;
     font-weight: 700;
     color: {text};
     padding: 2px 0px 4px 0px;
@@ -942,11 +1062,11 @@ QLabel#metaLabel {{
 }}
 
 QLabel#objectiveTag {{
-    background-color: rgba(71, 103, 74, 200);
+    background-color: {objective_tag_bg};
     color: white;
     font-weight: bold;
     font-size: {obj_tag_pt}pt;
-    border-radius: 6px;
+    border-radius: {radius_md};
     padding: 8px 12px;
 }}
 
@@ -964,13 +1084,13 @@ QMenuBar::item {{
 
 QMenuBar::item:selected {{
     background-color: {menubar_h};
-    border-radius: 4px;
+    border-radius: {radius_sm};
 }}
 
 QMenu {{
     background-color: {surface};
     border: none;
-    border-radius: 8px;
+    border-radius: {radius_lg};
     color: {text};
 }}
 
@@ -987,19 +1107,19 @@ QMenu::item:selected {{
 QDialog {{
     background-color: {bg};
     border: 1px solid {dialog_brd};
-    border-radius: 12px;
+    border-radius: {radius_xxl};
 }}
 
 QMessageBox {{
     background-color: {bg};
     border: 1px solid {dialog_brd};
-    border-radius: 12px;
+    border-radius: {radius_xxl};
 }}
 
 QComboBox {{
     background-color: {input_bg};
     border: 1px solid {data_brd};
-    border-radius: 6px;
+    border-radius: {radius_md};
     padding: 6px 10px;
     font-size: {base_pt}pt;
     color: {text};
@@ -1027,7 +1147,7 @@ QComboBox QAbstractItemView::item:hover {{
 QComboBoxPrivateContainer {{
     background-color: {surface};
     border: none;
-    border-radius: 8px;
+    border-radius: {radius_lg};
 }}
 
 QComboBoxPrivateContainer QListView {{
@@ -1072,7 +1192,7 @@ QSpinBox,
 QDoubleSpinBox {{
     background-color: {input_bg};
     border: 1px solid {data_brd};
-    border-radius: 6px;
+    border-radius: {radius_md};
     padding: 6px 10px;
     padding-right: 2px;
     font-size: {base_pt}pt;
@@ -1097,7 +1217,7 @@ QDateEdit,
 QDateTimeEdit {{
     background-color: {input_bg};
     border: 1px solid {data_brd};
-    border-radius: 6px;
+    border-radius: {radius_md};
     padding: 6px 10px;
     font-size: {base_pt}pt;
     color: {text};
@@ -1137,7 +1257,7 @@ QDateTimeEdit::down-arrow:hover {{
 QGroupBox#dialogSection {{
     background-color: {surface};
     border: 1px solid {data_brd};
-    border-radius: 6px;
+    border-radius: {radius_md};
     margin-top: 20px;
     padding-top: 16px;
     padding-left: 16px;
@@ -1170,7 +1290,7 @@ QMessageBox QLabel#qt_msgboxex_icon_label {{
 QToolButton#cornerIconBtn {{
     background-color: transparent;
     border: none;
-    border-radius: 6px;
+    border-radius: {radius_md};
     padding: 4px;
 }}
 
@@ -1193,7 +1313,7 @@ QToolButton#collapsibleToggle {{
 
 QToolButton#collapsibleToggle:hover {{
     background-color: {surface_hover};
-    border-radius: 4px;
+    border-radius: {radius_sm};
 }}
 
 QToolButton#collapsibleToggle:checked {{
@@ -1242,7 +1362,7 @@ QPushButton#categoryButton[position="middle"] {{
 /* Side panel container */
 #sidePanel {{
     background-color: {surface_low};
-    border-radius: 12px;
+    border-radius: {radius_xxl};
 }}
 
 /* Primary action button — full gradient, same as default but explicit */
@@ -1250,7 +1370,7 @@ QPushButton#primaryButton {{
     background-color: {primary_button_bg};
     color: {primary_button_text};
     border: none;
-    border-radius: 6px;
+    border-radius: {radius_md};
     padding: 8px 20px;
     min-height: 35px;
     font-weight: bold;
@@ -1269,7 +1389,7 @@ QPushButton#saveButton {{
     background-color: {primary_button_bg};
     color: {primary_button_text};
     font-weight: bold;
-    border-radius: 6px;
+    border-radius: {radius_md};
     padding: 8px 20px;
 }}
 
@@ -1281,7 +1401,7 @@ QPushButton#dialogPrimaryButton {{
     background-color: {primary_button_bg};
     color: {primary_button_text};
     border: none;
-    border-radius: 6px;
+    border-radius: {radius_md};
     padding: 6px 16px;
     min-height: 0px;
     font-weight: bold;
@@ -1300,7 +1420,7 @@ QPushButton#cropActionButton {{
     background-color: {surface_low};
     color: {text};
     border: 1px solid {data_brd};
-    border-radius: 6px;
+    border-radius: {radius_md};
     padding: 6px 10px;
     font-weight: bold;
 }}
@@ -1341,7 +1461,7 @@ QPushButton#guessButton {{
     background-color: {accent};
     color: white;
     font-weight: 600;
-    border-radius: 4px;
+    border-radius: {radius_sm};
 }}
 
 QPushButton#guessButton:hover {{
@@ -1349,10 +1469,10 @@ QPushButton#guessButton:hover {{
 }}
 
 QPushButton#mapButton {{
-    background-color: #334155;
+    background-color: {map_button_bg};
     color: white;
     font-size: {small_pt}pt;
-    border-radius: 4px;
+    border-radius: {radius_sm};
     padding: 4px 12px;
 }}
 
@@ -1370,7 +1490,7 @@ QPushButton#mapLink {{
 QPushButton#mapLink:hover {{
     color: {accent_h};
 }}
-"""
+""".format_map(tokens)
 
 
 def pt(n: int) -> int:
