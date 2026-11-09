@@ -32,6 +32,8 @@ files=(
   "ui/publish_notice.py"
   "ui/taxon_picker.py"
   "ui/live_lab_tab.py"
+  "ui/live_lab_raw.py"
+  "ui/live_lab_prep_panel.py"
   "ui/ingestion_hub_tab.py"
   "ui/sync_shot_dialog.py"
   "ui/image_gallery_widget.py"

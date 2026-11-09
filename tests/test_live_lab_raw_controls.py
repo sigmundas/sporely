@@ -19,6 +19,8 @@ from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QFrame, QHBoxL
 from PySide6.QtTest import QTest
 
 import ui.live_lab_tab as live_lab_tab
+import ui.live_lab_prep_panel as live_lab_prep_panel
+import ui.live_lab_raw as live_lab_raw
 from ui.adaptive_choice_selector import AdaptiveChoiceSelector
 from ui.raw_processing_controls import RawProcessingControls
 from ui.segmented_selector import SegmentedSelector
@@ -27,6 +29,23 @@ from utils.raw_render import (
     RawRenderingUnavailableError,
     apply_auto_level_bounds_to_settings,
 )
+
+
+_LIVE_LAB_MODULES = (live_lab_tab, live_lab_raw, live_lab_prep_panel)
+
+
+def _patch_live_lab(monkeypatch, name, value):
+    """Patch a module-level name in every Live Lab module that holds it.
+
+    Live Lab code is split across ui/live_lab_tab.py, ui/live_lab_raw.py and
+    ui/live_lab_prep_panel.py; each looks names up in its own module globals.
+    """
+    patched = False
+    for module in _LIVE_LAB_MODULES:
+        if hasattr(module, name):
+            monkeypatch.setattr(module, name, value)
+            patched = True
+    assert patched, name
 
 
 def _qapp():
@@ -466,8 +485,11 @@ def _build_raw_controls_state() -> SimpleNamespace:
         }
         preview_path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
         return str(preview_path)
-    live_lab_tab.save_raw_preview_jpeg = _fake_save_raw_preview_jpeg
-    live_lab_tab.render_raw_preview_proxy_rgb = _fake_render_raw_preview_proxy_rgb
+    for module in _LIVE_LAB_MODULES:
+        if hasattr(module, "save_raw_preview_jpeg"):
+            module.save_raw_preview_jpeg = _fake_save_raw_preview_jpeg
+        if hasattr(module, "render_raw_preview_proxy_rgb"):
+            module.render_raw_preview_proxy_rgb = _fake_render_raw_preview_proxy_rgb
     state._session_gallery_selected_keys = lambda: live_lab_tab.LiveLabTab._session_gallery_selected_keys(state)
     state._objective_key_from_metadata = lambda metadata: live_lab_tab.LiveLabTab._objective_key_from_metadata(state, metadata)
     state._microscope_state_from_metadata = lambda metadata: live_lab_tab.LiveLabTab._microscope_state_from_metadata(state, metadata)
@@ -837,10 +859,10 @@ def _install_fake_local_ingest_pipeline(
         add_image_calls.append(dict(kwargs))
         return len(add_image_calls)
 
-    monkeypatch.setattr(live_lab_tab, "prepare_local_ingest_image", fake_prepare_local_ingest_image)
+    _patch_live_lab(monkeypatch, "prepare_local_ingest_image", fake_prepare_local_ingest_image)
     monkeypatch.setattr(live_lab_tab.ImageDB, "add_image", fake_add_image)
-    monkeypatch.setattr(live_lab_tab, "generate_all_sizes", lambda *args, **kwargs: None)
-    monkeypatch.setattr(live_lab_tab, "cleanup_import_temp_file", lambda *args, **kwargs: None)
+    _patch_live_lab(monkeypatch, "generate_all_sizes", lambda *args, **kwargs: None)
+    _patch_live_lab(monkeypatch, "cleanup_import_temp_file", lambda *args, **kwargs: None)
     if set_setting_calls is not None:
         monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", lambda key, value: set_setting_calls.append((key, value)))
 
@@ -978,8 +1000,8 @@ def test_live_lab_pending_preview_auto_level_sliders_freeze_the_rendered_image(m
     )
     ramp = np.linspace(0.05, 0.95, 100, dtype=np.float32).reshape(10, 10)
     raw_rgb = np.repeat(ramp[..., None], 3, axis=2)
-    monkeypatch.setattr(
-        live_lab_tab,
+    _patch_live_lab(
+        monkeypatch,
         "render_raw_preview_proxy_rgb",
         lambda *_args, **_kwargs: raw_rgb,
     )
@@ -1028,13 +1050,13 @@ def test_pending_raw_method_b_uses_larger_proxy_for_auto_levels(monkeypatch, tmp
     source_path.write_bytes(b"raw-bytes")
     raw_rgb = np.full((4, 4, 3), 0.5, dtype=np.float32)
     raw_rgb[0, 0] = 1.0
-    monkeypatch.setattr(
-        live_lab_tab,
+    _patch_live_lab(
+        monkeypatch,
         "render_raw_preview_proxy_rgb",
         lambda *_args, **_kwargs: raw_rgb,
     )
-    monkeypatch.setattr(
-        live_lab_tab,
+    _patch_live_lab(
+        monkeypatch,
         "_resize_preview_rgb",
         lambda *_args, **_kwargs: np.asarray(
             [
@@ -1150,8 +1172,8 @@ def test_live_lab_raw_curve_preview_cache_miss_uses_fallback_without_sync_decode
         "curve preview cache miss should not decode RAW synchronously"
     )
 
-    monkeypatch.setattr(
-        live_lab_tab,
+    _patch_live_lab(
+        monkeypatch,
         "render_raw_preview_proxy_rgb",
         lambda *args, **kwargs: pytest.fail("curve preview cache miss should not decode RAW synchronously"),
     )
@@ -1180,8 +1202,8 @@ def test_live_lab_raw_curve_preview_histogram_uses_pre_levels_working_buffer(tmp
     # Force the pre-levels helper to a known constant so the histogram
     # peak lands in a predictable bin regardless of the WB stage.
     pre_levels_rgb = np.full((2, 2, 3), 0.75, dtype=np.float32)
-    monkeypatch.setattr(
-        live_lab_tab,
+    _patch_live_lab(
+        monkeypatch,
         "compute_pre_levels_working_rgb",
         lambda rgb, settings: pre_levels_rgb,
     )
@@ -1256,8 +1278,8 @@ def test_live_lab_raw_processing_prefers_visible_image_over_stale_thumbnail_sele
     update_calls: list[dict[str, object]] = []
     generate_calls: list[tuple[str, int]] = []
 
-    monkeypatch.setattr(
-        live_lab_tab,
+    _patch_live_lab(
+        monkeypatch,
         "render_raw_image",
         lambda *args, **kwargs: pytest.fail("committed RAW slider changes should not full-render"),
     )
@@ -1269,8 +1291,8 @@ def test_live_lab_raw_processing_prefers_visible_image_over_stale_thumbnail_sele
         "update_image",
         lambda *args, **kwargs: update_calls.append({"args": args, "kwargs": kwargs}),
     )
-    monkeypatch.setattr(
-        live_lab_tab,
+    _patch_live_lab(
+        monkeypatch,
         "generate_all_sizes",
         lambda filepath, image_id: generate_calls.append((str(filepath), int(image_id))) or {},
     )
@@ -1328,8 +1350,8 @@ def test_live_lab_committed_raw_slider_after_cache_clear_does_not_sync_decode(tm
 
     live_lab_tab.LiveLabTab._show_session_image(state, 101)
     state._pending_raw_preview_proxy_cache.clear()
-    monkeypatch.setattr(
-        live_lab_tab,
+    _patch_live_lab(
+        monkeypatch,
         "render_raw_preview_proxy_rgb",
         lambda *args, **kwargs: pytest.fail("committed RAW slider tick should not synchronously decode when cache is cold"),
     )
@@ -1375,8 +1397,8 @@ def test_live_lab_dirty_committed_raw_edit_switch_discards_with_status(tmp_path,
         lambda image_id: copy.deepcopy(images.get(int(image_id))) if images.get(int(image_id)) is not None else None,
     )
     monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        live_lab_tab,
+    _patch_live_lab(
+        monkeypatch,
         "render_raw_image",
         lambda *args, **kwargs: pytest.fail("dirty switch should not silently full-render"),
     )
@@ -1440,8 +1462,8 @@ def test_live_lab_objective_state_prefers_nested_lab_metadata(monkeypatch):
     _qapp()
     state = _build_raw_controls_state()
 
-    monkeypatch.setattr(
-        live_lab_tab,
+    _patch_live_lab(
+        monkeypatch,
         "load_objectives",
         lambda: {
             "40x": {
@@ -1451,8 +1473,8 @@ def test_live_lab_objective_state_prefers_nested_lab_metadata(monkeypatch):
             }
         },
     )
-    monkeypatch.setattr(
-        live_lab_tab,
+    _patch_live_lab(
+        monkeypatch,
         "resolve_objective_key",
         lambda name, objectives: "40x" if "40" in str(name) else None,
     )
@@ -1577,11 +1599,11 @@ def test_live_lab_ingest_uses_current_raw_settings_and_keeps_prior_snapshot(tmp_
     def fake_set_setting(key, value):
         set_setting_calls.append((key, value))
 
-    monkeypatch.setattr(live_lab_tab, "prepare_local_ingest_image", fake_prepare_local_ingest_image)
+    _patch_live_lab(monkeypatch, "prepare_local_ingest_image", fake_prepare_local_ingest_image)
     monkeypatch.setattr(live_lab_tab.ImageDB, "add_image", fake_add_image)
     monkeypatch.setattr(live_lab_tab.ImageDB, "get_image", lambda image_id: {"filepath": working_path_one if image_id == 1 else working_path_two})
-    monkeypatch.setattr(live_lab_tab, "generate_all_sizes", lambda *args, **kwargs: None)
-    monkeypatch.setattr(live_lab_tab, "cleanup_import_temp_file", lambda *args, **kwargs: None)
+    _patch_live_lab(monkeypatch, "generate_all_sizes", lambda *args, **kwargs: None)
+    _patch_live_lab(monkeypatch, "cleanup_import_temp_file", lambda *args, **kwargs: None)
     monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", fake_set_setting)
 
     state.raw_controls.white_balance_selector.set_selected_value("camera")
@@ -1706,10 +1728,10 @@ def test_live_lab_raw_controls_follow_visible_image_when_gallery_selection_is_st
         return new_image_id
 
     monkeypatch.setattr(live_lab_tab.ImageDB, "get_image", fake_get_image)
-    monkeypatch.setattr(live_lab_tab, "prepare_local_ingest_image", fake_prepare_local_ingest_image)
+    _patch_live_lab(monkeypatch, "prepare_local_ingest_image", fake_prepare_local_ingest_image)
     monkeypatch.setattr(live_lab_tab.ImageDB, "add_image", fake_add_image)
-    monkeypatch.setattr(live_lab_tab, "generate_all_sizes", lambda *args, **kwargs: None)
-    monkeypatch.setattr(live_lab_tab, "cleanup_import_temp_file", lambda *args, **kwargs: None)
+    _patch_live_lab(monkeypatch, "generate_all_sizes", lambda *args, **kwargs: None)
+    _patch_live_lab(monkeypatch, "cleanup_import_temp_file", lambda *args, **kwargs: None)
 
     state._sidebar_binds_to_selection = True
     state._refresh_session_gallery()
@@ -1782,11 +1804,11 @@ def test_live_lab_non_raw_capture_keeps_raw_processing_out_of_metadata(tmp_path,
     def fake_set_setting(key, value):
         set_setting_calls.append((key, value))
 
-    monkeypatch.setattr(live_lab_tab, "prepare_local_ingest_image", fake_prepare_local_ingest_image)
+    _patch_live_lab(monkeypatch, "prepare_local_ingest_image", fake_prepare_local_ingest_image)
     monkeypatch.setattr(live_lab_tab.ImageDB, "add_image", fake_add_image)
     monkeypatch.setattr(live_lab_tab.ImageDB, "get_image", lambda image_id: {"filepath": working_path})
-    monkeypatch.setattr(live_lab_tab, "generate_all_sizes", lambda *args, **kwargs: None)
-    monkeypatch.setattr(live_lab_tab, "cleanup_import_temp_file", lambda *args, **kwargs: None)
+    _patch_live_lab(monkeypatch, "generate_all_sizes", lambda *args, **kwargs: None)
+    _patch_live_lab(monkeypatch, "cleanup_import_temp_file", lambda *args, **kwargs: None)
     monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", fake_set_setting)
 
     assert live_lab_tab.LiveLabTab._ingest_detected_image(state, str(source_path))
@@ -1942,9 +1964,9 @@ def test_live_lab_committed_raw_edit_preview_apply_updates_existing_row(tmp_path
 
     monkeypatch.setattr(live_lab_tab.ImageDB, "get_image", fake_get_image)
     monkeypatch.setattr(live_lab_tab.ImageDB, "update_image", fake_update_image)
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
-    monkeypatch.setattr(live_lab_tab, "render_raw_image", _fake_render_raw_jpeg)
-    monkeypatch.setattr(live_lab_tab, "generate_all_sizes", lambda filepath, image_id: generate_calls.append((str(filepath), int(image_id))) or {})
+    _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
+    _patch_live_lab(monkeypatch, "render_raw_image", _fake_render_raw_jpeg)
+    _patch_live_lab(monkeypatch, "generate_all_sizes", lambda filepath, image_id: generate_calls.append((str(filepath), int(image_id))) or {})
     monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", lambda key, value: saved_settings.append((key, value)))
 
     assert live_lab_tab.LiveLabTab._begin_raw_edit_for_selected_image(state) is True
@@ -2050,14 +2072,14 @@ def test_live_lab_committed_raw_edit_refreshes_thumbnail_caches_after_apply(tmp_
 
     monkeypatch.setattr(live_lab_tab.ImageDB, "get_image", lambda image_id: copy.deepcopy(images.get(int(image_id))) if images.get(int(image_id)) is not None else None)
     monkeypatch.setattr(live_lab_tab.ImageDB, "update_image", lambda *args, **kwargs: None)
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
-    monkeypatch.setattr(live_lab_tab, "render_raw_image", _fake_render_raw_jpeg)
-    monkeypatch.setattr(live_lab_tab, "generate_all_sizes", lambda filepath, image_id: generate_calls.append((str(filepath), int(image_id))) or {})
+    _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
+    _patch_live_lab(monkeypatch, "render_raw_image", _fake_render_raw_jpeg)
+    _patch_live_lab(monkeypatch, "generate_all_sizes", lambda filepath, image_id: generate_calls.append((str(filepath), int(image_id))) or {})
     monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", lambda *args, **kwargs: None)
     # The thumbnail lookup reads the database; never depend on the
     # developer's real profile having an image 101.
     fake_thumb = str(tmp_path / "thumbnails" / "101_small.jpg")
-    monkeypatch.setattr(live_lab_tab, "get_thumbnail_path", lambda image_id, size: fake_thumb)
+    _patch_live_lab(monkeypatch, "get_thumbnail_path", lambda image_id, size: fake_thumb)
 
     assert live_lab_tab.LiveLabTab._begin_raw_edit_for_selected_image(state) is True
     assert live_lab_tab.LiveLabTab._apply_raw_edit_session(state) is True
@@ -2098,7 +2120,7 @@ def test_live_lab_committed_raw_edit_cancel_restores_future_controls_and_deletes
 
     images = {101: _make_raw_image_row(101, source_path=source_path, derivative_path=derivative_path)}
     monkeypatch.setattr(live_lab_tab.ImageDB, "get_image", lambda image_id: copy.deepcopy(images.get(int(image_id))) if images.get(int(image_id)) is not None else None)
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
+    _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
     monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", lambda *args, **kwargs: None)
 
     assert live_lab_tab.LiveLabTab._begin_raw_edit_for_selected_image(state) is True
@@ -2157,8 +2179,8 @@ def test_live_lab_raw_copy_settings_can_open_other_raw_image_without_selection_r
         "get_image",
         lambda image_id: copy.deepcopy(images.get(int(image_id))) if images.get(int(image_id)) is not None else None,
     )
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
-    monkeypatch.setattr(live_lab_tab, "render_raw_image", _fake_render_raw_jpeg)
+    _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
+    _patch_live_lab(monkeypatch, "render_raw_image", _fake_render_raw_jpeg)
     monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", lambda *args, **kwargs: None)
 
     assert live_lab_tab.LiveLabTab._begin_raw_edit_for_selected_image(state) is True
@@ -2265,7 +2287,7 @@ def test_live_lab_review_queue_is_placed_in_the_main_viewer_area(monkeypatch, qa
     monkeypatch.setattr(live_lab_tab.LiveLabTab, "_update_session_controls", lambda self: None)
     monkeypatch.setattr(live_lab_tab.LiveLabTab, "_register_hint_widgets", lambda self: None)
     monkeypatch.setattr(live_lab_tab.LiveLabTab, "_set_hint", lambda self, *args, **kwargs: None)
-    monkeypatch.setattr(live_lab_tab, "load_objectives", lambda: {})
+    _patch_live_lab(monkeypatch, "load_objectives", lambda: {})
     monkeypatch.setattr(
         live_lab_tab.SettingsDB,
         "get_setting",
@@ -2598,8 +2620,8 @@ def test_live_lab_active_pending_raw_control_change_uses_cached_fast_path_withou
     )
     state._enqueue_pending_raw_preview_job = lambda request: enqueue_calls.append(request)
 
-    monkeypatch.setattr(
-        live_lab_tab,
+    _patch_live_lab(
+        monkeypatch,
         "render_raw_preview_proxy_rgb",
         lambda *args, **kwargs: pytest.fail("cached pending RAW preview should not re-decode"),
     )
@@ -3136,7 +3158,7 @@ def _build_offscreen_live_lab_tab(monkeypatch):
     monkeypatch.setattr(live_lab_tab.LiveLabTab, "_update_session_controls", lambda self: None)
     monkeypatch.setattr(live_lab_tab.LiveLabTab, "_register_hint_widgets", lambda self: None)
     monkeypatch.setattr(live_lab_tab.LiveLabTab, "_set_hint", lambda self, *args, **kwargs: None)
-    monkeypatch.setattr(live_lab_tab, "load_objectives", lambda: {})
+    _patch_live_lab(monkeypatch, "load_objectives", lambda: {})
     monkeypatch.setattr(live_lab_tab.SettingsDB, "get_setting", lambda key, default=None: default)
     monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", lambda *args, **kwargs: None)
     return live_lab_tab.LiveLabTab(SimpleNamespace())
@@ -3279,7 +3301,7 @@ def test_live_lab_review_keyboard_shortcuts_navigate_save_and_skip_text_focus(tm
         add_image_calls=add_image_calls,
         set_setting_calls=set_setting_calls,
     )
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
+    _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
 
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(state, str(source_one), group_key="group-1", state={})
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(state, str(source_two), group_key="group-2", state={})
@@ -3345,7 +3367,7 @@ def test_live_lab_review_keyboard_shortcut_discard_removes_selected_pending(tmp_
         captured_calls=[],
         add_image_calls=add_image_calls,
     )
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
+    _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
 
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(state, str(source_path), group_key="group-1", state={})
     assert state._pending_raw_captures
@@ -3402,7 +3424,7 @@ def test_live_lab_review_shortcut_ignores_foreign_focus_widget(tmp_path, monkeyp
         captured_calls=[],
         add_image_calls=add_image_calls,
     )
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
+    _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
 
     # Simulate a leaked focus widget from a previous test / dialog: a
     # top-level QPushButton (a QAbstractButton, so `_is_text_input_widget`
@@ -3544,7 +3566,7 @@ def test_live_lab_background_wb_sampling_updates_pending_preview_and_metadata(tm
         captured_calls=captured_calls,
         add_image_calls=add_image_calls,
     )
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
+    _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
 
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(state, str(source_path), group_key="group-1", state={})
     _wait_for_pending_raw_preview(state)
@@ -3637,7 +3659,7 @@ def test_live_lab_background_wb_sampling_tracks_zoomed_view_crop(tmp_path, monke
         captured_calls=captured_calls,
         add_image_calls=add_image_calls,
     )
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
+    _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
 
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(state, str(source_path), group_key="group-1", state={})
     _wait_for_pending_raw_preview(state)
@@ -3691,7 +3713,7 @@ def test_live_lab_pending_raw_invalid_background_wb_sample_leaves_settings_uncha
         captured_calls=captured_calls,
         add_image_calls=add_image_calls,
     )
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
+    _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
 
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(state, str(source_path), group_key="group-1", state={})
     _wait_for_pending_raw_preview(state)
@@ -3760,9 +3782,9 @@ def test_live_lab_committed_raw_edit_background_wb_click_sets_custom_mode_and_ap
 
     monkeypatch.setattr(live_lab_tab.ImageDB, "get_image", fake_get_image)
     monkeypatch.setattr(live_lab_tab.ImageDB, "update_image", fake_update_image)
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
-    monkeypatch.setattr(live_lab_tab, "render_raw_image", _fake_render_raw_jpeg)
-    monkeypatch.setattr(live_lab_tab, "generate_all_sizes", lambda filepath, image_id: generate_calls.append((str(filepath), int(image_id))) or {})
+    _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
+    _patch_live_lab(monkeypatch, "render_raw_image", _fake_render_raw_jpeg)
+    _patch_live_lab(monkeypatch, "generate_all_sizes", lambda filepath, image_id: generate_calls.append((str(filepath), int(image_id))) or {})
     monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", lambda key, value: saved_settings.append((key, value)))
 
     assert live_lab_tab.LiveLabTab._begin_raw_edit_for_selected_image(state) is True
@@ -3935,7 +3957,7 @@ def test_live_lab_review_mode_creates_pending_preview_and_defers_db_row(tmp_path
         add_image_calls=add_image_calls,
         set_setting_calls=set_setting_calls,
     )
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
+    _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
 
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(
         state,
@@ -3989,16 +4011,16 @@ def test_live_lab_review_mode_pending_gallery_selection_tracks_current_item(tmp_
     state._refresh_main_window_after_import = lambda image_id: None
     state._update_observation_thumbnail = lambda: None
     state._log_session_event = lambda *args, **kwargs: None
-    monkeypatch.setattr(
-        live_lab_tab,
+    _patch_live_lab(
+        monkeypatch,
         "load_objectives",
         lambda: {
             "10x": {"magnification": 10.0, "name": "10x"},
             "63x": {"magnification": 63.0, "name": "63x"},
         },
     )
-    monkeypatch.setattr(
-        live_lab_tab,
+    _patch_live_lab(
+        monkeypatch,
         "resolve_objective_key",
         lambda name, objectives: str(name) if str(name) in objectives else None,
     )
@@ -4055,7 +4077,7 @@ def test_live_lab_review_mode_pending_gallery_selection_tracks_current_item(tmp_
         add_image_calls=add_image_calls,
         set_setting_calls=set_setting_calls,
     )
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
+    _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
 
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(state, str(source_one), group_key="group-1", state={})
     state._current_lab_metadata = lambda: second_metadata
@@ -4627,7 +4649,7 @@ def test_live_lab_pending_raw_controls_still_rerender_after_session_stop(tmp_pat
     state._save_raw_processing_settings_for_current_context = lambda settings=None: None
     state._schedule_pending_raw_preview_refresh = lambda: live_lab_tab.LiveLabTab._refresh_selected_pending_raw_preview(state)
     state._raw_capture_mode = live_lab_tab.LiveLabTab.RAW_CAPTURE_MODE_REVIEW
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
+    _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
 
     live_lab_tab.LiveLabTab._finalize_session_stop(state)
     state.raw_controls.tone_curve_checkbox.setChecked(True)
@@ -4700,7 +4722,7 @@ def test_live_lab_review_mode_save_current_after_session_stop_commits_pending_ra
         "get_image",
         lambda image_id: copy.deepcopy(images.get(int(image_id))) if int(image_id) in images else None,
     )
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
+    _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
 
     live_lab_tab.LiveLabTab._finalize_session_stop(state)
     assert state._session_observation_id == 1
@@ -4890,8 +4912,8 @@ def test_live_lab_pending_raw_commit_failure_clears_busy_and_reenables_controls(
     state._set_pending_raw_commit_busy = lambda visible, text=None, value=None, maximum=None: progress_calls.append(
         (bool(visible), text, value, maximum)
     )
-    monkeypatch.setattr(
-        live_lab_tab,
+    _patch_live_lab(
+        monkeypatch,
         "prepare_local_ingest_image",
         lambda *args, **kwargs: (_ for _ in ()).throw(RawRenderingUnavailableError("decode failed")),
     )
@@ -5207,7 +5229,7 @@ def test_live_lab_review_mode_pending_metadata_changes_stick_to_each_capture_on_
         "get_image",
         lambda image_id: copy.deepcopy(images.get(int(image_id))) if int(image_id) in images else None,
     )
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
+    _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
 
     state.objective_combo.setCurrentIndex(0)
     state.contrast_combo.setCurrentIndex(0)
@@ -5304,7 +5326,7 @@ def test_live_lab_review_mode_commit_uses_selected_settings_and_keeps_snapshot(t
         add_image_calls=add_image_calls,
         set_setting_calls=set_setting_calls,
     )
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
+    _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
 
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(
         state,
@@ -5381,7 +5403,7 @@ def test_live_lab_ingest_detected_image_merges_partial_and_current_metadata(tmp_
         add_image_calls=add_image_calls,
         set_setting_calls=set_setting_calls,
     )
-    monkeypatch.setattr(live_lab_tab, "load_objectives", lambda: {"40x": {"microns_per_pixel": 0.5}})
+    _patch_live_lab(monkeypatch, "load_objectives", lambda: {"40x": {"microns_per_pixel": 0.5}})
     monkeypatch.setattr(
         live_lab_tab.CalibrationDB,
         "get_active_calibration_id",
@@ -5457,7 +5479,7 @@ def test_live_lab_review_mode_discard_drops_pending_without_db_row(tmp_path, mon
         add_image_calls=add_image_calls,
         set_setting_calls=set_setting_calls,
     )
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
+    _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
 
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(
         state,
@@ -5572,7 +5594,7 @@ def test_live_lab_review_mode_multiple_raw_arrivals_queue_separately(tmp_path, m
         add_image_calls=add_image_calls,
         set_setting_calls=set_setting_calls,
     )
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
+    _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
 
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(state, str(source_one), group_key="group-1", state={})
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(state, str(source_two), group_key="group-2", state={})
@@ -5619,7 +5641,7 @@ def test_live_lab_review_mode_raw_jpeg_companion_creates_one_pending_entry(tmp_p
         add_image_calls=add_image_calls,
         set_setting_calls=set_setting_calls,
     )
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
+    _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
 
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(
         state,
@@ -5675,8 +5697,8 @@ def test_live_lab_review_mode_falls_back_to_companion_jpeg_when_raw_preview_fail
     def failing_preview(*args, **kwargs):
         raise RawRenderingUnavailableError("rawpy unavailable")
 
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", failing_preview)
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview_proxy_rgb", failing_preview)
+    _patch_live_lab(monkeypatch, "render_raw_preview", failing_preview)
+    _patch_live_lab(monkeypatch, "render_raw_preview_proxy_rgb", failing_preview)
     state._raw_preview_proxy_for_source = lambda *args, **kwargs: (_ for _ in ()).throw(RawRenderingUnavailableError("rawpy unavailable"))
 
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(
@@ -5728,7 +5750,7 @@ def test_live_lab_review_mode_copy_paste_settings_between_pending(tmp_path, monk
         add_image_calls=add_image_calls,
         set_setting_calls=set_setting_calls,
     )
-    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
+    _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
 
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(state, str(source_one), group_key="group-1", state={})
     assert live_lab_tab.LiveLabTab._handle_raw_companion_source(state, str(source_two), group_key="group-2", state={})

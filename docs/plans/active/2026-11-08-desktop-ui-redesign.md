@@ -660,8 +660,9 @@ test status.
 
 | Stage | PR | Merge | Status |
 | --- | --- | --- | --- |
-| 0 | sigmundas/sporely#65 | — | Agent-verified (tests, inspected renderer screenshots); owner tested it 2026-11-08 and said to go on; merge not yet done |
-| P1 | sigmundas/sporely#67 | — | Agent-verified (tests, inspected renderer screenshots); no production code; based on the stage 0 branch |
+| 0 | sigmundas/sporely#65 | `a682f6c` | Agent-verified (tests, inspected renderer screenshots); owner tested it 2026-11-08 and said to go on; merged 2026-11-09 |
+| P1 | sigmundas/sporely#67 | `3162501` | Agent-verified (tests, inspected renderer screenshots); no production code; merged 2026-11-09 |
+| P2 | `ui/redesign` | — | Agent-verified: Live Lab, RAW and main-window tests green; `live-lab` renders pixel-identical to the P1 baseline in both themes; translations moved to the new contexts with none lost |
 
 Found during stage 0, not fixed there (rule 1):
 
@@ -709,6 +710,19 @@ Found during P1, not fixed there (rule 1); the first two are pinned as
 - The review renderer's `reference-library` group takes about 180 s (also on
   `main`), so `test_default_renderer_emits_central_manifest_and_all_established_states`
   exceeds its 120 s timeout; CI skips that file.
+
+Found during P2, not fixed there (rule 1):
+
+- `tests/test_live_lab_raw_controls.py` (`_build_raw_controls_state`) assigns
+  fakes for `save_raw_preview_jpeg` and `render_raw_preview_proxy_rgb` directly
+  on the Live Lab modules instead of through `monkeypatch`, so they stay in
+  place for every later test in the same run. P2 kept the behaviour and only
+  points the assignments at the module that now uses them.
+- The companion grouping (`_queue_companion_source`, `_flush_companion_group`,
+  `_handle_raw_companion_source`) and the RAW+JPEG source preference stay in
+  `LiveLabTab`: they decide which file of a capture is ingested and serve JPEG
+  captures too. Stage 5 (slimmer RAW panel) may want them next to the RAW
+  mixin.
 
 Baseline renders for the pilot's before/after comparisons (P1, 2026-11-08):
 `/Users/sigmundas/Documents/Code/sporely/sporely-py/docs/plans/november-ui/baseline-p1/`
