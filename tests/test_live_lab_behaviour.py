@@ -642,3 +642,130 @@ def test_enter_on_a_section_header_toggles_it_and_triggers_no_review_shortcut(qt
     tab.setFocus(Qt.OtherFocusReason)
     qtbot.keyClick(tab, Qt.Key_Return)
     assert calls == ["save"]
+
+
+# ---------------------------------------------------------------------------
+# Stage 1b: Preparation as chip rows
+# ---------------------------------------------------------------------------
+
+
+def _chip(selector, value):
+    button = selector.button_for_value(value)
+    assert button is not None and button.isVisible(), (value, selector.visible_chip_values())
+    return button
+
+
+def test_preparation_rows_are_chips_without_a_not_set_chip(qtbot, profile):
+    tab = _make_tab(qtbot)
+    for selector in (tab.mount_combo, tab.stain_combo, tab.sample_combo, tab.sample_source_combo):
+        assert selector.is_chip_mode()
+        assert "Not_set" not in selector.visible_chip_values()
+        assert not selector.combo().isVisible()
+
+
+def test_clicking_a_chip_chooses_it_and_clicking_it_again_clears_it(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_OFFLINE)
+
+    qtbot.mouseClick(_chip(tab.mount_combo, "Water"), Qt.LeftButton)
+    assert tab.mount_combo.selected_value() == "Water"
+    assert tab.slide_prep_group.summary().startswith("Water · ")
+
+    qtbot.mouseClick(_chip(tab.mount_combo, "Water"), Qt.LeftButton)
+    assert tab.mount_combo.selected_value() == "Not_set"
+    assert not any(button.isChecked() for button in tab.mount_combo.buttons() if button.isVisible())
+    assert tab.slide_prep_group.summary_alert() == "Mount not set"
+
+    changes = [
+        (event.get("attribute_name"), event.get("value"))
+        for event in _events(obs)
+        if event.get("event_type") == "dropdown_change"
+    ]
+    assert changes[-2:] == [("mount_medium", "Water"), ("mount_medium", "Not_set")]
+
+
+def test_more_chip_shows_the_rest_in_place_and_folds_after_a_choice(qtbot, profile):
+    tab = _make_tab(qtbot, width=1100, height=720)  # narrow side panel: stains do not fit
+    stain = tab.stain_combo
+    _choose(qtbot, stain, "Melzer")
+    more = stain.more_chip()
+    assert more.isVisible()
+    folded = stain.visible_chip_values()
+    hidden = [v for v in ("Congo_Red", "Cotton_Blue", "Lactofuchsin", "Cresyl_Blue", "Trypan_Blue", "Chlorazol_Black_E") if v not in folded]
+    assert hidden and more.text() == f"+ {len(hidden)} more"
+    folded_height = stain.height()
+
+    qtbot.mouseClick(more, Qt.LeftButton)
+    qtbot.waitUntil(lambda: set(hidden) <= set(stain.visible_chip_values()), timeout=2000)
+    assert stain.chips_expanded() and not more.isVisible()
+    qtbot.waitUntil(lambda: stain.height() > folded_height, timeout=2000)  # wrapped onto more rows
+
+    qtbot.mouseClick(_chip(stain, hidden[-1]), Qt.LeftButton)
+    assert stain.selected_value() == hidden[-1]
+    qtbot.waitUntil(lambda: not stain.chips_expanded() and more.isVisible(), timeout=2000)
+    assert hidden[-1] in stain.visible_chip_values()  # the choice stays visible when folded
+    qtbot.waitUntil(lambda: stain.height() == folded_height, timeout=2000)
+
+
+def test_a_restored_choice_from_the_folded_part_is_visible(qtbot, profile):
+    tab = _make_tab(qtbot, width=1100, height=720)
+    _choose(qtbot, tab.stain_combo, "Chlorazol_Black_E")
+    tab.close()
+
+    restarted = _make_tab(qtbot, width=1100, height=720)
+    assert restarted.stain_combo.selected_value() == "Chlorazol_Black_E"
+    assert "Chlorazol_Black_E" in restarted.stain_combo.visible_chip_values()
+    assert _chip(restarted.stain_combo, "Chlorazol_Black_E").isChecked()
+
+
+def test_chip_keyboard_moves_and_chooses_without_review_shortcuts(qtbot, profile):
+    """Arrows move between chips, Space/Enter choose; Live Lab's RAW review
+    shortcuts (Left/Right/Return) never see keys meant for a focused chip."""
+    tab = _make_tab(qtbot, width=1100, height=720)
+    calls: list[str] = []
+    tab._handle_raw_review_shortcut = lambda action: calls.append(action)
+    mount = tab.mount_combo
+    _choose(qtbot, mount, "KOH")
+    koh = _chip(mount, "KOH")
+    koh.setFocus(Qt.TabFocusReason)
+    qtbot.waitUntil(koh.hasFocus, timeout=1000)
+
+    qtbot.keyClick(koh, Qt.Key_Right)
+    next_chip = QApplication.focusWidget()
+    assert next_chip is not koh and next_chip in mount.buttons()
+    assert mount.selected_value() == "KOH"  # moving never chooses (or clears)
+    qtbot.keyClick(next_chip, Qt.Key_Left)
+    assert QApplication.focusWidget() is koh
+
+    qtbot.keyClick(koh, Qt.Key_Right)
+    target = QApplication.focusWidget()
+    qtbot.keyClick(target, Qt.Key_Return)
+    assert mount.selected_value() == mount.itemData(int(target.property("choiceIndex")))
+    qtbot.keyClick(target, Qt.Key_Space)
+    assert mount.selected_value() == "Not_set"  # Space on the chosen chip clears it
+
+    more = tab.stain_combo.more_chip()
+    more.setFocus(Qt.TabFocusReason)
+    qtbot.waitUntil(more.hasFocus, timeout=1000)
+    qtbot.keyClick(more, Qt.Key_Return)
+    assert tab.stain_combo.chips_expanded()
+    assert QApplication.focusWidget() in tab.stain_combo.buttons()
+    assert calls == []
+
+
+def test_chip_rows_are_quiet_when_nothing_changes(qtbot, profile):
+    tab = _make_tab(qtbot)
+    qtbot.wait(100)
+    counts = {"layouts": 0}
+    original = tab.stain_combo._layout_chips
+
+    def counting():
+        counts["layouts"] += 1
+        original()
+
+    tab.stain_combo._layout_chips = counting
+    for _ in range(40):
+        qtbot.wait(5)
+    assert counts["layouts"] <= 2

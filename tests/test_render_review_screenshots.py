@@ -159,7 +159,7 @@ LIVE_LAB_IDS = {
         "sections-collapsed",
     )
     for suffix in ("", "-dark")
-} | {"live-lab.idle-small", "live-lab.sections-collapsed-de"}
+} | {"live-lab.idle-small", "live-lab.idle-de", "live-lab.sections-collapsed-de"}
 STYLE_TOKEN_IDS = {"style-tokens.objective-rings", "style-tokens.objective-rings-dark"}
 ALL_IDS = (
     REFERENCE_IDS

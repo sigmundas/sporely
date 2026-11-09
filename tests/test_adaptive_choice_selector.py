@@ -439,3 +439,120 @@ def test_display_listeners_follow_every_visible_change(qapp):
     assert selector.is_mixed() and len(seen) == count + 1
     selector.clear()
     assert seen[-1] == ""  # cleared
+
+
+def _chip_selector(qapp, width: int):
+    from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+    page = QWidget()
+    layout = QVBoxLayout(page)
+    selector = AdaptiveChoiceSelector(compact=True)
+    selector.addItem("Not set", "Not_set", pillText="—")
+    for value in ("Melzer", "Congo red", "Cotton blue", "Lactofuchsin", "Cresyl blue", "Trypan blue"):
+        selector.addItem(value, value)
+    selector.set_chip_mode(clear_value="Not_set")
+    layout.addWidget(selector)
+    layout.addStretch(1)
+    page.resize(width, 300)
+    page.show()
+    qapp.processEvents()
+    return page, selector
+
+
+def test_chip_mode_never_falls_back_to_a_dropdown(qapp):
+    _page, selector = _chip_selector(qapp, 140)
+    assert selector.is_chip_mode() and selector.display_mode() == "chip"
+    assert not selector.combo().isVisible()
+    assert selector.more_chip().isVisible()
+    assert len(selector.visible_chip_values()) >= 1
+
+
+def test_chip_mode_keeps_mixed_values_visible_and_survives_a_rebuild(qapp):
+    _page, selector = _chip_selector(qapp, 260)
+    selector.set_mixed_values(["Melzer", "Trypan blue"])
+    qapp.processEvents()
+    assert {"Melzer", "Trypan blue"} <= set(selector.visible_chip_values())
+    selector.clear()
+    for value in ("Not set", "Water", "KOH"):
+        selector.addItem(value, "Not_set" if value == "Not set" else value)
+    qapp.processEvents()
+    assert selector.visible_chip_values() == ["Water", "KOH"]
+    assert not selector.more_chip().isVisible()
+
+
+def test_chip_mode_height_follows_wrapping(qapp):
+    _page, selector = _chip_selector(qapp, 260)
+    one_row = selector.heightForWidth(selector.width())
+    selector.more_chip().click()
+    qapp.processEvents()
+    assert selector.chips_expanded()
+    assert selector.heightForWidth(selector.width()) > one_row
+
+
+def test_other_selectors_keep_pills_and_dropdown(qapp):
+    from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+    page = QWidget()
+    layout = QVBoxLayout(page)
+    selector = AdaptiveChoiceSelector(compact=True)
+    for value in ("BF", "DIC"):
+        selector.addItem(value, value)
+    layout.addWidget(selector)
+    page.resize(400, 120)
+    page.show()
+    for _ in range(5):
+        qapp.processEvents()
+    assert not selector.is_chip_mode()
+    assert selector.more_chip() is None
+    assert selector.display_mode() in {"pill", "combo"}
+
+
+def test_a_chip_wider_than_the_row_stays_inside_it(qapp):
+    from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+    page = QWidget()
+    layout = QVBoxLayout(page)
+    layout.setContentsMargins(0, 0, 0, 0)
+    selector = AdaptiveChoiceSelector(compact=True)
+    selector.addItem("Water", "Water")
+    selector.addItem("A very long custom mounting medium name " * 3, "Long")
+    selector.set_chip_mode(clear_value="Not_set")
+    layout.addWidget(selector)
+    layout.addStretch(1)
+    page.resize(220, 200)
+    page.show()
+    selector.set_selected_value("Long")
+    for _ in range(5):
+        qapp.processEvents()
+    for button in selector.buttons():
+        if button.isVisible():
+            assert button.geometry().right() <= selector.width(), button.text()
+
+
+def test_non_chip_selectors_show_pills_when_wide_and_a_dropdown_when_narrow(qapp):
+    from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+    page = QWidget()
+    layout = QVBoxLayout(page)
+    selector = AdaptiveChoiceSelector(compact=True)
+    for value in ("BF", "DF", "DIC", "Phase"):
+        selector.addItem(value, value)
+    selector.set_selected_value("DIC")
+    layout.addWidget(selector)
+    page.resize(600, 120)
+    page.show()
+    for _ in range(10):
+        qapp.processEvents()
+    selector._refresh_mode_for_width()
+    assert selector.display_mode() == "pill"
+    assert selector.button_for_value("DIC").isChecked()
+    page.resize(90, 120)
+    for _ in range(10):
+        qapp.processEvents()
+    selector._refresh_mode_for_width()
+    assert selector.display_mode() == "combo"
+    assert selector.combo().currentData() == "DIC"
+    seen = []
+    selector.currentIndexChanged.connect(seen.append)
+    selector.combo().setCurrentIndex(selector.findData("BF"))
+    assert selector.selected_value() == "BF" and seen

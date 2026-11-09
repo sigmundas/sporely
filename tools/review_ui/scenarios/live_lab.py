@@ -343,6 +343,17 @@ def register_live_lab_scenarios(registry: ScenarioRegistry) -> None:
             )
     registry.register(
         ReviewScenario(
+            id="live-lab.idle-de",
+            group="live-lab",
+            title="Live Lab — idle (de)",
+            description="The idle state in German: the longest chip labels in the Preparation rows.",
+            build=_idle,
+            viewport=(1440, 900),
+            locale="de_DE",
+        )
+    )
+    registry.register(
+        ReviewScenario(
             id="live-lab.sections-collapsed-de",
             group="live-lab",
             title="Live Lab — Preparation and Notes closed (de)",

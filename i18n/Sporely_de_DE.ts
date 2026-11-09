@@ -229,6 +229,15 @@
     </message>
 </context>
 <context>
+    <name>AdaptiveChoiceSelector</name>
+    <message>
+        <location filename="../ui/adaptive_choice_selector.py" line="626"/>
+        <location filename="../ui/adaptive_choice_selector.py" line="657"/>
+        <source>+ {count} more</source>
+        <translation>+ {count} weitere</translation>
+    </message>
+</context>
+<context>
     <name>AddReferenceDialog</name>
     <message>
         <location filename="../ui/add_reference_dialog.py" line="648"/>
@@ -5407,7 +5416,7 @@ Maßstab fehlt: {missing}</translation>
     <message>
         <location filename="../ui/live_lab_prep_panel.py" line="77"/>
         <source>Stain:</source>
-        <translation>Faerbung:</translation>
+        <translation>Färbung:</translation>
     </message>
     <message>
         <location filename="../ui/live_lab_prep_panel.py" line="78"/>
@@ -5420,109 +5429,109 @@ Maßstab fehlt: {missing}</translation>
         <translation>Quelle:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="87"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="90"/>
         <source>Mount</source>
         <translation>Medium</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="88"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="91"/>
         <source>Condition</source>
         <translation>Zustand</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="89"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="92"/>
         <source>Stain</source>
         <translation>Färbung</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="90"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="93"/>
         <source>Source</source>
         <translation>Quelle</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="101"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="104"/>
         <source>{field}: mixed</source>
         <translation>{field}: gemischt</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="109"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="112"/>
         <source>{field} not set</source>
         <translation>{field} nicht gesetzt</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="111"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="114"/>
         <source>{count} not set</source>
         <translation>{count} nicht gesetzt</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="124"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="127"/>
         <source>Notes</source>
         <translation>Notizen</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="136"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="139"/>
         <source>Add a timestamped session note</source>
         <translation>Zeitgestempelte Notiz zur Sitzung hinzufügen</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="139"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="142"/>
         <source>Add</source>
         <translation>Hinzufügen</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="142"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="145"/>
         <source>Note:</source>
         <translation>Notiz:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="150"/>
-        <location filename="../ui/live_lab_prep_panel.py" line="241"/>
-        <location filename="../ui/live_lab_prep_panel.py" line="266"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="153"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="244"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="269"/>
         <source>Optional note for the selected image</source>
         <translation>Optionale Notiz für das ausgewählte Bild</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="152"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="155"/>
         <source>Image note:</source>
         <translation>Bildnotiz:</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="196"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="199"/>
         <source>1 note · {time} {text}</source>
         <translation>1 Notiz · {time} {text}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="199"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="202"/>
         <source>{count} notes · last {time} {text}</source>
         <translation>{count} Notizen · zuletzt {time} {text}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="208"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="211"/>
         <source>Image: (Multiple notes)</source>
         <translation>Bild: (Mehrere Notizen)</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="212"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="215"/>
         <source>Image: {note}</source>
         <translation>Bild: {note}</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="213"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="216"/>
         <source>No notes</source>
         <translation>Keine Notizen</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="270"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="273"/>
         <source>(Multiple notes)</source>
         <translation>(Mehrere Notizen)</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="482"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="485"/>
         <source>Start a Live Lab session before adding notes.</source>
         <translation>Starte eine Live-Lab-Sitzung, bevor du Notizen hinzufügst.</translation>
     </message>
     <message>
-        <location filename="../ui/live_lab_prep_panel.py" line="491"/>
+        <location filename="../ui/live_lab_prep_panel.py" line="494"/>
         <source>Added session note.</source>
         <translation>Notiz zur Sitzung hinzugefügt.</translation>
     </message>

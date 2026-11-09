@@ -671,7 +671,8 @@ landed through PRs before the branch existed), the commit that brought it into
 | P1 | sigmundas/sporely#67 | `3162501` | Agent-verified (tests, inspected renderer screenshots); no production code; merged 2026-11-09 |
 | P2 | `adb561f` | — | Agent-verified: Live Lab, RAW and main-window tests green; `live-lab` renders pixel-identical to the P1 baseline in both themes; translations moved to the new contexts with none lost |
 | P3 | `e279277` | — | Agent-verified: the global stylesheet, design tokens and button icon colours are byte-identical in both themes; ring colour, outline and token tests; renders identical except the intended objective colour changes; Codex review: 3 findings fixed (Measure tag colour from the profile, NA-first names, outlined badge size). Owner's layout opinion 2026-11-09: looks good |
-| 1a | `ui/redesign` | — | Agent-verified: collapsible Preparation and Notes sections (summary line, warning for unset values, open state remembered); qtbot tests for mouse, keyboard, restart, summaries and layout; renders change only Live Lab's left panel; Codex review: 5 findings, 4 fixed, 1 not reproducible but guarded. Chip rows follow as 1b |
+| 1a | `c03845e` | — | Agent-verified: collapsible Preparation and Notes sections (summary line, warning for unset values, open state remembered); qtbot tests for mouse, keyboard, restart, summaries and layout; renders change only Live Lab's left panel; Codex review: 5 findings, 4 fixed, 1 not reproducible but guarded. |
+| 1b | `ui/redesign` | — | Agent-verified: Preparation rows as chips (click to choose, click again to clear, “+ N more” in place; arrows move, Space/Enter choose; Norwegian labels Medium, Farging, Tilstand, Kilde); qtbot tests; renders change only Live Lab's Preparation rows; Codex review: 3 bugs fixed (idle layout loop, arrow keys clearing a chip, over-wide chip), 1 test gap closed. Stage 1 done: waiting for the owner's layout opinion |
 
 Found during stage 0, not fixed there (rule 1):
 
@@ -764,6 +765,17 @@ Found during stage 1a, not fixed there (rule 1):
 - On macOS, Tab reaches the section headings (and other buttons) only with
   Full Keyboard Access on; clicking and Space/Enter on a focused heading work
   everywhere.
+
+Found during stage 1b, not fixed there (rule 1):
+
+- German translates “Stain:” as “Faerbung:” in other screens (fixed to
+  “Färbung:” only in Live Lab's Preparation section).
+- Pill-mode selectors (objective, contrast and the other non-chip ones) use
+  Qt's exclusive-group arrow-key handling, which moves focus and clicks the
+  next pill; in Live Lab the RAW review shortcuts take Left/Right first while
+  a RAW capture is under review.
+- No cocoa real-input run was made for the chip and heading keyboard
+  handling; it is tested offscreen with Live Lab's real shortcuts installed.
 
 Baseline renders for the pilot's before/after comparisons (P1, 2026-11-08):
 `/Users/sigmundas/Documents/Code/sporely/sporely-py/docs/plans/november-ui/baseline-p1/`

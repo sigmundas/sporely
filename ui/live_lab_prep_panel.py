@@ -78,6 +78,9 @@ class LiveLabPrepPanelMixin:
         prep_form.addRow(self.tr("Condition:"), self.sample_combo)
         prep_form.addRow(self.tr("Source:"), self.sample_source_combo)
         for combo in (self.mount_combo, self.stain_combo, self.sample_combo, self.sample_source_combo):
+            # Chip rows: click to choose, click the chosen chip again to clear,
+            # "+ N more" shows the rest in place. "Not set" has no chip.
+            combo.set_chip_mode(clear_value="Not_set")
             combo.add_display_listener(self._update_prep_summary)
         self._update_prep_summary()
 
