@@ -716,6 +716,18 @@ landed through PRs before the branch existed), the commit that brought it into
 | 5e | `d51ab4b` | — | Owner's first session (2026-11-09), fixed: after switching contrast back (BF → DIC) the RAW panel still showed the BF image on screen, so DIC's settings seemed lost. Now an objective or contrast change shows that combination's settings and edits them for the next capture; a capture shown or an image chosen takes the panel back; Pick is off meanwhile. Notater leaves objective and contrast changes out in live sessions (still in `session_logs`; offline sessions list them). Start/Stop økt moved into Gjeldende observasjon. qtbot tests (the switch-back test fails on the previous code); renders change only the observation card and the label position; Codex review: 2 findings fixed (late preview, Pick) |
 | 5f | `5f0221e` | — | Owner 2026-11-09: no session log in live Live Lab; the timestamped note is for offline microscopy, notes go per image and show in Mål. Live sessions: Notater shows only Bildenotat (the session log is still written; offline unchanged). Bildenotat is now stored as the image's `notes` (Mål's “Notat per bilde”); before, a saved image's note was lost and a RAW's stayed in lab metadata. Live Lab and Mål refresh each other's editor for the same image. qtbot tests; renders change only Notater (live and idle) and move the RAW panel up; Codex review: 1 finding fixed (stale editors) |
 | 6 | `6a04fce`, `abf1810` | — | Agent-verified: Mål has no left column; Skala is a collapsed section with a summary line (objective · calibration, scale warning as alert; SettingsDB `measure_scale_section_expanded`); category, Linje/Rektangel/Flerlinje, Start/Stopp måling and the status are a toolbar above the image; Visning and Info are pages of a new shared right drawer (`ui/side_drawer.py`) that overlays the image, closes with Esc, its ✕ or its button, and widens to fit its page; Info shows a dot when the image has a note. Splitter key `measure_main_splitter_sizes_v2`. New renderer scenarios `measure.tab*`, `measure.view-drawer*`, `measure.info-drawer*` build a real MainWindow; qtbot tests in `tests/test_measure_layout.py`. Codex review: 2 findings fixed (toolbar overlap in a narrow pane, drawer too narrow for a large font). Owner's layout opinion 2026-11-09: looks good |
+| 7a, 7b | `b2adcd7`, `a9c818f` | — | Agent-verified: (a) renderer scenarios `analysis.*` build a real MainWindow; (b) “Legg til referanse…” opens a right drawer over the plot: search, Bibliotek / Fellesskap, a quieter “Mine observasjoner”, “Kun denne taksonen” on by default; ticking attaches as Sammenlignet and plots, unticking detaches; the expanded row has the summary, the role (changed in place) and “Detaljer…” (opens the library manager on that set). Attachments are read from the database for the active observation. Fellesskap, Mine observasjoner and Ny referanse still open the old dialog on that tab (7c, 7d). qtbot tests in `tests/test_reference_drawer.py`; Codex challenge review: 6 findings fixed with regression tests |
+
+Found during stage 7, not fixed there (rule 1):
+
+- Selecting another observation's image through a Measure badge makes it
+  active without reloading `reference_series`, so the Analysis plot and
+  comparison list can still show the previous observation's references.
+  The reference drawer reads attachments from the database and is not
+  affected; the plot is.
+- Analysis plot: the legend is clipped at the plot's left edge, and the
+  first comparison row's icon overlaps its date line (visible in the
+  `analysis.tab` render).
 
 Found during stage 6, not fixed there (rule 1):
 
