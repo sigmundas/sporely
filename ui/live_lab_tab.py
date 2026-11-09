@@ -2369,10 +2369,16 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         selector = getattr(self, "session_mode_selector", None)
         if selector is not None:
             selector.set_selected_value(saved)
+        update_notes = getattr(self, "_update_notes_summary", None)
+        if callable(update_notes):
+            update_notes()  # Notes differs between live and offline
 
     def _on_session_mode_changed(self) -> None:
         SettingsDB.set_setting(self.SETTING_SESSION_MODE, self._selected_session_mode())
         self._update_session_controls()
+        update_notes = getattr(self, "_update_notes_summary", None)
+        if callable(update_notes):
+            update_notes()
 
     def _connect_session_logging_signals(self) -> None:
         self.objective_combo.currentIndexChanged.connect(
@@ -3120,6 +3126,8 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             resample_scale_factor=1.0,
             original_filepath=original_filepath,
             lab_metadata=ingest_lab_metadata or None,
+            # The note typed for the capture becomes the image's own (shown in Mål).
+            notes=str(ingest_lab_metadata.get("notes") or "").strip() or None,
             **ingest.provenance_kwargs(),
         )
         _raw_timing_log("RAW finalize DB add_image", db_start, detail=Path(str(source_path)).name)

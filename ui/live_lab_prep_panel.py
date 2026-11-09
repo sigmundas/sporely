@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from database.database_tags import DatabaseTerms
-from database.models import SessionLogDB, SettingsDB
+from database.models import ImageDB, SessionLogDB, SettingsDB
 from database.schema import load_objectives, objective_display_name, objective_sort_value
 
 from .combo_alerts import combo_is_unset, lab_state_combo_alert_stylesheet, update_combo_alert, update_combo_alerts
@@ -130,7 +130,12 @@ class LiveLabPrepPanelMixin:
         section.set_summary(text, alert=alert)
 
     def _build_notes_card(self) -> None:
-        """Build the collapsible Notes section (session note, image note) as ``self.notes_group``."""
+        """Build the collapsible Notes section as ``self.notes_group``.
+
+        The timestamped session note and the session log are for offline
+        microscopy; a live session shows only the image note, which is the
+        image's own note (the one Mål shows).
+        """
         self.notes_group = CollapsibleSection(
             self.tr("Notes"),
             QFormLayout,
@@ -140,6 +145,7 @@ class LiveLabPrepPanelMixin:
         notes_form = self.notes_group.body_layout
         notes_form.setSpacing(8)
         note_row = QWidget()
+        self.session_note_row = note_row
         note_row_layout = QHBoxLayout(note_row)
         note_row_layout.setContentsMargins(0, 0, 0, 0)
         note_row_layout.setSpacing(6)
@@ -176,17 +182,26 @@ class LiveLabPrepPanelMixin:
 
     # Session-log attributes shown as change lines in Notes (stage 4).
     _LOGGED_CHANGE_FIELDS = ("objective_name", "contrast", "mount_medium", "stain")
-    # In a live session each capture carries its own objective and contrast,
-    # so Notes leaves those changes out (the session log still has them);
-    # offline sessions need them to match photos to the microscope state.
-    _LIVE_UNLISTED_FIELDS = ("objective_name", "contrast")
+
+    def _notes_show_session_log(self) -> bool:
+        """True for an offline session (running, or chosen for the next one).
+
+        Offline microscopy matches photos to the session log by time, so
+        Notes offers the timestamped note and lists the log. In a live session
+        each capture carries its own state and note; the log is still written.
+        """
+        mode = getattr(self, "_active_session_mode", None)
+        if not mode:
+            selected = getattr(self, "_selected_session_mode", None)
+            mode = selected() if callable(selected) else None
+        return str(mode or "").strip().lower() == "offline"
 
     def _session_log_lines(self, *, refresh: bool = False) -> list[tuple[str, str]]:
         """(time, text) lines for Notes from the running session's log, oldest first.
 
-        Manual notes, and changes of mount and stain, plus objective and
-        contrast in offline sessions; the state logged when the session
-        started is the baseline, not a change. Read from ``session_logs`` and cached per session; ``refresh``
+        Manual notes, and changes of objective, contrast, mount and stain;
+        the state logged when the session started is the baseline, not a
+        change. Read from ``session_logs`` and cached per session; ``refresh``
         rereads (after a note or change is logged, or a session starts or stops).
         """
         session_id = str(getattr(self, "_session_id", None) or "")
@@ -210,8 +225,6 @@ class LiveLabPrepPanelMixin:
                     continue
                 attribute = str(event.get("attribute_name") or "")
                 if event_type != "dropdown_change" or attribute not in self._LOGGED_CHANGE_FIELDS:
-                    continue
-                if attribute in self._LIVE_UNLISTED_FIELDS and str(event.get("session_kind") or "").lower() == "live":
                     continue
                 value = event.get("value")
                 metadata = event.get("metadata_json") or event.get("metadata") or {}
@@ -264,7 +277,7 @@ class LiveLabPrepPanelMixin:
 
     def _notes_summary(self, *, refresh_log: bool = False) -> str:
         parts: list[str] = []
-        lines = self._session_log_lines(refresh=refresh_log)
+        lines = self._session_log_lines(refresh=refresh_log) if self._notes_show_session_log() else []
         if lines:
             time_text, text = lines[-1]
             if len(lines) == 1:
@@ -298,9 +311,13 @@ class LiveLabPrepPanelMixin:
         section = getattr(self, "notes_group", None)
         if isinstance(section, CollapsibleSection):
             section.set_summary(self._notes_summary(refresh_log=refresh_log))
+        show_log = self._notes_show_session_log()
+        note_row = getattr(self, "session_note_row", None)
+        if isinstance(section, CollapsibleSection) and note_row is not None:
+            section.body_layout.setRowVisible(note_row, show_log)
         log_list = getattr(self, "session_log_list", None)
         if log_list is not None:
-            lines = self._session_log_lines()
+            lines = self._session_log_lines() if show_log else []
             log_list.clear()
             for time_text, text in reversed(lines):  # newest first
                 log_list.addItem(f"{time_text}  {text}")
@@ -385,7 +402,37 @@ class LiveLabPrepPanelMixin:
         for capture in targets:
             meta = dict(capture.lab_metadata or {})
             meta["notes"] = text
-            capture.lab_metadata = meta
+            capture.lab_metadata = meta  # becomes the image's note when it is saved
+        # Saved images: their own note, the one Mål shows and edits.
+        note = text.strip() or None
+        saved: list[int] = []
+        for image_id in self._image_note_saved_targets(pending_targets=bool(targets)):
+            try:
+                ImageDB.update_image(int(image_id), notes=note)
+            except Exception:
+                continue
+            saved.append(int(image_id))
+        notify = getattr(getattr(self, "_main_window", None), "on_live_lab_image_note_changed", None)
+        if saved and callable(notify):
+            notify(saved, note)  # Mål may have the same image's note open
+
+    def reload_image_note(self, image_id: int, note_text: str | None) -> None:
+        """Mål saved an image's note: show it here if this is the note being edited."""
+        if getattr(self, "_image_note_mixed", False):
+            return
+        targets = self._image_note_saved_targets(pending_targets=self._current_pending_raw_capture() is not None)
+        if targets == [int(image_id)]:
+            self._load_image_note_from_metadata({"notes": note_text})
+
+    def _image_note_saved_targets(self, *, pending_targets: bool) -> list[int]:
+        """Saved images the image note applies to: the selected ones, else the one on screen."""
+        if self._session_gallery_selected_keys():
+            collect = getattr(self, "_selected_session_image_ids_for_metadata_sync", None)
+            return list(collect()) if callable(collect) else []
+        subject = getattr(self, "_viewer_subject", None)
+        if not pending_targets and subject and subject[0] == "image":
+            return [int(subject[1])]
+        return []
 
     def _make_combo(self):
         return AdaptiveChoiceSelector(self, compact=True)

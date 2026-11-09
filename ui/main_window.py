@@ -15545,6 +15545,23 @@ class MainWindow(GeometryMixin, QMainWindow):
         if existing_note == note_text:
             return
         ImageDB.update_image(image_id, notes=note_text)
+        live_lab = getattr(self, "live_lab_tab", None)
+        reload_note = getattr(live_lab, "reload_image_note", None)
+        if callable(reload_note):
+            reload_note(image_id, note_text)
+
+    def on_live_lab_image_note_changed(self, image_ids: list[int], note_text: str | None) -> None:
+        """Live Lab saved an image's note: show it here too if Mål has that image open.
+
+        Mål's own unsaved edit of that note is dropped; Live Lab's is the newer one.
+        """
+        image_id = int(self.current_image_id or 0)
+        if image_id <= 0 or image_id not in {int(value) for value in image_ids}:
+            return
+        timer = getattr(self, "_measure_image_note_save_timer", None)
+        if timer is not None and timer.isActive():
+            timer.stop()
+        self._set_measure_image_note_text(note_text, enabled=True)
 
     def _flush_measure_image_note(self) -> None:
         if not hasattr(self, "_measure_image_note_save_timer"):

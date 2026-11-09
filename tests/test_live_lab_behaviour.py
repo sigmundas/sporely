@@ -589,7 +589,7 @@ def test_notes_summary_shows_session_notes_and_the_selected_images_note(qtbot, p
     obs = create_observation(profile)
     tab = _make_tab(qtbot)
     assert tab.notes_group.summary() == "No notes"
-    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_OFFLINE)  # timestamped notes are for offline sessions
 
     tab.session_note_input.setText("Spores Melzer-negative")
     qtbot.keyClick(tab.session_note_input, Qt.Key_Return)
@@ -600,12 +600,14 @@ def test_notes_summary_shows_session_notes_and_the_selected_images_note(qtbot, p
     qtbot.mouseClick(tab.add_note_btn, Qt.LeftButton)
     second = tab.notes_group.summary()
     assert second.startswith("2 lines · last ") and second.endswith(" Basidia 4-spored")
+    _stop_session(qtbot, tab)
 
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
     image = _capture(qtbot, profile, obs, "P1010001.JPG")
     tab._on_session_gallery_clicked(image["id"], image.get("filepath") or "")
     qtbot.waitUntil(lambda: tab._selected_session_image_id == image["id"], timeout=3000)
     tab.image_note_input.setPlainText("Clamp at septum")
-    assert tab.notes_group.summary().endswith(" · Image: Clamp at septum")
+    assert tab.notes_group.summary() == "Image: Clamp at septum"  # live: the image note only
 
     _stop_session(qtbot, tab)
     # A new session starts with nothing selected: the note field may still hold
@@ -1533,18 +1535,50 @@ def test_clicking_an_image_after_a_switch_edits_that_image_again(qtbot, profile)
     _stop_session(qtbot, tab)
 
 
-def test_notes_leaves_out_objective_and_contrast_changes_in_a_live_session(qtbot, profile):
+def test_a_live_session_shows_only_the_image_note(qtbot, profile):
     obs = create_observation(profile)
     tab = _make_tab(qtbot)
     _set_lab_state(qtbot, tab, LAB_STATE)
+    _choose(qtbot, tab.session_mode_selector, tab.SESSION_MODE_OFFLINE)
+    assert tab.session_note_row.isVisible()  # an offline session is coming: timestamped notes
+    _choose(qtbot, tab.session_mode_selector, tab.SESSION_MODE_LIVE)
+    assert not tab.session_note_row.isVisible()
     _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
     qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)
     qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)
     _choose(qtbot, tab.mount_combo, "Water")
-    lines = [tab.session_log_list.item(i).text().split("  ", 1)[1] for i in range(tab.session_log_list.count())]
-    assert lines == ["Mount KOH → Water"]
+    assert not tab.session_note_row.isVisible() and not tab.session_log_list.isVisible()
+    assert tab.image_note_input.isVisible()
+    assert tab.notes_group.summary() == "No notes"
     logged = {e.get("attribute_name") for e in _events(obs) if e.get("event_type") == "dropdown_change"}
-    assert {"objective_name", "contrast"} <= logged  # still in the session log
+    assert {"objective_name", "contrast", "mount_medium"} <= logged  # the session log is still written
+    _stop_session(qtbot, tab)
+
+
+def test_the_image_note_is_the_images_own_note_as_mal_shows_it(qtbot, profile):
+    obs = create_observation(profile)
+    SettingsDB.set_setting(LiveLabTab_SETTING_RAW_CAPTURE_MODE(), "review")
+    tab = _make_tab(qtbot)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    jpeg = _capture(qtbot, profile, obs, "P1010401.JPG")
+    qtbot.waitUntil(lambda: tab._viewer_subject == ("image", jpeg["id"]), timeout=3000)
+    tab.image_note_input.setPlainText("Clamp at septum")  # the image on screen
+    assert ImageDB.get_image(jpeg["id"])["notes"] == "Clamp at septum"
+
+    _drop_pending_raw(qtbot, tab, profile, "P1010402.ORF")
+    tab.image_note_input.setPlainText("Spores in Melzer")  # the pending capture, not the JPEG
+    assert ImageDB.get_image(jpeg["id"])["notes"] == "Clamp at septum"
+    qtbot.mouseClick(tab.pending_raw_save_btn, Qt.LeftButton)
+    qtbot.waitUntil(lambda: not tab._pending_raw_captures and not tab._pending_raw_commit_is_busy(), timeout=10000)
+    raw_image = _images(obs)[-1]
+    assert raw_image["notes"] == "Spores in Melzer"
+
+    # Clicking the JPEG again shows its note; clearing it clears the image's note.
+    tab._on_session_gallery_clicked(jpeg["id"], jpeg.get("filepath") or "")
+    qtbot.waitUntil(lambda: tab.image_note_input.toPlainText() == "Clamp at septum", timeout=3000)
+    tab.image_note_input.setPlainText("")
+    assert ImageDB.get_image(jpeg["id"])["notes"] is None
+    assert ImageDB.get_image(raw_image["id"])["notes"] == "Spores in Melzer"
     _stop_session(qtbot, tab)
 
 
@@ -1576,4 +1610,59 @@ def test_a_switch_while_a_capture_is_on_screen_leaves_it_and_its_preview_alone(q
     assert _clipping(tab) is False  # the finished preview did not take the panel back
     assert tab._raw_render_settings.auto_levels_clipping is False
     assert capture.raw_settings.auto_levels_clipping is True  # the BF capture keeps its own
+    _stop_session(qtbot, tab)
+
+
+def test_an_image_note_saved_in_one_tab_shows_in_the_other(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    measure = tab._main_window
+    measure.current_image_id = None
+    shown: list = []
+    measure._set_measure_image_note_text = lambda text, *, enabled: shown.append(text)
+    measure.on_live_lab_image_note_changed = lambda ids, note: MainWindow_on_note(measure, ids, note)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    image = _capture(qtbot, profile, obs, "P1010403.JPG")
+    qtbot.waitUntil(lambda: tab._viewer_subject == ("image", image["id"]), timeout=3000)
+
+    measure.current_image_id = image["id"]  # Mål has the same image open
+    tab.image_note_input.setPlainText("From Live Lab")
+    assert shown == ["From Live Lab"]
+    tab.reload_image_note(image["id"], "From Mål")  # what Mål calls after saving
+    assert tab.image_note_input.toPlainText() == "From Mål"
+    tab.reload_image_note(image["id"] + 999, "Another image")
+    assert tab.image_note_input.toPlainText() == "From Mål"
+    _stop_session(qtbot, tab)
+
+
+def MainWindow_on_note(window, ids, note):
+    from ui.main_window import MainWindow
+
+    window._measure_image_note_save_timer = None
+    return MainWindow.on_live_lab_image_note_changed(window, ids, note)
+
+
+def test_a_note_saved_in_mal_reaches_live_lab(qtbot, profile):
+    from types import SimpleNamespace
+
+    from PySide6.QtWidgets import QPlainTextEdit
+    from ui.main_window import MainWindow
+
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    image = _capture(qtbot, profile, obs, "P1010404.JPG")
+    qtbot.waitUntil(lambda: tab._viewer_subject == ("image", image["id"]), timeout=3000)
+    editor = QPlainTextEdit()
+    qtbot.addWidget(editor)
+    editor.setPlainText("Written in Mål")
+    mal = SimpleNamespace(
+        _loading_measure_image_note=False,
+        current_image_id=image["id"],
+        measure_image_note_input=editor,
+        live_lab_tab=tab,
+    )
+    MainWindow._commit_measure_image_note(mal)
+    assert ImageDB.get_image(image["id"])["notes"] == "Written in Mål"
+    assert tab.image_note_input.toPlainText() == "Written in Mål"
     _stop_session(qtbot, tab)
