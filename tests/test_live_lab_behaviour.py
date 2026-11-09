@@ -864,11 +864,10 @@ def test_overlays_stack_without_overlapping(qtbot, profile):
     _set_lab_state(qtbot, tab, LAB_STATE)
     _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
     qtbot.waitUntil(tab.live_state_label.isVisible, timeout=2000)
-    session = tab.session_action_frame.geometry()
     label = tab.live_state_label.geometry()
     bar = tab.capture_state_bar.geometry()
     calibration = tab.calibration_action_frame.geometry()
-    assert label.top() > session.bottom()  # label under the session button
+    assert (label.left(), label.top()) == (8, 8)  # top-left: the session button is not on the image
     assert not label.intersects(calibration)
     viewer = tab.live_image_label.rect()
     assert viewer.contains(bar)
@@ -1462,4 +1461,119 @@ def test_pasting_white_balance_re_renders_the_preview_with_it(qtbot, profile):
     )
     qtbot.mouseClick(tab.pending_raw_save_all_btn, Qt.LeftButton)
     qtbot.waitUntil(lambda: not tab._pending_raw_captures and not tab._pending_raw_commit_is_busy(), timeout=10000)
+    _stop_session(qtbot, tab)
+
+
+# ---------------------------------------------------------------------------
+# After the pilot: the owner's first session (2026-11-09)
+# ---------------------------------------------------------------------------
+
+
+def _clipping(tab):
+    return tab.raw_controls.auto_levels_clipping_selector.selected_value()
+
+
+def _stored_clipping(tab, objective, contrast):
+    context = {**tab._raw_processing_preset_context(), "objective_name": objective, "contrast": contrast}
+    settings = tab._stored_raw_settings_for_context(context)
+    return None if settings is None else settings.auto_levels_clipping
+
+
+def _review_and_save(qtbot, tab, profile, name, *, clipping):
+    _drop_pending_raw(qtbot, tab, profile, name)
+    assert tab._visible_raw_processing_target()[0] == "pending"  # the panel edits the capture
+    tab.raw_controls.auto_levels_clipping_selector.set_selected_value(clipping, emit=True)
+    assert tab._pending_raw_captures[-1].raw_settings.auto_levels_clipping is clipping
+    qtbot.mouseClick(tab.pending_raw_save_btn, Qt.LeftButton)
+    qtbot.waitUntil(lambda: not tab._pending_raw_captures and not tab._pending_raw_commit_is_busy(), timeout=10000)
+
+
+def test_switching_back_shows_and_edits_the_combinations_settings_while_an_image_is_shown(qtbot, profile):
+    obs = create_observation(profile)
+    SettingsDB.set_setting(LiveLabTab_SETTING_RAW_CAPTURE_MODE(), "review")
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "40X", "contrast_combo": "DIC"})
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    _review_and_save(qtbot, tab, profile, "P1010301.ORF", clipping=False)  # DIC: clipping off
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)
+    _review_and_save(qtbot, tab, profile, "P1010302.ORF", clipping=True)  # BF: clipping on
+    bf_image = _images(obs)[-1]
+    assert _clipping(tab) is True  # the saved BF image is on screen
+
+    qtbot.mouseClick(_bar_button(tab, "contrast", "DIC"), Qt.LeftButton)
+    assert _clipping(tab) is False  # DIC's settings, although the BF image is still shown
+    assert tab.raw_processing_card.isVisible()
+    # An edit now is for the next DIC capture, not the BF image on screen.
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "auto")
+    assert tab._raw_edit_session is None
+    assert _lab_metadata(ImageDB.get_image(bf_image["id"]))["raw_processing"] == _lab_metadata(bf_image)["raw_processing"]
+    assert _stored_wb(tab, "40X", "DIC") == "auto" and _stored_clipping(tab, "40X", "DIC") is False
+    assert _stored_clipping(tab, "40X", "BF") is True
+
+    _drop_pending_raw(qtbot, tab, profile, "P1010303.ORF")
+    capture = tab._pending_raw_captures[-1]
+    assert (capture.raw_settings.auto_levels_clipping, capture.raw_settings.white_balance_mode) == (False, "auto")
+    tab.raw_controls.auto_levels_clipping_selector.set_selected_value(True, emit=True)
+    assert capture.raw_settings.auto_levels_clipping is True  # the panel follows the new capture again
+    _stop_session(qtbot, tab)
+
+
+def test_clicking_an_image_after_a_switch_edits_that_image_again(qtbot, profile):
+    obs = create_observation(profile)
+    SettingsDB.set_setting(LiveLabTab_SETTING_RAW_CAPTURE_MODE(), "review")
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "40X", "contrast_combo": "BF"})
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    _review_and_save(qtbot, tab, profile, "P1010304.ORF", clipping=True)
+    image_id = int(_images(obs)[-1]["id"])
+    qtbot.mouseClick(_bar_button(tab, "contrast", "DIC"), Qt.LeftButton)
+    assert tab._selected_raw_processing_targets() == []
+    tab._on_session_gallery_clicked(image_id, ImageDB.get_image(image_id)["filepath"])
+    assert [kind for kind, *_rest in tab._selected_raw_processing_targets()] == ["image"]
+    _stop_session(qtbot, tab)
+
+
+def test_notes_leaves_out_objective_and_contrast_changes_in_a_live_session(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)
+    _choose(qtbot, tab.mount_combo, "Water")
+    lines = [tab.session_log_list.item(i).text().split("  ", 1)[1] for i in range(tab.session_log_list.count())]
+    assert lines == ["Mount KOH → Water"]
+    logged = {e.get("attribute_name") for e in _events(obs) if e.get("event_type") == "dropdown_change"}
+    assert {"objective_name", "contrast"} <= logged  # still in the session log
+    _stop_session(qtbot, tab)
+
+
+def test_the_session_button_is_in_the_observation_card(qtbot, profile):
+    tab = _make_tab(qtbot)
+    assert not tab.live_image_label.isAncestorOf(tab.start_stop_btn)
+    card = tab.current_observation_name_label.parentWidget()
+    assert card.isAncestorOf(tab.start_stop_btn) and tab.start_stop_btn.isVisible()
+
+
+def test_a_switch_while_a_capture_is_on_screen_leaves_it_and_its_preview_alone(qtbot, profile):
+    obs = create_observation(profile)
+    SettingsDB.set_setting(LiveLabTab_SETTING_RAW_CAPTURE_MODE(), "review")
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "40X", "contrast_combo": "BF"})
+    tab.raw_controls.auto_levels_clipping_selector.set_selected_value(True, emit=True)  # BF: clipping on
+    qtbot.mouseClick(_bar_button(tab, "contrast", "DIC"), Qt.LeftButton)
+    tab.raw_controls.auto_levels_clipping_selector.set_selected_value(False, emit=True)  # DIC: clipping off
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    _watcher().drop(profile.raw("P1010305.ORF"))
+    qtbot.waitUntil(lambda: len(tab._pending_raw_captures) == 1, timeout=5000)
+    capture = tab._pending_raw_captures[0]
+    assert tab._raw_processing_pick_target() == "pending"
+    # Switch before its preview has finished rendering.
+    qtbot.mouseClick(_bar_button(tab, "contrast", "DIC"), Qt.LeftButton)
+    assert _clipping(tab) is False and tab._raw_processing_pick_target() is None
+    qtbot.waitUntil(lambda: not tab._pending_raw_preview_has_request_for_capture(capture), timeout=5000)
+    assert _clipping(tab) is False  # the finished preview did not take the panel back
+    assert tab._raw_render_settings.auto_levels_clipping is False
+    assert capture.raw_settings.auto_levels_clipping is True  # the BF capture keeps its own
     _stop_session(qtbot, tab)

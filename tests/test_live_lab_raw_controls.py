@@ -2332,13 +2332,8 @@ def test_live_lab_review_queue_is_placed_in_the_main_viewer_area(monkeypatch, qa
     tab._update_pending_raw_controls()
     qapp.processEvents()
 
-    assert tab.session_action_frame.parentWidget() is tab.live_image_label
-    assert tab.session_action_frame.pos().x() == 8
-    assert tab.session_action_frame.pos().y() == 8
-    assert tab.session_action_frame.styleSheet() == tab.calibration_action_frame.styleSheet()
+    assert not tab.live_image_label.isAncestorOf(tab.start_stop_btn)  # in the observation card
     assert tab.start_stop_btn.text() == "Start Session"
-    assert tab.session_action_frame.size().width() >= tab.start_stop_btn.size().width() + 16
-    assert tab.session_action_frame.size().height() >= tab.start_stop_btn.size().height() + 12
     assert tab.pending_raw_frame.parentWidget() is tab.live_image_label
     assert tab.pending_raw_frame.isVisible() is True
     assert tab.pending_raw_frame.sizeHint().height() <= 96

@@ -723,7 +723,9 @@ class LiveLabRawMixin:
 
         Only while preparing the next capture (not while the side panel edits
         selected images, nor for a mixed selection, nor in a RAW edit). The
-        panel shows them unless it is showing a capture's own settings.
+        panel then shows them and edits them for the next capture, also while
+        an older capture stays on screen, until a capture is shown or an image
+        is chosen (``_raw_panel_shows_next_capture``).
         """
         if getattr(self, "_sidebar_binds_to_selection", False) or getattr(self, "_raw_edit_session", None) is not None:
             return
@@ -731,13 +733,15 @@ class LiveLabRawMixin:
             return
         settings = self._stored_raw_settings_for_context()
         if settings is None:
-            return
+            # Nothing stored for this combination yet: the next capture gets
+            # the settings in use now, so the panel keeps showing those.
+            settings = RawRenderSettings.from_dict(getattr(self, "_raw_render_settings", None))
         self._raw_render_settings = settings
-        if self._visible_raw_processing_target() is None:
-            sync_helper = getattr(self, "_sync_raw_processing_controls_from_settings", None)
-            if callable(sync_helper):
-                sync_helper(settings)
-            self._refresh_raw_processing_context_ui()
+        self._raw_panel_shows_next_capture = True
+        sync_helper = getattr(self, "_sync_raw_processing_controls_from_settings", None)
+        if callable(sync_helper):
+            sync_helper(settings)
+        self._refresh_raw_processing_context_ui()
 
     def _load_raw_processing_settings_for_current_context(self) -> RawRenderSettings:
         settings = self._stored_raw_settings_for_context()
@@ -1080,6 +1084,9 @@ class LiveLabRawMixin:
             controls.set_settings(settings_list[0])
 
     def _selected_raw_processing_targets(self) -> list[tuple[str, object, object]]:
+        if getattr(self, "_raw_panel_shows_next_capture", False):
+            # The panel holds the next capture's settings, not the image on screen.
+            return []
         targets: list[tuple[str, object, object]] = []
         captures = getattr(self, "_pending_raw_captures", [])
         selected_keys = self._session_gallery_selected_keys()
@@ -1181,6 +1188,11 @@ class LiveLabRawMixin:
             return False
         if self._current_pending_raw_capture() is not None:
             return True
+        if getattr(self, "_raw_panel_shows_next_capture", False):
+            # Still the same workflow: the panel stays as it was (without
+            # reading the shown image again on every objective or contrast change).
+            card = getattr(self, "raw_processing_card", None)
+            return card is not None and not card.isHidden()
         return bool(self._selected_raw_processing_targets())
 
     def _selection_contains_non_raw_item(self) -> bool:
@@ -2282,6 +2294,8 @@ class LiveLabRawMixin:
     def _raw_processing_pick_target(self) -> str | None:
         if getattr(self, "_raw_edit_session", None) is not None:
             return "edit"
+        if getattr(self, "_raw_panel_shows_next_capture", False):
+            return None  # the panel holds the next capture's settings; there is nothing to sample
         if self._current_pending_raw_capture() is not None:
             return "pending"
         return None
@@ -3970,6 +3984,7 @@ class LiveLabRawMixin:
 
     def _show_pending_raw_capture(self, index: int | None = None) -> None:
         start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+        self._raw_panel_shows_next_capture = False  # the panel follows the capture on screen
         captures = getattr(self, "_pending_raw_captures", [])
         if not captures:
             self._cancel_pending_raw_background_wb_selection()
@@ -4397,7 +4412,9 @@ class LiveLabRawMixin:
                     curve_settings,
                 )
             capture.status = "pending"
-            if current_request.kind == "selected":
+            if current_request.kind == "selected" and not getattr(self, "_raw_panel_shows_next_capture", False):
+                # Not after an objective or contrast change: the panel then
+                # holds the next capture's settings.
                 self._sync_raw_processing_controls_from_settings(
                     capture.raw_settings,
                     auto_level_settings=result.auto_level_settings,

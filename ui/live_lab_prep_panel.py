@@ -176,13 +176,17 @@ class LiveLabPrepPanelMixin:
 
     # Session-log attributes shown as change lines in Notes (stage 4).
     _LOGGED_CHANGE_FIELDS = ("objective_name", "contrast", "mount_medium", "stain")
+    # In a live session each capture carries its own objective and contrast,
+    # so Notes leaves those changes out (the session log still has them);
+    # offline sessions need them to match photos to the microscope state.
+    _LIVE_UNLISTED_FIELDS = ("objective_name", "contrast")
 
     def _session_log_lines(self, *, refresh: bool = False) -> list[tuple[str, str]]:
         """(time, text) lines for Notes from the running session's log, oldest first.
 
-        Manual notes, and changes of objective, contrast, mount and stain;
-        the state logged when the session started is the baseline, not a
-        change. Read from ``session_logs`` and cached per session; ``refresh``
+        Manual notes, and changes of mount and stain, plus objective and
+        contrast in offline sessions; the state logged when the session
+        started is the baseline, not a change. Read from ``session_logs`` and cached per session; ``refresh``
         rereads (after a note or change is logged, or a session starts or stops).
         """
         session_id = str(getattr(self, "_session_id", None) or "")
@@ -206,6 +210,8 @@ class LiveLabPrepPanelMixin:
                     continue
                 attribute = str(event.get("attribute_name") or "")
                 if event_type != "dropdown_change" or attribute not in self._LOGGED_CHANGE_FIELDS:
+                    continue
+                if attribute in self._LIVE_UNLISTED_FIELDS and str(event.get("session_kind") or "").lower() == "live":
                     continue
                 value = event.get("value")
                 metadata = event.get("metadata_json") or event.get("metadata") or {}

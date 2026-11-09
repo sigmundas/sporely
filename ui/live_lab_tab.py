@@ -194,6 +194,9 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         # capture's metadata after each ingest.
         self._session_microscope_state: dict = {}
         self._raw_render_settings = RawRenderSettings.default()
+        # True after an objective or contrast change: the RAW panel shows and
+        # edits the next capture's settings rather than the image on screen.
+        self._raw_panel_shows_next_capture = False
         self._raw_capture_mode = self.RAW_CAPTURE_MODE_AUTO_SAVE
         self._raw_companion_source_preference = RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW
         self._pending_raw_captures: list[PendingRawCapture] = []
@@ -352,23 +355,14 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         self.current_observation_location_label.setVisible(False)
         current_text_layout.addWidget(self.current_observation_location_label)
         current_text_layout.addStretch(1)
-        current_row.addLayout(current_text_layout, 1)
-
-        self.session_action_frame = QFrame()
-        self.session_action_frame.setFrameShape(QFrame.NoFrame)
-        self.session_action_frame.setObjectName("sectionCard")
-        self.session_action_frame.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        session_action_layout = QHBoxLayout(self.session_action_frame)
-        session_action_layout.setContentsMargins(8, 6, 8, 6)
-        session_action_layout.setSpacing(6)
-        self.start_stop_btn = QPushButton(
-            self.tr("Start\nSession").replace("\n", " "),
-            self.session_action_frame,
-        )
+        # Starting and stopping the session belongs to the observation, not
+        # the image: the viewer shows only what is needed at the microscope.
+        self.start_stop_btn = QPushButton(self.tr("Start\nSession").replace("\n", " "))
         self.start_stop_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.start_stop_btn.setStyleSheet(self.SESSION_BUTTON_BASE_STYLE)
         self.start_stop_btn.clicked.connect(self._toggle_session)
-        session_action_layout.addWidget(self.start_stop_btn)
+        current_text_layout.addWidget(self.start_stop_btn, 0, Qt.AlignLeft)
+        current_row.addLayout(current_text_layout, 1)
         current_layout.addLayout(current_row)
         left_layout.addWidget(current_group)
 
@@ -579,16 +573,6 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             "}"
         )
         self.calibration_action_frame.raise_()
-        self.session_action_frame.setParent(self.live_image_label)
-        self.session_action_frame.setAttribute(Qt.WA_StyledBackground, True)
-        self.session_action_frame.setStyleSheet(
-            "QFrame#sectionCard {"
-            " background-color: rgba(255, 255, 255, 215);"
-            " border: 1px solid rgba(0, 0, 0, 40);"
-            " border-radius: 8px;"
-            "}"
-        )
-        self.session_action_frame.raise_()
         # Capture-state bar (stage 2): objective and contrast as large segments
         # at the bottom of the viewer, and a label at the top-left showing the
         # state of what is on screen, coloured by the objective's ring colour.
@@ -639,7 +623,6 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         # while the controls are visible still works.
         self._install_viewer_gesture_forwarding(self.pending_raw_frame)
         self._install_viewer_gesture_forwarding(self.calibration_action_frame)
-        self._install_viewer_gesture_forwarding(self.session_action_frame)
         self._install_viewer_gesture_forwarding(self.capture_state_bar)
         # New buttons (objectives loaded, contrast list changed in Preferences)
         # need the forwarding too, and a new size means a new position.
@@ -1495,7 +1478,6 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         frames = [
             getattr(self, "pending_raw_frame", None),
             getattr(self, "calibration_action_frame", None),
-            getattr(self, "session_action_frame", None),
             getattr(self, "capture_state_bar", None),
         ]
         for frame in frames:
@@ -1612,13 +1594,6 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             y = 8
             calibration_frame.setGeometry(x, y, width, height)
             calibration_frame.raise_()
-        session_frame = getattr(self, "session_action_frame", None)
-        if session_frame is not None and session_frame.parentWidget() is image_label:
-            hint = session_frame.sizeHint()
-            width = max(hint.width(), session_frame.minimumSizeHint().width())
-            height = max(hint.height(), session_frame.minimumSizeHint().height())
-            session_frame.setGeometry(8, 8, width, height)
-            session_frame.raise_()
         notice = getattr(self, "calibration_notice", None)
         if notice is not None and notice.parentWidget() is image_label:
             hint = notice.sizeHint()
@@ -1645,11 +1620,8 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
                         break
         state_label = getattr(self, "live_state_label", None)
         if state_label is not None and state_label.parentWidget() is image_label:
-            top = 8
-            if session_frame is not None and session_frame.parentWidget() is image_label and not session_frame.isHidden():
-                top = session_frame.geometry().bottom() + 8
             state_label.adjustSize()
-            state_label.move(8, top)
+            state_label.move(8, 8)
             state_label.raise_()
 
     _SESSION_IMAGE_TOP_LEVEL_METADATA_KEYS = (
@@ -3422,6 +3394,7 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         self._sidebar_binds_to_selection = (
             bool(selected_keys) if is_multi_select else bool(clicked_selected)
         )
+        self._raw_panel_shows_next_capture = False
         current_edit_session = getattr(self, "_raw_edit_session", None)
         try:
             clicked_image_id = int(image_id or 0)
@@ -3530,6 +3503,8 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         # empty selection releases it so future edits queue for the next
         # capture instead of mutating whatever was previously highlighted.
         self._sidebar_binds_to_selection = selected_count > 0
+        if selected_count > 0:
+            self._raw_panel_shows_next_capture = False
         self._update_edit_selection_hint(selected_count)
         if selected_count > 1:
             metadatas = self._collect_multi_select_metadatas()
@@ -3777,6 +3752,7 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
 
     def _show_session_image(self, image_id: int) -> None:
         start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+        self._raw_panel_shows_next_capture = False  # the panel follows the image on screen
         db_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         image = ImageDB.get_image(image_id)
         _raw_timing_log("show session image DB get_image", db_start, detail=f"image_id={image_id}")
