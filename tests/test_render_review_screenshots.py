@@ -166,6 +166,7 @@ MEASURE_TAB_IDS = {
     for state in ("tab", "view-drawer", "info-drawer")
     for suffix in ("", "-dark")
 } | {"measure.tab-de", "measure.tab-small", "measure.view-drawer-de"}
+ANALYSIS_TAB_IDS = {"analysis.tab", "analysis.tab-dark", "analysis.tab-small"}
 ALL_IDS = (
     REFERENCE_IDS
     | CONFLICT_IDS
@@ -175,6 +176,7 @@ ALL_IDS = (
     | LIVE_LAB_IDS
     | STYLE_TOKEN_IDS
     | MEASURE_TAB_IDS
+    | ANALYSIS_TAB_IDS
 )
 
 
@@ -197,7 +199,7 @@ def test_registry_has_unique_semantic_ids_and_expected_groups() -> None:
     ids = [scenario.id for scenario in registry.all()]
     assert len(ids) == len(set(ids))
     assert set(registry.groups()) == {
-        "conflict", "live-lab", "measure", "observations", "portable-import",
+        "analysis", "conflict", "live-lab", "measure", "observations", "portable-import",
         "quick-fixes", "raw-processing", "reference-library", "style-tokens",
         "taxon-picker",
     }

@@ -582,6 +582,11 @@ sorts everything else, read-only, into a table the owner approves:
       the RAW settings last used with that objective + contrast combination.
 - [x] Decided 2026-11-09: no hold-to-compare key for RAW before/after in
       stage 5.
+- [x] Decided 2026-11-09 (stage 7): in the reference drawer, ticking a
+      reference attaches it to the observation and plots it; unticking
+      detaches it (the same as Fjern in the comparison list). A ticked
+      reference is attached as “Sammenlignet”; the role is changed in its
+      expanded row.
 - [ ] Unsaved edits in Rediger: autosave, or ask when switching (before 9;
       neither is built until decided).
 - [ ] Switching observation with unsaved images in Bilder: ask, or save them to
