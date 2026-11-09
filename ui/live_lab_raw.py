@@ -2305,6 +2305,11 @@ class LiveLabRawMixin:
         self.raw_processing_toggle_btn.setText(
             self.tr("RAW processing {arrow} {summary}").format(arrow=arrow, summary=summary)
         )
+        more_section = getattr(getattr(self, "raw_controls", None), "more_section", None)
+        if more_section is not None:
+            # "More" holds levels and the tone curve: its summary is those parts.
+            parts = summary.split(" \u00b7 ")
+            more_section.set_summary(" \u00b7 ".join(parts[1:]) if len(parts) > 1 else summary)
 
     def _on_raw_processing_toggle_changed(self, checked: bool) -> None:
         self._update_raw_processing_visibility()

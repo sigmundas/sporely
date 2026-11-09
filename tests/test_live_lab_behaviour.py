@@ -1310,3 +1310,51 @@ def LiveLabTab_SETTING_RAW_CAPTURE_MODE():
     from ui.live_lab_tab import LiveLabTab
 
     return LiveLabTab.SETTING_RAW_CAPTURE_MODE
+
+
+# ---------------------------------------------------------------------------
+# Stage 5b: a slimmer RAW panel
+# ---------------------------------------------------------------------------
+
+
+def _is_inside(widget, ancestor) -> bool:
+    parent = widget
+    while parent is not None:
+        if parent is ancestor:
+            return True
+        parent = parent.parentWidget()
+    return False
+
+
+def test_raw_panel_keeps_the_essentials_in_view_and_the_rest_under_more(qtbot, profile):
+    tab = _make_tab(qtbot)
+    controls = tab.raw_controls
+    more = controls.more_section
+    assert more is not None and not more.is_expanded()  # closed by default
+    for essential in (controls.white_balance_selector, controls.light_slider, controls.dark_slider, controls.contrast_slider):
+        assert not _is_inside(essential, more.body)
+    for advanced in (controls.auto_levels_toggle, controls.tone_curve_checkbox, controls.curve_strength_slider, tab.raw_curve_preview_widget):
+        assert _is_inside(advanced, more.body)
+
+
+def test_more_summary_follows_the_settings_and_its_open_state_is_remembered(qtbot, profile):
+    tab = _make_tab(qtbot)
+    tab.raw_processing_toggle_btn.setChecked(True)
+    more = tab.raw_controls.more_section
+    before = more.summary()
+    tab.raw_controls.tone_curve_checkbox.setChecked(not tab.raw_controls.tone_curve_checkbox.isChecked())
+    qtbot.waitUntil(lambda: more.summary() != before, timeout=2000)
+    assert "Camera WB" not in more.summary() and "Auto WB" not in more.summary()
+    qtbot.mouseClick(more.header, Qt.LeftButton)
+    qtbot.waitUntil(more.is_expanded, timeout=1000)
+    tab.close()
+    restarted = _make_tab(qtbot)
+    assert restarted.raw_controls.more_section.is_expanded()
+
+
+def test_copy_settings_is_in_the_raw_panel_not_on_the_image(qtbot, profile):
+    tab = _make_tab(qtbot)
+    assert _is_inside(tab.pending_raw_copy_btn, tab.raw_processing_card)
+    assert _is_inside(tab.pending_raw_paste_btn, tab.raw_processing_card)
+    assert not _is_inside(tab.pending_raw_copy_btn, tab.live_image_label)
+    assert _is_inside(tab.pending_raw_save_btn, tab.pending_raw_frame)  # saving stays until stage 9

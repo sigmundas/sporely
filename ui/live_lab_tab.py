@@ -146,6 +146,7 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
     SETTING_SESSION_MODE = "live_lab_session_mode"
     SETTING_MAIN_SPLITTER = "live_lab_main_splitter_sizes"
     SETTING_CONTENT_SPLITTER = "live_lab_content_splitter_sizes"
+    SETTING_RAW_MORE_SECTION_EXPANDED = "live_lab_raw_more_expanded"
     SESSION_MODE_LIVE = "live"
     SESSION_MODE_OFFLINE = "offline"
     VIEWER_PREVIEW_MAX_DIM = 1600
@@ -440,13 +441,15 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         self.raw_controls = RawProcessingControls(
             self.raw_processing_body,
             show_tone_controls_when_disabled=True,
+            more_section_key=self.SETTING_RAW_MORE_SECTION_EXPANDED,
         )
         self._push_raw_processing_cutoffs_to_controls()
         self.raw_controls.settingsChanged.connect(self._on_raw_processing_controls_changed)
         self.raw_controls.pickWhiteBalanceToggled.connect(self._toggle_active_raw_background_wb_pick)
         raw_body_layout.addWidget(self.raw_controls)
         self.raw_curve_preview_widget = RawCurvePreviewWidget(self.raw_processing_body)
-        raw_body_layout.addWidget(self.raw_curve_preview_widget, 0, Qt.AlignHCenter)
+        # The curve and histogram belong with the tone curve in "More".
+        self.raw_controls.more_section.body_layout.addWidget(self.raw_curve_preview_widget, 0, Qt.AlignHCenter)
 
         self.pending_raw_frame = QFrame()
         self.pending_raw_frame.setFrameShape(QFrame.NoFrame)
@@ -466,13 +469,21 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         self.pending_raw_save_all_btn = QPushButton(self.tr("Save all"))
         self.pending_raw_save_all_btn.clicked.connect(self._commit_all_pending_raw_captures)
         pending_raw_layout.addWidget(self.pending_raw_save_all_btn)
-        self.pending_raw_copy_btn = QPushButton(self.tr("Copy settings"))
+        # Copy/paste of RAW settings lives in the RAW panel (stage 5): the image
+        # frame shows only what you need while looking through the microscope.
+        raw_copy_row = QWidget(self.raw_processing_body)
+        raw_copy_layout = QHBoxLayout(raw_copy_row)
+        raw_copy_layout.setContentsMargins(0, 0, 0, 0)
+        raw_copy_layout.setSpacing(6)
+        self.pending_raw_copy_btn = QPushButton(self.tr("Copy settings"), raw_copy_row)
         self.pending_raw_copy_btn.clicked.connect(self._copy_selected_pending_raw_settings)
-        pending_raw_layout.addWidget(self.pending_raw_copy_btn)
-        self.pending_raw_paste_btn = QPushButton(self.tr("Paste settings"))
+        raw_copy_layout.addWidget(self.pending_raw_copy_btn)
+        self.pending_raw_paste_btn = QPushButton(self.tr("Paste settings"), raw_copy_row)
         self.pending_raw_paste_btn.clicked.connect(self._paste_copied_settings_to_selected_pending)
         self.pending_raw_paste_btn.setVisible(False)
-        pending_raw_layout.addWidget(self.pending_raw_paste_btn)
+        raw_copy_layout.addWidget(self.pending_raw_paste_btn)
+        raw_copy_layout.addStretch(1)
+        raw_body_layout.addWidget(raw_copy_row)
 
         self.pending_raw_frame.setVisible(False)
 

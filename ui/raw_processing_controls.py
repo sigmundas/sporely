@@ -225,6 +225,7 @@ class RawProcessingControls(QWidget):
         *,
         show_shadow_lift: bool = False,
         show_tone_controls_when_disabled: bool = False,
+        more_section_key: str | None = None,
     ) -> None:
         super().__init__(parent)
         self._settings = RawRenderSettings.default()
@@ -247,6 +248,22 @@ class RawProcessingControls(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
+        # With ``more_section_key`` (Live Lab, UI redesign stage 5) only white
+        # balance, Light, Dark and Contrast stay in view; auto levels and the
+        # tone curve go into a collapsed "More" section remembered under that
+        # SettingsDB key. Without it the layout is unchanged.
+        self.more_section = None
+        if more_section_key:
+            from .collapsible_section import CollapsibleSection
+
+            self.more_section = CollapsibleSection(
+                self.tr("More"),
+                settings_key=more_section_key,
+                expanded=False,
+                parent=self,
+                body_margins=(10, 10, 10, 10),
+                body_spacing=10,
+            )
 
         self.white_balance_selector = SegmentedSelector(self, compact=True, button_height=32, container_height=40)
         self.white_balance_selector.add_option(self.tr("Camera WB"), "camera", checked=True)
@@ -314,13 +331,23 @@ class RawProcessingControls(QWidget):
         auto_levels_layout.addWidget(method_control, 0, Qt.AlignTop)
         auto_levels_layout.addWidget(clipping_control, 0, Qt.AlignTop)
         auto_levels_layout.addStretch(1)
-        layout.addWidget(auto_levels_row)
+        if self.more_section is None:
+            layout.addWidget(auto_levels_row)
 
         slider_form = QFormLayout()
         slider_form.setContentsMargins(0, 0, 0, 0)
         slider_form.setHorizontalSpacing(8)
         slider_form.setVerticalSpacing(8)
         slider_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        # The tone-curve rows: in the same form, or in the "More" section.
+        if self.more_section is None:
+            tone_form = slider_form
+        else:
+            tone_form = QFormLayout()
+            tone_form.setContentsMargins(0, 0, 0, 0)
+            tone_form.setHorizontalSpacing(8)
+            tone_form.setVerticalSpacing(8)
+            tone_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
         def _build_slider_row(slider: QSlider, trailing: QWidget) -> QWidget:
             row = QWidget(self)
@@ -384,7 +411,7 @@ class RawProcessingControls(QWidget):
 
         self.tone_curve_checkbox = QCheckBox(self.tr("Tone curve"), self)
         self.tone_curve_checkbox.toggled.connect(self._on_control_changed)
-        slider_form.addRow(QLabel("", self), self.tone_curve_checkbox)
+        tone_form.addRow(QLabel("", self), self.tone_curve_checkbox)
 
         self.curve_strength_label = QLabel(self.tr("Strength:"), self)
         self.curve_strength_slider = MixedStateSlider(Qt.Horizontal, self)
@@ -397,7 +424,7 @@ class RawProcessingControls(QWidget):
         self.curve_strength_value_label.setFixedWidth(_TRAILING_WIDTH)
         self.curve_strength_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.curve_strength_row = _build_slider_row(self.curve_strength_slider, self.curve_strength_value_label)
-        slider_form.addRow(self.curve_strength_label, self.curve_strength_row)
+        tone_form.addRow(self.curve_strength_label, self.curve_strength_row)
         self.strength_label = self.curve_strength_label
         self.strength_slider = self.curve_strength_slider
         self.strength_value_label = self.curve_strength_value_label
@@ -413,7 +440,7 @@ class RawProcessingControls(QWidget):
         self.curve_midpoint_value_label.setFixedWidth(_TRAILING_WIDTH)
         self.curve_midpoint_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.curve_midpoint_row = _build_slider_row(self.curve_midpoint_slider, self.curve_midpoint_value_label)
-        slider_form.addRow(self.curve_midpoint_label, self.curve_midpoint_row)
+        tone_form.addRow(self.curve_midpoint_label, self.curve_midpoint_row)
         self.midpoint_slider = self.curve_midpoint_slider
         self.midpoint_value_label = self.curve_midpoint_value_label
 
@@ -428,7 +455,7 @@ class RawProcessingControls(QWidget):
         self.shadows_value_label.setFixedWidth(_TRAILING_WIDTH)
         self.shadows_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.shadows_row = _build_slider_row(self.shadows_slider, self.shadows_value_label)
-        slider_form.addRow(self.shadows_label, self.shadows_row)
+        tone_form.addRow(self.shadows_label, self.shadows_row)
         self.shadow_lift_label = self.shadows_label
         self.shadow_lift_row = self.shadows_row
         self.shadow_lift_slider = self.shadows_slider
@@ -445,9 +472,13 @@ class RawProcessingControls(QWidget):
         self.highlights_value_label.setFixedWidth(_TRAILING_WIDTH)
         self.highlights_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.highlights_row = _build_slider_row(self.highlights_slider, self.highlights_value_label)
-        slider_form.addRow(self.highlights_label, self.highlights_row)
+        tone_form.addRow(self.highlights_label, self.highlights_row)
 
         layout.addLayout(slider_form)
+        if self.more_section is not None:
+            self.more_section.body_layout.addWidget(auto_levels_row)
+            self.more_section.body_layout.addLayout(tone_form)
+            layout.addWidget(self.more_section)
 
         self._sync_controls_from_settings(self._settings)
 
