@@ -1,12 +1,13 @@
 name: CI
 
-# Fast checks for every pull request and for main. No secrets, no Supabase
-# access: the suite isolates app data and the keychain itself
-# (tests/conftest.py), and the local-Supabase tests skip without their env.
+# Fast checks for every push to any branch, and for pull requests. No
+# secrets, no Supabase access: the suite isolates app data and the keychain
+# itself (tests/conftest.py), and the local-Supabase tests skip without their
+# env.
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: ["**"]  # every branch; release tags are left to release.yml
 
 permissions:
   contents: read
