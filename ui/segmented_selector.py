@@ -108,5 +108,12 @@ class SegmentedSelector(QFrame):
             self.selectionChanged.emit(button.property("segment_value"))
         return True
 
+    def clear_selection(self) -> None:
+        """Show no option as chosen (another control holds the choice)."""
+        self.button_group.setExclusive(False)
+        for button in self._buttons_by_value.values():
+            button.setChecked(False)
+        self.button_group.setExclusive(True)
+
     def _on_button_clicked(self, button: QPushButton) -> None:
         self.selectionChanged.emit(button.property("segment_value"))

@@ -5916,6 +5916,13 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self.live_lab_tab.shutdown()
             except Exception:
                 pass
+        # The reference drawer's Community search/detail workers (stage 7c).
+        picker = getattr(self, "reference_picker_page", None)
+        if picker is not None:
+            try:
+                picker.shutdown()
+            except Exception:
+                pass
         # A cloud login worker may still be running if the user quits mid sign-in.
         # Join it with a bounded timeout so it is not destroyed while running.
         login_worker = getattr(self, "_cloud_login_worker", None)
@@ -10159,6 +10166,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         observation = ObservationDB.get_observation(int(observation_id)) or {}
         return {
             "observation_id": int(observation_id),
+            "cloud_id": observation.get("cloud_id"),
             "taxon_id": self._active_sporely_taxon_id(observation),
             "genus": self._clean_ref_genus_text(observation.get("genus")),
             "species": self._clean_ref_species_text(observation.get("species") or observation.get("species_guess")),
@@ -10242,8 +10250,58 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._refresh_reference_series_table()
         return True, None
 
+    # Plot series that are not attachments (Community, My observations; stage 7c).
+
+    def reference_picker_series_key(self, data: dict):
+        return self._reference_series_key(data)
+
+    def reference_picker_series_keys(self, observation_id: int) -> set:
+        if not self._reference_picker_observation_is_active(observation_id):
+            return set()
+        return {
+            entry.get("key") for entry in (self.reference_series or [])
+            if isinstance(entry, dict) and entry.get("key") is not None
+        }
+
+    def reference_picker_add_series(self, observation_id: int, data: dict):
+        """Plot ``data`` for the active observation; its key, or None if it is not plotted."""
+        if not self._reference_picker_observation_is_active(observation_id) or not isinstance(data, dict):
+            QTimer.singleShot(0, self._reload_reference_drawer_if_open)
+            return None
+        key = self._reference_series_key(data)
+        try:
+            self._add_reference_series_entry(data)
+        except Exception:
+            return None
+        return key if key in self.reference_picker_series_keys(observation_id) else None
+
+    def reference_picker_remove_series(self, observation_id: int, key) -> bool:
+        if not self._reference_picker_observation_is_active(observation_id):
+            QTimer.singleShot(0, self._reload_reference_drawer_if_open)
+            return False
+        if isinstance(key, str):
+            return False  # an attachment's key: those are detached, not removed here
+        self._remove_reference_series_key(key)
+        return key not in self.reference_picker_series_keys(observation_id)
+
+    def reference_picker_my_observations(self, context: dict):
+        from .add_reference_dialog import default_my_observation_candidates
+
+        try:
+            return default_my_observation_candidates(
+                context.get("genus") or "", context.get("species") or "",
+                exclude_observation_id=int(context["observation_id"]),
+            )
+        except Exception:
+            return []
+
+    def reference_picker_observation_series(self, context: dict, source_observation_id: int) -> dict | None:
+        return self._personal_observation_series_data(
+            source_observation_id, context.get("genus") or "", context.get("species") or "",
+        )
+
     def _on_reference_picker_other_source(self, source: str) -> None:
-        """Community, My observations and New reference still use the dialog (until 7c/7d)."""
+        """New reference still uses the dialog (until 7d)."""
         self._on_add_reference_clicked(initial_source=source)
         self._reload_reference_drawer_if_open()
 
@@ -10466,23 +10524,30 @@ class MainWindow(GeometryMixin, QMainWindow):
         appended directly to ``reference_series`` rather than routed through
         ``ObservationReferenceUseRepository``.
         """
-        try:
-            source_id = int(source_observation_id)
-        except (TypeError, ValueError):
-            return
-        points = self._spore_points_for_observation(source_id)
-        if not points:
+        data = self._personal_observation_series_data(source_observation_id, genus, species)
+        if data is None:
             QMessageBox.warning(
                 self,
                 self.tr("Add reference"),
                 self.tr("This observation has no usable spore measurements."),
             )
             return
+        self._add_reference_series_entry(data)
+
+    def _personal_observation_series_data(self, source_observation_id, genus: str, species: str) -> dict | None:
+        """The plot series for another personal observation's spores, or None without any."""
+        try:
+            source_id = int(source_observation_id)
+        except (TypeError, ValueError):
+            return None
+        points = self._spore_points_for_observation(source_id)
+        if not points:
+            return None
         obs = ObservationDB.get_observation(source_id)
         author = (obs.get("author") or "").strip() if obs else ""
         date_str = ((obs.get("date") or "").split(" ")[0].split("T")[0]) if obs else ""
         stats = self._reference_stats_from_points(points)
-        data = {
+        return {
             **stats,
             "points": points,
             "source_kind": "observation",
@@ -10492,7 +10557,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             "genus": genus,
             "species": species,
         }
-        self._add_reference_series_entry(data)
 
     def _on_attach_library_reference_clicked(self) -> None:
         """Open the attachment chooser and persist the user's selection."""

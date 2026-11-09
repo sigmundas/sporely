@@ -1,6 +1,7 @@
 """Dialog for reviewing and importing community spore data."""
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Any, Callable
 
@@ -52,7 +53,7 @@ from .delegates import SpeciesItemDelegate
 from .dialog_helpers import make_github_help_button
 from .reference_preview_pane import ReferencePreviewPane
 from .taxon_input_controller import TaxonInputController
-from .two_line_row import TwoLineRow
+from .two_line_row import CheckableTwoLineRow, TwoLineRow
 
 # Quiet period after the last keystroke in the Community tab's search field
 # before a search is issued. One search is a QThread plus three network RPCs,
@@ -1254,6 +1255,11 @@ class CommunityResultsPane(QWidget):
     """
 
     selection_changed = Signal()
+    # Checkable mode (the Analysis reference drawer, stage 7c): a row's
+    # checkbox was ticked or unticked by the user: (result index, checked).
+    result_check_toggled = Signal(int, bool)
+    # The result list was rebuilt (a search finished or the taxon changed).
+    results_changed = Signal()
 
     def __init__(
         self,
@@ -1266,8 +1272,10 @@ class CommunityResultsPane(QWidget):
         exclude_observation_cloud_id: str | None = None,
         comparison_view_factory: Callable[..., ComparisonView] | None = None,
         preview_is_active: Callable[[], bool] | None = None,
+        checkable: bool = False,
     ) -> None:
         super().__init__(parent)
+        self._checkable = bool(checkable)
         self._genus = str(genus or "").strip()
         self._species = str(species or "").strip()
         self._preview_pane = preview_pane
@@ -1574,7 +1582,13 @@ class CommunityResultsPane(QWidget):
         self.status_label.setText(str(message or "").strip() or QCoreApplication.translate("CommunityResultsPane", "Community search failed."))
 
     def _update_status_after_results(self) -> None:
-        if self._results:
+        if self._results and self._checkable:
+            self.status_label.setText(
+                QCoreApplication.translate("CommunityResultsPane", "Found {count} community source(s). Tick one to add it to the plot.").format(
+                    count=len(self._results)
+                )
+            )
+        elif self._results:
             self.status_label.setText(
                 QCoreApplication.translate("CommunityResultsPane", "Found {count} community source(s). Select one to review before adding.").format(
                     count=len(self._results)
@@ -1605,9 +1619,16 @@ class CommunityResultsPane(QWidget):
             item.setToolTip(label if not detail else f"{label}\n{detail}")
             item.setData(Qt.UserRole, index)
             self.results_list.addItem(item)
-            row_widget = TwoLineRow(label, detail, self.results_list)
+            if self._checkable:
+                row_widget = CheckableTwoLineRow(label, detail, self.results_list)
+                row_widget.toggled.connect(
+                    lambda checked, index=index: self.result_check_toggled.emit(index, bool(checked))
+                )
+            else:
+                row_widget = TwoLineRow(label, detail, self.results_list)
             item.setSizeHint(row_widget.sizeHint())
             self.results_list.setItemWidget(item, row_widget)
+        self.results_changed.emit()
 
     # ------------------------------------------------------------------
     # Selection / detail
@@ -1831,6 +1852,44 @@ class CommunityResultsPane(QWidget):
 
     def has_selection(self) -> bool:
         return self._selected_detail is not None
+
+    # -- checkable mode (the reference drawer) --------------------------
+
+    def result_count(self) -> int:
+        return len(self._results)
+
+    @staticmethod
+    def identity_of(row_data: dict[str, Any]) -> str:
+        """A stable identity for one result, the same across searches."""
+        keys = (
+            "_kind", "observation_id", "id", "reference_id", "reference_value_id", "genus", "species",
+            "source", "contributor_label", "observed_on", "mount_medium", "mount_media", "stain", "stains",
+        )
+        return json.dumps({key: row_data.get(key) for key in keys}, sort_keys=True, default=str)
+
+    def result_identity(self, index: int) -> str | None:
+        if 0 <= index < len(self._results):
+            return self.identity_of(self._results[index])
+        return None
+
+    def select_result(self, index: int) -> None:
+        """Select a result, which loads its detail (``selection_changed`` when it arrives)."""
+        if 0 <= index < self.results_list.count():
+            self.results_list.setCurrentRow(index)
+
+    def selected_index(self) -> int | None:
+        items = self.results_list.selectedItems()
+        value = items[0].data(Qt.UserRole) if items else None
+        return value if isinstance(value, int) else None
+
+    def detail_error(self) -> str | None:
+        return self._selected_error
+
+    def set_result_checked(self, index: int, checked: bool) -> None:
+        if 0 <= index < self.results_list.count():
+            widget = self.results_list.itemWidget(self.results_list.item(index))
+            if isinstance(widget, CheckableTwoLineRow):
+                widget.set_checked_silently(checked)
 
     def current_mode_payload(self) -> dict[str, Any] | None:
         """The reference_series-ready payload for the checked radio, or None."""

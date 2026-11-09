@@ -7,6 +7,12 @@ Add-reference dialog. Ticking a row attaches that set to the observation and
 plots it at once; unticking detaches it (decided 2026-11-09). A ticked set is
 attached as "Compared"; its expanded row changes the role.
 
+The other two sources tick the same way (stage 7c). "Community" reuses
+``CommunityResultsPane`` in its checkable mode: a tick loads that dataset's
+detail from Sporely Cloud and then plots it; "My observations" plots another
+of the user's observations of the taxon. Neither is an attachment: they are
+plot series, as from the old dialog, and unticking removes them.
+
 The page holds no persistence of its own. Every change goes through the
 ``host`` (``MainWindow``), whose methods reuse the existing attach, detach and
 role paths and refuse to act when the active observation is no longer the one
@@ -23,8 +29,10 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
     QListWidgetItem,
     QPushButton,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -32,9 +40,15 @@ from PySide6.QtWidgets import (
 from database.reference_library import MeasurementSetCandidate, MeasurementSetRepository, ReferenceLibraryError
 from references.reference_display import format_measurement_expression
 
-from .add_reference_dialog import AddReferenceDialog, filter_library_candidates, group_library_candidates
+from .add_reference_dialog import (
+    AddReferenceDialog,
+    PersonalObservationCandidate,
+    filter_library_candidates,
+    group_library_candidates,
+)
 from .library_source_row import DEFAULT_REFERENCE_USE_ROLE, LibraryResultsList, LibrarySourceRow
 from .segmented_selector import SegmentedSelector
+from .two_line_row import CheckableTwoLineRow
 
 
 class ReferencePickerHost(Protocol):
@@ -46,12 +60,17 @@ class ReferencePickerHost(Protocol):
     def reference_picker_attach(self, observation_id: int, set_id: str, role: str) -> tuple[str, str | None]: ...
     def reference_picker_detach(self, observation_id: int, set_id: str) -> tuple[bool, str | None]: ...
     def reference_picker_set_role(self, observation_id: int, set_id: str, role: str) -> tuple[bool, str | None]: ...
+    # Plot series that are not attachments (Community, My observations).
+    def reference_picker_series_keys(self, observation_id: int) -> set: ...
+    def reference_picker_add_series(self, observation_id: int, data: dict) -> object | None: ...  # its key
+    def reference_picker_remove_series(self, observation_id: int, key) -> bool: ...
+    def reference_picker_my_observations(self, context: dict) -> list[PersonalObservationCandidate]: ...
+    def reference_picker_observation_series(self, context: dict, source_observation_id: int) -> dict | None: ...
+    def reference_picker_series_key(self, data: dict) -> object | None: ...
 
 
 class ReferencePickerPage(QWidget):
-    # The less used sources and "New reference…" still open the old dialog
-    # on that tab until stages 7c and 7d move them: "community",
-    # "my_observations" or "new".
+    # "New reference…" still opens the old dialog on its tab until stage 7d.
     other_source_requested = Signal(str)
     # "Details…" on a row: open this measurement set in the library.
     details_requested = Signal(object)  # MeasurementSetCandidate
@@ -66,16 +85,23 @@ class ReferencePickerPage(QWidget):
         # The public-observation notice is asked on the first tick each time
         # the drawer opens (an attach on an already public observation).
         self._attach_confirmed = False
+        self._source = "library"
+        # Community: result identity -> plot-series key, for this session
+        # (a dataset's key is only known once its detail has loaded), and the
+        # one tick still waiting for its detail: (observation id, index, identity).
+        self.community_pane = None
+        self._community_stale = True
+        # Per observation, for this session: switching away and back keeps them.
+        self._community_keys_by_observation: dict[int, dict[str, object]] = {}
+        self._community_keys: dict[str, object] = {}
+        self._community_pending: tuple[int, int, str] | None = None
+        # My observations: candidates and their plot-series keys.
+        self._my_observations: list[PersonalObservationCandidate] = []
+        self._my_observation_keys: dict[int, object] = {}
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 4, 12, 12)
         layout.setSpacing(8)
-
-        self.search_input = QLineEdit(self)
-        self.search_input.setPlaceholderText(self.tr("Search publication, taxon or measurements…"))
-        self.search_input.setClearButtonEnabled(True)
-        self.search_input.textChanged.connect(self._populate)
-        layout.addWidget(self.search_input)
 
         source_row = QHBoxLayout()
         source_row.setSpacing(8)
@@ -87,22 +113,53 @@ class ReferencePickerPage(QWidget):
         self.my_observations_link = QPushButton(self.tr("My observations"), self)
         self.my_observations_link.setObjectName("linkButton")  # less prominent than the two above
         self.my_observations_link.setCursor(Qt.PointingHandCursor)
-        self.my_observations_link.clicked.connect(lambda: self.other_source_requested.emit("my_observations"))
+        self.my_observations_link.clicked.connect(lambda: self.show_source("my_observations"))
         source_row.addWidget(self.my_observations_link, 0)
         source_row.addStretch(1)
         layout.addLayout(source_row)
 
-        self.only_this_taxon_checkbox = QCheckBox(self.tr("Only this taxon"), self)
+        self.pages = QStackedWidget(self)
+        layout.addWidget(self.pages, 1)
+
+        # Library
+        self.library_page = QWidget(self.pages)
+        library_layout = QVBoxLayout(self.library_page)
+        library_layout.setContentsMargins(0, 0, 0, 0)
+        library_layout.setSpacing(8)
+        self.search_input = QLineEdit(self.library_page)
+        self.search_input.setPlaceholderText(self.tr("Search publication, taxon or measurements…"))
+        self.search_input.setClearButtonEnabled(True)
+        self.search_input.textChanged.connect(self._populate)
+        library_layout.addWidget(self.search_input)
+        self.only_this_taxon_checkbox = QCheckBox(self.tr("Only this taxon"), self.library_page)
         self.only_this_taxon_checkbox.setChecked(True)
         self.only_this_taxon_checkbox.toggled.connect(self._populate)
-        layout.addWidget(self.only_this_taxon_checkbox)
-
-        self.results_list = LibraryResultsList(self)
+        library_layout.addWidget(self.only_this_taxon_checkbox)
+        self.results_list = LibraryResultsList(self.library_page)
         self.results_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.results_list.setSelectionMode(LibraryResultsList.NoSelection)
         self.results_list.setFocusPolicy(Qt.NoFocus)
         self.results_list.setMinimumHeight(220)
-        layout.addWidget(self.results_list, 1)
+        library_layout.addWidget(self.results_list, 1)
+        self.pages.addWidget(self.library_page)
+
+        # Community: built when first shown (its pane searches Sporely Cloud).
+        self.community_page = QWidget(self.pages)
+        self._community_layout = QVBoxLayout(self.community_page)
+        self._community_layout.setContentsMargins(0, 0, 0, 0)
+        self.pages.addWidget(self.community_page)
+
+        # My observations
+        self.my_observations_page = QWidget(self.pages)
+        my_layout = QVBoxLayout(self.my_observations_page)
+        my_layout.setContentsMargins(0, 0, 0, 0)
+        my_layout.setSpacing(8)
+        self.my_observations_list = QListWidget(self.my_observations_page)
+        self.my_observations_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.my_observations_list.setSelectionMode(QListWidget.NoSelection)
+        self.my_observations_list.setFocusPolicy(Qt.NoFocus)
+        my_layout.addWidget(self.my_observations_list, 1)
+        self.pages.addWidget(self.my_observations_page)
 
         self.status_label = QLabel("", self)
         self.status_label.setWordWrap(True)
@@ -116,10 +173,22 @@ class ReferencePickerPage(QWidget):
     # -- loading -------------------------------------------------------------
 
     def load(self) -> None:
-        """Read the active observation, the library and what is attached; rebuild the list."""
+        """Read the active observation, the library and what is attached; rebuild the lists."""
         self._attach_confirmed = False
+        if self._community_pending is not None and self.community_pane is not None:
+            # A tick still loading is dropped, so it must not stay ticked.
+            self.community_pane.set_result_checked(self._community_pending[1], False)
+        self._community_pending = None
         self._set_status("")
+        previous = self._current_observation_id()
         self._context = self._host.reference_picker_context()
+        if self._current_observation_id() != previous:
+            # Another observation: its own plot series, and its own taxon to search.
+            self._community_keys = self._community_keys_by_observation.setdefault(self._current_observation_id(), {})
+            self._community_stale = True
+        self._load_my_observations()
+        if self._source == "community":
+            self._refresh_community()
         if self._context is None:
             self._candidates, self._attached = [], {}
             self._populate()
@@ -229,10 +298,229 @@ class ReferencePickerPage(QWidget):
 
     # -- actions -------------------------------------------------------------
 
+    # -- sources -------------------------------------------------------------
+
+    def current_source(self) -> str:
+        return self._source
+
     def _on_source_changed(self, value) -> None:
-        if value != "library":
-            self.source_selector.set_selected_value("library")  # until stage 7c
-            self.other_source_requested.emit(str(value))
+        self.show_source(str(value))
+
+    def show_source(self, source: str) -> None:
+        """Show "library", "community" or "my_observations"."""
+        self._source = source
+        self._set_status("")
+        if source == "community":
+            self.source_selector.set_selected_value("community")
+            self._refresh_community()
+            self.pages.setCurrentWidget(self.community_page)
+        elif source == "my_observations":
+            self.source_selector.clear_selection()
+            self.pages.setCurrentWidget(self.my_observations_page)
+        else:
+            self._source = "library"
+            self.source_selector.set_selected_value("library")
+            self.pages.setCurrentWidget(self.library_page)
+        self.my_observations_link.setProperty("active", self._source == "my_observations")
+        self.my_observations_link.style().unpolish(self.my_observations_link)
+        self.my_observations_link.style().polish(self.my_observations_link)
+
+    # -- Community -------------------------------------------------------------
+
+    def _refresh_community(self) -> None:
+        context = self._context or {}
+        if self.community_pane is None:
+            from .cloud_reference_dialog import CommunityResultsPane
+            from .reference_preview_pane import ReferencePreviewPane
+
+            # The plot is the preview here; the pane still wants one to own.
+            self._hidden_preview = ReferencePreviewPane(self.community_page)
+            self._hidden_preview.hide()
+            injected = getattr(self._host, "reference_picker_community_results", None)
+            self.community_pane = CommunityResultsPane(
+                self.community_page,
+                genus=context.get("genus") or "",
+                species=context.get("species") or "",
+                preview_pane=self._hidden_preview,
+                results=injected() if callable(injected) else None,
+                exclude_observation_cloud_id=context.get("cloud_id"),
+                preview_is_active=lambda: False,
+                checkable=True,
+            )
+            self.community_pane.results_list.setSelectionMode(QListWidget.SingleSelection)
+            self.community_pane.result_check_toggled.connect(self._on_community_toggled)
+            self.community_pane.selection_changed.connect(self._finish_community_tick)
+            self.community_pane.results_changed.connect(self._sync_community_ticks)
+            self._community_layout.addWidget(self.community_pane, 1)
+            self._community_stale = False
+            self._sync_community_ticks()
+        elif self._community_stale:
+            self.community_pane._exclude_observation_cloud_id = context.get("cloud_id") or None
+            self.community_pane.set_taxon(context.get("genus") or "", context.get("species") or "")
+            self._community_stale = False
+
+    def _sync_community_ticks(self) -> None:
+        pane = self.community_pane
+        if pane is None:
+            return
+        plotted = self._host.reference_picker_series_keys(self._current_observation_id()) if self._current_observation_id() else set()
+        pending_index = self._community_pending[1] if self._community_pending is not None else None
+        for index in range(pane.result_count()):
+            if index == pending_index:
+                continue  # still loading: its tick stands
+            key = self._community_keys.get(pane.result_identity(index) or "")
+            pane.set_result_checked(index, key is not None and key in plotted)
+
+    def _on_community_toggled(self, index: int, checked: bool) -> None:
+        pane = self.community_pane
+        observation_id = self._current_observation_id()
+        identity = pane.result_identity(index) if pane is not None else None
+        if pane is None or not observation_id or identity is None:
+            if pane is not None:
+                pane.set_result_checked(index, not checked)
+            return
+        if checked:
+            if self._community_pending is not None and self._community_pending[1] != index:
+                pane.set_result_checked(self._community_pending[1], False)  # superseded before it loaded
+            self._community_pending = (observation_id, index, identity)
+            self._set_status(self.tr("Loading the dataset…"))
+            if pane.selected_index() == index:
+                self._finish_community_tick()
+            else:
+                pane.select_result(index)  # loads its detail; selection_changed when it has
+            return
+        if self._community_pending is not None and self._community_pending[1] == index:
+            self._community_pending = None
+            self._set_status("")
+            return
+        key = self._community_keys.get(identity)
+        if key is None or self._host.reference_picker_remove_series(observation_id, key):
+            self._community_keys.pop(identity, None)
+            self._set_status("")
+        else:
+            pane.set_result_checked(index, True)
+            self._set_status(self.tr("The reference could not be removed from the plot."))
+
+    def _finish_community_tick(self) -> None:
+        pending = self._community_pending
+        pane = self.community_pane
+        if pending is None or pane is None:
+            return
+        observation_id, index, identity = pending
+        if self._current_observation_id() != observation_id or pane.result_identity(index) != identity:
+            self._community_pending = None  # another observation or another search since
+            return
+        if pane.selected_index() != index:
+            # Another row was selected before this one's detail arrived: the
+            # tick is abandoned rather than left hanging.
+            self._community_pending = None
+            pane.set_result_checked(index, False)
+            self._set_status("")
+            return
+        error = pane.detail_error()
+        if error:
+            self._community_pending = None
+            pane.set_result_checked(index, False)
+            self._set_status(error)
+            return
+        if not pane.has_selection():
+            return  # still loading
+        self._community_pending = None
+        payload = pane.current_mode_payload()
+        key = self._host.reference_picker_add_series(observation_id, payload) if payload else None
+        if key is None:
+            pane.set_result_checked(index, False)
+            self._set_status(self.tr("The reference could not be added to the plot."))
+            return
+        # The plot holds one series per key: a result with the same key
+        # (same taxon, source and preparation) was just replaced by this one.
+        for other_identity, other_key in list(self._community_keys.items()):
+            if other_key == key and other_identity != identity:
+                del self._community_keys[other_identity]
+        self._community_keys[identity] = key
+        self._sync_community_ticks()
+        # The plot refresh may have let a sync run before the key was known.
+        pane.set_result_checked(index, True)
+        self._set_status("")
+
+    def shutdown(self) -> None:
+        """Stop the Community pane's search and detail workers (the window is closing)."""
+        if self.community_pane is not None:
+            self.community_pane.close()
+
+    # -- My observations -------------------------------------------------------
+
+    def _load_my_observations(self) -> None:
+        self.my_observations_list.clear()
+        self._my_observations = []
+        self._my_observation_keys = {}
+        context = self._context
+        if context is None:
+            return
+        self._my_observations = list(self._host.reference_picker_my_observations(context))
+        plotted = self._host.reference_picker_series_keys(int(context["observation_id"]))
+        for candidate in self._my_observations:
+            data = self._host.reference_picker_observation_series(context, candidate.observation_id)
+            key = self._host.reference_picker_series_key(data) if data else None
+            label = (
+                self.tr("My observation — {author}").format(author=candidate.author)
+                if candidate.author else self.tr("My observation")
+            )
+            detail = " · ".join(part for part in (
+                candidate.date, self.tr("n = {count}").format(count=candidate.n), candidate.location,
+            ) if part)
+            row = CheckableTwoLineRow(label, detail, self.my_observations_list)
+            row.set_checked_silently(key is not None and key in plotted)
+            row.toggled.connect(lambda checked, oid=candidate.observation_id: self._on_my_observation_toggled(oid, checked))
+            item = QListWidgetItem()
+            item.setData(Qt.UserRole, candidate.observation_id)
+            item.setToolTip(f"{label}\n{detail}")
+            self.my_observations_list.addItem(item)
+            item.setSizeHint(row.sizeHint())
+            self.my_observations_list.setItemWidget(item, row)
+            if key is not None:
+                self._my_observation_keys[candidate.observation_id] = key
+        if not self._my_observations:
+            empty = QListWidgetItem(self.tr("No previous observations of this taxon have spore measurements."))
+            empty.setFlags(Qt.NoItemFlags)
+            self.my_observations_list.addItem(empty)
+
+    def my_observation_row(self, observation_id: int) -> CheckableTwoLineRow | None:
+        for index in range(self.my_observations_list.count()):
+            item = self.my_observations_list.item(index)
+            if item.data(Qt.UserRole) == observation_id:
+                widget = self.my_observations_list.itemWidget(item)
+                return widget if isinstance(widget, CheckableTwoLineRow) else None
+        return None
+
+    def _on_my_observation_toggled(self, source_observation_id: int, checked: bool) -> None:
+        observation_id = self._current_observation_id()
+        row = self.my_observation_row(source_observation_id)
+        if not observation_id:
+            if row is not None:
+                row.set_checked_silently(not checked)
+            return
+        if checked:
+            data = self._host.reference_picker_observation_series(self._context or {}, source_observation_id)
+            key = self._host.reference_picker_add_series(observation_id, data) if data else None
+            if key is None:
+                if row is not None:
+                    row.set_checked_silently(False)
+                self._set_status(self.tr("This observation has no usable spore measurements."))
+                return
+            self._my_observation_keys[source_observation_id] = key
+            row = self.my_observation_row(source_observation_id)
+            if row is not None:
+                row.set_checked_silently(True)  # a sync during the plot refresh may have run first
+            self._set_status("")
+            return
+        key = self._my_observation_keys.get(source_observation_id)
+        if key is None or self._host.reference_picker_remove_series(observation_id, key):
+            self._set_status("")
+        else:
+            if row is not None:
+                row.set_checked_silently(True)
+            self._set_status(self.tr("The reference could not be removed from the plot."))
 
     def _current_observation_id(self) -> int:
         return int((self._context or {}).get("observation_id") or 0)
@@ -285,10 +573,16 @@ class ReferencePickerPage(QWidget):
         self._refresh_row_height(set_id)
 
     def sync_attached(self) -> None:
-        """Follow attachments changed elsewhere (the comparison list, the dialog) without a rebuild."""
+        """Follow attachments and plot series changed elsewhere (the comparison list, the dialog) without a rebuild."""
         observation_id = self._current_observation_id()
         if not observation_id:
             return
+        plotted = self._host.reference_picker_series_keys(observation_id)
+        for source_id, key in self._my_observation_keys.items():
+            row = self.my_observation_row(source_id)
+            if row is not None:
+                row.set_checked_silently(key in plotted)
+        self._sync_community_ticks()
         self._attached = dict(self._host.reference_picker_attached(observation_id))
         for index in range(self.results_list.count()):
             row = self.results_list.itemWidget(self.results_list.item(index))

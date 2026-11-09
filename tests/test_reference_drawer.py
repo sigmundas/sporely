@@ -37,7 +37,7 @@ def _observation(profile, key="default"):
     for index in range(6):
         x = 40 + index * 40
         MeasurementDB.add_measurement(
-            image_id, 9.0 + index * 0.3, 5.0 + index * 0.1, measurement_type="Spores",
+            image_id, 9.0 + index * 0.3, 5.0 + index * 0.1, measurement_type="spores",
             points=[QPointF(x, 50), QPointF(x + 28, 50), QPointF(x + 14, 42), QPointF(x + 14, 58)],
         )
     return observation_id
@@ -333,3 +333,214 @@ def test_details_finds_a_publication_beyond_the_first_search_results(qtbot, prof
     row.set_expanded(True)
     qtbot.mouseClick(row.details_link, Qt.LeftButton)
     assert seen == [library[2].id]
+
+
+# ---------------------------------------------------------------------------
+# Stage 7c: Community and My observations in the drawer
+# ---------------------------------------------------------------------------
+
+
+def _community_rows() -> list[dict]:
+    """Deterministic community results carrying their full detail (no network)."""
+    return [
+        {
+            "_kind": "observation", "observation_id": 4242, "genus": "Cortinarius", "species": "limonius",
+            "contributor_label": "sporely_community_user_7", "observed_on": "2025-05-01", "measurement_count": 3,
+            "q_min": 1.1, "q_p50": 1.3, "q_max": 1.5,
+            "measurements_json": [
+                {"length_um": 8.0, "width_um": 5.0}, {"length_um": 9.0, "width_um": 6.0},
+                {"length_um": 10.0, "width_um": 7.0},
+            ],
+            "length_min": 8.0, "length_p50": 9.0, "length_max": 10.0,
+            "width_min": 5.0, "width_p50": 6.0, "width_max": 7.0,
+        },
+        {
+            "_kind": "reference", "genus": "Cortinarius", "species": "limonius", "source": "mycena.no",
+            "contributor_label": "mycena.no", "measurement_count": 0, "length_min": 8.0, "length_max": 10.5,
+            "width_min": 4.5, "width_max": 6.0,
+        },
+    ]
+
+
+def _plotted_kinds(window) -> list[str]:
+    return [str(entry["data"].get("source_kind") or "") for entry in window.reference_series]
+
+
+def test_my_observations_tick_plots_another_observation_and_untick_removes_it(qtbot, profile, library):
+    observation_id = _observation(profile, "current")
+    other = _observation(profile, "earlier")
+    window = _window(qtbot, observation_id)
+    page = _open(qtbot, window)
+    qtbot.mouseClick(page.my_observations_link, Qt.LeftButton)
+    assert page.current_source() == "my_observations" and page.my_observations_list.isVisible()
+    assert page.source_selector.selected_value() is None  # neither Library nor Community
+    row = page.my_observation_row(other)
+    assert row is not None and not row.is_checked()
+    row.checkbox.click()
+    assert "observation" in _plotted_kinds(window)
+    assert _uses(observation_id) == {}  # a plot series, not an attachment
+    window.reference_drawer.close_drawer()
+    page = _open(qtbot, window)
+    assert page.my_observation_row(other).is_checked()  # from what is plotted
+    page.my_observation_row(other).checkbox.click()
+    assert "observation" not in _plotted_kinds(window)
+
+
+def test_community_tick_loads_the_dataset_and_plots_it_and_untick_removes_it(qtbot, profile, library):
+    observation_id = _observation(profile)
+    window = _window(qtbot, observation_id)
+    window.reference_picker_community_results = _community_rows
+    page = _open(qtbot, window)
+    qtbot.mouseClick(page.source_selector.button_for_value("community"), Qt.LeftButton)
+    pane = page.community_pane
+    assert pane is not None and pane.result_count() == 2 and page.community_page.isVisible()
+    pane.results_list.itemWidget(pane.results_list.item(1)).checkbox.click()
+    assert _plotted_kinds(window).count("reference") == 1
+    assert pane.results_list.itemWidget(pane.results_list.item(1)).is_checked()
+    assert _uses(observation_id) == {}  # a plot series, not an attachment
+    pane.results_list.itemWidget(pane.results_list.item(1)).checkbox.click()
+    assert _plotted_kinds(window).count("reference") == 0
+    # Raw points, when the dataset has them and that mode is chosen.
+    pane.select_result(0)
+    pane.raw_points_radio.setChecked(True)
+    pane.results_list.itemWidget(pane.results_list.item(0)).checkbox.click()
+    assert "points" in _plotted_kinds(window)
+
+
+def test_a_community_tick_whose_detail_fails_is_unticked_with_the_reason(qtbot, profile, library, monkeypatch):
+    window = _window(qtbot, _observation(profile))
+    window.reference_picker_community_results = _community_rows
+    page = _open(qtbot, window)
+    page.show_source("community")
+    pane = page.community_pane
+    monkeypatch.setattr(pane, "detail_error", lambda: "Sign in to Sporely Cloud to load dataset details.")
+    pane.results_list.itemWidget(pane.results_list.item(0)).checkbox.click()
+    assert not pane.results_list.itemWidget(pane.results_list.item(0)).is_checked()
+    assert "Sign in" in page.status_label.text()
+
+
+def test_removing_a_community_series_in_the_list_unticks_it(qtbot, profile, library):
+    observation_id = _observation(profile)
+    window = _window(qtbot, observation_id)
+    window.reference_picker_community_results = _community_rows
+    page = _open(qtbot, window)
+    page.show_source("community")
+    pane = page.community_pane
+    pane.results_list.itemWidget(pane.results_list.item(1)).checkbox.click()
+    key = next(e["key"] for e in window.reference_series if e["data"].get("source_type") == "cloud")
+    window._remove_reference_series_key(key)
+    qtbot.waitUntil(lambda: not pane.results_list.itemWidget(pane.results_list.item(1)).is_checked(), timeout=2000)
+
+
+def test_switching_observation_clears_community_ticks_and_researches(qtbot, profile, library):
+    first = _observation(profile, "first")
+    second = _observation(profile, "second")
+    window = _window(qtbot, first)
+    window.reference_picker_community_results = _community_rows
+    page = _open(qtbot, window)
+    page.show_source("community")
+    pane = page.community_pane
+    pane.results_list.itemWidget(pane.results_list.item(1)).checkbox.click()
+    assert page._community_keys
+    window.on_observation_selected(second, "Cortinarius limonius", switch_tab=False)
+    qtbot.waitUntil(lambda: window.active_observation_id == second, timeout=5000)
+    assert page._community_keys == {}
+    assert not any(
+        pane.results_list.itemWidget(pane.results_list.item(i)).is_checked() for i in range(pane.result_count())
+    )
+
+
+# ---------------------------------------------------------------------------
+# Codex review of stage 7c
+# ---------------------------------------------------------------------------
+
+
+def _reference_rows_differing_by(**differences) -> list[dict]:
+    base = {
+        "_kind": "reference", "genus": "Cortinarius", "species": "limonius", "source": "mycena.no",
+        "contributor_label": "mycena.no", "measurement_count": 0,
+        "length_min": 8.0, "length_max": 10.5, "width_min": 4.5, "width_max": 6.0,
+    }
+    rows = [dict(base), dict(base)]
+    for field, (first, second) in differences.items():
+        rows[0][field], rows[1][field] = first, second
+    return rows
+
+
+def _community(qtbot, profile, rows, observation_key="default"):
+    observation_id = _observation(profile, observation_key)
+    window = _window(qtbot, observation_id)
+    window.reference_picker_community_results = lambda: [dict(row) for row in rows]
+    page = _open(qtbot, window)
+    page.show_source("community")
+    return window, page, page.community_pane
+
+
+def _ticked(pane) -> list[bool]:
+    return [pane.results_list.itemWidget(pane.results_list.item(i)).is_checked() for i in range(pane.result_count())]
+
+
+def _box(pane, index):
+    return pane.results_list.itemWidget(pane.results_list.item(index)).checkbox
+
+
+def test_references_with_different_preparations_are_different_rows(qtbot, profile, library):
+    window, page, pane = _community(qtbot, profile, _reference_rows_differing_by(mount_medium=("KOH", "Melzer")))
+    assert pane.result_identity(0) != pane.result_identity(1)
+    _box(pane, 0).click()
+    page.sync_attached()
+    assert _ticked(pane) == [True, False]
+
+
+def test_a_result_with_the_same_plot_series_replaces_the_other_tick(qtbot, profile, library):
+    # Different datasets (reference ids) that the plot shows as one series.
+    window, page, pane = _community(qtbot, profile, _reference_rows_differing_by(reference_id=("r-1", "r-2")))
+    _box(pane, 0).click()
+    _box(pane, 1).click()
+    assert _ticked(pane) == [False, True]
+    assert [e["data"].get("source_type") for e in window.reference_series].count("cloud") == 1
+    _box(pane, 1).click()
+    assert _ticked(pane) == [False, False]
+    assert [e["data"].get("source_type") for e in window.reference_series].count("cloud") == 0
+
+
+def test_closing_the_window_stops_the_community_workers(qtbot, profile, library, monkeypatch):
+    window, page, pane = _community(qtbot, profile, _community_rows())
+    closed = []
+    monkeypatch.setattr(pane, "close", lambda: closed.append(True) or True)
+    window.close()
+    assert closed == [True]
+
+
+def test_selecting_another_row_while_a_tick_loads_drops_that_tick(qtbot, profile, library, monkeypatch):
+    window, page, pane = _community(qtbot, profile, _community_rows())
+    monkeypatch.setattr(pane, "has_selection", lambda: False)  # the detail is still loading
+    _box(pane, 0).click()
+    assert page._community_pending is not None and _ticked(pane)[0]
+    pane.select_result(1)
+    assert page._community_pending is None and _ticked(pane) == [False, False]
+
+
+def test_reopening_the_drawer_while_a_tick_loads_drops_that_tick(qtbot, profile, library, monkeypatch):
+    window, page, pane = _community(qtbot, profile, _community_rows())
+    monkeypatch.setattr(pane, "has_selection", lambda: False)
+    _box(pane, 0).click()
+    window.reference_drawer.close_drawer()
+    _open(qtbot, window)
+    assert page._community_pending is None and _ticked(pane) == [False, False]
+
+
+def test_community_ticks_come_back_with_their_observation(qtbot, profile, library):
+    window, page, pane = _community(qtbot, profile, _community_rows(), observation_key="first")
+    first = window.active_observation_id
+    second = _observation(profile, "second")
+    _box(pane, 1).click()
+    window.on_observation_selected(second, "Cortinarius limonius", switch_tab=False)
+    qtbot.waitUntil(lambda: window.active_observation_id == second, timeout=5000)
+    assert _ticked(pane) == [False, False]
+    window.on_observation_selected(first, "Cortinarius limonius", switch_tab=False)
+    qtbot.waitUntil(lambda: window.active_observation_id == first, timeout=5000)
+    qtbot.wait(100)
+    # The first observation's plot series come back with it, and so do the ticks.
+    assert any(e["data"].get("source_type") == "cloud" for e in window.reference_series)
+    assert _ticked(pane) == [False, True]

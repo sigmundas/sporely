@@ -1,9 +1,9 @@
 """Shared two-line results-row widget for the Add-reference picker's tabs."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFontMetrics
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 
 class TwoLineRow(QWidget):
@@ -54,4 +54,32 @@ class TwoLineRow(QWidget):
             )
 
 
-__all__ = ["TwoLineRow"]
+class CheckableTwoLineRow(QWidget):
+    """A ``TwoLineRow`` with a checkbox in front: ticking adds the source to
+    the plot (the Analysis reference drawer, stage 7c)."""
+
+    toggled = Signal(bool)
+
+    def __init__(self, label: str, detail: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(6, 0, 0, 0)
+        layout.setSpacing(4)
+        self.checkbox = QCheckBox(self)
+        self.checkbox.toggled.connect(self.toggled)
+        layout.addWidget(self.checkbox, 0, Qt.AlignVCenter)
+        self.row = TwoLineRow(label, detail, self)
+        layout.addWidget(self.row, 1)
+
+    def is_checked(self) -> bool:
+        return self.checkbox.isChecked()
+
+    def set_checked_silently(self, checked: bool) -> None:
+        blocked = self.checkbox.blockSignals(True)
+        try:
+            self.checkbox.setChecked(bool(checked))
+        finally:
+            self.checkbox.blockSignals(blocked)
+
+
+__all__ = ["CheckableTwoLineRow", "TwoLineRow"]

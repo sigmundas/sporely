@@ -728,6 +728,10 @@ QPushButton#linkButton:hover {{
     color: {accent_h};
 }}
 
+QPushButton#linkButton[active="true"] {{
+    font-weight: bold;
+}}
+
 /* Opens a drawer page: outlined while closed, filled while its page shows (stage 6). */
 QPushButton#drawerToggle {{
     background-color: {surface};

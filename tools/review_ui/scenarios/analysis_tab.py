@@ -46,6 +46,21 @@ def seed_analysis(context: ReviewContext, *, attach: bool = True) -> dict:
         x, y = 40 + (index % 8) * 50, 40 + (index // 8) * 60
         points = [QPointF(x, y), QPointF(x + 28, y), QPointF(x + 14, y - 8), QPointF(x + 14, y + 8)]
         MeasurementDB.add_measurement(image_id, length, width, measurement_type="Spores", points=points)
+    # An earlier observation of the same taxon, for "My observations".
+    earlier_id = create_observation(
+        profile, f"analysis-{count}-earlier", genus="Cortinarius", species="limonius",
+        common_name="Sitronslørsopp", date="2025-09-21", location="Lianvatnet, Trondheim",
+    )
+    earlier_image = int(
+        ImageDB.add_image(earlier_id, str(profile.jpeg(f"E{count:04d}.JPG", seed=6)), "microscope", scale=0.1)
+    )
+    for index in range(12):
+        x = 40 + index * 30
+        points = [QPointF(x, 50), QPointF(x + 28, 50), QPointF(x + 14, 42), QPointF(x + 14, 58)]
+        MeasurementDB.add_measurement(
+            earlier_image, round(rng.gauss(10.2, 0.6), 2), round(rng.gauss(5.5, 0.3), 2),
+            measurement_type="spores", points=points,
+        )
     _work, sets = _seed_library()
     if attach:
         ObservationReferenceUseRepository.attach(observation_id, sets[0].id, role="compared")
@@ -67,6 +82,43 @@ def _analysis_tab(context: ReviewContext, *, size: tuple[int, int] = (1500, 950)
         after(window)
         _settle(0.5)
     return window
+
+
+COMMUNITY_RESULTS = [
+    {
+        "_kind": "observation", "observation_id": 4242, "genus": "Cortinarius", "species": "limonius",
+        "contributor_label": "sporely_community_user_7", "observed_on": "2025-05-01", "measurement_count": 3,
+        "q_min": 1.7, "q_p50": 1.9, "q_max": 2.1,
+        "measurements_json": [
+            {"length_um": 9.0, "width_um": 5.0}, {"length_um": 9.6, "width_um": 5.2},
+            {"length_um": 10.3, "width_um": 5.4},
+        ],
+        "length_min": 9.0, "length_p50": 9.6, "length_max": 10.3,
+        "width_min": 5.0, "width_p50": 5.2, "width_max": 5.4,
+    },
+    {
+        "_kind": "reference", "genus": "Cortinarius", "species": "limonius", "source": "mycena.no",
+        "contributor_label": "mycena.no", "measurement_count": 0,
+        "length_min": 8.0, "length_max": 10.5, "width_min": 4.5, "width_max": 6.0,
+    },
+]
+
+
+def _open_source(source: str):
+    def after(window) -> None:
+        # Deterministic results instead of a Sporely Cloud search.
+        window.reference_picker_community_results = lambda: [dict(row) for row in COMMUNITY_RESULTS]
+        window._toggle_reference_drawer()
+        page = window.reference_picker_page
+        page.show_source(source)
+        if source == "community":
+            pane = page.community_pane
+            pane.results_list.itemWidget(pane.results_list.item(1)).checkbox.click()
+        else:
+            row = page.my_observations_list.itemWidget(page.my_observations_list.item(0))
+            if row is not None:
+                row.checkbox.click()
+    return after
 
 
 def _open_drawer(window) -> None:
@@ -105,6 +157,20 @@ def register_analysis_tab_scenarios(registry: ScenarioRegistry) -> None:
                 viewport=(1500, 950),
                 locale="nb_NO",
                 theme=theme,
+            )
+        )
+    for source, label in (("community", "Community"), ("my-observations", "My observations")):
+        registry.register(
+            ReviewScenario(
+                id=f"analysis.reference-drawer-{source}",
+                group="analysis",
+                title=f"Analysis tab, reference drawer: {label} (nb)",
+                description=f"The {label} source in the reference drawer with one source ticked and plotted (stage 7c).",
+                build=lambda context, source=source: _analysis_tab(
+                    context, after=_open_source(source.replace("-", "_")),
+                ),
+                viewport=(1500, 950),
+                locale="nb_NO",
             )
         )
     registry.register(
