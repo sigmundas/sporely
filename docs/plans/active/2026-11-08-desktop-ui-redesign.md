@@ -422,6 +422,8 @@ screens are inspected in `nb_NO` and one other language; existing tests pass.
   per image, or the current image's values where that is not possible.
 - Done when: changing contrast switches (or suggests) the preset; manual
   tweaks stay until the next contrast change; the before/after key works.
+- Decided 2026-11-09 (owner): the RAW panel stays docked in the side panel;
+  no floating overlay or pin (stage 5c dropped).
 
 ## Rollout
 
@@ -704,7 +706,8 @@ landed through PRs before the branch existed), the commit that brought it into
 | 1b | `e52bc3b` | — | Agent-verified: Preparation rows as chips (click to choose, click again to clear, “+ N more” in place; arrows move, Space/Enter choose; Norwegian labels Medium, Farging, Tilstand, Kilde); qtbot tests; renders change only Live Lab's Preparation rows; Codex review: 3 bugs fixed (idle layout loop, arrow keys clearing a chip, over-wide chip), 1 test gap closed. Stage 1 done; owner's layout opinion 2026-11-09: looks good |
 | 2 | `194b4f6` | — | Agent-verified: capture-state bar (objective and contrast with ring colours, 1–6 and B/D/I/P shortcuts), live-view label, Microscope card removed; the P1 objective-restore bug fixed; qtbot tests; cocoa real-input run 20/20 (`tools/review_ui/live_lab_mac_check.py`); renders change only Live Lab; Codex review: 6 findings, 5 fixed, 1 kept as designed. Owner's layout opinion 2026-11-09: looks good; the pending-RAW bar should leave the image (stages 5 and 9) |
 | 3 | `0d7b2b0` | — | Agent-verified: the scale bar, live-view label and a new “Ikke kalibrert · {objektiv}  Kalibrer…” notice describe what the viewer shows (owner's decision 2026-11-09); bar length tested at five zoom levels; renders change only Live Lab's uncalibrated states; Codex review: 7 findings fixed. Owner's layout opinion 2026-11-09: looks good |
-| 4 | `ui/redesign` | — | Agent-verified: switching objective brings back its last contrast (SettingsDB `live_lab_contrast_by_objective`, only while preparing the next capture); Notater lists the session's notes and objective, contrast, mount and stain changes, newest first, from `session_logs`; qtbot tests incl. restart and a real gallery selection; cocoa run 20/20; Codex review: 4 findings fixed, 1 test gap closed |
+| 4 | `17f83a8` | — | Agent-verified: switching objective brings back its last contrast (SettingsDB `live_lab_contrast_by_objective`, only while preparing the next capture); Notater lists the session's notes and objective, contrast, mount and stain changes, newest first, from `session_logs`; qtbot tests incl. restart and a real gallery selection; cocoa run 20/20; Codex review: 4 findings fixed, 1 test gap closed |
+| 5 | `e7dfb9f`, `7323515`, `6d7c802`, `ui/redesign` | — | Agent-verified: (a) RAW settings follow objective + contrast, stored per combination with the old key as fallback, saved captures keep their own combination; (b) RAW panel slimmed (white balance, Lys, Mørk, Kontrast; levels, tone curve and histogram under “Mer”), copy/paste settings moved into the panel; (c) dropped: the owner keeps the RAW panel in the side panel (2026-11-09); (d) pasted settings carry white balance per image. qtbot tests; Codex review: 4 findings fixed, 1 test gap closed |
 
 Found during stage 0, not fixed there (rule 1):
 
@@ -845,6 +848,19 @@ Found during stage 4, not fixed there (rule 1):
 - The Notes log shows changes to objective, contrast, mount and stain (the
   plan's list); condition and source changes are logged in `session_logs`
   but not shown.
+
+Found during stage 5, not fixed there (rule 1):
+
+- In RAW review mode the RAW panel edits the selected pending capture
+  whenever one exists, even with the viewer showing something else; only
+  without pending captures does it edit the next capture's settings.
+- “Egendefinert HB” is clipped by the “Velg” button in the narrow side panel
+  (also before the redesign).
+- A selected-preview request that is already running is not cancelled when
+  its settings change; its result is discarded and a new render follows.
+- Running the RAW-control tests and the Live Lab tests in one process can
+  crash at exit when stale bytecode from quickly rewritten modules is left in
+  `__pycache__`; clearing it fixes the run (seen while bisecting stage 5).
 
 Baseline renders for the pilot's before/after comparisons (P1, 2026-11-08):
 `/Users/sigmundas/Documents/Code/sporely/sporely-py/docs/plans/november-ui/baseline-p1/`

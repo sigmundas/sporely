@@ -1358,3 +1358,108 @@ def test_copy_settings_is_in_the_raw_panel_not_on_the_image(qtbot, profile):
     assert _is_inside(tab.pending_raw_paste_btn, tab.raw_processing_card)
     assert not _is_inside(tab.pending_raw_copy_btn, tab.live_image_label)
     assert _is_inside(tab.pending_raw_save_btn, tab.pending_raw_frame)  # saving stays until stage 9
+
+
+# ---------------------------------------------------------------------------
+# Stage 5: review fixes (Codex)
+# ---------------------------------------------------------------------------
+
+
+def _stored_wb(tab, objective, contrast):
+    context = {**tab._raw_processing_preset_context(), "objective_name": objective, "contrast": contrast}
+    settings = tab._stored_raw_settings_for_context(context)
+    return None if settings is None else settings.white_balance_mode
+
+
+def _drop_pending_raw(qtbot, tab, profile, name):
+    before = len(tab._pending_raw_captures)
+    _watcher().drop(profile.raw(name))
+    qtbot.waitUntil(lambda: len(tab._pending_raw_captures) == before + 1, timeout=5000)
+    qtbot.waitUntil(lambda: not tab._pending_raw_preview_has_request_for_capture(tab._pending_raw_captures[-1]), timeout=5000)
+
+
+def test_save_all_stores_each_captures_settings_under_its_own_combination(qtbot, profile):
+    obs = create_observation(profile)
+    SettingsDB.set_setting(LiveLabTab_SETTING_RAW_CAPTURE_MODE(), "review")
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "63X", "contrast_combo": "Phase"})
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "auto")  # 63X · Phase: auto
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "camera")  # 40X · BF: camera
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    _drop_pending_raw(qtbot, tab, profile, "P1010201.ORF")  # captured at 40X · BF
+    qtbot.mouseClick(_bar_button(tab, "objective", "63X"), Qt.LeftButton)  # preparing the next one
+    qtbot.mouseClick(_bar_button(tab, "contrast", "Phase"), Qt.LeftButton)
+
+    qtbot.mouseClick(tab.pending_raw_save_all_btn, Qt.LeftButton)
+    qtbot.waitUntil(lambda: not tab._pending_raw_captures and not tab._pending_raw_commit_is_busy(), timeout=10000)
+    assert _stored_wb(tab, "63X", "Phase") == "auto"  # not overwritten by the 40X · BF capture
+    assert _stored_wb(tab, "40X", "BF") == "camera"
+    _stop_session(qtbot, tab)
+
+
+def test_a_new_capture_uses_its_own_combination_while_an_older_image_is_selected(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "100X", "contrast_combo": "DIC"})
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "camera")  # 100X · DIC: camera
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "auto")  # 40X · BF: auto
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    image = _capture(qtbot, profile, obs, "P1010202.JPG")  # captured at 40X · BF
+    ImageDB.update_image(image["id"], objective_name="100X")
+    # Select it: the side panel now shows (and edits) that image's 100X state.
+    tab._sidebar_binds_to_selection = True
+    blocked = tab.objective_combo.blockSignals(True)
+    tab.objective_combo.setCurrentIndex(tab.objective_combo.findData("100X"))
+    tab.objective_combo.blockSignals(blocked)
+    blocked = tab.contrast_combo.blockSignals(True)
+    tab.contrast_combo.setCurrentIndex(tab.contrast_combo.findData("DIC"))
+    tab.contrast_combo.blockSignals(blocked)
+    assert tab._capture_time_metadata()["objective_name"] == "40X"
+    assert tab._current_raw_render_settings().white_balance_mode == "auto"  # 40X · BF's
+
+
+def test_the_new_key_wins_over_settings_saved_before_stage_5(qtbot, profile):
+    from utils.raw_render import RawRenderSettings
+
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "40X", "contrast_combo": "BF"})
+    context = tab._raw_processing_preset_context()
+    old = RawRenderSettings.from_dict({**RawRenderSettings.default().to_dict(), "white_balance_mode": "auto"})
+    new = RawRenderSettings.from_dict({**RawRenderSettings.default().to_dict(), "white_balance_mode": "camera"})
+    SettingsDB.set_setting(tab._raw_processing_settings_key(context), json.dumps(old.to_dict()))
+    SettingsDB.set_setting(tab._raw_processing_combo_key(context), json.dumps(new.to_dict()))
+    assert tab._stored_raw_settings_for_context(context).white_balance_mode == "camera"
+
+
+def test_pasting_white_balance_re_renders_the_preview_with_it(qtbot, profile):
+    from ui.live_lab_raw import _pending_raw_settings_signature
+
+    obs = create_observation(profile)
+    SettingsDB.set_setting(LiveLabTab_SETTING_RAW_CAPTURE_MODE(), "review")
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    _drop_pending_raw(qtbot, tab, profile, "P1010301.ORF")
+    _drop_pending_raw(qtbot, tab, profile, "P1010302.ORF")
+    tab._show_pending_raw_capture(1)
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "auto")
+    qtbot.waitUntil(lambda: tab._pending_raw_captures[1].raw_settings.white_balance_mode == "auto", timeout=3000)
+    qtbot.mouseClick(tab.pending_raw_copy_btn, Qt.LeftButton)
+    tab._show_pending_raw_capture(0)
+    target = tab._pending_raw_captures[0]
+    assert target.raw_settings.white_balance_mode == "camera"
+    qtbot.mouseClick(tab.pending_raw_paste_btn, Qt.LeftButton)
+    assert target.raw_settings.white_balance_mode == "auto"
+    expected = _pending_raw_settings_signature(target.raw_settings)
+    qtbot.waitUntil(
+        lambda: target.rendered_settings is not None
+        and _pending_raw_settings_signature(target.rendered_settings) == expected,
+        timeout=5000,
+    )
+    qtbot.mouseClick(tab.pending_raw_save_all_btn, Qt.LeftButton)
+    qtbot.waitUntil(lambda: not tab._pending_raw_captures and not tab._pending_raw_commit_is_busy(), timeout=10000)
+    _stop_session(qtbot, tab)

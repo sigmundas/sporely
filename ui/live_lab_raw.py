@@ -750,13 +750,35 @@ class LiveLabRawMixin:
             LiveLabRawMixin._sync_raw_processing_controls_from_settings(self, settings)
         return settings
 
-    def _save_raw_processing_settings_for_current_context(self, settings: RawRenderSettings | None = None) -> None:
+    def _save_raw_processing_settings_for_current_context(
+        self,
+        settings: RawRenderSettings | None = None,
+        *,
+        lab_metadata: dict | None = None,
+    ) -> None:
+        """Remember ``settings`` for an objective + contrast.
+
+        By default the side panel's; ``lab_metadata`` (a capture's own) names
+        another, so a capture saved later does not overwrite the preset of
+        whatever is selected now.
+        """
         resolved_settings = RawRenderSettings.from_dict(settings or self._raw_settings_from_controls())
+        context = self._raw_context_from_metadata(lab_metadata) if lab_metadata else None
         SettingsDB.set_setting(
-            self._raw_processing_combo_key(),
+            self._raw_processing_combo_key(context),
             json.dumps(resolved_settings.to_dict(), sort_keys=True),
         )
-        self._raw_render_settings = resolved_settings
+        if context is None:
+            self._raw_render_settings = resolved_settings
+
+    def _raw_context_from_metadata(self, metadata: dict | None) -> dict[str, str | None]:
+        data = dict(metadata or {})
+        objective = str(data.get("objective_name") or "").strip() or None
+        return {
+            **self._raw_processing_preset_context(),
+            "objective_name": objective,
+            "contrast": DatabaseTerms.canonicalize("contrast", data.get("contrast")),
+        }
 
     @staticmethod
     def _raw_processing_setting_float(key: str, default: float, minimum: float, maximum: float) -> float:
@@ -1910,20 +1932,20 @@ class LiveLabRawMixin:
         capture: PendingRawCapture,
         *,
         kind: str | None = None,
+        settings_signature: str | None = None,
     ) -> bool:
+        def matches(request) -> bool:
+            if request.capture is not capture or (kind is not None and request.kind != kind):
+                return False
+            return settings_signature is None or request.settings_signature == settings_signature
+
         active_request = getattr(self, "_pending_raw_preview_active_request", None)
-        if isinstance(active_request, _PendingRawPreviewJobRequest):
-            if active_request.capture is capture and (kind is None or active_request.kind == kind):
-                return True
+        if isinstance(active_request, _PendingRawPreviewJobRequest) and matches(active_request):
+            return True
         queue = getattr(self, "_pending_raw_preview_job_queue", None)
         for request in list(queue or []):
-            if not isinstance(request, _PendingRawPreviewJobRequest):
-                continue
-            if request.capture is not capture:
-                continue
-            if kind is not None and request.kind != kind:
-                continue
-            return True
+            if isinstance(request, _PendingRawPreviewJobRequest) and matches(request):
+                return True
         return False
 
     def _pending_raw_commit_has_request_for_capture(
@@ -2427,10 +2449,19 @@ class LiveLabRawMixin:
         )
 
     def _current_raw_render_settings(self) -> RawRenderSettings:
-        """Settings for the next capture: its objective + contrast's stored ones, else the panel's."""
-        if self._visible_raw_processing_target() is None:
-            return self._raw_settings_from_controls(update_session_settings=False)
-        stored = self._stored_raw_settings_for_context()
+        """Settings for the next capture: those stored for its objective + contrast, else the panel's.
+
+        The combination is the next capture's (``_capture_time_metadata``),
+        not the side panel's, which may show a selected older image.
+        """
+        capture_state = getattr(self, "_capture_time_metadata", None)
+        context = None
+        if callable(capture_state):
+            try:
+                context = self._raw_context_from_metadata(capture_state())
+            except Exception:
+                context = None
+        stored = self._stored_raw_settings_for_context(context)
         return stored if stored is not None else self._raw_settings_from_controls(update_session_settings=False)
 
     @staticmethod
@@ -4107,7 +4138,13 @@ class LiveLabRawMixin:
             return
         if LiveLabRawMixin._pending_raw_capture_preview_is_current(capture):
             return
-        if self._pending_raw_preview_has_request_for_capture(capture, kind="selected"):
+        # A request already running or queued only counts if it renders the
+        # current settings; after a paste or edit it would render old ones.
+        if self._pending_raw_preview_has_request_for_capture(
+            capture,
+            kind="selected",
+            settings_signature=_pending_raw_settings_signature(capture.raw_settings),
+        ):
             return
         request_builder = getattr(self, "_pending_raw_preview_request_for_capture", None)
         enqueue_request = getattr(self, "_enqueue_pending_raw_preview_job", None)

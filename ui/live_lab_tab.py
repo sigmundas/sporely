@@ -3233,13 +3233,17 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         )
         if getattr(ingest, "raw_render_snapshot", None) is not None:
             settings_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
+            # Under the capture's own objective + contrast, not whatever the
+            # side panel shows by the time a deferred save completes.
+            capture_metadata = capture_time_state or lab_metadata or None
             save_helper = getattr(self, "_save_raw_processing_settings_for_current_context", None)
             if callable(save_helper):
-                save_helper(raw_settings or self._current_raw_render_settings())
+                save_helper(raw_settings or self._current_raw_render_settings(), lab_metadata=capture_metadata)
             else:
                 LiveLabTab._save_raw_processing_settings_for_current_context(
                     self,
                     raw_settings or self._current_raw_render_settings(),
+                    lab_metadata=capture_metadata,
                 )
             _raw_timing_log("RAW finalize settings save", settings_start, detail=Path(stored_path).name)
         if not defer_ui_refresh:
@@ -3757,9 +3761,12 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         frame = getattr(self, "calibration_action_frame", None)
         if frame is not None:
             frame.setVisible(False)
-        # An empty viewer waits for the next capture: its overlays describe
-        # the current state.
+        # An empty viewer waits for the next capture: its overlays and the RAW
+        # panel describe the next capture's state.
         self._viewer_subject = None
+        apply_raw = getattr(self, "_apply_raw_settings_for_combination", None)
+        if callable(apply_raw):
+            apply_raw()
         self._viewer_subject_metadata = None
         refresh_overlays = getattr(self, "_refresh_viewer_overlays", None)
         if callable(refresh_overlays):

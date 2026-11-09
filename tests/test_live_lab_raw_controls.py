@@ -373,10 +373,11 @@ def _build_raw_controls_state() -> SimpleNamespace:
         capture,
         kind=kind,
     )
-    state._pending_raw_preview_has_request_for_capture = lambda capture, *, kind=None: live_lab_tab.LiveLabTab._pending_raw_preview_has_request_for_capture(
+    state._pending_raw_preview_has_request_for_capture = lambda capture, *, kind=None, settings_signature=None: live_lab_tab.LiveLabTab._pending_raw_preview_has_request_for_capture(
         state,
         capture,
         kind=kind,
+        settings_signature=settings_signature,
     )
     state._enqueue_pending_raw_preview_job = lambda request: live_lab_tab.LiveLabTab._enqueue_pending_raw_preview_job(state, request)
     state._start_next_pending_raw_preview_job = lambda: live_lab_tab.LiveLabTab._start_next_pending_raw_preview_job(state)
@@ -597,6 +598,7 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state._finalize_pending_raw_background_wb_from_preview = lambda: live_lab_tab.LiveLabTab._finalize_pending_raw_background_wb_from_preview(state)
     state._raw_processing_settings_key = lambda context=None: live_lab_tab.LiveLabTab._raw_processing_settings_key(state, context)
     state._raw_processing_combo_key = lambda context=None: live_lab_tab.LiveLabTab._raw_processing_combo_key(state, context)
+    state._raw_context_from_metadata = lambda metadata: live_lab_tab.LiveLabTab._raw_context_from_metadata(state, metadata)
     state._stored_raw_settings_for_context = lambda context=None: live_lab_tab.LiveLabTab._stored_raw_settings_for_context(state, context)
     state._ingest_detected_image = (
         lambda source_path, raw_settings=None, lab_metadata=None, observation_id=None: live_lab_tab.LiveLabTab._ingest_detected_image(
@@ -1651,7 +1653,10 @@ def test_live_lab_ingest_uses_current_raw_settings_and_keeps_prior_snapshot(tmp_
     assert first_snapshot["auto_levels"] is True
     assert first_snapshot["tone_curve_enabled"] is False
     assert set_setting_calls
-    assert set_setting_calls[-1][0] == state._raw_processing_combo_key()
+    # Saved under the capture's own objective + contrast (Phase), not the panel's.
+    assert set_setting_calls[-1][0] == state._raw_processing_combo_key(
+        state._raw_context_from_metadata({"contrast": "Phase"})
+    )
     assert json.loads(set_setting_calls[-1][1])["white_balance_mode"] == "auto"
 
 
@@ -1687,7 +1692,7 @@ def test_live_lab_raw_controls_follow_visible_image_when_gallery_selection_is_st
     state._refresh_main_window_after_import = lambda image_id: None
     state._log_session_event = lambda *args, **kwargs: None
     state.tr = lambda text: text
-    state._save_raw_processing_settings_for_current_context = lambda settings=None: None
+    state._save_raw_processing_settings_for_current_context = lambda settings=None, **kwargs: None
 
     images = {
         101: _make_raw_image_row(101, source_path=source_path, derivative_path=old_derivative_path),
@@ -3010,7 +3015,7 @@ def test_live_lab_save_all_defers_full_gallery_and_viewer_refresh_until_batch_en
         lambda image_id: copy.deepcopy(images.get(int(image_id))) if int(image_id) in images else None,
     )
     state._show_status = lambda *args, **kwargs: None
-    state._save_raw_processing_settings_for_current_context = lambda settings=None: None
+    state._save_raw_processing_settings_for_current_context = lambda settings=None, **kwargs: None
     refresh_calls: list[None] = []
     shown_ids: list[int] = []
     full_observation_refresh_calls: list[object] = []
@@ -4337,7 +4342,7 @@ def test_live_lab_review_mode_multi_select_preserves_selection_and_applies_micro
     state._cancel_raw_edit_session = lambda restore_selection=False: None
     state._log_session_event = lambda *args, **kwargs: None
     state._update_session_controls = lambda: None
-    state._save_raw_processing_settings_for_current_context = lambda settings=None: None
+    state._save_raw_processing_settings_for_current_context = lambda settings=None, **kwargs: None
     state._refresh_session_gallery = lambda: live_lab_tab.LiveLabTab._refresh_session_gallery(state)
     state._show_session_image = lambda image_id: None
     state._refresh_main_window_after_import = lambda image_id: None
@@ -4660,7 +4665,7 @@ def test_live_lab_pending_raw_controls_still_rerender_after_session_stop(tmp_pat
     state._log_session_event = lambda *args, **kwargs: None
     state._update_session_controls = lambda: None
     state._show_status = lambda *args, **kwargs: None
-    state._save_raw_processing_settings_for_current_context = lambda settings=None: None
+    state._save_raw_processing_settings_for_current_context = lambda settings=None, **kwargs: None
     state._schedule_pending_raw_preview_refresh = lambda: live_lab_tab.LiveLabTab._refresh_selected_pending_raw_preview(state)
     state._raw_capture_mode = live_lab_tab.LiveLabTab.RAW_CAPTURE_MODE_REVIEW
     _patch_live_lab(monkeypatch, "render_raw_preview", _fake_render_raw_preview)
@@ -4719,7 +4724,7 @@ def test_live_lab_review_mode_save_current_after_session_stop_commits_pending_ra
     state._cancel_raw_edit_session = lambda restore_selection=False: None
     state._log_session_event = lambda *args, **kwargs: None
     state._update_session_controls = lambda: None
-    state._save_raw_processing_settings_for_current_context = lambda settings=None: None
+    state._save_raw_processing_settings_for_current_context = lambda settings=None, **kwargs: None
     state._show_session_image = lambda image_id: live_lab_tab.LiveLabTab._show_session_image(state, image_id)
 
     add_image_calls: list[dict[str, object]] = []
@@ -4853,7 +4858,7 @@ def test_live_lab_pending_raw_commit_worker_completion_finalizes_on_main_path_an
         "stain": "none",
         "sample_type": "spore",
     }
-    state._save_raw_processing_settings_for_current_context = lambda settings=None: None
+    state._save_raw_processing_settings_for_current_context = lambda settings=None, **kwargs: None
 
     captured_calls: list[dict[str, object]] = []
     add_image_calls: list[dict[str, object]] = []
@@ -5120,7 +5125,7 @@ def test_live_lab_review_mode_save_all_after_session_stop_commits_every_pending_
     state._cancel_raw_edit_session = lambda restore_selection=False: None
     state._log_session_event = lambda *args, **kwargs: None
     state._update_session_controls = lambda: None
-    state._save_raw_processing_settings_for_current_context = lambda settings=None: None
+    state._save_raw_processing_settings_for_current_context = lambda settings=None, **kwargs: None
 
     add_image_calls: list[dict[str, object]] = []
     captured_calls: list[dict[str, object]] = []
@@ -5191,7 +5196,7 @@ def test_live_lab_review_mode_pending_metadata_changes_stick_to_each_capture_on_
     state._cancel_raw_edit_session = lambda restore_selection=False: None
     state._log_session_event = lambda *args, **kwargs: None
     state._update_session_controls = lambda: None
-    state._save_raw_processing_settings_for_current_context = lambda settings=None: None
+    state._save_raw_processing_settings_for_current_context = lambda settings=None, **kwargs: None
     state._refresh_session_gallery = lambda: live_lab_tab.LiveLabTab._refresh_session_gallery(state)
     state._show_session_image = lambda image_id: None
     state._refresh_main_window_after_import = lambda image_id: None
