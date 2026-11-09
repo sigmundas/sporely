@@ -28,7 +28,7 @@ import json
 from dataclasses import asdict, fields
 from typing import Any, Iterable
 
-from PySide6.QtCore import QObject, QThread, Qt, Signal, Slot
+from PySide6.QtCore import QT_TRANSLATE_NOOP, QObject, QThread, Qt, Signal, Slot
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -307,12 +307,16 @@ class _CompletenessHintLabel(QLabel):
     represents a shared or public-catalogue moderation signal.
     """
 
+    # QT_TRANSLATE_NOOP marks the labels for lupdate; set_hints() translates
+    # them through self.tr() in this class's context.
     _HINT_LABELS = {
-        "missing title": ("Missing title",),
-        "missing authors": ("Missing authors",),
-        "missing year": ("Missing year",),
+        "missing title": (QT_TRANSLATE_NOOP("_CompletenessHintLabel", "Missing title"),),
+        "missing authors": (QT_TRANSLATE_NOOP("_CompletenessHintLabel", "Missing authors"),),
+        "missing year": (QT_TRANSLATE_NOOP("_CompletenessHintLabel", "Missing year"),),
         "missing publication/container information": (
-            "Missing publication/container information",
+            QT_TRANSLATE_NOOP(
+                "_CompletenessHintLabel", "Missing publication/container information"
+            ),
         ),
     }
 
@@ -2215,11 +2219,12 @@ class ReferenceLibraryManagerDialog(QDialog):
         splitter.setStretchFactor(2, 4)
         outer.addWidget(splitter, 1)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Close, Qt.Horizontal, self)
+        # A custom reject-role button rather than the standard Close button:
+        # the app loads no Qt base translations, so standard button text stays
+        # English (and Qt resets it on every language change).
+        buttons = QDialogButtonBox(Qt.Horizontal, self)
+        buttons.addButton(self.tr("Close"), QDialogButtonBox.RejectRole)
         buttons.rejected.connect(self.reject)
-        close_btn = buttons.button(QDialogButtonBox.Close)
-        if close_btn is not None:
-            close_btn.clicked.connect(self.reject)
         outer.addWidget(buttons)
 
     def _build_works_pane(self) -> QWidget:
@@ -2242,6 +2247,11 @@ class ReferenceLibraryManagerDialog(QDialog):
         self.works_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.works_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.works_table.verticalHeader().setVisible(False)
+        # Rows have a fixed height: wrapped labels were clipped and drifted out
+        # of line with the Year and Missing columns. Elide instead and keep
+        # the full label in the tooltip.
+        self.works_table.setWordWrap(False)
+        self.works_table.setTextElideMode(Qt.ElideRight)
         header = self.works_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
@@ -2375,8 +2385,10 @@ class ReferenceLibraryManagerDialog(QDialog):
         for work in works:
             row = self.works_table.rowCount()
             self.works_table.insertRow(row)
-            label_item = QTableWidgetItem(work.short_label or work.title or "")
+            label_text = work.short_label or work.title or ""
+            label_item = QTableWidgetItem(label_text)
             label_item.setData(Qt.UserRole, work.id)
+            label_item.setToolTip(label_text)
             self.works_table.setItem(row, 0, label_item)
             year_item = QTableWidgetItem("" if work.year is None else str(work.year))
             self.works_table.setItem(row, 1, year_item)

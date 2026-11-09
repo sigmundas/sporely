@@ -1134,7 +1134,7 @@ class IngestionHubTab(QWidget):
             return
         self._show_status(
             self.tr(
-                "Sync Shot created. Photograph it, then use 'Choose QR image...' in Ingestion Hub "
+                "Sync Shot created. Photograph it, then use 'Choose QR image...' in Camera import "
                 "to calibrate from the photographed QR image."
             ),
             tone="success",

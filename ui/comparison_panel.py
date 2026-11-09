@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable
 
-from PySide6.QtCore import QCoreApplication, Qt, Signal
+from PySide6.QtCore import QCoreApplication, QT_TRANSLATE_NOOP, Qt, Signal
 from PySide6.QtGui import QColor, QFontMetrics
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -239,13 +239,20 @@ def _format_provenance(data: dict) -> str:
     return "\n".join(lines)
 
 
+# Source text only; translated at display time in the "ComparisonPanel"
+# context (see _source_kind_label).
 _SOURCE_KIND_LABELS = {
-    SourceKind.OBSERVATION: "Observation",
-    SourceKind.LIBRARY: "Library",
-    SourceKind.COMMUNITY: "Community",
-    SourceKind.MY_OBS: "My observations",
-    SourceKind.MANUAL: "Manual",
+    SourceKind.OBSERVATION: QT_TRANSLATE_NOOP("ComparisonPanel", "Observation"),
+    SourceKind.LIBRARY: QT_TRANSLATE_NOOP("ComparisonPanel", "Library"),
+    SourceKind.COMMUNITY: QT_TRANSLATE_NOOP("ComparisonPanel", "Community"),
+    SourceKind.MY_OBS: QT_TRANSLATE_NOOP("ComparisonPanel", "My observations"),
+    SourceKind.MANUAL: QT_TRANSLATE_NOOP("ComparisonPanel", "Manual"),
 }
+
+
+def _source_kind_label(kind: SourceKind) -> str:
+    text = _SOURCE_KIND_LABELS.get(kind, "")
+    return QCoreApplication.translate("ComparisonPanel", text) if text else ""
 
 
 class _ComparisonRowWidget(QFrame):
@@ -295,7 +302,7 @@ class _ComparisonRowWidget(QFrame):
         self.title_label.setToolTip(row.label_tooltip or row.title)
         title_row.addWidget(self.title_label, 1)
 
-        self.badge_label = QLabel(_SOURCE_KIND_LABELS.get(row.source_kind, ""), self)
+        self.badge_label = QLabel(_source_kind_label(row.source_kind), self)
         self.badge_label.setStyleSheet("color: #7f8c8d; font-size: 10px;")
         title_row.addWidget(self.badge_label, 0)
 

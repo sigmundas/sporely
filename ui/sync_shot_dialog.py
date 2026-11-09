@@ -40,7 +40,7 @@ class SyncShotDialog(QDialog):
 
         intro_label = QLabel(
             self.tr(
-                "Photograph this screen with your camera, then close this dialog. In Ingestion Hub, "
+                "Photograph this screen with your camera, then close this dialog. In Camera import, "
                 "you can use 'Choose QR image...' to calibrate from any photographed Sync Shot QR, "
                 "even before you scan an import folder."
             )

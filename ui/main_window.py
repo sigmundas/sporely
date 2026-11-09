@@ -48,6 +48,7 @@ from PySide6.QtCore import (
     QStandardPaths,
     QModelIndex,
     QT_TRANSLATE_NOOP,
+    QCoreApplication,
     QSysInfo,
     QBuffer,
     QByteArray,
@@ -1422,8 +1423,16 @@ class SettingsHubDialog(QDialog):
         return page
 
     def _build_publishing_page(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
+        # The embedded publishing dialog has a 700 × 760 minimum, more than
+        # the hub leaves it at its default size. Without a scroll area the
+        # layout was squeezed and the last row overlapped the "Ask before
+        # making … public" checkbox.
+        page = QScrollArea()
+        page.setWidgetResizable(True)
+        page.setFrameShape(QScrollArea.NoFrame)
+        content = QWidget()
+        page.setWidget(content)
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         # Cloud/profile identity lives on the profile page; publishing content
@@ -1447,6 +1456,7 @@ class SettingsHubDialog(QDialog):
         )
         layout.addSpacing(8)
         layout.addWidget(self._show_publish_notice_check)
+        layout.addStretch(1)
         return page
 
     def _build_language_page(self) -> QWidget:
@@ -6430,7 +6440,9 @@ class MainWindow(GeometryMixin, QMainWindow):
             obs_id = int(record.get("id") or 0)
         except Exception:
             obs_id = 0
-        return f"Observation {obs_id}" if obs_id > 0 else "Observation"
+        if obs_id > 0:
+            return QCoreApplication.translate("MainWindow", "Observation {id}").format(id=obs_id)
+        return QCoreApplication.translate("MainWindow", "Observation")
 
     @staticmethod
     def _cloud_sync_observation_reason(observation: dict | None) -> str:
@@ -8655,8 +8667,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         )
         layout.addWidget(self.comparison_list, 1)
 
-        action_row = QHBoxLayout()
-        action_row.setSpacing(8)
+        # Stacked, full width: side by side, the two labels did not fit a
+        # narrow panel and "Manage reference library…" was clipped.
+        action_row = QVBoxLayout()
+        action_row.setSpacing(6)
         self.ref_add_reference_btn = QPushButton(self.tr("Add reference…"))
         self.ref_add_reference_btn.clicked.connect(self._on_add_reference_clicked)
         self._register_gallery_hint_widget(
@@ -8664,7 +8678,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.tr("Search the reference library, community data, or your own observations for a reference to plot"),
             allow_when_disabled=True,
         )
-        action_row.addWidget(self.ref_add_reference_btn, 1)
+        action_row.addWidget(self.ref_add_reference_btn)
 
         self.ref_manage_library_btn = QPushButton(self.tr("Manage reference library…"))
         self.ref_manage_library_btn.clicked.connect(self._on_manage_reference_library_clicked)
@@ -8673,7 +8687,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.tr("Browse and edit reference works, treatments, and measurement sets"),
             allow_when_disabled=True,
         )
-        action_row.addWidget(self.ref_manage_library_btn, 0)
+        action_row.addWidget(self.ref_manage_library_btn)
         layout.addLayout(action_row)
 
         self._refresh_reference_series_table()
@@ -17858,7 +17872,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.gallery_hist_patches = {}
             all_axes = [ax_scatter, ax_len if show_hist else None,
                         ax_wid if show_hist else None, ax_q if show_hist else None]
-            ax_scatter.text(0.5, 0.5, "No measurements", ha="center", va="center",
+            ax_scatter.text(0.5, 0.5, self.tr("No measurements"), ha="center", va="center",
                             color="#e8e8e8" if dark else "#2c3e50")
             ax_scatter.set_axis_off()
             if show_hist and ax_len and ax_wid and ax_q:

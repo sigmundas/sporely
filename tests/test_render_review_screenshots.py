@@ -137,7 +137,16 @@ TAXON_PICKER_IDS = {
     "taxon-picker.search-genus-dark",
     "taxon-picker.card-states-dark",
 }
-ALL_IDS = REFERENCE_IDS | CONFLICT_IDS | OTHER_UI_IDS | TAXON_PICKER_IDS
+QUICK_FIX_IDS = {
+    "quick-fixes.preferences-publishing",
+    "quick-fixes.preferences-publishing-dark",
+    "quick-fixes.camera-import",
+    "quick-fixes.camera-import-de",
+    "quick-fixes.live-lab",
+    "quick-fixes.image-import-footer",
+    "quick-fixes.reference-library-long-labels",
+}
+ALL_IDS = REFERENCE_IDS | CONFLICT_IDS | OTHER_UI_IDS | TAXON_PICKER_IDS | QUICK_FIX_IDS
 
 
 def _run(*arguments: str, timeout: int = 120) -> subprocess.CompletedProcess[str]:
@@ -160,7 +169,7 @@ def test_registry_has_unique_semantic_ids_and_expected_groups() -> None:
     assert len(ids) == len(set(ids))
     assert set(registry.groups()) == {
         "conflict", "measure", "observations", "portable-import",
-        "raw-processing", "reference-library", "taxon-picker",
+        "quick-fixes", "raw-processing", "reference-library", "taxon-picker",
     }
     assert {scenario.id for scenario in registry.all()} == ALL_IDS
 

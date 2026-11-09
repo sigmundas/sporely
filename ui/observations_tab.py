@@ -2535,7 +2535,7 @@ class ObservationsTab(QWidget):
         self._button_icon_map: dict[QPushButton, tuple[str, str]] = {}
 
         # ── New — full-width primary action ───────────────────────────────
-        self.new_btn = QPushButton(self.tr("+ New (N)"))
+        self.new_btn = QPushButton(self.tr("New (N)"))
         self.new_btn.setObjectName("primaryButton")
         self.new_btn.setIcon(self._btn_icon("icon_new.svg", get_button_icon_color("primaryButton")))
         self.new_btn.setIconSize(self._icon_size)
