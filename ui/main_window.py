@@ -159,7 +159,8 @@ from pathlib import Path
 import re
 from PIL import Image, ExifTags
 from database.models import ObservationDB, ImageDB, MeasurementDB, SettingsDB, ReferenceDB, CalibrationDB
-from database.models import SpeciesDataAvailability
+from database.models import ScaleChange, SpeciesDataAvailability
+from database.models import KEEP_FIELD
 from database.reference_library import (
     MeasurementSet,
     MeasurementSetPreferenceRepository,
@@ -13239,12 +13240,15 @@ class MainWindow(GeometryMixin, QMainWindow):
         old_scale = self.microns_per_pixel
         previous_key = self.current_objective_name
         new_scale = objective.get("microns_per_pixel", 0.5)
-        if not self._maybe_rescale_current_image(old_scale, new_scale):
-            self._populate_scale_combo(previous_key)
-            return False
         objective_key = objective.get("key") or objective.get("objective_key")
         if not objective_key:
             objective_key = objective.get("magnification") or objective.get("name")
+        calibration_id = CalibrationDB.get_active_calibration_id(objective_key) if objective_key else None
+        if not self._maybe_rescale_current_image(
+            old_scale, new_scale, objective_name=objective_key, calibration_id=calibration_id,
+        ):
+            self._populate_scale_combo(previous_key)
+            return False
         self.current_objective = objective
         self.current_objective_name = objective_key
         self.microns_per_pixel = new_scale
@@ -13262,7 +13266,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.image_label.set_microns_per_pixel(self.microns_per_pixel)
 
         if self.current_image_id:
-            calibration_id = CalibrationDB.get_active_calibration_id(objective_key) if objective_key else None
             ImageDB.update_image(
                 self.current_image_id,
                 scale=self.microns_per_pixel,
@@ -13284,7 +13287,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Apply a custom scale and optionally warn about mismatches."""
         old_scale = self.microns_per_pixel
         previous_key = self.current_objective_name
-        if not self._maybe_rescale_current_image(old_scale, scale):
+        if not self._maybe_rescale_current_image(old_scale, scale, objective_name="Custom", calibration_id=None):
             self._populate_scale_combo(previous_key)
             return False
         self.current_objective = {
@@ -22945,22 +22948,24 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Show a localized Yes/No confirmation dialog."""
         return ask_wrapped_yes_no(self, title, text, default_yes=default_yes)
 
-    def _maybe_rescale_current_image(self, old_scale, new_scale):
-        """Prompt to rescale previous measurements for the current image."""
+    def _maybe_rescale_current_image(self, old_scale, new_scale, *, objective_name=KEEP_FIELD,
+                                     calibration_id=KEEP_FIELD):
+        """Prompt, then recalculate the current image's measurements for a new scale.
+
+        Uses the shared rescale path (``MeasurementDB.apply_scale_changes``),
+        which also writes the image's new scale, and the objective and
+        calibration when given, in the same transaction. Every
+        kind of measurement is recalculated, including single lines and
+        multi-line measurements; calibration measurements are left alone.
+        Returns False when the user cancels.
+        """
         if self.suppress_scale_prompt:
             return True
         if not self.current_image_id or not old_scale or not new_scale:
             return True
         if abs(new_scale - old_scale) < 1e-6:
             return True
-        measurements = MeasurementDB.get_measurements_for_image(self.current_image_id)
-        if not measurements:
-            return True
-        has_points = any(
-            all(m.get(f"p{i}_{axis}") is not None for i in range(1, 5) for axis in ("x", "y"))
-            for m in measurements
-        )
-        if not has_points:
+        if not MeasurementDB.rescalable_count(self.current_image_id):
             return True
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Question)
@@ -22972,26 +22977,16 @@ class MainWindow(GeometryMixin, QMainWindow):
         if box.clickedButton() != ok_btn:
             return False
 
-        conn = get_connection()
-        cursor = conn.cursor()
-        for m in measurements:
-            if not all(m.get(f"p{i}_{axis}") is not None for i in range(1, 5) for axis in ("x", "y")):
-                continue
-            p1 = QPointF(m["p1_x"], m["p1_y"])
-            p2 = QPointF(m["p2_x"], m["p2_y"])
-            p3 = QPointF(m["p3_x"], m["p3_y"])
-            p4 = QPointF(m["p4_x"], m["p4_y"])
-            dist1 = math.hypot(p2.x() - p1.x(), p2.y() - p1.y()) * new_scale
-            dist2 = math.hypot(p4.x() - p3.x(), p4.y() - p3.y()) * new_scale
-            length_um = max(dist1, dist2)
-            width_um = min(dist1, dist2)
-            q_value = length_um / width_um if width_um > 0 else 0
-            cursor.execute(
-                'UPDATE spore_measurements SET length_um = ?, width_um = ?, notes = ? WHERE id = ?',
-                (length_um, width_um, f"Q={q_value:.1f}", m["id"])
+        MeasurementDB.apply_scale_changes([
+            ScaleChange(
+                int(self.current_image_id),
+                float(new_scale),
+                objective_name=objective_name,
+                calibration_id=calibration_id,
+                old_scale=float(old_scale),  # the scale the measurements on screen were made at
             )
-        conn.commit()
-        conn.close()
+        ])
+        self._notify_measurements_changed()
 
         self.load_measurement_lines()
         self.update_measurements_table()

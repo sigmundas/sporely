@@ -133,7 +133,7 @@ class _MeasureStub:
     def tr(self, text):
         return text
 
-    def _maybe_rescale_current_image(self, *_args):
+    def _maybe_rescale_current_image(self, *_args, **_kwargs):
         return True
 
     def __getattr__(self, name):
