@@ -13275,6 +13275,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                 objective_name=self.current_objective_name,
                 calibration_id=calibration_id,
             )
+            if not self.suppress_scale_prompt:  # the user changed it, not an image load
+                self.refresh_observation_images(select_image_id=self.current_image_id, preserve_selection=True)
         self._populate_scale_combo(self.current_objective_name)
         self._last_scale_combo_key = self.current_objective_name
         self._update_scale_mismatch_warning()
@@ -13321,6 +13323,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                 objective_name=self.current_objective_name,
                 calibration_id=None,
             )
+            if not self.suppress_scale_prompt:  # the user changed it, not an image load
+                self.refresh_observation_images(select_image_id=self.current_image_id, preserve_selection=True)
         self._populate_scale_combo("Custom")
         self._last_scale_combo_key = self.scale_combo.currentData() if hasattr(self, "scale_combo") else "Custom"
         self._update_scale_mismatch_warning()
@@ -13430,6 +13434,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._update_scalebar_controls_visibility()
         if image_data.get("image_type") == "field" and (scale is None or scale <= 0):
             self.microns_per_pixel = 0.0
+            # Nothing of the previous microscope image's objective carries over.
+            self.image_label.set_objective_text("")
         self._update_field_scale_label()
 
     def _set_measure_image_tags(self, image_data: dict) -> None:
@@ -13446,6 +13452,12 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         tags = []
         keys = []
+        if image_data.get("image_type") == "field":
+            # Objective, contrast, mount and stain describe a slide; a field
+            # photo has none (before, the previous image's objective and
+            # "No stain" showed here).
+            self.image_label.set_top_left_tags(tags, keys)
+            return
         objective_text = str(getattr(self.image_label, "objective_text", "") or "").strip()
         contrast = _value("contrast")
         canonical_contrast = DatabaseTerms.canonicalize("contrast", contrast) if contrast else None
@@ -13523,6 +13535,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                 "sample_source": "sample_source",
             }[selected_category]
             ImageDB.update_image(self.current_image_id, **{column: value})
+            if column == "contrast":  # shown on the thumbnail
+                self.refresh_observation_images(select_image_id=self.current_image_id, preserve_selection=True)
         image_data = ImageDB.get_image(self.current_image_id)
         if image_data:
             self._set_measure_image_tags(image_data)
@@ -14103,7 +14117,27 @@ class MainWindow(GeometryMixin, QMainWindow):
             except Exception:
                 pass
 
-    def refresh_observation_images(self, select_image_id=None, force_refresh: bool = False):
+    @staticmethod
+    def _measure_gallery_signature_for(images) -> tuple:
+        """What the Mål gallery shows of each image: a change rebuilds it.
+
+        The thumbnail labels show type, objective, contrast and scale, so a
+        change to any of them counts, not only a new id or file.
+        """
+        return tuple(
+            (
+                img.get("id"),
+                str(img.get("filepath") or ""),
+                img.get("image_type"),
+                img.get("objective_name"),
+                img.get("contrast"),
+                img.get("scale_microns_per_pixel"),
+            )
+            for img in images
+        )
+
+    def refresh_observation_images(self, select_image_id=None, force_refresh: bool = False,
+                                   preserve_selection: bool = False):
         """Refresh the image list for the active observation.
 
         `force_refresh=True` bypasses the "same-signature short-circuit" so
@@ -14130,13 +14164,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._pixmap_cache_observation_id = self.active_observation_id
 
         new_observation_images = ImageDB.get_images_for_observation(self.active_observation_id)
-        new_signature = tuple(
-            (
-                img.get("id"),
-                str(img.get("filepath") or ""),
-            )
-            for img in new_observation_images
-        )
+        new_signature = self._measure_gallery_signature_for(new_observation_images)
         gallery_changed = (
             force_refresh
             or self._measure_gallery_observation_id != self.active_observation_id
@@ -14150,6 +14178,9 @@ class MainWindow(GeometryMixin, QMainWindow):
             same_observation = (
                 self._measure_gallery_observation_id == self.active_observation_id
             )
+            if preserve_selection and same_observation:
+                # A metadata edit keeps the user's (multi-)selection.
+                self.measure_gallery.set_selection_after_next_load(self.measure_gallery.selected_paths())
             self.measure_gallery.set_observation_id(
                 self.active_observation_id,
                 reveal="preserve" if same_observation else None,
@@ -14175,7 +14206,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.current_image_index = 0 if self.observation_images else -1
 
         self.update_image_navigation_ui()
-        if hasattr(self, "measure_gallery"):
+        if hasattr(self, "measure_gallery") and not preserve_selection:
+            # (Selecting also centres the strip on the image.)
             self.measure_gallery.select_image(self.current_image_id)
         return gallery_changed
 
@@ -22991,7 +23023,17 @@ class MainWindow(GeometryMixin, QMainWindow):
         """
         if self.suppress_scale_prompt:
             return True
-        if not self.current_image_id or not old_scale or not new_scale:
+        if not self.current_image_id or not new_scale:
+            return True
+        # The scale the image's measurements were saved at is the one stored
+        # for it, not the one Mål holds in memory: that can be stale (an
+        # image still loading, a field image after a microscope image), and
+        # comparing against it skipped the recalculation while the new scale
+        # was still written, leaving measurements at the old scale.
+        image = ImageDB.get_image(self.current_image_id) or {}
+        stored_scale = image.get("scale_microns_per_pixel")
+        old_scale = stored_scale if stored_scale and stored_scale > 0 else old_scale
+        if not old_scale:
             return True
         if abs(new_scale - old_scale) < 1e-6:
             return True
@@ -23013,7 +23055,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 float(new_scale),
                 objective_name=objective_name,
                 calibration_id=calibration_id,
-                old_scale=float(old_scale),  # the scale the measurements on screen were made at
+                old_scale=KEEP_FIELD if stored_scale and stored_scale > 0 else float(old_scale),
             )
         ])
         self._notify_measurements_changed()

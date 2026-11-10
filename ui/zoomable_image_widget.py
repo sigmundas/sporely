@@ -20,6 +20,16 @@ from .measurement_overlay_style import (
 )
 
 
+def _next_smaller_round(value: float) -> float:
+    """The next 1-2-5 step below ``value`` (10 → 5 → 2 → 1 → 0.5 …)."""
+    exponent = math.floor(math.log10(value))
+    mantissa = value / (10 ** exponent)
+    for step in (5.0, 2.0, 1.0):
+        if mantissa > step * (1 + 1e-9):
+            return step * (10 ** exponent)
+    return 5.0 * (10 ** (exponent - 1))
+
+
 class ZoomableImageLabel(QLabel):
     """Custom label that supports zoom, pan, and measurement overlays."""
 
@@ -1033,6 +1043,29 @@ class ZoomableImageLabel(QLabel):
         if available_width is not None:
             length = min(length, float(available_width) * 0.6)
         return length
+
+    def scale_bar_for_width(self, available_width: float | None = None) -> tuple[float, float]:
+        """``(microns, on-screen pixels)`` of the bar to draw in ``available_width``.
+
+        The configured length while it fits in 60 % of the width; otherwise
+        the longest round length (1-2-5 steps) below it that does, so the
+        label always says what the bar measures. Shortening a bar drawn under
+        an unchanged label made it lie when zoomed in.
+        """
+        bar_um = float(self.scale_bar_um)
+        length = self.scale_bar_screen_length()
+        if available_width is None or length <= 0 or self.microns_per_pixel <= 0:
+            return bar_um, length
+        limit = float(available_width) * 0.6
+        if length <= limit:
+            return bar_um, length
+        pixels_per_micron = float(self.zoom_level) / float(self.microns_per_pixel)
+        candidate = bar_um
+        for _ in range(40):
+            candidate = _next_smaller_round(candidate)
+            if candidate * pixels_per_micron <= limit:
+                break
+        return candidate, max(1.0, candidate * pixels_per_micron)
 
     def bottom_left_readout_rect(self) -> QRect:
         """Where the zoom readout (and a preview tag above it) are painted.
@@ -3113,9 +3146,10 @@ class ZoomableImageLabel(QLabel):
         # Draw scale bar in lower right corner
         scale_bar_box = None
         if self.show_scale_bar and self.microns_per_pixel > 0:
-            bar_um = self.scale_bar_um
-            anchor_rect = visible_view_rect if preview_crop_active else QRectF(display_rect)
-            bar_screen = self.scale_bar_screen_length(anchor_rect.width())
+            # The visible part of the image: zoomed in, the image runs past the
+            # view, and the bar stays in the view's lower right corner.
+            anchor_rect = visible_view_rect if not visible_view_rect.isEmpty() else QRectF(display_rect)
+            bar_um, bar_screen = self.scale_bar_for_width(anchor_rect.width())
 
             font = painter.font()
             font.setPointSize(9)
