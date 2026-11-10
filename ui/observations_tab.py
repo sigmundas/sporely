@@ -8577,7 +8577,11 @@ class ObservationsTab(QWidget):
         if not observation_id or observation_id != self.selected_observation_id:
             return
         self.gallery_widget.set_observation_id_async(int(observation_id))
-        if self._current_view_mode() == self.VIEW_MODE_IMAGES:
+        if self._current_view_mode() == self.VIEW_MODE_IMAGES and not self.isVisible():
+            # Selected from another page (stage 9b: the table follows the
+            # observation shown there): decode the full image when View shows.
+            self._image_browser_refresh_deferred = True
+        elif self._current_view_mode() == self.VIEW_MODE_IMAGES:
             # load_oriented_pixmap can block the UI thread for hundreds of ms
             # on large images. Force the table to flush its pending paint
             # first, otherwise the row we just selected renders blank until
@@ -8587,6 +8591,13 @@ class ObservationsTab(QWidget):
             self._refresh_image_browser_for_current_selection()
             if hasattr(self, "table"):
                 self.table.viewport().update()
+
+    def showEvent(self, event):  # noqa: N802 - Qt override
+        super().showEvent(event)
+        if getattr(self, "_image_browser_refresh_deferred", False):
+            self._image_browser_refresh_deferred = False
+            if self._current_view_mode() == self.VIEW_MODE_IMAGES:
+                QTimer.singleShot(0, self, self._refresh_image_browser_for_current_selection)
 
     def _on_gallery_observation_loaded(self, observation_id: object) -> None:
         try:

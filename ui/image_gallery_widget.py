@@ -10,6 +10,7 @@ from typing import Iterable
 from PySide6.QtCore import Qt, Signal, QEvent, QSize, QRectF, QTimer, QMimeData, QPoint, QPointF, QThread
 from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QDrag, QShortcut, QKeySequence, QIcon, QPalette
 from PySide6.QtWidgets import QGraphicsDropShadowEffect
+from shiboken6 import isValid
 from PySide6.QtWidgets import (
     QApplication,
     QGroupBox,
@@ -1142,6 +1143,8 @@ class ImageGalleryWidget(QGroupBox):
         *,
         reveal: str | None = None,
     ) -> None:
+        if not isValid(self):
+            return  # the loader finished after the gallery was destroyed (window closing)
         if generation != self._observation_load_generation:
             return
         try:

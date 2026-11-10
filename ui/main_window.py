@@ -240,6 +240,7 @@ from .dialog_helpers import ask_measurements_exist_delete, ask_wrapped_yes_no, m
 from .calibration_dialog import CalibrationDialog
 from .ingestion_hub_tab import IngestionHubTab
 from .mode_bar import ModeBar
+from .observation_list_panel import ObservationListPanel, VerticalRailButton
 from .measurement_overlay_style import (
     DEFAULT_RECTANGLE_STYLE,
     DEFAULT_RECTANGLE_THICKNESS,
@@ -6092,7 +6093,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._mode_bar_edit_timer = QTimer(self)
         self._mode_bar_edit_timer.setSingleShot(True)
         self._mode_bar_edit_timer.setInterval(0)
-        self._mode_bar_edit_timer.timeout.connect(self._refresh_mode_bar_edit_enabled)
+        self._mode_bar_edit_timer.timeout.connect(self._refresh_observation_selection_ui)
         table = self.observations_tab.table
         self.observations_tab.selection_count_changed.connect(self._schedule_mode_bar_edit_refresh)
         table.selectionModel().selectionChanged.connect(self._schedule_mode_bar_edit_refresh)
@@ -6107,8 +6108,36 @@ class MainWindow(GeometryMixin, QMainWindow):
         pages_layout.setContentsMargins(0, 0, 0, 0)
         pages_layout.setSpacing(0)
         pages_layout.addWidget(self.mode_bar)
-        pages_layout.addWidget(self.tab_widget, 1)
+        # Stage 9b: in Images, Measure and Analysis the observation list is a
+        # thin rail that opens it as a left drawer over the page.
+        body = QWidget(pages)
+        body_layout = QHBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(8)
+        self.observation_rail = VerticalRailButton(self.tr("OBSERVATIONS"), body)
+        self.observation_rail.setToolTip(self.tr("Show the observation list"))
+        self.observation_rail.setAccessibleName(self.tr("Show the observation list"))
+        self.observation_rail.clicked.connect(self._toggle_observation_drawer)
+        body_layout.addWidget(self.observation_rail)
+        body_layout.addWidget(self.tab_widget, 1)
+        pages_layout.addWidget(body, 1)
         main_layout.addWidget(pages, 1)
+        self.observation_list_panel = ObservationListPanel()
+        self.observation_list_panel.set_source_model(table.model())
+        self.observation_list_panel.rowChosen.connect(self._on_observation_list_row_chosen)
+        self.observation_list_panel.tableRequested.connect(self._on_observation_list_table_requested)
+        self.observation_list_panel.newRequested.connect(self._on_observation_list_new_requested)
+        self.observation_list_panel.searchTextChanged.connect(self.observations_tab.search_input.setText)
+        self.observations_tab.search_input.textChanged.connect(self.observation_list_panel.set_search_text)
+        self.observation_drawer = SideDrawer(body, side="left", width=300, escape_anywhere=True)
+        self.observation_drawer.add_page("observations", self.tr("Observations"), self.observation_list_panel)
+        self.observation_drawer.opened.connect(lambda _key: self._on_observation_drawer_opened())
+        # Drawers open one at a time.
+        for other in (self.measure_drawer, self.reference_drawer):
+            other.opened.connect(lambda _key: self.observation_drawer.close_drawer())
+        self.observation_drawer.hide()
+        self.tab_widget.currentChanged.connect(self._update_observation_rail)
+        self._update_observation_rail(self.tab_widget.currentIndex())
 
         # Corner buttons: settings cog + calibration icon + profile
         corner = QWidget()
@@ -17323,8 +17352,12 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def _schedule_mode_bar_edit_refresh(self, *_args) -> None:
         timer = getattr(self, "_mode_bar_edit_timer", None)
-        if timer is not None:
+        if timer is None:
+            return
+        try:
             timer.start()
+        except RuntimeError:
+            pass  # the window is being destroyed; its table empties after the timer is gone
 
     def _mode_bar_edit_row(self) -> int:
         """The list row Edit acts on, or -1.
@@ -17342,6 +17375,73 @@ class MainWindow(GeometryMixin, QMainWindow):
             return rows[0].row() if len(rows) == 1 else -1
         active = int(getattr(self, "active_observation_id", 0) or 0)
         return tab._find_table_row_for_observation(active) if active > 0 else -1
+
+    # -- the observation list's rail and drawer (stage 9b) -------------------
+
+    RAIL_PAGES = (1, 2, 3)  # Measure, Analysis, Images (Live Lab)
+
+    def _update_observation_rail(self, index: int) -> None:
+        on_rail_page = int(index) in self.RAIL_PAGES
+        self.observation_rail.setVisible(on_rail_page)
+        if not on_rail_page:
+            self.observation_drawer.close_drawer()
+
+    def _toggle_observation_drawer(self) -> None:
+        self.observation_drawer.toggle_page("observations")
+
+    def _on_observation_drawer_opened(self) -> None:
+        self.measure_drawer.close_drawer()
+        self.reference_drawer.close_drawer()
+        self._mark_observation_list_row()
+        self.observation_list_panel.list_view.setFocus(Qt.OtherFocusReason)
+
+    def _on_observation_list_row_chosen(self, row: int) -> None:
+        """Open the chosen observation on the page shown, as the table would."""
+        tab = self.observations_tab
+        if row < 0 or row >= tab.table.rowCount():
+            return
+        self.observation_drawer.close_drawer()
+        tab.table.selectRow(row)
+        tab.set_selected_as_active(switch_tab=False)
+
+    def _on_observation_list_table_requested(self) -> None:
+        self.observation_drawer.close_drawer()
+        self.tab_widget.setCurrentIndex(0)
+
+    def _on_observation_list_new_requested(self) -> None:
+        self.observation_drawer.close_drawer()
+        self.observations_tab.create_new_observation()
+
+    def _mark_observation_list_row(self) -> None:
+        model = self.observations_tab.table.selectionModel()
+        rows = model.selectedRows() if model is not None else []
+        self.observation_list_panel.mark_row(rows[0].row() if len(rows) == 1 else -1)
+
+    def _select_active_observation_row(self) -> None:
+        """One selected observation: the table follows the observation shown.
+
+        Selecting a row never loops back into ``on_observation_selected``: the
+        table only highlights it and loads View's thumbnails (the full image
+        waits until View is shown). A multi-row selection is left alone.
+        """
+        tab = getattr(self, "observations_tab", None)
+        active = int(getattr(self, "active_observation_id", 0) or 0)
+        if tab is None or active <= 0:
+            return
+        row = tab._find_table_row_for_observation(active)
+        if row < 0:
+            return
+        model = tab.table.selectionModel()
+        selected = [index.row() for index in model.selectedRows()] if model is not None else []
+        if len(selected) > 1:
+            return  # a batch chosen in View stays (export, publish, delete)
+        if selected != [row]:
+            tab.table.selectRow(row)
+
+    def _refresh_observation_selection_ui(self) -> None:
+        self._refresh_mode_bar_edit_enabled()
+        if hasattr(self, "observation_list_panel"):
+            self._mark_observation_list_row()
 
     def _refresh_mode_bar_edit_enabled(self) -> None:
         if hasattr(self, "mode_bar"):
@@ -23314,6 +23414,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.schedule_gallery_refresh()
         # An open reference drawer follows the new observation.
         self._reload_reference_drawer_if_open()
+        if hasattr(self, "observations_tab"):
+            QTimer.singleShot(0, self, self._select_active_observation_row)
         self._schedule_mode_bar_edit_refresh()
 
     def on_observation_deleted(self, observation_id: int):

@@ -179,6 +179,8 @@ ANALYSIS_TAB_IDS = {
 MODE_BAR_IDS = {
     "mode-bar.view", "mode-bar.view-dark", "mode-bar.measure", "mode-bar.measure-dark",
     "mode-bar.view-de", "mode-bar.small-de",
+    "observation-list.rail", "observation-list.rail-dark", "observation-list.drawer",
+    "observation-list.drawer-dark", "observation-list.drawer-de",
 }
 ALL_IDS = (
     REFERENCE_IDS

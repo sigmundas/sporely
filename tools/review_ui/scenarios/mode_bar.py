@@ -36,7 +36,65 @@ def _window(context: ReviewContext, *, page: str, size: tuple[int, int], waiting
     return window
 
 
+NAMES = (
+    ("Gulgrønn lærhatt", "Cortinarius", "olivaceofuscus"),
+    ("Silketrevlesopp-gruppen", "Inocybe", "geophylla"),
+    ("", "Flammulina", "velutipes"),
+    ("Svartrandkjuke", "Bjerkandera", "adusta"),
+    ("Knuskkjuke", "Fomes", "fomentarius"),
+)
+
+
+def _rail(context: ReviewContext, *, size: tuple[int, int], open_drawer: bool) -> QWidget:
+    """Mål with a handful of observations; the list's drawer open or only the rail."""
+    from database.models import ObservationDB
+
+    def more(window):
+        tab = window.observations_tab
+        for common, genus, species in NAMES:
+            ObservationDB.create_observation(
+                date="2026-10-31 08:50", genus=genus, species=species, common_name=common or None,
+            )
+        tab.refresh_observations()
+        _settle(0.4)
+        window._select_active_observation_row()
+        _settle(0.2)
+        if open_drawer:
+            window._toggle_observation_drawer()
+            _settle(0.5)
+
+    window = _window(context, page="measure_tab", size=size)
+    more(window)
+    return window
+
+
 def register_mode_bar_scenarios(registry: ScenarioRegistry) -> None:
+    for open_drawer, state in ((False, "rail"), (True, "drawer")):
+        for theme in ("light", "dark"):
+            suffix = "" if theme == "light" else "-dark"
+            registry.register(
+                ReviewScenario(
+                    id=f"observation-list.{state}{suffix}",
+                    group="mode-bar",
+                    title=f"Observation list, {state} in Mål (nb{', dark' if theme == 'dark' else ''})",
+                    description="The rail at Mål's left edge; open, the list drawer over the page (stage 9b).",
+                    build=lambda context, open_drawer=open_drawer: _rail(context, size=(1500, 950), open_drawer=open_drawer),
+                    viewport=(1500, 950),
+                    locale="nb_NO",
+                    theme=theme,
+                )
+            )
+    registry.register(
+        ReviewScenario(
+            id="observation-list.drawer-de",
+            group="mode-bar",
+            title="Observation list drawer (de)",
+            description="The list drawer with German strings in a small window.",
+            build=lambda context: _rail(context, size=(1100, 720), open_drawer=True),
+            viewport=(1100, 720),
+            locale="de_DE",
+        )
+    )
     for page, label in (("observations_tab", "view"), ("measure_tab", "measure")):
         for theme in ("light", "dark"):
             suffix = "" if theme == "light" else "-dark"

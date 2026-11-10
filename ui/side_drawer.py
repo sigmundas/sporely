@@ -12,6 +12,7 @@ spans the host's full height.
 from __future__ import annotations
 
 from PySide6.QtCore import QEasingCurve, QEvent, QPoint, QPropertyAnimation, Qt, Signal
+from PySide6.QtWidgets import QApplication
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -31,8 +32,14 @@ class SideDrawer(QFrame):
     opened = Signal(str)
     closed = Signal()
 
-    def __init__(self, host: QWidget, *, side: str = "right", width: int = DEFAULT_WIDTH) -> None:
+    def __init__(
+        self, host: QWidget, *, side: str = "right", width: int = DEFAULT_WIDTH, escape_anywhere: bool = False,
+    ) -> None:
         super().__init__(host)
+        # Close on Esc wherever focus is in the window, before the page's own
+        # Esc shortcuts (which would otherwise be ambiguous with a drawer one).
+        self._escape_anywhere = bool(escape_anywhere)
+        self._swallow_escape_press = False
         self._host = host
         self._side = "left" if side == "left" else "right"
         self._width = int(width)
@@ -112,6 +119,8 @@ class SideDrawer(QFrame):
             self._place(self._shown_pos())  # the new page may need another width
         if not self._open:
             self._open = True
+            if self._escape_anywhere and QApplication.instance() is not None:
+                QApplication.instance().installEventFilter(self)
             self._place(self._shown_pos() if not self.isVisible() else self.pos())
             self.show()
             self.raise_()
@@ -129,6 +138,8 @@ class SideDrawer(QFrame):
         if not self._open:
             return
         self._open = False
+        if not self._swallow_escape_press:
+            self._remove_escape_filter()
         self._slide(self.pos(), self._hidden_pos())
         self.closed.emit()
 
@@ -169,7 +180,33 @@ class SideDrawer(QFrame):
         if not self._open:
             self.hide()
 
+    def _remove_escape_filter(self) -> None:
+        if self._escape_anywhere and QApplication.instance() is not None:
+            QApplication.instance().removeEventFilter(self)
+
+    def _escape_in_my_window(self, obj, event) -> bool:
+        if event.key() != Qt.Key_Escape or event.modifiers() not in (Qt.NoModifier, Qt.KeypadModifier):
+            return False
+        return isinstance(obj, QWidget) and obj.window() is self.window()
+
     def eventFilter(self, obj, event) -> bool:  # noqa: N802 - Qt override
+        kind = event.type()
+        if self._escape_anywhere and kind in (QEvent.ShortcutOverride, QEvent.KeyPress):
+            if kind == QEvent.ShortcutOverride and self._open and self._escape_in_my_window(obj, event):
+                # Claim the key so no page shortcut fires, then close.
+                event.accept()
+                self._swallow_escape_press = True
+                self.close_drawer()
+                return True
+            if self._swallow_escape_press and isinstance(obj, QWidget):
+                # The Esc press that closed the drawer goes nowhere else.
+                swallow = kind == QEvent.KeyPress and self._escape_in_my_window(obj, event)
+                if swallow or event.key() != Qt.Key_Escape:
+                    self._swallow_escape_press = False
+                    if not self._open:
+                        self._remove_escape_filter()
+                if swallow:
+                    return True
         if obj is self._host and event.type() == QEvent.Resize:
             self._animation.stop()
             if self._open:
