@@ -262,7 +262,7 @@ Rules for the implementing agent (the doc's rules, adapted to `AGENTS.md`):
 | 6 | Mål | Layout opinion |
 | 7 | Reference picker and create dialog | Layout opinion |
 | 8 | Batch correction of microscope settings | **Owner approval before work starts** |
-| 9 | Observation workspace (the structural change) | Layout opinion; the Kameraimport bin change needs owner approval first |
+| 9 | Observation workspace (the structural change) | Layout opinion per sub-stage; the owner approves the split first |
 | 10 | Sort the remaining dialogs into visibility levels | Owner approves the table |
 
 ## Stage 0 — Quick fixes
@@ -519,16 +519,28 @@ owner has answered these:
   and the top tabs go; Kameraimport stays its own screen, a distinct button at
   the far right of the mode bar (⌥C), with the layout order Import folder,
   camera time offset, sessions, actions. Retire the Rediger observasjon and
-  Legg til bilder dialogs. Rediger keeps today's save behaviour: autosave vs.
-  ask is undecided, and neither is built until it is decided.
-- Split into sub-stages that each leave the app usable (likely: mode shell and
-  shared strip; Bilder sources; Rediger mode; Kameraimport); propose the split
-  before starting. The monolith panels this touches in `ui/main_window.py` and
-  `ui/observations_tab.py` are extracted first, each as its own mechanical PR.
-- Settle first: unsaved images when switching observation; the owner's
-  approval of the Kameraimport bin change (below). Status og publisering
+  Legg til bilder dialogs. Rediger autosaves (decided 2026-11-10).
+- Split into sub-stages that each leave the app usable (proposed below; the
+  owner approves the split before 9a starts). A monolith panel in
+  `ui/main_window.py` or `ui/observations_tab.py` that a sub-stage must move
+  is extracted first, as its own mechanical commit with no behaviour change.
+- Decided 2026-11-10: Rediger autosaves; staged images stay with the
+  observation they were taken for when switching observation; the
+  Kameraimport bin button is left as it is; “Sync Shot” becomes “Camera time
+  offset” and “Microscope sessions” “Live lab sessions”. Status og publisering
   changes only `is_draft`; a change that would touch `sharing_scope` or the
   sync contract stops and asks.
+- Proposed split (2026-11-10, awaiting the owner's OK):
+
+  | Sub-stage | What | Leaves the app |
+  | --- | --- | --- |
+  | 9a | Mode shell: a mode bar (Vis, Bilder, Mål, Analyse; Kameraimport at the far right, ⌥C) replaces the top tabs; today's pages stay behind it, Live Lab is Bilder for now; Rediger opens today's dialog until 9e; every shortcut keeps working | Same screens, new navigation |
+  | 9b | Observation rail: the list extracted from `ObservationsTab` (mechanical commit), then shown as a rail with a left drawer in Bilder, Mål and Analyse; Tabell from the list header; one selected observation across modes and the table | One list everywhere |
+  | 9c | One shared image strip under the modes, replacing Vis's image browser, Mål's gallery and Live Lab's; unsaved images first with an orange border, kept per observation | One strip |
+  | 9d | Bilder › Live: captures land in the strip, “Lagre til observasjon” there, the pending-RAW bar leaves the image; Kamera tilkoblet and Kun logg session types; a running session survives switching mode | Live Lab merged |
+  | 9e | Bilder › Filer og SD-kort: Legg til bilder in place (Felt/Mikroskop per image, microscope bar for microscope images, EXIF in an Info drawer); the dialog retired | Import merged |
+  | 9f | Rediger mode with autosave: the dialog's form extracted (mechanical commit), then in place; AI-forslag inline; Status og publisering (`is_draft` only); the dialog retired | Edit merged |
+  | 9g | Kameraimport: layout order Import folder, Camera time offset, Live lab sessions, actions; the renames in all three translations; hints updated; bin button unchanged | Stage 9 done |
 - Done when: the selected observation stays the same across modes and the
   table; unsaved edits are never lost when switching mode or observation; a
   running Live session survives switching mode.
@@ -583,10 +595,8 @@ sorts everything else, read-only, into a table the owner approves:
 
   Existing English sources that already mean the same thing are reused
   (“Measure”, “Analysis”, “Camera import”, “Notes”, “Mount:”, “Stain:”).
-- **Kameraimport bin button:** recommended design is to hide the row by
-  default and offer a separate delete that confirms with the number of
-  sessions and events that will be lost. Not built until the owner approves
-  (deletion change).
+- **Kameraimport bin button** (owner, 2026-11-10): leave it as it is; the
+  proposed hide-and-confirm design is not built.
 - **Kameraimport placement:** a distinct button at the far right of the mode
   bar, ⌥C.
 - **Shortcuts:** keep ⌥I (Camera import from Observations) and ⌘E/⌥E (Edit)
@@ -600,7 +610,13 @@ sorts everything else, read-only, into a table the owner approves:
   never changed implicitly.
 - **Stage 2 label** is coloured by objective; **Preparat** has no “–” option;
   **AI-forslag** sits inline in Rediger.
-- **Rediger save model:** autosave or ask stays open; build neither.
+- **Rediger save model** (owner, 2026-11-10): autosave; no Lagre/Avbryt prompt
+  when leaving.
+- **Staged images when switching observation** (owner, 2026-11-10): they stay
+  staged for the observation they were taken for, with no prompt and no
+  automatic save; the rail shows a count on that observation.
+- **Naming** (owner, 2026-11-10): “Sync Shot” becomes “Camera time offset”
+  and “Microscope sessions” “Live lab sessions” (stage 9g).
 
 ## Open decisions (settle before the stage named)
 
@@ -617,13 +633,11 @@ sorts everything else, read-only, into a table the owner approves:
       detaches it (the same as Fjern in the comparison list). A ticked
       reference is attached as “Sammenlignet”; the role is changed in its
       expanded row.
-- [ ] Unsaved edits in Rediger: autosave, or ask when switching (before 9;
-      neither is built until decided).
-- [ ] Switching observation with unsaved images in Bilder: ask, or save them to
-      the observation they were taken for (before 9).
-- [ ] Approve the Kameraimport bin change (before 9).
-- [ ] “Sync Shot” or “Camera time offset” as the name (before 9; stage 0
-      leaves the name alone).
+- [x] Decided 2026-11-10: Rediger autosaves.
+- [x] Decided 2026-11-10: switching observation keeps unsaved images staged
+      for the observation they were taken for.
+- [x] Decided 2026-11-10: the Kameraimport bin button stays as it is.
+- [x] Decided 2026-11-10: “Camera time offset” and “Live lab sessions”.
 - [x] Decided 2026-11-08: Analyse and Live Lab are modes in Observasjoner;
       Live Lab and Legg til bilder merge into the Bilder mode.
 
@@ -697,7 +711,8 @@ screen unless it blocks daily use. Screenshot defects moved to stage 0.
 
 ### Kameraimport (stage 9)
 - *feature* Layout order: Import folder, camera time offset, sessions,
-  Actions; update button hints (Sync Shot name: open decision).
+  Actions; update button hints (renamed “Camera time offset”, decided
+  2026-11-10).
 - *feature* Richer manual reassignment for unmatched images (also in
   `docs/hardware-sync.md`).
 
