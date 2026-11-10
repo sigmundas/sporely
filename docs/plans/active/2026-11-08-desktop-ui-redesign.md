@@ -478,6 +478,34 @@ owner has answered these:
   human-gated.
 - Done when: no measurement changes without being flagged; the confirmation
   shows correct counts; the log records the change.
+- Decided 2026-11-10 (owner), from the read-only survey:
+  - **Rescale:** one shared database function. It recomputes each
+    measurement from its pixel points with the new scale (a multi-line
+    measurement from the line stored in its note; a ratio only for rows
+    without points), skips calibration rows, updates the image's scale,
+    objective and calibration in one transaction, and marks the observation
+    for sync. The batch and Mål's objective change use it; the unused
+    `CalibrationDB.recalculate_measurements_for_objective` is removed. The
+    import dialog, Observations import and calibration-dialog paths move to
+    it later. Survey: six writers today (`MainWindow._maybe_rescale_current_image`,
+    `_on_calibration_measurement_edited`, `ImageImportDialog._rescale_measurements_for_image`,
+    `ObservationsTab._rescale_measurement_lengths`, and the two `CalibrationDB`
+    functions); they disagree on points vs ratio and on calibration rows, and
+    only the calibration one marks sync. Mål's rescale skips multi-line
+    measurements today (they store two points; the line is in `notes`), so
+    they keep the old scale.
+  - **Log:** one `session_logs` event per observation (images, old → new
+    values, measurement count). Local, in backups and exports, not synced;
+    no schema change.
+  - **Sync:** the new values go through the normal path (`ImageDB.update_image`
+    marks the observation dirty; measurements push per row from it). No
+    contract change. Checking one batch edit against the real account is
+    human-gated.
+  - **Review flag:** open. The owner questioned it (2026-11-10): the change
+    is confirmed in a prompt and measurements are recomputed from their
+    pixel points, so the values are exact, not guesses. Proposal: no flag
+    and no schema change; the confirmation with counts and the log are the
+    safeguards.
 
 ### 9 — Observation workspace (the structural change)
 
