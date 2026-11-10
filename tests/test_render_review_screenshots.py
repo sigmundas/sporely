@@ -176,6 +176,10 @@ ANALYSIS_TAB_IDS = {
     "analysis.create-reference-parsed", "analysis.create-reference-parsed-dark",
     "analysis.create-reference-parsed-de", "analysis.create-reference-unlinked",
 }
+MODE_BAR_IDS = {
+    "mode-bar.view", "mode-bar.view-dark", "mode-bar.measure", "mode-bar.measure-dark",
+    "mode-bar.view-de", "mode-bar.small-de",
+}
 ALL_IDS = (
     REFERENCE_IDS
     | CONFLICT_IDS
@@ -186,6 +190,7 @@ ALL_IDS = (
     | STYLE_TOKEN_IDS
     | MEASURE_TAB_IDS
     | ANALYSIS_TAB_IDS
+    | MODE_BAR_IDS
 )
 
 

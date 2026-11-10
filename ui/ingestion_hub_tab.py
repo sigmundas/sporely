@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QUrl
+from PySide6.QtCore import QSize, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QImageReader, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -69,6 +69,9 @@ from .zoomable_image_widget import ZoomableImageLabel
 class IngestionHubTab(QWidget):
     """Match mixed field and microscope imports to existing observations."""
 
+    # Matched photos from the last scan not yet imported (the mode bar's badge).
+    waitingCountChanged = Signal(int)
+
     SETTING_SCAN_DIR = "ingestion_hub_scan_dir"
     SETTING_FIELD_MATCH_TOLERANCE_SECONDS = "ingestion_hub_field_match_tolerance_seconds"
     SETTING_OFFSET_SECONDS = "ingestion_hub_offset_seconds"
@@ -85,6 +88,7 @@ class IngestionHubTab(QWidget):
         self._matches_by_observation: dict[int, list[dict]] = {}
         self._match_result: dict = {"matches": [], "unmatched": [], "observation_counts": {}}
         self._excluded_paths: set[str] = set()
+        self._waiting_count = 0
         self._sync_shot_record: dict | None = None
         self._sync_shot_image_path: str | None = None
         self._selected_match_path: str | None = None
@@ -943,6 +947,7 @@ class IngestionHubTab(QWidget):
                 added = True
         if added:
             self._refresh_gallery()
+            self._update_action_state()
 
     def _on_staging_gallery_items_reordered(self, ordered_keys) -> None:
         obs_id = self._selected_observation_id()
@@ -1801,3 +1806,23 @@ class IngestionHubTab(QWidget):
         self.add_all_images_btn.setEnabled(has_selection and has_addable_matches)
         self.choose_sync_shot_image_btn.setEnabled(True)
         self.clear_sync_shot_btn.setEnabled(bool(self._sync_shot_record or self._sync_shot_image_path))
+        waiting = self.waiting_photo_count()
+        if waiting != self._waiting_count:
+            self._waiting_count = waiting
+            self.waitingCountChanged.emit(waiting)
+
+    def waiting_photo_count(self) -> int:
+        """Matched photos from the last scan that are not imported yet."""
+        excluded = self._excluded_paths
+        count = 0
+        for row in (self._match_result or {}).get("matches") or []:
+            if not isinstance(row, dict) or bool(row.get("already_imported")):
+                continue
+            if str(row.get("filepath") or "") in excluded:
+                continue
+            try:
+                if int(row.get("observation_id") or 0) > 0:
+                    count += 1
+            except (TypeError, ValueError):
+                continue
+        return count

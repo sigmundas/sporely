@@ -2583,7 +2583,12 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         tab_index = tab_widget.indexOf(self)
         if tab_index < 0:
             return
-        tab_widget.setTabIcon(tab_index, self._recording_tab_icon if active else QIcon())
+        icon = self._recording_tab_icon if active else QIcon()
+        tab_widget.setTabIcon(tab_index, icon)
+        # The tab bar is hidden since stage 9a: the dot shows on the mode bar's Images.
+        mode_bar = getattr(self._main_window, "mode_bar", None)
+        if mode_bar is not None:
+            mode_bar.set_page_icon(tab_index, icon)
 
     def _set_session_button_style(self, active: bool) -> None:
         self.start_stop_btn.setStyleSheet(

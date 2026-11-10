@@ -615,6 +615,63 @@ QTabBar::tab:hover:!selected {{
     color: {text};
 }}
 
+/* Stage 9a: the mode bar above the main window's pages, styled like the tab bar it replaces. */
+QWidget#modeBar {{
+    background-color: {tab_surface};
+}}
+
+QToolButton#modeBarButton {{
+    background-color: {tab_surface};
+    color: {text_dim};
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 10px 16px;
+    font-family: 'Manrope', sans-serif;
+    font-weight: 700;
+    font-size: {base_pt}pt;
+}}
+
+QToolButton#modeBarButton:checked {{
+    color: {accent};
+    border-bottom: 2px solid {accent};
+}}
+
+QToolButton#modeBarButton:hover:!checked {{
+    background-color: {surface_hover};
+    color: {text};
+}}
+
+QToolButton#modeBarButton:disabled {{
+    color: {dis_fg};
+}}
+
+QToolButton#cameraImportButton {{
+    background-color: {surface};
+    color: {text};
+    border: 1px solid {data_brd};
+    border-radius: 14px;
+    padding: 4px 12px;
+    font-weight: 600;
+}}
+
+QToolButton#cameraImportButton:hover {{
+    background-color: {surface_hover};
+}}
+
+QToolButton#cameraImportButton:checked {{
+    color: {accent};
+    border: 1px solid {accent};
+}}
+
+QLabel#modeBarBadge {{
+    background-color: {accent};
+    color: #ffffff;
+    border-radius: 9px;
+    padding: 0px 7px;
+    font-weight: 700;
+    min-height: 18px;
+}}
+
 QGroupBox {{
     background-color: {surface};
     border: none;

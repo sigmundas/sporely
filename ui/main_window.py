@@ -58,6 +58,11 @@ from PySide6.QtCore import (
 
 _ALT_LABEL = "⌥" if QSysInfo.productType() == "macos" else "Alt"
 
+# Camera import's icon in the mode bar (stage 9a).
+_SVG_CAMERA = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none"
+ stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="4" width="13" height="9" rx="1.5"/>
+<circle cx="8" cy="8.5" r="2.5"/><path d="M5.5 4l1-1.5h3l1 1.5"/></svg>"""
+
 # ── Corner icon SVGs ───────────────────────────────────────────────────────────
 _SVG_SETTINGS = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
   stroke="currentColor" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round">
@@ -234,6 +239,7 @@ from .splitter_state import (
 from .dialog_helpers import ask_measurements_exist_delete, ask_wrapped_yes_no, make_github_help_button
 from .calibration_dialog import CalibrationDialog
 from .ingestion_hub_tab import IngestionHubTab
+from .mode_bar import ModeBar
 from .measurement_overlay_style import (
     DEFAULT_RECTANGLE_STYLE,
     DEFAULT_RECTANGLE_THICKNESS,
@@ -6068,7 +6074,41 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.ingestion_hub_tab = IngestionHubTab(self)
         self.tab_widget.addTab(self.ingestion_hub_tab, self.tr("Camera import ({alt}+C)").format(alt=_ALT_LABEL))
 
-        main_layout.addWidget(self.tab_widget, 1)
+        # Stage 9a: a mode bar replaces the tab bar. The pages stay in
+        # tab_widget, which remains the one source of truth for the page shown.
+        self.tab_widget.tabBar().hide()
+        self.mode_bar = ModeBar(_ALT_LABEL, central)
+        self.mode_bar.bind_page(self.mode_bar.view_button, 0)
+        self.mode_bar.bind_page(self.mode_bar.images_button, 3)
+        self.mode_bar.bind_page(self.mode_bar.measure_button, 1)
+        self.mode_bar.bind_page(self.mode_bar.analysis_button, 2)
+        self.mode_bar.bind_page(self.mode_bar.camera_import_button, 4)
+        self.mode_bar.modeRequested.connect(self.tab_widget.setCurrentIndex)
+        self.mode_bar.editRequested.connect(self._on_mode_bar_edit_requested)
+        self.tab_widget.currentChanged.connect(self.mode_bar.set_current_page)
+        self.mode_bar.set_current_page(self.tab_widget.currentIndex())
+        # Edit follows the list selection in View and the shown observation
+        # elsewhere; re-checked after selection, list and page changes.
+        self._mode_bar_edit_timer = QTimer(self)
+        self._mode_bar_edit_timer.setSingleShot(True)
+        self._mode_bar_edit_timer.setInterval(0)
+        self._mode_bar_edit_timer.timeout.connect(self._refresh_mode_bar_edit_enabled)
+        table = self.observations_tab.table
+        self.observations_tab.selection_count_changed.connect(self._schedule_mode_bar_edit_refresh)
+        table.selectionModel().selectionChanged.connect(self._schedule_mode_bar_edit_refresh)
+        for model_signal in (table.model().rowsInserted, table.model().rowsRemoved, table.model().modelReset):
+            model_signal.connect(self._schedule_mode_bar_edit_refresh)
+        self.tab_widget.currentChanged.connect(self._schedule_mode_bar_edit_refresh)
+        self._refresh_mode_bar_edit_enabled()
+        self.ingestion_hub_tab.waitingCountChanged.connect(self.mode_bar.set_waiting_count)
+        self.mode_bar.set_waiting_count(self.ingestion_hub_tab.waiting_photo_count())
+        pages = QWidget(central)
+        pages_layout = QVBoxLayout(pages)
+        pages_layout.setContentsMargins(0, 0, 0, 0)
+        pages_layout.setSpacing(0)
+        pages_layout.addWidget(self.mode_bar)
+        pages_layout.addWidget(self.tab_widget, 1)
+        main_layout.addWidget(pages, 1)
 
         # Corner buttons: settings cog + calibration icon + profile
         corner = QWidget()
@@ -6118,7 +6158,7 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         self._update_corner_ui()
         self._refresh_background_activity_badge()
-        self.tab_widget.setCornerWidget(corner, Qt.TopRightCorner)
+        self.mode_bar.set_corner_widget(corner)
 
         # Tab navigation shortcuts: Alt/Option on all platforms.
         # Cmd (Meta) deliberately excluded — Cmd+A/M/O conflict with system shortcuts on macOS.
@@ -6130,6 +6170,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             (self.observations_tab, Qt.Key_A, lambda: self._switch_tab_from_observations(2)),
             (self.observations_tab, Qt.Key_L, lambda: self._switch_tab_from_observations(3)),
             (self.observations_tab, Qt.Key_I, lambda: self._switch_tab_from_observations(4)),
+            (self.observations_tab, Qt.Key_C, lambda: self._switch_tab_from_observations(4)),
             (self.measure_tab,      Qt.Key_O, lambda: self.tab_widget.setCurrentIndex(0)),
             (self.measure_tab,      Qt.Key_A, lambda: self.tab_widget.setCurrentIndex(2)),
             (self.measure_tab,      Qt.Key_L, lambda: self.tab_widget.setCurrentIndex(3)),
@@ -6256,6 +6297,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         
         self._settings_corner_btn.setIcon(_make_svg_icon(_SVG_SETTINGS, icon_color))
         self._settings_corner_btn.setIconSize(QSize(22, 22))
+        if hasattr(self, "mode_bar"):
+            self.mode_bar.set_camera_icon(_make_svg_icon(_SVG_CAMERA, icon_color))
 
         settings = get_app_settings()
         cloud_client = getattr(self, "_cloud_client", None)
@@ -17278,6 +17321,46 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Return True if the Analysis tab is active."""
         return hasattr(self, "tab_widget") and self.tab_widget.currentIndex() == 2
 
+    def _schedule_mode_bar_edit_refresh(self, *_args) -> None:
+        timer = getattr(self, "_mode_bar_edit_timer", None)
+        if timer is not None:
+            timer.start()
+
+    def _mode_bar_edit_row(self) -> int:
+        """The list row Edit acts on, or -1.
+
+        In View it is the one selected row; on the other pages it is the
+        observation shown there, which can differ from the list's selection
+        (Calibration's “Go to observation”, a Measure badge).
+        """
+        tab = getattr(self, "observations_tab", None)
+        if tab is None:
+            return -1
+        if self.tab_widget.currentIndex() == 0:
+            model = tab.table.selectionModel()
+            rows = model.selectedRows() if model is not None else []
+            return rows[0].row() if len(rows) == 1 else -1
+        active = int(getattr(self, "active_observation_id", 0) or 0)
+        return tab._find_table_row_for_observation(active) if active > 0 else -1
+
+    def _refresh_mode_bar_edit_enabled(self) -> None:
+        if hasattr(self, "mode_bar"):
+            self.mode_bar.set_edit_enabled(self._mode_bar_edit_row() >= 0)
+
+    def _on_mode_bar_edit_requested(self) -> None:
+        """Edit in the mode bar opens today's observation editor (until stage 9f)."""
+        row = self._mode_bar_edit_row()
+        self._refresh_mode_bar_edit_enabled()
+        if row < 0:
+            return
+        tab = self.observations_tab
+        model = tab.table.selectionModel()
+        selected = [index.row() for index in model.selectedRows()] if model is not None else []
+        if selected != [row]:
+            # Align the list with the observation shown, so the editor opens it.
+            tab.table.selectRow(row)
+        tab.edit_observation()
+
     def _switch_tab_from_observations(self, target_index: int) -> None:
         """Switch tabs only when Observations tab is currently active."""
         if not hasattr(self, "tab_widget"):
@@ -23231,6 +23314,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.schedule_gallery_refresh()
         # An open reference drawer follows the new observation.
         self._reload_reference_drawer_if_open()
+        self._schedule_mode_bar_edit_refresh()
 
     def on_observation_deleted(self, observation_id: int):
         if observation_id != getattr(self, "active_observation_id", None):

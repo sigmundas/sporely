@@ -40,6 +40,7 @@ files=(
   "ui/reference_picker_drawer.py"
   "ui/reference_create_dialog.py"
   "ui/microscope_settings_dialog.py"
+  "ui/mode_bar.py"
   "ui/ingestion_hub_tab.py"
   "ui/sync_shot_dialog.py"
   "ui/image_gallery_widget.py"
