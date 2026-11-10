@@ -7808,27 +7808,22 @@ class MainWindow(GeometryMixin, QMainWindow):
         )
         self._update_measure_copyright_overlay()
 
-        self.measure_gallery = ImageGalleryWidget(
-            self.tr("Images"),
-            self,
-            show_delete=True,
-            show_badges=True,
-            show_edit=True,
-            min_height=GALLERY_MIN_HEIGHT,
-            default_height=GALLERY_DEFAULT_HEIGHT,
-            show_publish_checkbox=True,
-            publish_checkbox_hint=self.tr("Keep image in Sporely Cloud"),
-            show_change_settings=True,
-        )
-        self.measure_gallery.set_multi_select(True)
-        self.measure_gallery.set_reorderable(True)
-        self.measure_gallery.imageClicked.connect(self._on_measure_gallery_clicked)
-        self.measure_gallery.deleteImagesRequested.connect(self._on_measure_gallery_delete_selection_requested)
-        self.measure_gallery.editRequested.connect(self._on_measure_gallery_edit_requested)
-        self.measure_gallery.publishSelectionChanged.connect(self._on_measure_gallery_publish_selection_changed)
-        self.measure_gallery.itemsReordered.connect(self._on_measure_gallery_items_reordered)
-        self.measure_gallery.selectionChanged.connect(self._on_measure_gallery_selection_changed)
-        self.measure_gallery.changeSettingsRequested.connect(self._on_measure_gallery_change_settings_requested)
+        # Stage 9c: Mål shares View's image strip. It moves into Mål's slot
+        # when Mål shows, and Mål's handlers listen on the "measure" channel.
+        self.measure_gallery = self.observations_tab.gallery_widget
+        strip = self.measure_gallery.channel("measure")
+        strip.imageClicked.connect(self._on_measure_gallery_clicked)
+        strip.deleteImagesRequested.connect(self._on_measure_gallery_delete_selection_requested)
+        strip.editRequested.connect(self._on_measure_gallery_edit_requested)
+        strip.publishSelectionChanged.connect(self._on_measure_gallery_publish_selection_changed)
+        strip.itemsReordered.connect(self._on_measure_gallery_items_reordered)
+        strip.selectionChanged.connect(self._on_measure_gallery_selection_changed)
+        strip.changeSettingsRequested.connect(self._on_measure_gallery_change_settings_requested)
+        self.measure_strip_slot = QWidget()
+        self.measure_strip_slot.setObjectName("imageStripSlot")
+        self.measure_strip_slot.setMinimumHeight(GALLERY_MIN_HEIGHT)
+        measure_slot_layout = QVBoxLayout(self.measure_strip_slot)
+        measure_slot_layout.setContentsMargins(0, 0, 0, 0)
 
         self.measure_image_splitter = QSplitter(Qt.Vertical)
         self.measure_image_splitter.setObjectName("gallerySplitter")
@@ -7839,7 +7834,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         image_area_layout.setContentsMargins(0, 0, 0, 0)
         image_area_layout.addWidget(self.image_label)
         self.measure_image_splitter.addWidget(self.measure_image_area)
-        self.measure_image_splitter.addWidget(self.measure_gallery)
+        self.measure_image_splitter.addWidget(self.measure_strip_slot)
         self.measure_image_splitter.setStretchFactor(0, 4)
         self.measure_image_splitter.setStretchFactor(1, 1)
         install_persistent_splitter(
@@ -14226,7 +14221,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._measure_gallery_observation_id = None
             self._measure_gallery_signature = None
             self.update_image_navigation_ui()
-            if hasattr(self, "measure_gallery"):
+            if hasattr(self, "measure_gallery") and self._strip_on_measure():
                 self.measure_gallery.clear()
             return True
 
@@ -14243,12 +14238,19 @@ class MainWindow(GeometryMixin, QMainWindow):
             or self._measure_gallery_signature != new_signature
         )
         self.observation_images = new_observation_images
+        if hasattr(self, "measure_gallery") and not self._strip_on_measure():
+            # View holds the shared strip: Mål reloads it when it shows again.
+            gallery_changed = False
+            new_signature = None
         if hasattr(self, "measure_gallery") and gallery_changed:
             # Same-observation refresh (post-edit, signature change) should
             # keep the user's scroll position on the strip; switching to a
             # different observation resets scroll as before.
+            shown = getattr(self.measure_gallery, "shown_observation_id", None)
             same_observation = (
                 self._measure_gallery_observation_id == self.active_observation_id
+                # Stage 9c: View already shows it in the shared strip.
+                or (callable(shown) and shown() == self.active_observation_id)
             )
             if preserve_selection and same_observation:
                 # A metadata edit keeps the user's (multi-)selection.
@@ -14278,7 +14280,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.current_image_index = 0 if self.observation_images else -1
 
         self.update_image_navigation_ui()
-        if hasattr(self, "measure_gallery") and not preserve_selection:
+        if hasattr(self, "measure_gallery") and not preserve_selection and self._strip_on_measure():
             # (Selecting also centres the strip on the image.)
             self.measure_gallery.select_image(self.current_image_id)
         return gallery_changed
@@ -14443,7 +14445,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             pass
 
     def _apply_measure_gallery_publish_selection(self) -> None:
-        if not hasattr(self, "measure_gallery"):
+        if not hasattr(self, "measure_gallery") or not self._strip_on_measure():
             return
         if not self.active_observation_id:
             return
@@ -14811,6 +14813,19 @@ class MainWindow(GeometryMixin, QMainWindow):
         observations_tab = getattr(self, "observations_tab", None)
         if observations_tab is None:
             return None
+        # Stage 9c: one image chosen in the shared strip for View's observation.
+        strip = getattr(observations_tab, "gallery_widget", None)
+        shown = getattr(strip, "shown_observation_id", None)
+        if callable(shown):
+            try:
+                selected_observation_id = int(getattr(observations_tab, "selected_observation_id", 0) or 0)
+            except (TypeError, ValueError):
+                selected_observation_id = 0
+            keys = strip.selected_keys() if hasattr(strip, "selected_keys") else set()
+            if selected_observation_id > 0 and shown() == selected_observation_id and len(keys) == 1:
+                key = next(iter(keys))
+                if isinstance(key, int) and key > 0:
+                    return key
         browser = getattr(observations_tab, "image_browser", None)
         if browser is None:
             return None
@@ -17471,9 +17486,54 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         self.tab_widget.setCurrentIndex(int(target_index))
 
+    # -- the shared image strip (stage 9c) -----------------------------------
+
+    def _strip_on_measure(self) -> bool:
+        gallery = getattr(self, "measure_gallery", None)
+        if gallery is None:
+            return False
+        active_channel = getattr(gallery, "active_channel", None)
+        return True if active_channel is None else active_channel() == "measure"  # no channels: Mål's own
+
+    def _place_shared_strip(self, index: int) -> None:
+        """Move the strip to the page shown; it keeps selection, scroll and height."""
+        gallery = getattr(self, "measure_gallery", None)
+        if gallery is None or not hasattr(self, "measure_strip_slot"):
+            return
+        # The page that held it is already hidden; its geometry is kept.
+        height = gallery.height()
+        if index == 0:
+            self.observations_tab.reclaim_strip()
+            target_splitter, slot = None, self.observations_tab.gallery_slot
+        elif index == 1:
+            gallery.set_active_channel("measure")
+            gallery.set_context_actions(change_settings=True, move_to_observation=False, delete_cloud_copy=False)
+            layout = self.measure_strip_slot.layout()
+            if layout.indexOf(gallery) < 0:
+                layout.addWidget(gallery)
+            gallery.show()
+            target_splitter, slot = self.measure_image_splitter, self.measure_strip_slot
+        else:
+            return
+        splitter = target_splitter or slot.parentWidget()
+        if isinstance(splitter, QSplitter) and height >= GALLERY_MIN_HEIGHT:
+            sizes = splitter.sizes()
+            position = splitter.indexOf(slot)
+            if len(sizes) == 2 and position == 1 and sum(sizes) > height:
+                splitter.setSizes([sum(sizes) - height, height])
+
+    def _resync_measure_strip(self) -> None:
+        """Mål took the strip: show the active observation if it shows another."""
+        gallery = self.measure_gallery
+        if gallery.shown_observation_id() == self.active_observation_id and self._measure_gallery_observation_id:
+            return
+        self._measure_gallery_observation_id = None
+        self.refresh_observation_images(select_image_id=self.current_image_id)
+
     def on_tab_changed(self, index):
         """Handle tab changes for analysis/measure."""
         _t0 = time.perf_counter()
+        self._place_shared_strip(index)
         if index == 0 and hasattr(self, "_sync_observations_tab_publish_state"):
             self._sync_observations_tab_publish_state(self.active_observation_id)
         if index in (1, 2, 3, 4) and hasattr(self, "observations_tab"):
@@ -17481,17 +17541,27 @@ class MainWindow(GeometryMixin, QMainWindow):
             if selected:
                 obs_id, display_name = selected
                 if self.active_observation_id != obs_id:
+                    # The image chosen in View's strip (stage 9c), read before
+                    # activating clears it.
+                    chosen_image_id = self._selected_observation_tab_image_id() if index == 1 else None
                     self.on_observation_selected(
                         obs_id,
                         display_name,
                         switch_tab=False,
                         suppress_gallery=True
                     )
+                    if chosen_image_id:
+                        self._show_measure_image_for_selected_observation(chosen_image_id)
                 else:
                     self.active_observation_name = display_name
                     selected_image_id = self._selected_observation_tab_image_id()
+                    # Stage 9c: a multi-selection in the shared strip stays.
+                    keys_of = getattr(getattr(self, "measure_gallery", None), "selected_keys", None)
+                    strip_keys = keys_of() if index == 1 and callable(keys_of) else set()
+                    keep = {"preserve_selection": True} if len(strip_keys) > 1 else {}
                     self.refresh_observation_images(
-                        select_image_id=selected_image_id or self.current_image_id
+                        select_image_id=selected_image_id or self.current_image_id,
+                        **keep,
                     )
                     self.update_measurements_table()
                     self._show_measure_image_for_selected_observation(selected_image_id)
@@ -17509,6 +17579,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._apply_measure_gallery_publish_selection()
         if index == 1 and hasattr(self, "measure_button"):
             self.measure_button.setEnabled(True)
+        if index == 1 and hasattr(self, "measure_strip_slot"):
+            self._resync_measure_strip()
         if index == 2:
             self.apply_gallery_settings()
             self.refresh_gallery_filter_options()

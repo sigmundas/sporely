@@ -7,7 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
 
-from PySide6.QtCore import Qt, Signal, QEvent, QSize, QRectF, QTimer, QMimeData, QPoint, QPointF, QThread
+from PySide6.QtCore import Qt, Signal, QEvent, QSize, QRectF, QTimer, QMimeData, QPoint, QPointF, QThread, QObject
 from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QDrag, QShortcut, QKeySequence, QIcon, QPalette
 from PySide6.QtWidgets import QGraphicsDropShadowEffect
 from shiboken6 import isValid
@@ -43,7 +43,7 @@ from database.database_tags import DatabaseTerms
 from utils.thumbnail_generator import get_thumbnail_path
 from utils.image_utils import load_oriented_pixmap
 from .adaptive_choice_selector import objective_color, objective_short_label
-from .styles import objective_ring_outline, pt
+from .styles import STAGING_BORDER, objective_ring_outline, pt
 
 
 # Padding around every thumbnail's outer selection-backdrop container.
@@ -547,6 +547,36 @@ class _ObservationGalleryLoader(QThread):
         self.loaded.emit(self._observation_id, images, measurement_image_ids)
 
 
+class GalleryChannel(QObject):
+    """One page's view of a shared strip (redesign stage 9c).
+
+    A strip shared by several pages forwards its signals only to the active
+    channel, so a click acts on the page shown. Same signals as the strip.
+    """
+
+    imageClicked = Signal(object, str)
+    imageSelected = Signal(object, str)
+    imageDoubleClicked = Signal(object, str)
+    measureBadgeClicked = Signal(object, str)
+    editRequested = Signal(object, str)
+    deleteImagesRequested = Signal(list)
+    deleteCloudCopiesRequested = Signal(list)
+    moveToObservationRequested = Signal(list)
+    changeSettingsRequested = Signal(list)
+    selectionChanged = Signal(list)
+    publishSelectionChanged = Signal(object)
+    itemsReordered = Signal(object)
+    observationLoaded = Signal(object)
+
+
+_CHANNEL_SIGNALS = (
+    "imageClicked", "imageSelected", "imageDoubleClicked", "measureBadgeClicked", "editRequested",
+    "deleteImagesRequested", "deleteCloudCopiesRequested", "moveToObservationRequested",
+    "changeSettingsRequested", "selectionChanged", "publishSelectionChanged", "itemsReordered",
+    "observationLoaded",
+)
+
+
 class ImageGalleryWidget(QGroupBox):
     """Collapsible thumbnail gallery for observations or explicit image lists."""
 
@@ -629,6 +659,13 @@ class ImageGalleryWidget(QGroupBox):
         self._decode_max_dim = max(384, self._base_thumb_size * 4)
         self._items: list[dict] = []
         self._frames: list[QFrame] = []
+        # Stage 9c: channels for a strip shared by pages, the observation
+        # whose images are shown, and unsaved images kept per observation.
+        self._channels: dict[str, GalleryChannel] = {}
+        self._active_channel: str | None = None
+        self._shown_observation_id: int | None = None
+        self._observation_base_items: list[dict] = []
+        self._staged_by_observation: dict[int, list[dict]] = {}
         self._selected_id = None
         self._selected_keys: set[str | int] = set()
         # Filepaths to re-select on the next set_items / observation reload
@@ -719,7 +756,101 @@ class ImageGalleryWidget(QGroupBox):
             return bool(default_publish_selected)
         return True
 
+    # -- a strip shared by pages (stage 9c) -----------------------------------
+
+    def channel(self, key: str) -> GalleryChannel:
+        """The signals as seen by page ``key``; the first channel starts active."""
+        if not self._channels:
+            for name in _CHANNEL_SIGNALS:
+                getattr(self, name).connect(lambda *args, _name=name: self._forward_to_channel(_name, *args))
+        channel = self._channels.get(key)
+        if channel is None:
+            channel = GalleryChannel(self)
+            self._channels[key] = channel
+            if self._active_channel is None:
+                self._active_channel = key
+        return channel
+
+    def set_active_channel(self, key: str) -> None:
+        if key in self._channels:
+            self._active_channel = key
+
+    def active_channel(self) -> str | None:
+        return self._active_channel
+
+    # Actions on saved images: unsaved (staged) ones never reach a page's handlers.
+    _SAVED_IMAGE_ACTIONS = frozenset(
+        {"deleteImagesRequested", "deleteCloudCopiesRequested", "moveToObservationRequested", "changeSettingsRequested"}
+    )
+
+    def _forward_to_channel(self, name: str, *args) -> None:
+        channel = self._channels.get(self._active_channel or "")
+        if channel is None:
+            return
+        if name in self._SAVED_IMAGE_ACTIONS and args:
+            staged_keys = {
+                item.get("id") if item.get("id") is not None else item.get("filepath")
+                for item in self._items
+                if item.get("staged")
+            }
+            keys = [key for key in (args[0] or []) if key not in staged_keys]
+            if not keys:
+                return
+            args = (keys, *args[1:])
+        getattr(channel, name).emit(*args)
+
+    def set_context_actions(
+        self,
+        *,
+        change_settings: bool | None = None,
+        move_to_observation: bool | None = None,
+        delete_cloud_copy: bool | None = None,
+    ) -> None:
+        """The right-click actions the page shown offers."""
+        if change_settings is not None:
+            self._show_change_settings = bool(change_settings)
+        if move_to_observation is not None:
+            self._show_move_to_observation = bool(move_to_observation)
+        if delete_cloud_copy is not None:
+            self._show_delete_cloud_copy = bool(delete_cloud_copy)
+
+    def shown_observation_id(self) -> int | None:
+        """The observation whose images the strip shows, if it shows one."""
+        return self._shown_observation_id
+
+    def set_staged_items(self, observation_id: int, items: Iterable[dict]) -> None:
+        """Unsaved images for ``observation_id``: shown first, with an orange border.
+
+        They stay with that observation and show whenever its images do.
+        """
+        try:
+            key = int(observation_id)
+        except (TypeError, ValueError):
+            return
+        staged = []
+        for item in items or []:
+            entry = dict(item)
+            entry["staged"] = True
+            entry.setdefault("frame_border_color", STAGING_BORDER)
+            staged.append(entry)
+        if staged:
+            self._staged_by_observation[key] = staged
+        else:
+            self._staged_by_observation.pop(key, None)
+        if self._shown_observation_id == key:
+            shown = key
+            self.set_items(staged + list(self._observation_base_items), reveal="preserve")
+            self._shown_observation_id = shown
+
+    def staged_items(self, observation_id: int) -> list[dict]:
+        try:
+            return list(self._staged_by_observation.get(int(observation_id), []))
+        except (TypeError, ValueError):
+            return []
+
     def clear(self) -> None:
+        self._shown_observation_id = None
+        self._observation_base_items = []
         self._render_generation += 1
         self._observation_load_generation += 1
         self._invalidate_center_requests()
@@ -1047,6 +1178,7 @@ class ImageGalleryWidget(QGroupBox):
         # `preserve_scroll=True` remains for callers that haven't switched
         # to the reveal API; when both are unset the refresh doesn't touch
         # the scroll position.
+        self._shown_observation_id = None
         mode = reveal
         if mode is None:
             mode = "preserve" if preserve_scroll else "off"
@@ -1104,6 +1236,7 @@ class ImageGalleryWidget(QGroupBox):
                     "cloud_uploaded": item.get("cloud_uploaded"),
                     "cloud_tombstone_synced": item.get("cloud_tombstone_synced"),
                     "cloud_state": item.get("cloud_state"),
+                    "staged": bool(item.get("staged")),
                 }
             )
         self._consume_pending_selection_paths()
@@ -1265,7 +1398,9 @@ class ImageGalleryWidget(QGroupBox):
                     "publish_selected_default": image_type != "microscope",
                 }
             )
-        self.set_items(items, reveal=reveal)
+        self._observation_base_items = list(items)
+        self.set_items(self.staged_items(observation_id) + items, reveal=reveal)
+        self._shown_observation_id = int(observation_id)
 
     def _consume_pending_selection_paths(self) -> None:
         pending = getattr(self, "_pending_selection_paths", None)
@@ -1470,6 +1605,8 @@ class ImageGalleryWidget(QGroupBox):
         target_index = ordered_keys.index(target_key)
         if source_index == target_index and not insert_after:
             return False
+        if self._items[source_index].get("staged") or self._items[target_index].get("staged"):
+            return False  # unsaved images stay first, in their own order
 
         moved_item = self._items.pop(source_index)
         if source_index < target_index:
@@ -1621,10 +1758,13 @@ class ImageGalleryWidget(QGroupBox):
         previous_id = self._selected_id
         previous_frame = self._frame_for_key(previous_id) if previous_id is not None else None
         new_frame = self._frame_for_key(image_id) if image_id is not None else None
+        was_multi = len(self._selected_keys) > 1
         self._selected_id = image_id
         self._selected_keys = set(current_keys)
         self._last_clicked_index = self._index_for_key(image_id)
-        if previous_frame is not None and previous_id != image_id:
+        if was_multi:
+            self._apply_selection_styles()  # unmark every frame of the old selection
+        elif previous_frame is not None and previous_id != image_id:
             self._set_frame_selected_state(previous_frame, False)
         if new_frame is not None:
             self._set_frame_selected_state(new_frame, True)
@@ -2181,7 +2321,7 @@ class ImageGalleryWidget(QGroupBox):
         image_layout.addWidget(overlay, 0, 0, alignment=Qt.AlignTop | Qt.AlignRight)
 
         publish_checkbox = None
-        if self._show_publish_checkbox:
+        if self._show_publish_checkbox and not item.get("staged"):  # unsaved: nothing to keep in the cloud yet
             publish_checkbox = _PublishToggle()
             key = item.get("id") if item.get("id") is not None else item.get("filepath")
             checked = bool(self._resolve_publish_checked_state(item))

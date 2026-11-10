@@ -181,6 +181,7 @@ MODE_BAR_IDS = {
     "mode-bar.view-de", "mode-bar.small-de",
     "observation-list.rail", "observation-list.rail-dark", "observation-list.drawer",
     "observation-list.drawer-dark", "observation-list.drawer-de",
+    "image-strip.staged", "image-strip.staged-dark",
 }
 ALL_IDS = (
     REFERENCE_IDS

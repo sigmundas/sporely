@@ -2345,6 +2345,20 @@ def _pending_location_pair(draft: dict | None, latitude, longitude) -> tuple[str
     return pair if location_pair_is_writable(*pair, latitude, longitude) else None
 
 
+def _strip_for(tab):
+    """The strip to write to: the tab's own check, or the plain widget for stand-in tabs."""
+    if callable(getattr(type(tab), "_strip", None)):
+        return tab._strip()
+    return tab.gallery_widget
+
+
+class _AwayStrip:
+    """Swallows View's writes while Mål holds the shared strip (stage 9c)."""
+
+    def __getattr__(self, _name):
+        return lambda *args, **kwargs: None
+
+
 class ObservationsTab(QWidget):
     """Tab for viewing and managing observations."""
 
@@ -2759,21 +2773,31 @@ class ObservationsTab(QWidget):
         self.gallery_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.gallery_widget.set_multi_select(True)
         self.gallery_widget.set_reorderable(True)
-        self.gallery_widget.imageClicked.connect(self._on_gallery_image_clicked)
-        self.gallery_widget.imageDoubleClicked.connect(self._on_gallery_image_double_clicked)
-        self.gallery_widget.measureBadgeClicked.connect(self._on_gallery_measure_badge_clicked)
-        self.gallery_widget.editRequested.connect(self._on_gallery_edit_requested)
-        self.gallery_widget.deleteImagesRequested.connect(self._on_panel_gallery_delete_images_requested)
-        self.gallery_widget.deleteCloudCopiesRequested.connect(
+        # Stage 9c: the main window shares this strip with Mål. View's
+        # handlers listen on the "view" channel; the strip moves between
+        # page slots and only the page shown receives its signals.
+        strip = self.gallery_widget.channel("view")
+        strip.imageClicked.connect(self._on_gallery_image_clicked)
+        strip.imageDoubleClicked.connect(self._on_gallery_image_double_clicked)
+        strip.measureBadgeClicked.connect(self._on_gallery_measure_badge_clicked)
+        strip.editRequested.connect(self._on_gallery_edit_requested)
+        strip.deleteImagesRequested.connect(self._on_panel_gallery_delete_images_requested)
+        strip.deleteCloudCopiesRequested.connect(
             lambda ids, g=self.gallery_widget: self._on_gallery_delete_cloud_copies_requested(g, ids)
         )
-        self.gallery_widget.moveToObservationRequested.connect(self._begin_move_selected_gallery_images)
-        self.gallery_widget.publishSelectionChanged.connect(self._on_gallery_publish_selection_changed)
-        self.gallery_widget.observationLoaded.connect(self._on_gallery_observation_loaded)
-        self.gallery_widget.itemsReordered.connect(self._on_gallery_widget_items_reordered)
-        self.gallery_widget.selectionChanged.connect(self._on_observations_gallery_selection_changed)
+        strip.moveToObservationRequested.connect(self._begin_move_selected_gallery_images)
+        strip.publishSelectionChanged.connect(self._on_gallery_publish_selection_changed)
+        strip.observationLoaded.connect(self._on_gallery_observation_loaded)
+        strip.itemsReordered.connect(self._on_gallery_widget_items_reordered)
+        strip.selectionChanged.connect(self._on_observations_gallery_selection_changed)
 
-        splitter.addWidget(self.gallery_widget)
+        self.gallery_slot = QWidget(self)
+        self.gallery_slot.setObjectName("imageStripSlot")
+        self.gallery_slot.setMinimumHeight(GALLERY_MIN_HEIGHT)
+        slot_layout = QVBoxLayout(self.gallery_slot)
+        slot_layout.setContentsMargins(0, 0, 0, 0)
+        slot_layout.addWidget(self.gallery_widget)
+        splitter.addWidget(self.gallery_slot)
 
         drop_targets = [
             self,
@@ -3077,6 +3101,10 @@ class ObservationsTab(QWidget):
                         if callable(viewport_updater):
                             viewport_updater()
                     return False
+        if event.type() in (QEvent.DragEnter, QEvent.DragMove, QEvent.Drop) and not self._strip_is_mine():
+            strip = self.gallery_widget
+            if isinstance(obj, QWidget) and (obj is strip or strip.isAncestorOf(obj)):
+                return super().eventFilter(obj, event)  # Mål holds the strip: no new-observation drop there
         if event.type() == QEvent.DragEnter and self._accept_image_drag(event):
             return True
         if event.type() == QEvent.DragMove and self._accept_image_drag(event):
@@ -6574,7 +6602,7 @@ class ObservationsTab(QWidget):
             self.rename_btn.setEnabled(False)
             self.delete_btn.setEnabled(False)
             self._update_publish_controls()
-            self.gallery_widget.clear()
+            _strip_for(self).clear()
             self.selected_observation_id = None
 
             if sorting_enabled:
@@ -7886,6 +7914,8 @@ class ObservationsTab(QWidget):
         gallery = getattr(self, "gallery_widget", None)
         if browser is None or gallery is None:
             return
+        if callable(getattr(type(self), "_strip_is_mine", None)) and not self._strip_is_mine():
+            return  # Mål holds the shared strip (stage 9c)
         try:
             selected_count = len(gallery.selected_image_keys())
         except Exception:
@@ -8576,7 +8606,7 @@ class ObservationsTab(QWidget):
         self._pending_gallery_observation_id = None
         if not observation_id or observation_id != self.selected_observation_id:
             return
-        self.gallery_widget.set_observation_id_async(int(observation_id))
+        _strip_for(self).set_observation_id_async(int(observation_id))
         if self._current_view_mode() == self.VIEW_MODE_IMAGES and not self.isVisible():
             # Selected from another page (stage 9b: the table follows the
             # observation shown there): decode the full image when View shows.
@@ -8591,6 +8621,33 @@ class ObservationsTab(QWidget):
             self._refresh_image_browser_for_current_selection()
             if hasattr(self, "table"):
                 self.table.viewport().update()
+
+    # -- the shared strip (stage 9c) ------------------------------------------
+
+    def _strip_is_mine(self) -> bool:
+        active_channel = getattr(self.gallery_widget, "active_channel", None)
+        return not callable(active_channel) or active_channel() in (None, "view")
+
+    def _strip(self):
+        """The strip for writing, or a stand-in while Mål holds it."""
+        if self._strip_is_mine():
+            return self.gallery_widget
+        self._strip_stale = True
+        return _AwayStrip()
+
+    def reclaim_strip(self) -> None:
+        """View shows again: the strip shows View's selection."""
+        self.gallery_widget.set_active_channel("view")
+        self.gallery_widget.set_context_actions(change_settings=False, move_to_observation=True, delete_cloud_copy=True)
+        layout = self.gallery_slot.layout()
+        if layout.indexOf(self.gallery_widget) < 0:
+            layout.addWidget(self.gallery_widget)
+        self.gallery_widget.show()
+        selected = self.selected_observation_ids()
+        expected = selected[0] if len(selected) == 1 else None
+        if getattr(self, "_strip_stale", False) or self.gallery_widget.shown_observation_id() != expected:
+            self._strip_stale = False
+            self.on_selection_changed()
 
     def showEvent(self, event):  # noqa: N802 - Qt override
         super().showEvent(event)
@@ -8626,7 +8683,7 @@ class ObservationsTab(QWidget):
             return
         # Reload from the DB so the badges/numbering reflect the new order.
         if hasattr(self, "gallery_widget"):
-            self.gallery_widget.set_observation_id_async(int(obs_id))
+            _strip_for(self).set_observation_id_async(int(obs_id))
 
     def _apply_gallery_publish_selection_for_observation(self, observation_id: int | None) -> None:
         if not observation_id or not hasattr(self, "gallery_widget"):
@@ -8651,7 +8708,7 @@ class ObservationsTab(QWidget):
         excluded = self._cloud_image_storage_excluded_image_ids(observation_id)
         excluded = {img_id for img_id in excluded if img_id in all_ids}
         selected_ids = all_ids - excluded
-        self.gallery_widget.set_publish_selected_ids(selected_ids, emit_signal=False)
+        _strip_for(self).set_publish_selected_ids(selected_ids, emit_signal=False)
         self._register_gallery_publish_hint_widgets()
         if hasattr(self, "_sync_image_browser_publish_state"):
             self._sync_image_browser_publish_state()
@@ -8750,7 +8807,7 @@ class ObservationsTab(QWidget):
         if not target_obs_id:
             return
         self._apply_gallery_publish_selection_for_observation(int(target_obs_id))
-        self.gallery_widget.refresh_cloud_states()
+        _strip_for(self).refresh_cloud_states()
 
     def on_selection_changed(self):
         """Update detail view when selection changes."""
@@ -8765,7 +8822,7 @@ class ObservationsTab(QWidget):
         self.selection_count_changed.emit(len(selected_rows))
         if not selected_rows:
             self._cancel_pending_gallery_load()
-            self.gallery_widget.clear()
+            _strip_for(self).clear()
             self.selected_observation_id = None
             self._image_browser_observation_id = None
             if hasattr(self, "image_browser"):
@@ -8777,7 +8834,7 @@ class ObservationsTab(QWidget):
             if not has_cloud and not self._is_cloud_sync_running():
                 self.delete_btn.setEnabled(True)
             self._cancel_pending_gallery_load()
-            self.gallery_widget.clear()
+            _strip_for(self).clear()
             self.selected_observation_id = None
             self._image_browser_observation_id = None
             if hasattr(self, "image_browser"):
@@ -8789,7 +8846,7 @@ class ObservationsTab(QWidget):
         id_item = self.table.item(row, 0)
         if id_item is None:
             self._cancel_pending_gallery_load()
-            self.gallery_widget.clear()
+            _strip_for(self).clear()
             self.selected_observation_id = None
             self._image_browser_observation_id = None
             self._update_publish_controls()
@@ -8800,10 +8857,10 @@ class ObservationsTab(QWidget):
             if isinstance(row_data, dict) and str(row_data.get("row_kind") or "") == "cloud":
                 self.rename_btn.setEnabled(True)
                 self._cancel_pending_gallery_load()
-                self.gallery_widget.set_items(self._cloud_gallery_items(row_data))
+                _strip_for(self).set_items(self._cloud_gallery_items(row_data))
             else:
                 self._cancel_pending_gallery_load()
-                self.gallery_widget.clear()
+                _strip_for(self).clear()
             self.selected_observation_id = None
             self._image_browser_observation_id = None
             self._update_publish_controls()
