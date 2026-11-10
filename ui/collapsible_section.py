@@ -39,9 +39,12 @@ class _ElidedLabel(QLabel):
     full text, so code written for a plain ``QLabel`` can use it as is.
     """
 
-    def __init__(self, parent: QWidget | None = None, *, text_setter: bool = False) -> None:
+    def __init__(
+        self, parent: QWidget | None = None, *, text_setter: bool = False, elide_mode=Qt.ElideRight,
+    ) -> None:
         super().__init__(parent)
         self._full_text = ""
+        self._elide_mode = elide_mode
         self._text_setter = bool(text_setter)
         self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self.setTextFormat(Qt.PlainText)
@@ -69,7 +72,7 @@ class _ElidedLabel(QLabel):
 
     def _refresh(self) -> None:
         metrics = QFontMetrics(self.font())
-        super().setText(metrics.elidedText(self._full_text, Qt.ElideRight, max(0, self.width())))
+        super().setText(metrics.elidedText(self._full_text, self._elide_mode, max(0, self.width())))
 
 
 ElidedLabel = _ElidedLabel

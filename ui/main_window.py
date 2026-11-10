@@ -1669,12 +1669,12 @@ class SettingsHubDialog(QDialog):
 
         self._live_lab_mode_selector = SegmentedSelector(self, compact=True, fill_width=True)
         self._live_lab_mode_selector.add_option(
-            self.tr("Live capture (watch folder)"),
+            self.tr("Camera connected"),
             LiveLabTab.SESSION_MODE_LIVE,
             checked=True,
         )
         self._live_lab_mode_selector.add_option(
-            self.tr("Offline (log only)"),
+            self.tr("Log only"),
             LiveLabTab.SESSION_MODE_OFFLINE,
         )
         saved_mode = LiveLabTab.SESSION_MODE_LIVE
@@ -6127,6 +6127,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.observation_list_panel = ObservationListPanel()
         self.observation_list_panel.set_source_model(table.model())
         self.live_lab_tab.unsavedCountsChanged.connect(self.observation_list_panel.set_unsaved_counts)
+        # Stage 9e: a running session shows on Images: “Live 00:14” / “Logging 00:14”.
+        self.live_lab_tab.sessionBadgeChanged.connect(lambda text: self.mode_bar.set_page_badge(3, text))
         self.observation_list_panel.set_unsaved_counts(self.live_lab_tab.unsaved_counts())
         self.observation_list_panel.rowChosen.connect(self._on_observation_list_row_chosen)
         self.observation_list_panel.tableRequested.connect(self._on_observation_list_table_requested)

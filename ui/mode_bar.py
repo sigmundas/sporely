@@ -97,6 +97,7 @@ class ModeBar(QWidget):
         button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         button.setIconSize(QSize(12, 12))
         button.setText(f"{name}  {self._alt_label}{key}" if key else name)
+        button.setProperty("baseText", button.text())
         button.setCheckable(checkable)
         button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         if checkable:
@@ -129,6 +130,22 @@ class ModeBar(QWidget):
         button = self._button_by_page.get(int(page_index))
         if button is not None:
             button.setIcon(icon)
+
+    def set_page_badge(self, page_index: int, text: str) -> None:
+        """A short state after a mode's name (“Live 00:14” on Images while a session runs)."""
+        button = self._button_by_page.get(int(page_index))
+        if button is None:
+            return
+        base = str(button.property("baseText") or button.text())
+        button.setText(f"{base}  ·  {text}" if text else base)
+        self._fit_camera_import_text()
+
+    def page_badge(self, page_index: int) -> str:
+        button = self._button_by_page.get(int(page_index))
+        if button is None:
+            return ""
+        base = str(button.property("baseText") or "")
+        return button.text()[len(base) + 5:] if button.text() != base else ""
 
     def set_edit_enabled(self, enabled: bool) -> None:
         self.edit_button.setEnabled(bool(enabled))

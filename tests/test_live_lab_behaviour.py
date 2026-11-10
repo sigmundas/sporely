@@ -274,7 +274,7 @@ def test_live_session_start_capture_and_stop_are_logged(qtbot, profile):
 
     _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
     session_id = tab._session_id
-    assert tab.start_stop_btn.text() == "Stop Session"
+    assert tab.start_stop_btn.text() == "End session"
     assert _watcher().isRunning()
     assert _watcher().directory_to_watch == str(profile.watch_dir)
 
@@ -830,16 +830,19 @@ def test_number_and_letter_shortcuts_choose_objective_and_contrast(qtbot, profil
     tab = _make_tab(qtbot)
     _set_lab_state(qtbot, tab, LAB_STATE)
     _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_OFFLINE)
-    tab.live_image_label.setFocus(Qt.OtherFocusReason)
-    qtbot.waitUntil(tab.live_image_label.hasFocus, timeout=1000)
+    # A Kun logg session shows its page instead of the viewer (stage 9e).
+    target = tab.log_page
+    assert tab.viewer_stack.currentWidget() is target
+    target.setFocus(Qt.OtherFocusReason)
+    qtbot.waitUntil(target.hasFocus, timeout=1000)
 
     for key, expected in ((Qt.Key_1, "40X"), (Qt.Key_2, "63X"), (Qt.Key_3, "100X")):
-        qtbot.keyClick(tab.live_image_label, key)
+        qtbot.keyClick(target, key)
         assert tab.objective_combo.selected_value() == expected
-    qtbot.keyClick(tab.live_image_label, Qt.Key_6)  # no sixth objective: nothing happens
+    qtbot.keyClick(target, Qt.Key_6)  # no sixth objective: nothing happens
     assert tab.objective_combo.selected_value() == "100X"
     for key, expected in ((Qt.Key_B, "BF"), (Qt.Key_D, "DF"), (Qt.Key_P, "Phase"), (Qt.Key_I, "DIC")):
-        qtbot.keyClick(tab.live_image_label, key)
+        qtbot.keyClick(target, key)
         assert tab.contrast_combo.selected_value() == expected
     assert _bar_button(tab, "objective", "63X").toolTip().endswith("(2)")
     assert _bar_button(tab, "contrast", "DIC").toolTip().endswith("(I)")

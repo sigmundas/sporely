@@ -159,3 +159,63 @@ class SyncShotDialog(QDialog):
     def done(self, result: int) -> None:
         self._frame_timer.stop()
         super().done(result)
+
+
+class SyncShotQrView(QLabel):
+    """The Sync Shot clock QR at a given size, for a page rather than a dialog (stage 9e).
+
+    The same code ``SyncShotDialog`` shows: the current time, renewed every
+    ``SYNC_SHOT_QR_INTERVAL_MS`` with a short blank frame between codes, so a
+    photo of it tells Camera import how far the camera clock is off. It only
+    ticks while visible.
+    """
+
+    def __init__(self, size: int = 200, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._size = int(size)
+        self._session_id = uuid4().hex
+        self._blank = False
+        self.setAlignment(Qt.AlignCenter)
+        self.setFixedSize(self._size + 16, self._size + 16)
+        self.setStyleSheet("background-color: #ffffff; border-radius: 6px;")
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self._advance)
+        self._show_code(tick=False)  # never blank, also before it is first shown
+
+    def has_code(self) -> bool:
+        pixmap = self.pixmap()
+        return pixmap is not None and not pixmap.isNull()
+
+    def showEvent(self, event) -> None:  # noqa: N802 - Qt override
+        super().showEvent(event)
+        self._blank = False
+        self._show_code()
+
+    def hideEvent(self, event) -> None:  # noqa: N802 - Qt override
+        self._timer.stop()
+        super().hideEvent(event)
+
+    def _advance(self) -> None:
+        if self._blank:
+            self._blank = False
+            self._show_code()
+            return
+        self._blank = True
+        self.clear()
+        self._timer.start(SYNC_SHOT_QR_BLANK_MS)
+
+    def _show_code(self, *, tick: bool = True) -> None:
+        payload = build_sync_shot_payload(current_sync_shot_utc(), self._session_id)
+        try:
+            image = render_sync_shot_qr(payload)
+        except ImportError:
+            self.setText(self.tr("Install Sync Shot QR dependencies to use this tool."))
+            self.setWordWrap(True)
+            return
+        pixmap = QPixmap.fromImage(ImageQt(image)).scaled(
+            self._size, self._size, Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
+        self.setPixmap(pixmap)
+        if tick:
+            self._timer.start(SYNC_SHOT_QR_VISIBLE_MS)

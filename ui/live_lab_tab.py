@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
 import tempfile
 from dataclasses import field
 from uuid import uuid4
@@ -93,8 +94,10 @@ from .hint_status import HintBar, HintStatusController, style_progress_widgets
 from .image_gallery_widget import ImageGalleryWidget
 from .adaptive_choice_selector import objective_color, objective_short_label
 from .raw_processing_controls import RawProcessingControls
+from .collapsible_section import ElidedLabel
 from .section_card import create_section_card
 from .segmented_selector import SegmentedSelector
+from .sync_shot_dialog import SyncShotDialog, SyncShotQrView
 from .splitter_state import (
     GALLERY_DEFAULT_HEIGHT,
     GALLERY_MIN_HEIGHT,
@@ -210,6 +213,8 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
 
     # Unsaved captures per observation changed (the observation list shows them).
     unsavedCountsChanged = Signal(object)
+    # “Live 00:14” / “Logging 00:14” while a session runs, "" otherwise (the mode bar).
+    sessionBadgeChanged = Signal(str)
 
     SETTING_WATCH_DIR = "live_lab_watch_dir"
     SETTING_LAST_OBJECTIVE = "live_lab_last_objective"
@@ -438,9 +443,9 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         self.start_stop_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.start_stop_btn.setStyleSheet(self.SESSION_BUTTON_BASE_STYLE)
         self.start_stop_btn.clicked.connect(self._toggle_session)
-        current_text_layout.addWidget(self.start_stop_btn, 0, Qt.AlignLeft)
         current_row.addLayout(current_text_layout, 1)
         current_layout.addLayout(current_row)
+        current_layout.addWidget(self._build_session_box())
         left_layout.addWidget(current_group)
 
         # These controls remain as the runtime binding for session settings,
@@ -449,12 +454,12 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         session_settings.hide()
         self.session_mode_selector = SegmentedSelector(session_settings, compact=True, fill_width=True)
         self.session_mode_live_radio = self.session_mode_selector.add_option(
-            self.tr("Live capture (watch folder)"),
+            self.tr("Camera connected"),
             self.SESSION_MODE_LIVE,
             checked=True,
         )
         self.session_mode_offline_radio = self.session_mode_selector.add_option(
-            self.tr("Offline (log only)"),
+            self.tr("Log only"),
             self.SESSION_MODE_OFFLINE,
         )
         self.session_mode_combo = self.session_mode_selector
@@ -618,6 +623,12 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         self.reset_view_btn.setEnabled(False)
         self.reset_view_btn.clicked.connect(self._reset_viewer)
         self.reset_view_btn.setVisible(False)
+        # Kun logg (stage 9e): a photo chosen in the strip shows here; this goes back to the page.
+        self.back_to_log_btn = QPushButton(self.tr("Back to the log"), viewer_panel)
+        self.back_to_log_btn.setObjectName("outlineButton")
+        self.back_to_log_btn.clicked.connect(self._back_to_log_page)
+        self.back_to_log_btn.setVisible(False)
+        viewer_layout.addWidget(self.back_to_log_btn, 0, Qt.AlignLeft)
 
         self.live_image_label = ZoomableImageLabel()
         self.live_image_label.setObjectName("liveLabImageLabel")
@@ -721,7 +732,12 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         content_splitter = QSplitter(Qt.Vertical)
         content_splitter.setObjectName("gallerySplitter")
         content_splitter.setChildrenCollapsible(False)
-        content_splitter.addWidget(viewer_panel)
+        # Stage 9e: a Kun logg session has no live view; its page takes the
+        # viewer's place, with the settings first.
+        self.viewer_stack = QStackedWidget()
+        self.viewer_stack.addWidget(viewer_panel)
+        self.viewer_stack.addWidget(self._build_log_page())
+        content_splitter.addWidget(self.viewer_stack)
         # The strip's slot: the save row, then the strip (stage 9d). In the
         # main window the strip is the one shared with View and Measure.
         self.strip_slot = QWidget()
@@ -1099,6 +1115,12 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
     )
 
     def _apply_microscope_state_to_controls(self, metadata: dict | None) -> None:
+        LiveLabTab._apply_microscope_state_to_controls_now(self, metadata)
+        update_log_page = getattr(self, "_update_log_page", None)
+        if callable(update_log_page):
+            update_log_page()  # the selectors changed with their signals blocked
+
+    def _apply_microscope_state_to_controls_now(self, metadata: dict | None) -> None:
         if getattr(self, "_sidebar_binds_to_selection", False):
             try:
                 selected_keys = LiveLabTab._session_gallery_selected_keys(self)
@@ -1322,6 +1344,9 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
 
     def _refresh_viewer_overlays(self, *_args) -> None:
         """Live-view label and calibration notice for what the viewer shows."""
+        update_log_page = getattr(self, "_update_log_page", None)
+        if callable(update_log_page):
+            update_log_page()  # Kun logg: the page, or the photo chosen in the strip
         metadata = self._displayed_lab_metadata()
         update_viewer_objective_tag = getattr(self, "_update_viewer_objective_tag", None)
         if callable(update_viewer_objective_tag):
@@ -1513,6 +1538,8 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         return ImageDB.get_image(image_id)
 
     def eventFilter(self, obj, event) -> bool:
+        if obj is getattr(self, "log_bar_slot", None) and event.type() == QEvent.Resize:
+            self._reposition_pending_raw_floating_tab()
         if obj is getattr(self, "live_image_label", None):
             if event.type() == QEvent.MouseButtonPress:
                 self._clear_session_gallery_edit_selection()
@@ -1637,6 +1664,10 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         image_label = getattr(self, "live_image_label", None)
         if image_label is None:
             return
+        log_slot = getattr(self, "log_bar_slot", None)
+        page_bar = getattr(self, "capture_state_bar", None)
+        if log_slot is not None and page_bar is not None and page_bar.parentWidget() is log_slot:
+            page_bar.fit_to_width(max(0, log_slot.width() - 8))  # Kun logg page: stack when narrow
         # Capture-state bar: bottom centre. The pending-RAW bar sits just above it.
         bottom = image_label.height() - 12
         bar = getattr(self, "capture_state_bar", None)
@@ -2440,8 +2471,8 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
     def _session_mode_label(self, mode: str | None = None) -> str:
         normalized = self._normalize_session_mode(mode or self._selected_session_mode())
         if normalized == self.SESSION_MODE_OFFLINE:
-            return self.tr("Offline")
-        return self.tr("Live capture")
+            return self.tr("Log only")
+        return self.tr("Camera connected")
 
     def _restore_session_mode(self) -> None:
         saved = self._normalize_session_mode(SettingsDB.get_setting(self.SETTING_SESSION_MODE, self.SESSION_MODE_LIVE))
@@ -2460,6 +2491,9 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             update_notes()
 
     def _connect_session_logging_signals(self) -> None:
+        # The Kun logg page shows the current settings (stage 9e).
+        for combo in (self.objective_combo, self.contrast_combo, self.mount_combo, self.stain_combo):
+            combo.currentIndexChanged.connect(lambda _index: self._update_log_page())
         self.objective_combo.currentIndexChanged.connect(
             lambda _idx: self._log_dropdown_change(
                 "objective_name",
@@ -2834,6 +2868,8 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             value=value,
             metadata=metadata,
         )
+        self._log_settings_since = datetime.now()
+        self._update_log_page()
         update_notes = getattr(self, "_update_notes_summary", None)
         if callable(update_notes):
             update_notes(refresh_log=True)
@@ -2844,6 +2880,258 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         self._log_dropdown_change("mount_medium", self._selected_combo_value(self.mount_combo), self.mount_combo.currentText())
         self._log_dropdown_change("stain", self._selected_combo_value(self.stain_combo), self.stain_combo.currentText())
         self._log_dropdown_change("sample_type", self._selected_combo_value(self.sample_combo), self.sample_combo.currentText())
+
+    # -- session type, folder and running time (stage 9e) ---------------------
+
+    def _build_session_box(self) -> QWidget:
+        """Session type, the watched folder, running time and Start/End, in the observation card."""
+        box = QWidget(self)
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(0, 8, 0, 0)
+        layout.setSpacing(6)
+        self.session_type_selector = SegmentedSelector(box, compact=True, fill_width=True)
+        self.session_type_selector.add_option(self.tr("Camera connected"), self.SESSION_MODE_LIVE, checked=True)
+        self.session_type_selector.add_option(self.tr("Log only"), self.SESSION_MODE_OFFLINE)
+        self.session_type_selector.setToolTip(
+            self.tr("The session type; the default is set in Preferences › Image import.")
+        )
+        self.session_type_selector.selectionChanged.connect(self._on_session_type_chosen)
+        layout.addWidget(self.session_type_selector)
+
+        self.session_folder_row = QWidget(box)
+        folder_layout = QHBoxLayout(self.session_folder_row)
+        folder_layout.setContentsMargins(0, 0, 0, 0)
+        folder_layout.setSpacing(6)
+        # A path keeps its start and end (the folder's name) when it is too long.
+        self.session_folder_label = ElidedLabel(self.session_folder_row, text_setter=True, elide_mode=Qt.ElideMiddle)
+        folder_layout.addWidget(self.session_folder_label, 1)
+        self.session_folder_change_btn = QPushButton(self.tr("Change…"), self.session_folder_row)
+        self.session_folder_change_btn.setObjectName("outlineButton")
+        self.session_folder_change_btn.setToolTip(self.tr("Choose the folder the microscope camera saves into"))
+        self.session_folder_change_btn.clicked.connect(self._choose_watch_dir)
+        folder_layout.addWidget(self.session_folder_change_btn, 0)
+        layout.addWidget(self.session_folder_row)
+
+        control_row = QHBoxLayout()
+        control_row.setContentsMargins(0, 0, 0, 0)
+        control_row.setSpacing(8)
+        self.session_clock_label = QLabel(box)
+        self.session_clock_label.setStyleSheet("font-weight: 700;")
+        self.session_clock_label.setVisible(False)
+        control_row.addWidget(self.session_clock_label, 1)
+        control_row.addWidget(self.start_stop_btn, 0, Qt.AlignRight)
+        layout.addLayout(control_row)
+
+        self._session_clock_started: float | None = None
+        self._session_clock_timer = QTimer(self)
+        self._session_clock_timer.setInterval(1000)
+        self._session_clock_timer.timeout.connect(self._update_session_clock)
+        return box
+
+    # -- the Kun logg page (stage 9e) ------------------------------------------
+
+    def _build_log_page(self) -> QWidget:
+        page = QWidget(self)
+        page.setObjectName("logOnlyPage")
+        self.log_page = page
+        page.setFocusPolicy(Qt.StrongFocus)  # a click here gives the 1–6 and B/D/I/P keys back
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        self.log_settings_summary = QLabel(page)
+        self.log_settings_summary.setStyleSheet("font-size: 20px; font-weight: 700;")
+        self.log_settings_summary.setWordWrap(True)
+        layout.addWidget(self.log_settings_summary)
+        self.log_applies_label = QLabel(page)
+        self.log_applies_label.setStyleSheet("font-weight: 600;")
+        self.log_applies_label.setWordWrap(True)
+        layout.addWidget(self.log_applies_label)
+        hint = QLabel(
+            self.tr("The next change is logged with its time and applied to the photos afterwards."), page
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: palette(placeholder-text);")
+        layout.addWidget(hint)
+
+        # The capture-state bar (objective, contrast) moves here from the image.
+        self.log_bar_slot = QWidget(page)
+        self.log_bar_slot.installEventFilter(self)
+        bar_layout = QHBoxLayout(self.log_bar_slot)
+        bar_layout.setContentsMargins(0, 4, 0, 4)
+        bar_layout.addStretch(1)
+        bar_layout.addStretch(1)
+        layout.addWidget(self.log_bar_slot)
+
+        cards = QHBoxLayout()
+        cards.setSpacing(12)
+        offset_card, offset_layout = create_section_card(self.tr("Camera time offset"), body_margins=(12, 10, 12, 12))
+        self.log_time_offset_card = offset_card
+        offset_row = QHBoxLayout()
+        offset_row.setSpacing(12)
+        self.log_qr_view = SyncShotQrView(180, offset_card)
+        offset_row.addWidget(self.log_qr_view, 0, Qt.AlignTop)
+        offset_text = QVBoxLayout()
+        offset_hint = QLabel(
+            self.tr(
+                "Photograph the code with the microscope camera. Camera import then knows how far the camera clock is off."
+            ),
+            offset_card,
+        )
+        offset_hint.setWordWrap(True)
+        offset_text.addWidget(offset_hint)
+        self.log_full_screen_btn = QPushButton(self.tr("Full screen"), offset_card)
+        self.log_full_screen_btn.setObjectName("outlineButton")
+        self.log_full_screen_btn.clicked.connect(self._open_sync_shot_full_screen)
+        offset_text.addWidget(self.log_full_screen_btn, 0, Qt.AlignLeft)
+        offset_text.addStretch(1)
+        offset_row.addLayout(offset_text, 1)
+        offset_layout.addLayout(offset_row)
+        cards.addWidget(offset_card, 1)
+
+        after_card, after_layout = create_section_card(self.tr("Afterwards"), body_margins=(12, 10, 12, 12))
+        for number, text in (
+            (1, self.tr("End the session and insert the camera's SD card.")),
+            (2, self.tr("Open Camera import: photos taken during the session are matched to this observation.")),
+            (3, self.tr("Check the matches and add them to the observation.")),
+        ):
+            step = QLabel(f"<b>{number}</b>&nbsp;&nbsp;{text}", after_card)
+            step.setWordWrap(True)
+            after_layout.addWidget(step)
+        after_layout.addStretch(1)
+        cards.addWidget(after_card, 1)
+        layout.addLayout(cards)
+        layout.addStretch(1)
+        return page
+
+    def _open_sync_shot_full_screen(self) -> None:
+        dialog = SyncShotDialog(self)
+        dialog.showMaximized()
+        dialog.exec()
+
+    def _log_mode(self) -> bool:
+        running = self.is_session_running() or bool(self._session_stop_pending)
+        mode = self._active_session_mode if running else self._selected_session_mode()
+        return self._normalize_session_mode(mode) == self.SESSION_MODE_OFFLINE
+
+    def _log_page_wanted(self) -> bool:
+        # A photo chosen in the strip is shown in the viewer, also in Kun logg.
+        return self._log_mode() and getattr(self, "_viewer_subject", None) is None
+
+    def _back_to_log_page(self) -> None:
+        gallery = getattr(self, "session_gallery", None)
+        if gallery is not None:
+            gallery.select_image(None, center=False)
+        self._sidebar_binds_to_selection = False
+        self._clear_session_viewer()
+        self._update_log_page()
+
+    def _log_settings_summary_text(self) -> str:
+        parts: list[str] = []
+        objective_key = self._selected_combo_value(self.objective_combo)
+        if objective_key:
+            objective = load_objectives().get(str(objective_key))
+            parts.append(objective_short_label(objective, str(objective_key)) or str(objective_key))
+        for combo in (self.contrast_combo, self.mount_combo, self.stain_combo):
+            value = self._selected_combo_value(combo)
+            if value and str(value) != "Not_set":
+                parts.append(combo.currentText())
+        return " · ".join(parts) or self.tr("No settings chosen")
+
+    def _update_log_page(self) -> None:
+        stack = getattr(self, "viewer_stack", None)
+        if stack is None:
+            return
+        wanted = self._log_page_wanted()
+        bar = getattr(self, "capture_state_bar", None)
+        if wanted:
+            stack.setCurrentWidget(self.log_page)
+            if bar is not None and bar.parentWidget() is not self.log_bar_slot:
+                self.log_bar_slot.layout().insertWidget(1, bar)
+                bar.show()
+        else:
+            stack.setCurrentWidget(self.viewer_panel)
+            if bar is not None and bar.parentWidget() is not self.live_image_label:
+                self.log_bar_slot.layout().removeWidget(bar)
+                bar.setParent(self.live_image_label)
+                bar.show()
+                self._reposition_pending_raw_floating_tab()
+        self.back_to_log_btn.setVisible(self._log_mode() and not wanted)
+        running = self.is_session_running()
+        self.log_settings_summary.setText(self._log_settings_summary_text())
+        since = getattr(self, "_log_settings_since", None)
+        if running and since is not None:
+            self.log_applies_label.setText(
+                self.tr("Applies to photos taken from {time}").format(time=since.strftime("%H:%M"))
+            )
+        else:
+            self.log_applies_label.setText(self.tr("Start the session to log these settings with their time."))
+        self.log_time_offset_card.setVisible(running)
+
+    def _on_session_type_chosen(self, value) -> None:
+        """Bilder's choice is the session mode (and the remembered default)."""
+        if self.is_session_running() or self._session_stop_pending:
+            return
+        self.session_mode_selector.set_selected_value(value, emit=True)
+
+    def _session_clock_text(self) -> str:
+        started = getattr(self, "_session_clock_started", None)
+        if started is None:
+            return ""
+        seconds = max(0, int(time.monotonic() - started))
+        return f"{seconds // 3600:02d}:{seconds % 3600 // 60:02d}:{seconds % 60:02d}"
+
+    def _update_session_clock(self) -> None:
+        label = getattr(self, "session_clock_label", None)
+        running = self.is_session_running()
+        clock = self._session_clock_text() if running else ""
+        logging = self._normalize_session_mode(self._active_session_mode) == self.SESSION_MODE_OFFLINE
+        if label is not None:
+            label.setVisible(bool(clock))
+            if clock:
+                label.setText(
+                    self.tr("Logging · {time}").format(time=clock) if logging else self.tr("Live · {time}").format(time=clock)
+                )
+        short = clock[:5] if clock else ""
+        badge = ""
+        if short:
+            badge = self.tr("Logging {time}").format(time=short) if logging else self.tr("Live {time}").format(time=short)
+        if badge != getattr(self, "_session_badge_text", ""):
+            self._session_badge_text = badge
+            self.sessionBadgeChanged.emit(badge)
+
+    def session_badge_text(self) -> str:
+        """“Live 00:14” / “Logging 00:14” while a session runs (the mode bar shows it)."""
+        return getattr(self, "_session_badge_text", "")
+
+    def _update_session_box(self, running: bool, stopping: bool, selected_mode: str, watch_ok: bool) -> None:
+        selector = getattr(self, "session_type_selector", None)
+        if selector is None:
+            return
+        with QSignalBlocker(selector):
+            selector.set_selected_value(selected_mode)
+        selector.setVisible(not running and not stopping)
+        folder_shown = not running and not stopping and selected_mode == self.SESSION_MODE_LIVE
+        self.session_folder_row.setVisible(folder_shown)
+        folder = str(self.watch_dir_input.text() or "").strip()
+        if folder and watch_ok:
+            self.session_folder_label.setText(self.tr("Folder: {path}").format(path=folder))
+            self.session_folder_label.setToolTip(folder)
+            self.session_folder_label.setStyleSheet("color: palette(placeholder-text);")
+        else:
+            self.session_folder_label.setText(
+                self.tr("Choose the folder the camera saves into") if not folder else self.tr("The folder no longer exists")
+            )
+            self.session_folder_label.setToolTip(folder)
+            self.session_folder_label.setStyleSheet(f"color: {STAGING_BORDER}; font-weight: 600;")
+        if running and self._session_clock_started is None:
+            self._session_clock_started = time.monotonic()
+        if running and not self._session_clock_timer.isActive():
+            self._session_clock_timer.start()
+        if not running:
+            self._session_clock_timer.stop()
+            self._session_clock_started = None
+        self._update_session_clock()
 
     def _update_session_controls(self) -> None:
         running = self.is_session_running()
@@ -2875,7 +3163,7 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         if stopping:
             self.start_stop_btn.setText(self.tr("Stopping..."))
         elif running:
-            self.start_stop_btn.setText(self.tr("Stop Session"))
+            self.start_stop_btn.setText(self.tr("End session"))
         else:
             self.start_stop_btn.setText(
                 self.tr("Start Log\nSession").replace("\n", " ")
@@ -2894,6 +3182,8 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             self.start_stop_btn.setProperty("_hint_disabled_text", disabled_hint)
 
         self._set_session_button_style(bool(running or stopping))
+        self._update_session_box(running, stopping, selected_mode, watch_ok)
+        self._update_log_page()
         self._update_tab_recording_indicator(bool(running or stopping))
         self._reposition_pending_raw_floating_tab()
 
@@ -2958,15 +3248,15 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             self._watcher.error_occurred.connect(self._on_watcher_error)
             self._watcher.finished.connect(self._on_watcher_finished)
             self._watcher.start()
-            status_text = self.tr("Live capture session started for {name}.").format(
+            status_text = self.tr("Camera session started for {name}.").format(
                 name=self._observation_summary_text(self._session_observation_snapshot),
             )
         else:
             self._clear_session_viewer(
-                title=self.tr("Offline session"),
+                title=self.tr("Log-only session"),
                 meta=self.tr("Log microscope-state changes now and match images later in Camera import."),
             )
-            status_text = self.tr("Offline session started for {name}.").format(
+            status_text = self.tr("Log-only session started for {name}.").format(
                 name=self._observation_summary_text(self._session_observation_snapshot),
             )
 
@@ -3074,9 +3364,9 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         if had_session:
             self._show_status(
                 (
-                    self.tr("Offline session stopped. Logged {count} imported image(s).")
+                    self.tr("Log-only session ended. Logged {count} imported image(s).")
                     if session_mode == self.SESSION_MODE_OFFLINE
-                    else self.tr("Live Lab session stopped. Imported {count} image(s).")
+                    else self.tr("Session ended. Imported {count} image(s).")
                 ).format(count=import_count),
                 tone="success" if import_count else "info",
                 timeout_ms=4000,
