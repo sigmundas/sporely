@@ -69,6 +69,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QSizePolicy,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QToolButton,
@@ -288,8 +289,13 @@ class ReferenceEntryEditor(QWidget):
         require_explicit_publication_assignment: bool = False,
         preview_pane=None,
         comparison_view_factory=None,
+        staged: bool = False,
     ):
         super().__init__(parent)
+        # Two steps (``ReferenceCreateDialog``, redesign stage 7d): the
+        # publication on one page, the measurements on the next, and the
+        # value grid hidden until a string is parsed or "Fill in manually".
+        self._staged = bool(staged)
         self._result = None
         self._genus = genus
         self._species = species
@@ -345,6 +351,21 @@ class ReferenceEntryEditor(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
+        # Where each part goes: one column, or (staged) one page per step.
+        if self._staged:
+            self.steps = QStackedWidget(self)
+            self.source_page = QWidget(self.steps)
+            source_column = QVBoxLayout(self.source_page)
+            self.measurements_page = QWidget(self.steps)
+            measure_column = QVBoxLayout(self.measurements_page)
+            for column in (source_column, measure_column):
+                column.setContentsMargins(0, 0, 0, 0)
+                column.setSpacing(10)
+            self.steps.addWidget(self.source_page)
+            self.steps.addWidget(self.measurements_page)
+        else:
+            self.steps = None
+            source_column = measure_column = layout
 
         # Built before the sections so every field below can register its
         # own hint as it is constructed; the bar itself is added to the
@@ -391,15 +412,28 @@ class ReferenceEntryEditor(QWidget):
         paste_button_row.addWidget(self._parse_measurement_btn)
         minmax_layout.addLayout(paste_button_row)
 
+        self.fill_manually_btn = QPushButton(
+            QCoreApplication.translate("ReferenceAddDialog", "Fill in manually"), self
+        )
+        self.fill_manually_btn.setObjectName("linkButton")
+        self.fill_manually_btn.setCursor(Qt.PointingHandCursor)
+        self.fill_manually_btn.clicked.connect(self._on_fill_manually_clicked)
+        self.fill_manually_btn.setVisible(False)
+        if self._staged:
+            minmax_layout.addWidget(self.fill_manually_btn, 0, Qt.AlignLeft)
+
         # Parse sits with the field it acts on; the two corrective actions go
         # below. Keeping all three inline squeezed the paste field down to a
         # few visible characters at the dialog's ordinary width, which is the
         # one control the user is meant to read what they pasted in.
-        correction_row = QHBoxLayout()
+        # The corrections and the grid are widgets of their own so the staged
+        # editor can keep them hidden until there are values to show.
+        self._correction_row_widget = QWidget(self._measurement_group)
+        correction_row = QHBoxLayout(self._correction_row_widget)
         correction_row.setContentsMargins(0, 0, 0, 0)
         correction_row.addWidget(self._swap_lw_btn)
         correction_row.addStretch(1)
-        minmax_layout.addLayout(correction_row)
+        minmax_layout.addWidget(self._correction_row_widget)
 
         self._measurement_preview_label = QLabel("")
         self._measurement_preview_label.setWordWrap(True)
@@ -408,6 +442,12 @@ class ReferenceEntryEditor(QWidget):
             f"color: #7f8c8d; font-size: {pt(9)}pt; padding: 2px 0px;"
         )
         minmax_layout.addWidget(self._measurement_preview_label)
+
+        self.measurement_grid_panel = QWidget(self._measurement_group)
+        grid_panel_layout = QVBoxLayout(self.measurement_grid_panel)
+        grid_panel_layout.setContentsMargins(0, 0, 0, 0)
+        grid_panel_layout.setSpacing(minmax_layout.spacing())
+        minmax_layout.addWidget(self.measurement_grid_panel)
 
         # Reported statistics (contract version 1): what the source says about
         # the numbers in the table below. They sit with the rest of the parse
@@ -424,7 +464,7 @@ class ReferenceEntryEditor(QWidget):
         self.measurement_tags_label.setStyleSheet(
             f"font-size: {pt(9)}pt; padding: 2px 0px 0px 0px;"
         )
-        minmax_layout.addWidget(self.measurement_tags_label)
+        grid_panel_layout.addWidget(self.measurement_tags_label)
 
         self.reported_statistics_label = QLabel("")
         self.reported_statistics_label.setObjectName("referenceReportedStatistics")
@@ -433,7 +473,7 @@ class ReferenceEntryEditor(QWidget):
         self.reported_statistics_label.setStyleSheet(
             f"color: #7f8c8d; font-size: {pt(9)}pt;"
         )
-        minmax_layout.addWidget(self.reported_statistics_label)
+        grid_panel_layout.addWidget(self.reported_statistics_label)
 
         self._reported_statistics_notice_label = QLabel("")
         self._reported_statistics_notice_label.setObjectName(
@@ -444,7 +484,7 @@ class ReferenceEntryEditor(QWidget):
         self._reported_statistics_notice_label.setStyleSheet(
             f"color: #b58900; font-style: italic; font-size: {pt(9)}pt; padding: 0px 0px 2px 0px;"
         )
-        minmax_layout.addWidget(self._reported_statistics_notice_label)
+        grid_panel_layout.addWidget(self._reported_statistics_notice_label)
 
         self._raw_measurement_text: str = ""
         prefill_meta = self._prefill_data.get("metadata_json") if self._prefill_data else None
@@ -517,7 +557,7 @@ class ReferenceEntryEditor(QWidget):
             self.measurement_inputs.append(row_inputs)
         for col in range(5):
             grid.setColumnStretch(col + 1, 1)
-        minmax_layout.addLayout(grid)
+        grid_panel_layout.addLayout(grid)
 
         # Contract N24: the keyboard order is stated, not inherited. Qt's
         # default chain follows construction order, which happens to be
@@ -537,8 +577,8 @@ class ReferenceEntryEditor(QWidget):
         )
         measurement_footnote.setWordWrap(True)
         measurement_footnote.setStyleSheet(f"color: #7f8c8d; font-size: {pt(9)}pt;")
-        minmax_layout.addWidget(measurement_footnote)
-        layout.addWidget(self._measurement_group)
+        grid_panel_layout.addWidget(measurement_footnote)
+        measure_column.addWidget(self._measurement_group)
 
         # Correction is offered as *retraction*: a reader who knows a tag is
         # wrong can drop that metric's range interpretation, or discard the
@@ -580,7 +620,7 @@ class ReferenceEntryEditor(QWidget):
         self.spore_table = SporeDataTable()
         self.spore_table.itemChanged.connect(lambda *_: self._refresh_preview())
         self._spore_section.body_layout().addWidget(self.spore_table)
-        layout.addWidget(self._spore_section)
+        measure_column.addWidget(self._spore_section)
 
         self._parmasto_section = CollapsibleSection(
             QCoreApplication.translate("ReferenceAddDialog", "Parmasto Biometrics"), self
@@ -616,7 +656,7 @@ class ReferenceEntryEditor(QWidget):
             parmasto_layout.addRow(_math_label(math_label, description), line_edit)
             self.parmasto_inputs[key] = line_edit
         self._parmasto_section.body_layout().addLayout(parmasto_layout)
-        layout.addWidget(self._parmasto_section)
+        measure_column.addWidget(self._parmasto_section)
 
         pub_group = QGroupBox(QCoreApplication.translate("ReferenceAddDialog", "Publication"))
         pub_layout = QVBoxLayout(pub_group)
@@ -685,6 +725,14 @@ class ReferenceEntryEditor(QWidget):
                 "Choose a reference taxon above to link it; otherwise it is "
                 "saved under the name as published only."
             )
+            if not self._staged
+            # No taxon selector in the two-step dialog: the taxon is the
+            # observation's, so the way to link it is the observation's own.
+            else QCoreApplication.translate("ReferenceAddDialog",
+                "The observation's taxon is not linked to a species in the "
+                "database, so this reference is saved under the name as "
+                "published only. Link the taxon in Edit to connect it."
+            )
         )
         self._no_taxon_notice_label.setWordWrap(True)
         self._no_taxon_notice_label.setObjectName("referenceNoTaxonNotice")
@@ -700,9 +748,18 @@ class ReferenceEntryEditor(QWidget):
             bool(self._observation_id) and not self._sporely_taxon_id
         )
         pub_layout.addWidget(self._no_taxon_notice_label)
+        # Staged only: the drawer lists existing sets; this says they exist.
+        self.existing_sets_note = QLabel("", pub_group)
+        self.existing_sets_note.setObjectName("referenceExistingSetsNote")
+        self.existing_sets_note.setWordWrap(True)
+        self.existing_sets_note.setVisible(False)
+        pub_layout.addWidget(self.existing_sets_note)
         # Publication first: the mockup's information hierarchy is who
         # published it, then what they measured.
-        layout.insertWidget(0, pub_group)
+        if self._staged:
+            source_column.addWidget(pub_group)
+        else:
+            layout.insertWidget(0, pub_group)
 
         data_group = QGroupBox(QCoreApplication.translate("ReferenceAddDialog", "Data"))
         data_layout = QVBoxLayout(data_group)
@@ -754,11 +811,20 @@ class ReferenceEntryEditor(QWidget):
         data_layout.addWidget(self._existing_sets_table)
         self._existing_sets_cache: list[MeasurementSet] = []
         self._legacy_source_prefill: str | None = None
-        layout.addWidget(data_group)
+        source_column.addWidget(data_group)
         # Spare height goes below the form. Without this a host that scrolls
         # the editor at viewport height spreads it between the sections, and
         # the collapsed disclosures float in large empty gaps.
-        layout.addStretch(1)
+        if self._staged:
+            # Picking an existing set is the reference drawer's job; this
+            # editor only creates. A note on the first page says when the
+            # publication already has sets for this taxon.
+            data_group.setVisible(False)
+            source_column.addStretch(1)
+            measure_column.addStretch(1)
+            layout.addWidget(self.steps, 1)
+        else:
+            layout.addStretch(1)
 
         self.use_existing_radio.toggled.connect(self._on_data_choice_toggled)
         self.enter_new_radio.toggled.connect(self._on_data_choice_toggled)
@@ -779,6 +845,8 @@ class ReferenceEntryEditor(QWidget):
         self._populate_publication_combo()
         self._apply_prefill()
         self._on_data_choice_toggled()
+        # Not staged, or reopening values: the grid is there from the start.
+        self.set_grid_revealed(not self._staged or self._has_grid_values())
         self._refresh_preview()
 
     @staticmethod
@@ -1587,7 +1655,75 @@ class ReferenceEntryEditor(QWidget):
             return
         self._raw_measurement_text = raw
         self._set_parsed_result(result)
+        self.set_grid_revealed(True)
         self._set_hint(QCoreApplication.translate("ReferenceAddDialog", "Parsed — review and edit before saving."), tone="info")
+
+    # ----- Two steps (staged) ------------------------------------------------
+
+    def is_staged(self) -> bool:
+        return self._staged
+
+    def show_step(self, index: int) -> None:
+        """Staged only: 0 is the publication, 1 the measurements."""
+        if self.steps is None:
+            return
+        self.steps.setCurrentIndex(max(0, min(int(index), self.steps.count() - 1)))
+        if self.steps.currentIndex() == 1 and not self.is_grid_revealed():
+            self.measurement_paste_input.setFocus(Qt.OtherFocusReason)
+
+    def current_step(self) -> int:
+        return self.steps.currentIndex() if self.steps is not None else 0
+
+    def is_grid_revealed(self) -> bool:
+        return not self.measurement_grid_panel.isHidden()
+
+    def set_grid_revealed(self, revealed: bool) -> None:
+        """Show or hide the value grid and its corrections (staged: hidden until needed)."""
+        revealed = bool(revealed) or not self._staged
+        self.measurement_grid_panel.setVisible(revealed)
+        self._correction_row_widget.setVisible(revealed)
+        self.fill_manually_btn.setVisible(self._staged and not revealed)
+
+    def _on_fill_manually_clicked(self) -> None:
+        self.set_grid_revealed(True)
+        self._measurement_input(0, 0).setFocus(Qt.OtherFocusReason)
+        self.data_changed.emit()
+
+    def has_publication(self) -> bool:
+        """A library publication is chosen, or a new one is waiting to be saved."""
+        return bool(self._selected_work_id or self._pending_reference_work is not None)
+
+    def bind_typed_publication(self) -> str | None:
+        """Select the work whose exact label was typed (see ``_resolve_typed_publication``)."""
+        return self._resolve_typed_publication()
+
+    def library_payload_ready(self) -> bool:
+        """Whether saving would store a measurement set: the payload builder's own answer.
+
+        A refusal (content this version cannot store) counts as ready, so the
+        click reaches validation, which explains it.
+        """
+        try:
+            return self.normalized_measurement_set_payload() is not None
+        except MeasurementContentError:
+            return True
+        except Exception:
+            return False
+
+    def _update_existing_sets_note(self) -> None:
+        count = len(self._existing_sets_cache)
+        note = getattr(self, "existing_sets_note", None)
+        if note is None:
+            return
+        note.setVisible(self._staged and count > 0)
+        if count:
+            note.setText(
+                QCoreApplication.translate(
+                    "ReferenceAddDialog",
+                    "Measurement sets for this taxon already in this publication: "
+                    "{count}. To use one, tick it in the Add reference list.",
+                ).format(count=count)
+            )
 
     def _on_swap_lw_clicked(self) -> None:
         row_a, row_b = 0, 1
@@ -2026,7 +2162,15 @@ class ReferenceEntryEditor(QWidget):
         ):
             self._pending_reference_work = None
             self._pending_reference_work_label = None
-        if self._selected_work_id is not None:
+        # Picking another publication changes the text before Qt emits
+        # currentIndexChanged; that is a selection, not typing over one.
+        picked_row = self.publication_combo.currentIndex()
+        picking = (
+            picked_row > 0
+            and bool(self.publication_combo.itemData(picked_row))
+            and self.publication_combo.itemText(picked_row).strip() == current
+        )
+        if self._selected_work_id is not None and not picking:
             for row in range(self.publication_combo.count()):
                 if str(self.publication_combo.itemData(row) or "") == self._selected_work_id:
                     if self.publication_combo.itemText(row).strip() != current:
@@ -2219,7 +2363,8 @@ class ReferenceEntryEditor(QWidget):
                     if ms.data_kind in SUPPORTED_ATTACHMENT_DATA_KINDS:
                         candidates.append(ms)
         self._existing_sets_cache = candidates
-        has_candidates = bool(candidates)
+        self._update_existing_sets_note()
+        has_candidates = bool(candidates) and not self._staged
         self.use_existing_radio.setEnabled(has_candidates)
         if not has_candidates and self.use_existing_radio.isChecked():
             self.enter_new_radio.setChecked(True)

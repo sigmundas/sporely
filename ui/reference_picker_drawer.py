@@ -70,8 +70,8 @@ class ReferencePickerHost(Protocol):
 
 
 class ReferencePickerPage(QWidget):
-    # "New reference…" still opens the old dialog on its tab until stage 7d.
-    other_source_requested = Signal(str)
+    # "New reference…": the host opens the two-step create dialog (stage 7d).
+    new_reference_requested = Signal()
     # "Details…" on a row: open this measurement set in the library.
     details_requested = Signal(object)  # MeasurementSetCandidate
 
@@ -167,7 +167,7 @@ class ReferencePickerPage(QWidget):
         layout.addWidget(self.status_label)
 
         self.new_reference_btn = QPushButton(self.tr("New reference…"), self)
-        self.new_reference_btn.clicked.connect(lambda: self.other_source_requested.emit("new"))
+        self.new_reference_btn.clicked.connect(lambda: self.new_reference_requested.emit())
         layout.addWidget(self.new_reference_btn, 0, Qt.AlignLeft)
 
     # -- loading -------------------------------------------------------------

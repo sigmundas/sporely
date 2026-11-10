@@ -170,6 +170,9 @@ ANALYSIS_TAB_IDS = {
     "analysis.tab", "analysis.tab-dark", "analysis.tab-small",
     "analysis.reference-drawer", "analysis.reference-drawer-dark", "analysis.reference-drawer-de",
     "analysis.reference-drawer-community", "analysis.reference-drawer-my-observations",
+    "analysis.create-reference-source", "analysis.create-reference-measurements",
+    "analysis.create-reference-parsed", "analysis.create-reference-parsed-dark",
+    "analysis.create-reference-parsed-de", "analysis.create-reference-unlinked",
 }
 ALL_IDS = (
     REFERENCE_IDS

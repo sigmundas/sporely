@@ -130,6 +130,45 @@ def _open_drawer(window) -> None:
         ticked[0].set_expanded(True)
 
 
+CREATE_PASTED = "(9.0–)9.5–11.0(–12.0) × (5.0–)5.3–6.0(–6.4) µm, Q = 1.6–2.0, n = 30"
+
+
+def _create_dialog(context: ReviewContext, state: str, *, linked: bool = True) -> QWidget:
+    """The two-step "New reference" dialog (stage 7d) in ``state``:
+    "source", "measurements" (nothing parsed) or "parsed"."""
+    from ui.reference_create_dialog import MEASUREMENTS_STEP, ReferenceCreateDialog
+
+    seeded = seed_analysis(context, attach=False)
+    work_id = None
+    if state != "source" or linked:
+        from database.reference_library import TaxonTreatmentRepository
+
+        work_id = TaxonTreatmentRepository.get(seeded["sets"][0].taxon_treatment_id).reference_work_id
+    dialog = ReferenceCreateDialog(
+        None,
+        genus="Cortinarius",
+        species="limonius",
+        common_name="Sitronslørsopp",
+        observation_id=seeded["observation_id"],
+        sporely_taxon_id=7 if linked else None,
+        save_callback=lambda _editor: None,
+        add_callback=lambda _editor: False,
+    )
+    dialog.resize(760, 640)
+    editor = dialog.editor
+    if work_id:
+        editor.publication_combo.setCurrentIndex(editor.publication_combo.findData(work_id))
+        editor.locator_input.setText("pp. 146–148")
+    if state != "source":
+        dialog.show_step(MEASUREMENTS_STEP)
+    if state == "parsed":
+        editor.measurement_paste_input.setText(CREATE_PASTED)
+        editor._on_parse_measurement_clicked()
+    dialog.show()
+    _settle(0.3)
+    return dialog
+
+
 def register_analysis_tab_scenarios(registry: ScenarioRegistry) -> None:
     for theme in ("light", "dark"):
         suffix = "" if theme == "light" else "-dark"
@@ -182,6 +221,57 @@ def register_analysis_tab_scenarios(registry: ScenarioRegistry) -> None:
             build=lambda context: _analysis_tab(context, after=_open_drawer),
             viewport=(1500, 950),
             locale="de_DE",
+        )
+    )
+    create_states = (
+        ("source", "step 1, the publication (it already has sets for this taxon)"),
+        ("measurements", "step 2 before parsing: only the paste field, Parse and Fill in manually"),
+        ("parsed", "step 2 after Parse: the value grid"),
+    )
+    for state, description in create_states:
+        registry.register(
+            ReviewScenario(
+                id=f"analysis.create-reference-{state}",
+                group="analysis",
+                title=f"New reference dialog: {state} (nb)",
+                description=f"The two-step create dialog (stage 7d), {description}.",
+                build=lambda context, state=state: _create_dialog(context, state),
+                viewport=(760, 640),
+                locale="nb_NO",
+            )
+        )
+    registry.register(
+        ReviewScenario(
+            id="analysis.create-reference-parsed-dark",
+            group="analysis",
+            title="New reference dialog: parsed (nb, dark)",
+            description="Step 2 after Parse in the dark theme.",
+            build=lambda context: _create_dialog(context, "parsed"),
+            viewport=(760, 640),
+            locale="nb_NO",
+            theme="dark",
+        )
+    )
+    registry.register(
+        ReviewScenario(
+            id="analysis.create-reference-parsed-de",
+            group="analysis",
+            title="New reference dialog: parsed (de)",
+            description="Step 2 after Parse with German strings.",
+            build=lambda context: _create_dialog(context, "parsed"),
+            viewport=(760, 640),
+            locale="de_DE",
+        )
+    )
+    registry.register(
+        ReviewScenario(
+            id="analysis.create-reference-unlinked",
+            group="analysis",
+            title="New reference dialog: unlinked taxon (nb)",
+            description="Step 1 when the observation's taxon is not linked: the notice applies.",
+            build=lambda context: _create_dialog(context, "source", linked=False),
+            viewport=(760, 640),
+            locale="nb_NO",
         )
     )
     registry.register(

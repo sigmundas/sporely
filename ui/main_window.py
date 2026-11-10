@@ -257,6 +257,7 @@ from .section_card import create_section_card
 from .collapsible_section import CollapsibleSection as SummarySection, ElidedLabel
 from .side_drawer import SideDrawer
 from .reference_picker_drawer import ReferencePickerPage
+from .reference_create_dialog import ReferenceCreateDialog
 from .segmented_selector import SegmentedSelector
 from .styles import get_style, apply_palette, pt, _is_dark
 from .window_state import GeometryMixin
@@ -8264,7 +8265,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.reference_drawer = SideDrawer(self.analysis_plot_area, side="left", width=400)
         self.reference_picker_page = ReferencePickerPage(self)
         self.reference_drawer.add_page("references", self.tr("Add reference"), self.reference_picker_page)
-        self.reference_picker_page.other_source_requested.connect(self._on_reference_picker_other_source)
+        self.reference_picker_page.new_reference_requested.connect(self._on_reference_picker_new_reference)
         self.reference_picker_page.details_requested.connect(self._on_reference_picker_details)
         self.reference_drawer.opened.connect(lambda _page: self.ref_add_reference_btn.setChecked(True))
         self.reference_drawer.closed.connect(lambda: self.ref_add_reference_btn.setChecked(False))
@@ -8799,8 +8800,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         action_row = QVBoxLayout()
         action_row.setSpacing(6)
         self.ref_add_reference_btn = QPushButton(self.tr("Add reference…"))
-        # Opens the reference drawer over the plot (stage 7); the dialog
-        # (_on_add_reference_clicked) remains for the sources not moved yet.
+        # Opens the reference drawer over the plot (stage 7). The old picker
+        # dialog (_on_add_reference_clicked) has no button any more.
         self.ref_add_reference_btn.setCheckable(True)
         self.ref_add_reference_btn.setObjectName("drawerToggle")  # filled while the drawer is open
         self.ref_add_reference_btn.clicked.connect(lambda _checked=False: self._toggle_reference_drawer())
@@ -10300,9 +10301,79 @@ class MainWindow(GeometryMixin, QMainWindow):
             source_observation_id, context.get("genus") or "", context.get("species") or "",
         )
 
-    def _on_reference_picker_other_source(self, source: str) -> None:
-        """New reference still uses the dialog (until 7d)."""
-        self._on_add_reference_clicked(initial_source=source)
+    def _on_reference_picker_new_reference(self) -> None:
+        """"New reference…" in the drawer: the two-step create dialog (stage 7d).
+
+        "Save to library" stores the measurement set without plotting it;
+        "Add to plot" stores and attaches it. Both reuse the old picker's
+        paths (``_save_manual_reference_to_library``,
+        ``_submit_reference_editor_result``) and refuse to write when the
+        active observation changed while the dialog was open. The drawer
+        reloads afterwards, so the new set is listed (and ticked if added).
+        """
+        context = self.reference_picker_context()
+        if context is None:
+            QMessageBox.information(
+                self,
+                self.tr("Add reference"),
+                self.tr("Select an observation first before adding a reference."),
+            )
+            return
+        captured_observation_id = int(context["observation_id"])
+        captured_taxon_id = context.get("taxon_id")
+
+        def _still_active() -> bool:
+            current = getattr(self, "active_observation_id", None)
+            if current is None or int(current) != captured_observation_id:
+                QMessageBox.warning(
+                    self,
+                    self.tr("Add reference"),
+                    self.tr(
+                        "The active observation changed while the picker "
+                        "was open. Reopen the observation and try again — "
+                        "no reference was attached."
+                    ),
+                )
+                return False
+            # The dialog files the reference under the taxon it opened with;
+            # a link changed or cleared since then would misfile it.
+            if self._active_sporely_taxon_id() != captured_taxon_id:
+                QMessageBox.warning(
+                    self,
+                    self.tr("Add reference"),
+                    self.tr(
+                        "The observation's taxon changed while the dialog was "
+                        "open. Close it and try again — no reference was saved."
+                    ),
+                )
+                return False
+            return True
+
+        def _save(editor) -> str | None:
+            if not _still_active():
+                return None
+            return self._save_manual_reference_to_library(editor)
+
+        def _add(editor) -> bool:
+            if not _still_active():
+                return False
+            return bool(self._submit_reference_editor_result(editor, sync_panel=False))
+
+        observation = ObservationDB.get_observation(captured_observation_id) or {}
+        dialog = ReferenceCreateDialog(
+            self,
+            genus=context.get("genus") or "",
+            species=context.get("species") or "",
+            common_name=(observation.get("common_name") or "").strip() or None,
+            observation_id=captured_observation_id,
+            sporely_taxon_id=context.get("taxon_id"),
+            save_callback=_save,
+            add_callback=_add,
+        )
+        try:
+            dialog.exec()
+        finally:
+            dialog.deleteLater()
         self._reload_reference_drawer_if_open()
 
     def _on_reference_picker_details(self, candidate) -> None:
@@ -12615,7 +12686,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         falling back to a direct ``reference_series`` entry when no
         normalized attach occurred. Shared by the legacy Quick-add dialog
         (:meth:`_on_reference_panel_add_clicked`) and the Add-reference
-        picker's Enter-manually tab (:meth:`_on_add_reference_clicked`) so
+        picker's Enter-manually tab (:meth:`_on_add_reference_clicked`) and the
+        two-step create dialog (:meth:`_on_reference_picker_new_reference`) so
         both submission entry points route through identical
         persistence/dedup behavior. ``editor`` is duck-typed: either a
         ``ReferenceAddDialog`` wrapper or the ``ReferenceEntryEditor`` it
