@@ -18,6 +18,7 @@ from PySide6.QtCore import (
     QEvent,
     QPointF,
     QRect,
+    Signal,
 )
 from PySide6.QtGui import (
     QColor,
@@ -105,7 +106,7 @@ from .splitter_state import (
 )
 from .zoomable_image_widget import ZoomableImageLabel
 from .capture_state_bar import CaptureStateBar, readable_text_color
-from .styles import HUD_COLORS, objective_ring_outline
+from .styles import HUD_COLORS, STAGING_BORDER, objective_ring_outline
 from .live_lab_prep_panel import LiveLabPrepPanelMixin
 from .live_lab_raw import LiveLabRawMixin
 # The RAW edit/preview machinery lives in ui/live_lab_raw.py; these names stay
@@ -138,8 +139,77 @@ from .live_lab_raw import (  # noqa: F401
 )
 
 
+class _LiveAwayStrip:
+    """Live Lab's view of the shared strip while View or Measure holds it (stage 9d).
+
+    Live Lab keeps working in the background (captures arrive, previews
+    render). Its writes must not touch the strip another page shows, and its
+    reads must see Live Lab's own selection, never the other page's: the
+    capture bar and the RAW panel edit what Live Lab has selected. Thumbnail
+    cache and the per-observation unsaved images still go to the real strip.
+    """
+
+    def __init__(self, strip, keys=(), paths=()):
+        self._strip = strip
+        self._keys = set(keys)
+        self._paths = [str(path) for path in paths if path]
+        self.stale = False
+
+    # reads: Live Lab's own selection
+    def selected_keys(self):
+        return set(self._keys)
+
+    def selected_paths(self):
+        return list(self._paths)
+
+    def is_multi_select(self):
+        return True
+
+    # writes: remembered, applied when Live Lab takes the strip back
+    def select_image(self, image_id, center=True):
+        del center
+        self._keys = {image_id} if image_id is not None else set()
+        self._paths = []
+        self.stale = True
+
+    def select_paths(self, paths, center=True):
+        del center
+        self._paths = [str(path) for path in paths or [] if path]
+        self._keys = set()
+        self.stale = True
+
+    def set_items(self, *args, **kwargs):
+        self.stale = True
+
+    def clear(self):
+        self._keys, self._paths = set(), []
+        self.stale = True
+
+    def exit_edit_selection(self):
+        self._keys, self._paths = set(), []
+        self.stale = True
+
+    def center_on_key(self, *args, **kwargs):
+        pass
+
+    # shared state that is not the page's
+    def invalidate_pixmap_cache(self, *args, **kwargs):
+        return self._strip.invalidate_pixmap_cache(*args, **kwargs)
+
+    def set_staged_items(self, observation_id, items, *, render=True):
+        self._strip.set_staged_items(observation_id, items, render=render)
+
+    def __getattr__(self, name):
+        if name.startswith("set_"):
+            return lambda *args, **kwargs: None  # page behaviour, applied on reclaim
+        return getattr(self._strip, name)
+
+
 class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
     """Watch a capture folder and ingest new microscope images into one observation."""
+
+    # Unsaved captures per observation changed (the observation list shows them).
+    unsavedCountsChanged = Signal(object)
 
     SETTING_WATCH_DIR = "live_lab_watch_dir"
     SETTING_LAST_OBJECTIVE = "live_lab_last_objective"
@@ -337,6 +407,13 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         current_text_layout = QVBoxLayout()
         current_text_layout.setContentsMargins(0, 0, 0, 0)
         current_text_layout.setSpacing(4)
+        # Stage 9d: a running session keeps its observation while another is
+        # open in View, Measure or Analysis; say so here.
+        self.session_target_notice = QLabel(self.tr("Session's observation: captures are saved here"))
+        self.session_target_notice.setWordWrap(True)
+        self.session_target_notice.setStyleSheet(f"font-weight: 600; color: {STAGING_BORDER};")
+        self.session_target_notice.setVisible(False)
+        current_text_layout.addWidget(self.session_target_notice)
         self.current_observation_name_label = QLabel("\u2014")
         self.current_observation_name_label.setWordWrap(True)
         self.current_observation_name_label.setStyleSheet("font-weight: 600; font-size: 15px;")
@@ -447,20 +524,24 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
 
         self.pending_raw_frame = QFrame()
         self.pending_raw_frame.setFrameShape(QFrame.NoFrame)
-        self.pending_raw_frame.setObjectName("sectionCard")
-        self.pending_raw_frame.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.pending_raw_frame.setObjectName("pendingRawSaveBar")
+        self.pending_raw_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         pending_raw_layout = QHBoxLayout(self.pending_raw_frame)
         pending_raw_layout.setContentsMargins(8, 6, 8, 6)
         pending_raw_layout.setSpacing(6)
 
-        self.pending_raw_count_label = QLabel(self.tr("Pending RAW captures: 0"), self.pending_raw_frame)
-        self.pending_raw_count_label.setStyleSheet("font-weight: 600;")
-        self.pending_raw_count_label.setVisible(False)
+        # Stage 9d: saving happens in the strip under the viewer, not on the
+        # image: “N not saved · Save selected · Save to observation”.
+        self.pending_raw_count_label = QLabel(self.pending_raw_frame)
+        self.pending_raw_count_label.setStyleSheet(f"font-weight: 600; color: {STAGING_BORDER};")
+        pending_raw_layout.addWidget(self.pending_raw_count_label)
+        pending_raw_layout.addStretch(1)
 
         self.pending_raw_save_btn = QPushButton(self.tr("Save current"))
+        self.pending_raw_save_btn.setObjectName("outlineButton")
         self.pending_raw_save_btn.clicked.connect(self._commit_selected_pending_raw_capture)
         pending_raw_layout.addWidget(self.pending_raw_save_btn)
-        self.pending_raw_save_all_btn = QPushButton(self.tr("Save all"))
+        self.pending_raw_save_all_btn = QPushButton(self.tr("Save to observation"))
         self.pending_raw_save_all_btn.clicked.connect(self._commit_all_pending_raw_captures)
         pending_raw_layout.addWidget(self.pending_raw_save_all_btn)
         # Copy/paste of RAW settings lives in the RAW panel (stage 5): the image
@@ -548,17 +629,6 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         self.live_image_label.clicked.connect(self._on_live_image_clicked_for_background_wb)
         viewer_layout.addWidget(self.live_image_label, 1)
 
-        # Floating action tab pinned to the bottom-right of the image viewer.
-        self.pending_raw_frame.setParent(self.live_image_label)
-        self.pending_raw_frame.setAttribute(Qt.WA_StyledBackground, True)
-        self.pending_raw_frame.setStyleSheet(
-            "QFrame#sectionCard {"
-            " background-color: rgba(255, 255, 255, 215);"
-            " border: 1px solid rgba(0, 0, 0, 40);"
-            " border-radius: 8px;"
-            "}"
-        )
-        self.pending_raw_frame.raise_()
         self.live_image_label.installEventFilter(self)
         # Pin the "Use for calibration" bar to the image viewer as well; it
         # sits at the top-right so it doesn't collide with the pending-RAW
@@ -621,7 +691,6 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         # Forward wheel and native pinch-gesture events that land on either
         # floating action bar down to the image viewer beneath, so zooming
         # while the controls are visible still works.
-        self._install_viewer_gesture_forwarding(self.pending_raw_frame)
         self._install_viewer_gesture_forwarding(self.calibration_action_frame)
         self._install_viewer_gesture_forwarding(self.capture_state_bar)
         # New buttons (objectives loaded, contrast list changed in Preferences)
@@ -653,7 +722,17 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         content_splitter.setObjectName("gallerySplitter")
         content_splitter.setChildrenCollapsible(False)
         content_splitter.addWidget(viewer_panel)
-        content_splitter.addWidget(self.session_gallery)
+        # The strip's slot: the save row, then the strip (stage 9d). In the
+        # main window the strip is the one shared with View and Measure.
+        self.strip_slot = QWidget()
+        self.strip_slot.setObjectName("imageStripSlot")
+        self.strip_slot.setMinimumHeight(GALLERY_MIN_HEIGHT)
+        strip_slot_layout = QVBoxLayout(self.strip_slot)
+        strip_slot_layout.setContentsMargins(0, 0, 0, 0)
+        strip_slot_layout.setSpacing(4)
+        strip_slot_layout.addWidget(self.pending_raw_frame)
+        strip_slot_layout.addWidget(self.session_gallery, 1)
+        content_splitter.addWidget(self.strip_slot)
         content_splitter.setStretchFactor(0, 4)
         content_splitter.setStretchFactor(1, 1)
         install_persistent_splitter(
@@ -2495,6 +2574,7 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
     def set_target_observation(self, observation_id: int | None, display_name: str | None = None) -> None:
         del display_name
         if self.is_session_running():
+            self._update_session_target_notice()
             return
         try:
             obs_id = int(observation_id or 0)
@@ -2509,6 +2589,8 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             self._target_observation = None
         self._update_target_display()
         self._update_session_controls()
+        if self.holds_shared_strip():
+            self._refresh_session_gallery(reveal="preserve")
 
     def _scientific_name_text(self, observation: dict | None) -> str:
         obs = dict(observation or {})
@@ -2535,7 +2617,16 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             )
         return vernacular or scientific or self.tr("Unknown observation")
 
+    def _update_session_target_notice(self) -> None:
+        notice = getattr(self, "session_target_notice", None)
+        if notice is None:
+            return
+        active = int(getattr(getattr(self, "_main_window", None), "active_observation_id", 0) or 0)
+        target = int(self._target_observation_id or 0)
+        notice.setVisible(bool(self.is_session_running() and target and active and active != target))
+
     def _update_target_display(self) -> None:
+        self._update_session_target_notice()
         observation = self._target_observation
         location_label = getattr(self, "current_observation_location_label", None)
         if observation:
@@ -3309,6 +3400,121 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             observation_id=observation_id,
         )
 
+    # -- the shared strip (stage 9d) ------------------------------------------
+
+    def adopt_shared_strip(self, strip) -> None:
+        """Use the main window's strip (shared with View and Measure) from now on."""
+        own = self.session_gallery
+        self._own_session_gallery = own
+        self._shared_strip = strip
+        channel = strip.channel("live", accepts_staged=True)
+        channel.imageClicked.connect(self._on_session_gallery_clicked)
+        channel.selectionChanged.connect(self._on_session_gallery_selection_changed)
+        channel.itemsReordered.connect(self._on_session_gallery_items_reordered)
+        channel.deleteImagesRequested.connect(self._on_session_gallery_delete_images_requested)
+        channel.editRequested.connect(self._on_session_gallery_edit_requested)
+        layout = self.strip_slot.layout()
+        layout.removeWidget(own)
+        own.hide()
+        if self._hint_controller is not None:
+            self._register_hint_widget(
+                strip,
+                self.tr("Unsaved captures come first, with an orange border; save them with Save to observation."),
+            )
+        self.session_gallery = _LiveAwayStrip(strip)
+
+    def _unsaved_count_text(self, count: int) -> str:
+        # Here, not in the RAW mixin: a plural tr() from a mixin method finds no translation.
+        return self.tr("%n not saved", "", int(count))
+
+    def unsaved_counts(self) -> dict[int, int]:
+        """Unsaved captures per observation (the observation list shows them)."""
+        counts: dict[int, int] = {}
+        for capture in getattr(self, "_pending_raw_captures", []) or []:
+            observation_id = int(getattr(capture, "observation_id", 0) or 0)
+            if observation_id > 0:
+                counts[observation_id] = counts.get(observation_id, 0) + 1
+        return counts
+
+    def holds_shared_strip(self) -> bool:
+        strip = getattr(self, "_shared_strip", None)
+        return strip is not None and self.session_gallery is strip
+
+    def reclaim_shared_strip(self) -> None:
+        """Images shows: the strip shows the session's observation, unsaved captures first."""
+        strip = getattr(self, "_shared_strip", None)
+        if strip is None:
+            return
+        away = self.session_gallery if isinstance(self.session_gallery, _LiveAwayStrip) else None
+        strip.set_active_channel("live")
+        strip.set_context_actions(change_settings=False, move_to_observation=False, delete_cloud_copy=False)
+        strip.set_page_behaviour(
+            toggle_on_plain_click=True, clear_on_background_click=True, reveal_mode="nudge", reorderable=False,
+        )
+        layout = self.strip_slot.layout()
+        if layout.indexOf(strip) < 0:
+            layout.addWidget(strip, 1)
+        strip.show()
+        self.session_gallery = strip
+        # Live Lab's own selection, not the one the other page left.
+        if away is not None and away.selected_paths():
+            strip.select_paths(away.selected_paths(), center=False)
+        else:
+            keys = list(away.selected_keys()) if away is not None else []
+            strip.select_image(keys[0] if len(keys) == 1 else None, center=False)
+        self._refresh_session_gallery(reveal="preserve")
+
+    def release_shared_strip(self) -> None:
+        """Another page takes the strip: remember Live Lab's selection, leave none behind."""
+        strip = getattr(self, "_shared_strip", None)
+        if strip is None or self.session_gallery is not strip:
+            return
+        self.session_gallery = _LiveAwayStrip(strip, strip.selected_keys(), strip.selected_paths())
+        strip.select_image(None, center=False)
+
+    def _refresh_shared_strip(self, *, reveal: str) -> None:
+        """The session's observation, its unsaved captures first (shared strip)."""
+        strip = self._shared_strip
+        pending_items, selected_pending_key = self._pending_raw_gallery_items()
+        observation_of = {
+            self._pending_raw_gallery_key(capture): int(getattr(capture, "observation_id", 0) or 0)
+            for capture in getattr(self, "_pending_raw_captures", []) or []
+        }
+        by_observation: dict[int, list[dict]] = {}
+        for item in pending_items:
+            observation_id = observation_of.get(item.get("id"), 0) or int(self._target_observation_id or 0)
+            if observation_id > 0:
+                by_observation.setdefault(observation_id, []).append(item)
+        # When Images holds the strip it renders once below, after the update.
+        render = not self.holds_shared_strip()
+        known = set(getattr(self, "_staged_observation_ids", set()))
+        for observation_id in known - set(by_observation):
+            self.session_gallery.set_staged_items(observation_id, [], render=render)
+        for observation_id, items in by_observation.items():
+            self.session_gallery.set_staged_items(observation_id, items, render=render)
+        self._staged_observation_ids = set(by_observation)
+        emitter = getattr(self, "unsavedCountsChanged", None)
+        if emitter is not None:
+            emitter.emit(self.unsaved_counts())
+        if not self.holds_shared_strip():
+            self.session_gallery.set_items()  # marks it to refresh when Images shows
+            return
+        target = int(self._target_observation_id or 0)
+        if target <= 0:
+            strip.clear()
+            return
+        # Saved images change too (a save adds one), so reload them each time.
+        strip.set_observation_id(target, reveal="preserve")
+        if len(strip.selected_keys()) > 1:
+            return  # a multi-selection survives the reload (set_items keeps it)
+        selected_key = selected_pending_key
+        if selected_key is None and self._selected_session_image_id is not None:
+            selected_key = self._selected_session_image_id
+        if selected_key is not None and getattr(self, "_sidebar_binds_to_selection", False):
+            strip.select_image(selected_key, center=reveal == "new_at_end")
+        elif selected_pending_key is not None and reveal == "new_at_end":
+            strip.select_image(selected_pending_key, center=True)
+
     def _refresh_session_gallery(self, *, reveal: str = "preserve") -> None:
         # A pending "new capture arrived" flag overrides the caller's mode.
         # It's set once by the ingest paths and consumed on the next refresh
@@ -3317,6 +3523,12 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         if getattr(self, "_pending_reveal_new_at_end", False):
             reveal = "new_at_end"
             self._pending_reveal_new_at_end = False
+        if getattr(self, "_shared_strip", None) is not None:
+            self._refresh_shared_strip(reveal=reveal)
+            update_hint = getattr(self, "_update_edit_selection_hint", None)
+            if callable(update_hint):
+                update_hint()
+            return
         start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         gallery = getattr(self, "session_gallery", None)
         if gallery is None:
@@ -3406,7 +3618,7 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         # should apply to the clicked image(s) rather than the next capture.
         self._sidebar_binds_to_selection = (
             bool(selected_keys) if is_multi_select else bool(clicked_selected)
-        )
+        ) and LiveLabTab._selection_is_this_sessions(self)  # images saved earlier are view-only (stage 9d)
         self._raw_panel_shows_next_capture = False
         current_edit_session = getattr(self, "_raw_edit_session", None)
         try:
@@ -3506,11 +3718,30 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         if callable(opener):
             opener(selected_image_path=path)
 
+    def _selection_is_this_sessions(self) -> bool:
+        """Shared strip: the selection holds an unsaved capture or one saved this session.
+
+        Images also shows images saved earlier (stage 9d); they are view-only
+        here, so the capture bar keeps editing the next capture.
+        """
+        if getattr(self, "_shared_strip", None) is None:
+            return True
+        session_ids = {int(value) for value in getattr(self, "_session_image_ids", []) or []}
+        for key in self._session_gallery_selected_keys():
+            if isinstance(key, int):
+                if key in session_ids:
+                    return True
+            elif self._pending_raw_capture_index_for_key(key) is not None:
+                return True
+        return False
+
     def _on_session_gallery_selection_changed(self, selected_paths: list[str]) -> None:
         try:
             selected_count = len([path for path in selected_paths or [] if path])
         except Exception:
             selected_count = 0
+        if selected_count and not LiveLabTab._selection_is_this_sessions(self):
+            selected_count = 0  # view-only: edits go to the next capture
         # Multi-selection or clearing the selection are both user actions.
         # Any surviving selection keeps the sidebar bound to those images; an
         # empty selection releases it so future edits queue for the next
@@ -3663,9 +3894,20 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         deleted = False
         for pending_index in sorted(pending_indices, reverse=True):
             deleted = self._delete_session_gallery_pending_capture(int(pending_index)) or deleted
+        self._note_earlier_images_not_deleted(committed_ids)
         if committed_ids:
             deleted = self._delete_committed_session_images(committed_ids) or deleted
         return deleted
+
+    def _note_earlier_images_not_deleted(self, image_ids) -> None:
+        """Images shows images saved before this session too; it deletes only this session's."""
+        session_ids = {int(value) for value in getattr(self, "_session_image_ids", []) or []}
+        if any(int(image_id) not in session_ids for image_id in image_ids or []):
+            self._show_status(
+                self.tr("Images saved before this session are deleted in View or Measure."),
+                tone="info",
+                timeout_ms=5000,
+            )
 
     def _delete_session_gallery_item(self, key) -> bool:
         pending_index = self._pending_raw_capture_index_for_key(key)
@@ -3677,6 +3919,7 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             image_id = 0
         if image_id <= 0:
             return False
+        self._note_earlier_images_not_deleted([image_id])
         return self._delete_session_gallery_committed_image(image_id)
 
     def _delete_session_gallery_pending_capture(self, pending_index: int) -> bool:
@@ -4022,7 +4265,15 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             refresh_images = getattr(self._main_window, "refresh_observation_images", None)
             if callable(refresh_images):
                 images_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
-                refresh_images(select_image_id=image_id)
+                on_measure = getattr(self._main_window, "_strip_on_measure", None)
+                if callable(on_measure) and on_measure() and getattr(self, "_shared_strip", None) is not None:
+                    # Measure holds the shared strip (stage 9d): keep what is open and selected there.
+                    refresh_images(
+                        select_image_id=getattr(self._main_window, "current_image_id", None),
+                        preserve_selection=True,
+                    )
+                else:
+                    refresh_images(select_image_id=image_id)
                 _raw_timing_log("main window refresh observation images", images_start, detail=f"image_id={image_id}")
             update_measurements = getattr(self._main_window, "update_measurements_table", None)
             if callable(update_measurements):

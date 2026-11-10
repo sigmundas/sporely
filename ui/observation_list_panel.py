@@ -13,7 +13,7 @@ as a left drawer in Images, Measure and Analysis.
 from __future__ import annotations
 
 from PySide6.QtCore import QModelIndex, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QPainter, QPalette
+from PySide6.QtGui import QColor, QPainter, QPalette
 from PySide6.QtWidgets import (
     QAbstractButton,
     QAbstractItemView,
@@ -28,6 +28,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from .styles import STAGING_BORDER
 
 # Columns of the Observations table this list reads (ui/observations_tab.py).
 ID_COLUMN = 0
@@ -71,7 +73,13 @@ def observation_list_number(index: QModelIndex) -> str:
 
 
 class ObservationListDelegate(QStyledItemDelegate):
-    """Number (muted) and name on one line, like the mockup's list."""
+    """Number (muted) and name on one line, like the mockup's list.
+
+    An observation with unsaved Live captures shows their count at the right
+    in the staging orange (stage 9d).
+    """
+
+    unsaved_counts: dict[int, int] = {}
 
     PADDING_X = 10
     PADDING_Y = 7
@@ -109,7 +117,24 @@ class ObservationListDelegate(QStyledItemDelegate):
             number,
         )
         name_left = text_rect.left() + number_width + (self.GAP if number else 0)
-        name_rect = QRect(name_left, text_rect.top(), max(0, text_rect.right() - name_left), text_rect.height())
+        right = text_rect.right()
+        try:
+            observation_id = int(index.siblingAtColumn(ID_COLUMN).data(Qt.UserRole) or 0)
+        except (TypeError, ValueError):
+            observation_id = 0
+        unsaved = int(self.unsaved_counts.get(observation_id, 0) or 0)
+        if unsaved > 0:
+            badge = str(unsaved)
+            badge_width = metrics.horizontalAdvance(badge) + 12
+            badge_rect = QRect(right - badge_width + 1, text_rect.center().y() - 9, badge_width, 18)
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(STAGING_BORDER))
+            painter.drawRoundedRect(badge_rect, 9, 9)
+            painter.setPen(QColor("#ffffff"))
+            painter.drawText(badge_rect, Qt.AlignCenter, badge)
+            right = badge_rect.left() - self.GAP
+        name_rect = QRect(name_left, text_rect.top(), max(0, right - name_left), text_rect.height())
         painter.setPen(palette.color(QPalette.HighlightedText if selected else QPalette.Text))
         painter.drawText(
             name_rect,
@@ -181,6 +206,15 @@ class ObservationListPanel(QWidget):
         self.list_view.clicked.connect(lambda index: self.rowChosen.emit(index.row()))
         self.list_view.rowChosen.connect(self.rowChosen)
         layout.addWidget(self.list_view, 1)
+
+    def set_unsaved_counts(self, counts: dict[int, int]) -> None:
+        """Unsaved Live captures per observation, shown as a count on its row."""
+        delegate = self.list_view.itemDelegate()
+        delegate.unsaved_counts = {int(key): int(value) for key, value in dict(counts or {}).items() if value}
+        self.list_view.viewport().update()
+
+    def unsaved_counts(self) -> dict[int, int]:
+        return dict(self.list_view.itemDelegate().unsaved_counts)
 
     def set_source_model(self, model) -> None:
         self.list_view.setModel(model)

@@ -2334,12 +2334,15 @@ def test_live_lab_review_queue_is_placed_in_the_main_viewer_area(monkeypatch, qa
 
     assert not tab.live_image_label.isAncestorOf(tab.start_stop_btn)  # in the observation card
     assert tab.start_stop_btn.text() == "Start Session"
-    assert tab.pending_raw_frame.parentWidget() is tab.live_image_label
+    # Stage 9d: saving left the image; it is a row above the strip.
+    assert not tab.live_image_label.isAncestorOf(tab.pending_raw_frame)
+    assert tab.strip_slot.isAncestorOf(tab.pending_raw_frame)
     assert tab.pending_raw_frame.isVisible() is True
     assert tab.pending_raw_frame.sizeHint().height() <= 96
-    assert tab.pending_raw_count_label.isVisible() is False
+    assert tab.pending_raw_count_label.isVisible() is True
+    assert tab.pending_raw_count_label.text() == "1 not saved"
     assert tab.pending_raw_save_btn.text() == "Save current"
-    assert tab.pending_raw_save_all_btn.text() == "Save all"
+    assert tab.pending_raw_save_all_btn.text() == "Save to observation"
     assert tab.pending_raw_copy_btn.text() == "Copy settings"
     assert tab.pending_raw_paste_btn.text() == "Paste settings"
     assert tab.pending_raw_paste_btn.isVisible() is False

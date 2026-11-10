@@ -552,7 +552,11 @@ class GalleryChannel(QObject):
 
     A strip shared by several pages forwards its signals only to the active
     channel, so a click acts on the page shown. Same signals as the strip.
+    ``accepts_staged``: the page that owns the unsaved images (Live, 9d) also
+    gets them in delete and the other saved-image actions.
     """
+
+    accepts_staged = False
 
     imageClicked = Signal(object, str)
     imageSelected = Signal(object, str)
@@ -758,7 +762,7 @@ class ImageGalleryWidget(QGroupBox):
 
     # -- a strip shared by pages (stage 9c) -----------------------------------
 
-    def channel(self, key: str) -> GalleryChannel:
+    def channel(self, key: str, *, accepts_staged: bool = False) -> GalleryChannel:
         """The signals as seen by page ``key``; the first channel starts active."""
         if not self._channels:
             for name in _CHANNEL_SIGNALS:
@@ -766,6 +770,7 @@ class ImageGalleryWidget(QGroupBox):
         channel = self._channels.get(key)
         if channel is None:
             channel = GalleryChannel(self)
+            channel.accepts_staged = bool(accepts_staged)
             self._channels[key] = channel
             if self._active_channel is None:
                 self._active_channel = key
@@ -787,7 +792,7 @@ class ImageGalleryWidget(QGroupBox):
         channel = self._channels.get(self._active_channel or "")
         if channel is None:
             return
-        if name in self._SAVED_IMAGE_ACTIONS and args:
+        if name in self._SAVED_IMAGE_ACTIONS and args and not channel.accepts_staged:
             staged_keys = {
                 item.get("id") if item.get("id") is not None else item.get("filepath")
                 for item in self._items
@@ -814,11 +819,20 @@ class ImageGalleryWidget(QGroupBox):
         if delete_cloud_copy is not None:
             self._show_delete_cloud_copy = bool(delete_cloud_copy)
 
+    def set_page_behaviour(
+        self, *, toggle_on_plain_click: bool, clear_on_background_click: bool, reveal_mode: str, reorderable: bool,
+    ) -> None:
+        """How clicks, reveal and dragging behave on the page that holds the strip."""
+        self.set_toggle_selection_on_plain_click(toggle_on_plain_click)
+        self.set_clear_selection_on_background_click(clear_on_background_click)
+        self.set_center_reveal_mode(reveal_mode)
+        self.set_reorderable(reorderable)
+
     def shown_observation_id(self) -> int | None:
         """The observation whose images the strip shows, if it shows one."""
         return self._shown_observation_id
 
-    def set_staged_items(self, observation_id: int, items: Iterable[dict]) -> None:
+    def set_staged_items(self, observation_id: int, items: Iterable[dict], *, render: bool = True) -> None:
         """Unsaved images for ``observation_id``: shown first, with an orange border.
 
         They stay with that observation and show whenever its images do.
@@ -837,7 +851,7 @@ class ImageGalleryWidget(QGroupBox):
             self._staged_by_observation[key] = staged
         else:
             self._staged_by_observation.pop(key, None)
-        if self._shown_observation_id == key:
+        if render and self._shown_observation_id == key:
             shown = key
             self.set_items(staged + list(self._observation_base_items), reveal="preserve")
             self._shown_observation_id = shown
@@ -1793,7 +1807,11 @@ class ImageGalleryWidget(QGroupBox):
             for item in self._items:
                 item_id = item.get("id")
                 key = item_id if item_id is not None else item.get("filepath")
-                is_checked = bool(item_id is not None and int(item_id) in normalized_ids)
+                try:
+                    numeric_id = int(item_id) if item_id is not None else None
+                except (TypeError, ValueError):
+                    numeric_id = None  # an unsaved capture ("pending:…"): not in the cloud
+                is_checked = bool(numeric_id is not None and numeric_id in normalized_ids)
                 self._publish_checked_by_key[key] = is_checked
                 item["publish_selected"] = is_checked
             for frame in self._frames:

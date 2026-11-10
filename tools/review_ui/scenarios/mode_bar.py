@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QWidget
 
 from ..context import ReviewContext
 from ..registry import ReviewScenario, ScenarioRegistry
-from ..live_lab_harness import review_profile
+from ..live_lab_harness import create_observation, review_profile
 from .measure_tab import _seed, _settle
 
 
@@ -90,7 +90,74 @@ def _staged(context: ReviewContext, *, theme_dark: bool = False) -> QWidget:
     return window
 
 
+class _DrainingWindow(QWidget):
+    """Hosts the main window; closing stops Live Lab's session and waits for its RAW work."""
+
+    def __init__(self, window, parent=None) -> None:
+        from PySide6.QtWidgets import QVBoxLayout
+
+        super().__init__(parent)
+        self.window_under_review = window
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(window)
+
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        from ..live_lab_harness import drain_live_lab, pump_until
+
+        drain_live_lab(self.window_under_review.live_lab_tab, pump_until)
+        super().closeEvent(event)
+
+
+def _images_live(context: ReviewContext) -> QWidget:
+    """Bilder with a running session: two unsaved RAW captures first, then three saved images (stage 9d)."""
+    from database.models import ImageDB
+    from ui.main_window import MainWindow
+
+    from ..live_lab_harness import FolderDropWatcher, pump_until
+    from .live_lab import _fresh_profile, _reset_live_lab_settings
+
+    profile = _fresh_profile(context, "images-live")
+    observation_id = create_observation(profile, "images-live")
+    for n in range(3):
+        ImageDB.add_image(observation_id, str(profile.jpeg(f"saved{n}.JPG", seed=20 + n)), "microscope",
+                          scale=0.1, objective_name="100X", contrast="DIC")
+    _reset_live_lab_settings(session_mode="live", raw_mode="review", watch_dir=str(profile.watch_dir))
+    window = MainWindow()
+    host = _DrainingWindow(window)
+    host.resize(1500, 950)
+    host.show()
+    _settle(0.3)
+    window.on_observation_selected(observation_id, "Inocybe geophylla", switch_tab=False)
+    window.tab_widget.setCurrentWidget(window.live_lab_tab)
+    _settle(0.3)
+    live = window.live_lab_tab
+    live.start_session()
+    pump_until(live.is_session_running)
+    for name in ("P1010401.ORF", "P1010402.ORF"):
+        before = len(live._pending_raw_captures)
+        FolderDropWatcher.created[-1].drop(profile.raw(name))
+        pump_until(lambda: len(live._pending_raw_captures) == before + 1)
+    pump_until(lambda: not live.pending_raw_frame.isHidden())
+    _settle(0.6)
+    return host
+
+
 def register_mode_bar_scenarios(registry: ScenarioRegistry) -> None:
+    for theme in ("light", "dark"):
+        suffix = "" if theme == "light" else "-dark"
+        registry.register(
+            ReviewScenario(
+                id=f"images.live{suffix}",
+                group="mode-bar",
+                title=f"Bilder with unsaved captures (nb{', dark' if theme == 'dark' else ''})",
+                description="The shared strip in Bilder: two unsaved RAW captures first, then the saved images; saving above the strip (stage 9d).",
+                build=lambda context: _images_live(context),
+                viewport=(1500, 950),
+                locale="nb_NO",
+                theme=theme,
+            )
+        )
     for theme in ("light", "dark"):
         suffix = "" if theme == "light" else "-dark"
         registry.register(

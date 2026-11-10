@@ -8639,6 +8639,9 @@ class ObservationsTab(QWidget):
         """View shows again: the strip shows View's selection."""
         self.gallery_widget.set_active_channel("view")
         self.gallery_widget.set_context_actions(change_settings=False, move_to_observation=True, delete_cloud_copy=True)
+        self.gallery_widget.set_page_behaviour(
+            toggle_on_plain_click=False, clear_on_background_click=False, reveal_mode="precise", reorderable=True,
+        )
         layout = self.gallery_slot.layout()
         if layout.indexOf(self.gallery_widget) < 0:
             layout.addWidget(self.gallery_widget)
@@ -8653,7 +8656,9 @@ class ObservationsTab(QWidget):
         super().showEvent(event)
         if getattr(self, "_image_browser_refresh_deferred", False):
             self._image_browser_refresh_deferred = False
-            if self._current_view_mode() == self.VIEW_MODE_IMAGES:
+            # When View skipped strip writes, taking the strip back reloads the
+            # selection and redraws the image anyway; once is enough.
+            if self._current_view_mode() == self.VIEW_MODE_IMAGES and not getattr(self, "_strip_stale", False):
                 QTimer.singleShot(0, self, self._refresh_image_browser_for_current_selection)
 
     def _on_gallery_observation_loaded(self, observation_id: object) -> None:

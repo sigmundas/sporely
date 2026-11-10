@@ -3914,7 +3914,8 @@ class LiveLabRawMixin:
 
         count_label = getattr(self, "pending_raw_count_label", None)
         if count_label is not None:
-            count_label.setText(self.tr("Pending RAW captures: {count}").format(count=count))
+            count_text = getattr(self, "_unsaved_count_text", None)
+            count_label.setText(count_text(count) if callable(count_text) else str(count))
 
         if not bool(getattr(self, "_suppress_pending_raw_gallery_refresh", False)):
             gallery_start = time.perf_counter() if _RAW_DEBUG_TIMING else None

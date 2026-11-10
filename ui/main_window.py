@@ -6070,6 +6070,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.refresh_gallery_filter_options()
 
         self.live_lab_tab = LiveLabTab(self)
+        # Stage 9d: Images (Live Lab) shares the strip with View and Measure.
+        self.live_lab_tab.adopt_shared_strip(self.measure_gallery)
         self.tab_widget.addTab(self.live_lab_tab, self.tr("Live Lab ({alt}L)").format(alt=_ALT_LABEL))
 
         self.ingestion_hub_tab = IngestionHubTab(self)
@@ -6124,6 +6126,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         main_layout.addWidget(pages, 1)
         self.observation_list_panel = ObservationListPanel()
         self.observation_list_panel.set_source_model(table.model())
+        self.live_lab_tab.unsavedCountsChanged.connect(self.observation_list_panel.set_unsaved_counts)
+        self.observation_list_panel.set_unsaved_counts(self.live_lab_tab.unsaved_counts())
         self.observation_list_panel.rowChosen.connect(self._on_observation_list_row_chosen)
         self.observation_list_panel.tableRequested.connect(self._on_observation_list_table_requested)
         self.observation_list_panel.newRequested.connect(self._on_observation_list_new_requested)
@@ -17502,12 +17506,21 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         # The page that held it is already hidden; its geometry is kept.
         height = gallery.height()
-        if index == 0:
+        live = getattr(self, "live_lab_tab", None)
+        if index in (0, 1, 3) and live is not None and hasattr(live, "release_shared_strip") and index != 3:
+            live.release_shared_strip()
+        if index == 3 and live is not None and hasattr(live, "reclaim_shared_strip"):
+            live.reclaim_shared_strip()
+            target_splitter, slot = None, live.strip_slot
+        elif index == 0:
             self.observations_tab.reclaim_strip()
             target_splitter, slot = None, self.observations_tab.gallery_slot
         elif index == 1:
             gallery.set_active_channel("measure")
             gallery.set_context_actions(change_settings=True, move_to_observation=False, delete_cloud_copy=False)
+            gallery.set_page_behaviour(
+                toggle_on_plain_click=False, clear_on_background_click=False, reveal_mode="precise", reorderable=True,
+            )
             layout = self.measure_strip_slot.layout()
             if layout.indexOf(gallery) < 0:
                 layout.addWidget(gallery)
@@ -17567,6 +17580,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                     self._show_measure_image_for_selected_observation(selected_image_id)
         if index == 3 and hasattr(self, "live_lab_tab"):
             self.live_lab_tab.sync_from_active_observation()
+            if self.live_lab_tab.holds_shared_strip():
+                self.live_lab_tab._refresh_session_gallery(reveal="preserve")  # the target may have changed
         if index == 4 and hasattr(self, "ingestion_hub_tab"):
             try:
                 self.ingestion_hub_tab.refresh_observation_queue(
