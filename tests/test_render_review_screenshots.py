@@ -165,7 +165,9 @@ MEASURE_TAB_IDS = {
     f"measure.{state}{suffix}"
     for state in ("tab", "view-drawer", "info-drawer")
     for suffix in ("", "-dark")
-} | {"measure.tab-de", "measure.tab-small", "measure.view-drawer-de"}
+} | {"measure.tab-de", "measure.tab-small", "measure.view-drawer-de"} | {
+    "measure.microscope-settings", "measure.microscope-settings-dark", "measure.microscope-settings-de",
+}
 ANALYSIS_TAB_IDS = {
     "analysis.tab", "analysis.tab-dark", "analysis.tab-small",
     "analysis.reference-drawer", "analysis.reference-drawer-dark", "analysis.reference-drawer-de",

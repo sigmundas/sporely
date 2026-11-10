@@ -567,6 +567,8 @@ class ImageGalleryWidget(QGroupBox):
     # ``cloud_delete_eligible_image_ids``.
     deleteCloudCopiesRequested = Signal(list)
     moveToObservationRequested = Signal(list)
+    # The selected image keys, for "Change microscope settings…" (stage 8).
+    changeSettingsRequested = Signal(list)
     selectionChanged = Signal(list)
     publishSelectionChanged = Signal(object)
     itemsReordered = Signal(object)
@@ -589,6 +591,7 @@ class ImageGalleryWidget(QGroupBox):
         publish_checkbox_hint: str = "",
         delete_menu_label_single: str = "",
         delete_menu_label_multi: str = "",
+        show_change_settings: bool = False,
     ) -> None:
         super().__init__(title, parent)
         self._gallery_title = str(title or "")
@@ -608,6 +611,7 @@ class ImageGalleryWidget(QGroupBox):
         self._show_publish_checkbox = bool(show_publish_checkbox)
         self._show_move_to_observation = bool(show_move_to_observation)
         self._show_edit = bool(show_edit)
+        self._show_change_settings = bool(show_change_settings)
         self._show_delete_cloud_copy = bool(show_delete_cloud_copy)
         self._publish_checkbox_hint = str(publish_checkbox_hint or "").strip()
         # Per-instance delete labels — lets callers say "Remove from batch"
@@ -1410,6 +1414,9 @@ class ImageGalleryWidget(QGroupBox):
         edit_action = None
         if self._show_edit:
             edit_action = menu.addAction(self.tr("Edit photo"))
+        settings_action = None
+        if self._show_change_settings:
+            settings_action = menu.addAction(self.tr("Change microscope settings…"))
         delete_action = None
         if self._show_delete:
             if len(selected_keys) > 1:
@@ -1441,6 +1448,9 @@ class ImageGalleryWidget(QGroupBox):
             image_id = getattr(frame, "image_id", None)
             image_path = getattr(frame, "image_path", "") or ""
             self.editRequested.emit(image_id, image_path)
+            return
+        if settings_action is not None and chosen == settings_action:
+            self.changeSettingsRequested.emit(list(selected_keys))
             return
         if delete_action is not None and chosen == delete_action:
             self.deleteImagesRequested.emit(list(selected_keys))

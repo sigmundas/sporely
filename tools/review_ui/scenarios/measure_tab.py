@@ -72,7 +72,47 @@ def _measure_tab(context: ReviewContext, *, size: tuple[int, int] = (1500, 950),
     return window
 
 
+SETTINGS_OBJECTIVES = {
+    "100X": {"name": "100X", "magnification": "100X", "microns_per_pixel": 0.1},
+    "40X": {"name": "40X", "magnification": "40X", "microns_per_pixel": 0.25},
+    "63X": {"name": "63X", "magnification": "63X", "microns_per_pixel": 0.16},
+}
+
+
+def _microscope_settings(context: ReviewContext) -> QWidget:
+    """The batch dialog (stage 8) for two microscope images and a field image, 40X chosen."""
+    from database.models import ImageDB
+    from ui.microscope_settings_dialog import MicroscopeSettingsDialog
+
+    observation_id, image_id = _seed(context, note=None)
+    profile = review_profile(context)
+    second = int(ImageDB.add_image(
+        observation_id, str(profile.jpeg("M-second.JPG", seed=4)), "microscope",
+        scale=0.16, objective_name="63X", contrast="DIC", mount_medium="KOH",
+    ))
+    field = int(ImageDB.add_image(observation_id, str(profile.jpeg("F-field.JPG", seed=5)), "field"))
+    dialog = MicroscopeSettingsDialog(None, [image_id, second, field], objectives=SETTINGS_OBJECTIVES)
+    dialog.objective_combo.setCurrentIndex(dialog.objective_combo.findData("40X"))
+    dialog.show()
+    _settle(0.3)
+    return dialog
+
+
 def register_measure_tab_scenarios(registry: ScenarioRegistry) -> None:
+    for suffix, theme, locale in (("", "light", "nb_NO"), ("-dark", "dark", "nb_NO"), ("-de", "light", "de_DE")):
+        registry.register(
+            ReviewScenario(
+                id=f"measure.microscope-settings{suffix}",
+                group="measure",
+                title=f"Change microscope settings ({locale}{', dark' if theme == 'dark' else ''})",
+                description="The batch dialog from Mål's gallery: three images selected, 40X chosen (stage 8).",
+                build=lambda context: _microscope_settings(context),
+                viewport=(560, 360),
+                natural_size=True,
+                locale=locale,
+                theme=theme,
+            )
+        )
     for theme in ("light", "dark"):
         suffix = "" if theme == "light" else "-dark"
         registry.register(

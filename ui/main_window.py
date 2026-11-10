@@ -259,6 +259,7 @@ from .collapsible_section import CollapsibleSection as SummarySection, ElidedLab
 from .side_drawer import SideDrawer
 from .reference_picker_drawer import ReferencePickerPage
 from .reference_create_dialog import ReferenceCreateDialog
+from .microscope_settings_dialog import MicroscopeSettingsDialog
 from .segmented_selector import SegmentedSelector
 from .styles import get_style, apply_palette, pt, _is_dark
 from .window_state import GeometryMixin
@@ -7745,6 +7746,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             default_height=GALLERY_DEFAULT_HEIGHT,
             show_publish_checkbox=True,
             publish_checkbox_hint=self.tr("Keep image in Sporely Cloud"),
+            show_change_settings=True,
         )
         self.measure_gallery.set_multi_select(True)
         self.measure_gallery.set_reorderable(True)
@@ -7754,6 +7756,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.measure_gallery.publishSelectionChanged.connect(self._on_measure_gallery_publish_selection_changed)
         self.measure_gallery.itemsReordered.connect(self._on_measure_gallery_items_reordered)
         self.measure_gallery.selectionChanged.connect(self._on_measure_gallery_selection_changed)
+        self.measure_gallery.changeSettingsRequested.connect(self._on_measure_gallery_change_settings_requested)
 
         self.measure_image_splitter = QSplitter(Qt.Vertical)
         self.measure_image_splitter.setObjectName("gallerySplitter")
@@ -14596,6 +14599,33 @@ class MainWindow(GeometryMixin, QMainWindow):
             controller.set_hint(self.tr("Selected images will be edited"), tone="info")
         else:
             controller.set_hint("")
+
+    def _on_measure_gallery_change_settings_requested(self, keys) -> None:
+        """"Change microscope settings…" on the selected images (stage 8)."""
+        image_ids = [int(key) for key in keys or [] if isinstance(key, int) or str(key).isdigit()]
+        if not image_ids:
+            return
+        dialog = MicroscopeSettingsDialog(self, image_ids, objectives=self.load_objective_definitions())
+        try:
+            if dialog.exec() != QDialog.Accepted or dialog.outcome is None or not dialog.outcome.image_ids:
+                return
+            outcome = dialog.outcome
+        finally:
+            dialog.deleteLater()
+        # Scale, tags, measurements, statistics and the gallery all follow
+        # the database again, as after saving a calibration; then back to the
+        # image that was open (the reload starts from the first image).
+        current_image_id = self.current_image_id
+        self._refresh_active_observation_after_calibration()
+        if current_image_id and current_image_id != self.current_image_id:
+            self._on_measure_gallery_clicked(current_image_id, "")
+        self._notify_measurements_changed()
+        message = self.tr("Changed %n image(s).", "", len(outcome.image_ids))
+        if outcome.measurements:
+            message += " " + self.tr("%n measurement(s) recalculated.", "", outcome.measurements)
+        controller = getattr(self, "_hint_controller", None)
+        if controller is not None:
+            controller.set_status(message, timeout_ms=6000, tone="success")
 
     def _on_measure_gallery_edit_requested(self, _image_id, filepath: str) -> None:
         path = (filepath or "").strip() or None
