@@ -501,11 +501,10 @@ owner has answered these:
     marks the observation dirty; measurements push per row from it). No
     contract change. Checking one batch edit against the real account is
     human-gated.
-  - **Review flag:** open. The owner questioned it (2026-11-10): the change
-    is confirmed in a prompt and measurements are recomputed from their
-    pixel points, so the values are exact, not guesses. Proposal: no flag
-    and no schema change; the confirmation with counts and the log are the
-    safeguards.
+  - **Review flag:** none (owner, 2026-11-10). Measurements are recomputed
+    from their pixel points, so the values are exact; the confirmation with
+    counts and the log are the safeguards. No schema change. This replaces
+    “flagged” in Done when.
 
 ### 9 — Observation workspace (the structural change)
 
@@ -750,6 +749,7 @@ landed through PRs before the branch existed), the commit that brought it into
 | 7a, 7b | `b2adcd7`, `a9c818f` | — | Agent-verified: (a) renderer scenarios `analysis.*` build a real MainWindow; (b) “Legg til referanse…” opens a right drawer over the plot: search, Bibliotek / Fellesskap, a quieter “Mine observasjoner”, “Kun denne taksonen” on by default; ticking attaches as Sammenlignet and plots, unticking detaches; the expanded row has the summary, the role (changed in place) and “Detaljer…” (opens the library manager on that set). Attachments are read from the database for the active observation. Fellesskap, Mine observasjoner and Ny referanse still open the old dialog on that tab (7c, 7d). qtbot tests in `tests/test_reference_drawer.py`; Codex challenge review: 6 findings fixed with regression tests |
 | 7c | `a00adbd`, `0c5d9f5` | — | Owner 2026-11-09: the drawer was far from its button; it now opens at the plot's left edge beside “Legg til referanse…” (drawer rule: next to what opened them). Agent-verified: Fellesskap and Mine observasjoner tick like the Library (plot series, not attachments); Fellesskap loads a dataset's detail from Sporely Cloud on tick, then plots the summary or raw points; ticks follow the comparison list and observation switches. Only “Ny referanse…” still opens the old dialog (7d). qtbot tests (26 in `tests/test_reference_drawer.py`); Codex challenge review: 6 findings fixed with regression tests |
 | 7d | `f4813f8` | — | Agent-verified: “Ny referanse…” opens a two-step dialog (`ui/reference_create_dialog.py`, the shared `ReferenceEntryEditor` in a staged mode): 1) Kilde (publication, navn som publisert, lokator), 2) Målinger (paste, Tolk; the grid appears after a successful parse or “Fyll inn manuelt”; Bytt L↔B and Korriger tolkning with it). Lagre i bibliotek stores without plotting, Legg til i diagram stores and attaches; both close on success and the drawer reloads. The unlinked-taxon notice shows only without a linked taxon and points to Rediger. Agent's call: no “use an existing set” choice in the dialog (the drawer does that); step 1 says how many sets the publication already has for the taxon. Also fixed: switching publication in the editor lost the selection. Old one-column editor renders unchanged. qtbot tests (13 in `tests/test_reference_create_dialog.py`); renderer `analysis.create-reference-*`; Codex review: 4 findings fixed (typed publication name, Save for unstorable values, two taxon-drift gaps) plus Enter in the paste field adding the reference. Owner's layout opinion 2026-11-10: looks good; stage 7 done |
+| 8a, 8b | `beb2897`, `e9dab37` | — | Agent-verified: (a) one rescale path, `MeasurementDB.apply_scale_changes` (database/models.py): recomputed from the points the way each measurement was made, by the ratio when there are none or they no longer give the stored length (a resized image's polyline, a pulled multi-line row); calibration rows left alone; image scale, objective and calibration in one transaction; only a real change marks the observation for sync. Mål's objective and custom-scale change use it, so single lines and multi-line measurements are now rescaled too. (b) Mål gallery, right-click → “Endre mikroskopinnstillinger…”: objective, contrast, medium, fargestoff; preview of images changed and measurements recalculated, Apply writes exactly that and refuses if the images changed; `MicroscopeSettingsDB` in one transaction, microscope images only, objective scale divided by the resize factor; one `session_logs` event per observation of kind “edit” (never read by the offline matcher), images by sync key with old and new values. qtbot tests in `tests/test_scale_change.py` (12) and `tests/test_microscope_settings_batch.py` (13); renderer `measure.microscope-settings*`; Codex challenge reviews: 8a 5 findings fixed, 8b 7 fixed. Human-gated, not done: sync one batch edit against the real account and check it on web |
 
 Found during stage 7, not fixed there (rule 1):
 
@@ -766,6 +766,19 @@ Found during stage 7, not fixed there (rule 1):
   remain only for their tests and `reference.add-dialog-*` scenarios, and
   the drawer still borrows three helpers from that module. Remove them
   together, moving the helpers, in a cleanup stage.
+- Stage 8 follow-ups (pre-existing, found in its reviews):
+  - Clearing an image's calibration does not reach the cloud: the image
+    push omits `calibration_uuid` when the local link is empty, so the old
+    calibration stays attached remotely (Mål's objective change and the
+    batch both clear it when the new objective has no active calibration).
+    A sync contract change.
+  - Loading an image whose scale is within 1 % of its objective's writes the
+    objective's scale to the database without rescaling (`apply_image_scale`
+    → `apply_objective` with prompts suppressed).
+  - The calibration-measurement edit rescaler (`_on_calibration_measurement_edited`)
+    replaces `notes` with “Q=…”, which drops a multi-line measurement's
+    polyline. It, the import dialog and Observations import still have their
+    own rescale code; moving them to `apply_scale_changes` is the next step.
 - `MainWindow._submit_reference_editor_result` still adds a legacy plot
   series and reports success after the shared persistence helper rejects a
   taxon drift for individual spore points. The two-step dialog checks the
