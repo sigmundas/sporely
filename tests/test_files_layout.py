@@ -63,6 +63,7 @@ def test_the_details_go_onto_the_image(qtbot, window):
         assert editor.tools_hud.isAncestorOf(button)
     assert not _visible(editor.microscope_bar)  # field photo
     assert not _visible(editor.slide_prep_group)  # from the start, not only after a selection change
+    assert not _visible(editor.scale_group)  # no microscope controls for a field photo
     # The dialog's window minimum is gone: the page fits a normal window without scrolling.
     assert editor.minimumSize().height() == 0
     frame = window.files_source_page._frames[window.ids_for_test["first"]]
@@ -77,12 +78,14 @@ def test_field_and_microscope_on_the_image(qtbot, window):
     assert editor.type_hud.current() == "micro"
     assert _visible(editor.microscope_bar)
     assert _visible(editor.slide_prep_group)
+    assert _visible(editor.scale_group)
     assert not _visible(editor.time_gps_hud)
     assert editor.has_unsaved_changes()
     qtbot.mouseClick(editor.type_hud.field_btn, Qt.LeftButton)
     assert editor.import_results[editor.selected_index].image_type == "field"
     assert not _visible(editor.microscope_bar)
     assert not _visible(editor.slide_prep_group)
+    assert not _visible(editor.scale_group)
 
 
 def test_the_microscope_bar_sets_all_selected(qtbot, window, profile):

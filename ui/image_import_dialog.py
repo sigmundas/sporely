@@ -2796,6 +2796,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
 
         self.tools_hud.setVisible(single is not None)
         self.microscope_bar.setVisible(types == {"microscope"})
+        # Owner 2026-11-11: field photos need no microscope controls, so the
+        # Scale card (macro scale, scale bar) shows for microscope images only.
+        # Hiding keeps any scale a field photo already carries.
+        self.scale_group.setVisible(types == {"microscope"})
         self._position_in_place_overlays()
 
     def _position_in_place_overlays(self) -> None:
