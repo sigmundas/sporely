@@ -19,6 +19,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QLineEdit, QLabel
 import database.models as models
 from database.taxon_lookup import TaxonChoice
 import ui.observations_tab as observations_tab
+import ui.observation_details_dialog as observation_details_dialog
 from ui.observations_tab import (
     ObservationDetailsDialog,
     _format_observation_display_label,
@@ -108,6 +109,8 @@ def _configure(monkeypatch, db_path: Path, language: str = "no") -> None:
         lambda key, default=None: language if key == "vernacular_language" else default,
     )
     monkeypatch.setattr(observations_tab, "resolve_vernacular_db_path",
+                        lambda _lang: db_path)
+    monkeypatch.setattr(observation_details_dialog, "resolve_vernacular_db_path",
                         lambda _lang: db_path)
 
 

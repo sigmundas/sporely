@@ -16,7 +16,7 @@ from PIL import Image
 from PySide6.QtWidgets import QApplication
 
 from database.models import ImageDB, ObservationDB
-from ui import observations_tab
+from ui import observation_details_dialog, observations_tab
 from ui.image_import_dialog import ImageImportResult
 from ui.observations_tab import ObservationsTab
 from tests.test_cloud_inbox_import_identity import _TabStub
@@ -28,6 +28,7 @@ OBJECTIVES = {"40x": {"name": "40x", "microns_per_pixel": 0.1}, "100x": {"name":
 @pytest.fixture(autouse=True)
 def _app(monkeypatch):
     monkeypatch.setattr(observations_tab, "load_objectives", lambda: dict(OBJECTIVES))
+    monkeypatch.setattr(observation_details_dialog, "load_objectives", lambda: dict(OBJECTIVES))
     return QApplication.instance() or QApplication([])
 
 

@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import ui.observations_tab as observations_tab
+import ui.observation_details_dialog as observation_details_dialog
 
 
 def test_observation_image_browser_builds_same_metadata_tag_row(monkeypatch):
@@ -26,6 +27,11 @@ def test_observation_image_browser_builds_same_metadata_tag_row(monkeypatch):
     )
     monkeypatch.setattr(
         observations_tab,
+        "load_objectives",
+        lambda: {"40x": {"magnification": 40, "name": "40x"}},
+    )
+    monkeypatch.setattr(
+        observation_details_dialog,
         "load_objectives",
         lambda: {"40x": {"magnification": 40, "name": "40x"}},
     )

@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QLineEdit, QLabel
 import database.models as models
 from database.taxon_lookup import TaxonChoice
 import ui.observations_tab as observations_tab
+import ui.observation_details_dialog as observation_details_dialog
 from ui.observations_tab import ObservationDetailsDialog
 
 
@@ -138,6 +139,7 @@ def _configure_dialog_environment(monkeypatch, db_path: Path | None) -> None:
         lambda key, default=None: "en" if key == "vernacular_language" else default,
     )
     monkeypatch.setattr(observations_tab, "resolve_vernacular_db_path", lambda _lang: db_path)
+    monkeypatch.setattr(observation_details_dialog, "resolve_vernacular_db_path", lambda _lang: db_path)
 
 
 def _build_dialog() -> _MinimalObservationDetailsDialog:
@@ -602,7 +604,9 @@ def test_setup_is_safe_without_vernacular_db(tmp_path: Path, monkeypatch, qapp) 
     _seed_reference_db(reference_db_path)
     _configure_dialog_environment(monkeypatch, None)
     monkeypatch.setattr(observations_tab, "list_available_vernacular_languages", lambda: ["no"])
+    monkeypatch.setattr(observation_details_dialog, "list_available_vernacular_languages", lambda: ["no"])
     monkeypatch.setattr(observations_tab, "resolve_vernacular_db_path", lambda _lang: None)
+    monkeypatch.setattr(observation_details_dialog, "resolve_vernacular_db_path", lambda _lang: None)
     monkeypatch.setattr(models, "get_reference_connection", lambda: sqlite3.connect(reference_db_path))
     dialog = _build_dialog()
 

@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QApplication
 
 import ui.image_import_dialog as image_import_dialog
 import ui.observations_tab as observations_tab
+import ui.observation_details_dialog as observation_details_dialog
 from ui.image_import_dialog import ImageImportResult
 import utils.ai_image_prep as ai_image_prep
 import utils.inat_oauth as inat_oauth
@@ -52,6 +53,7 @@ def _make_dialog_patches(monkeypatch) -> None:
         lambda key, default=None: "en" if key == "vernacular_language" else default,
     )
     monkeypatch.setattr(observations_tab, "resolve_vernacular_db_path", lambda _lang: None)
+    monkeypatch.setattr(observation_details_dialog, "resolve_vernacular_db_path", lambda _lang: None)
     monkeypatch.setattr(
         observations_tab.ObservationDetailsDialog,
         "_load_objectives",
@@ -385,7 +387,9 @@ def test_provider_specific_guess_only_starts_requested_worker(
 
     expected_worker = _recording_worker_class()
     monkeypatch.setattr(observations_tab, "AIGuessWorker", expected_worker if source == "arts" else _FailWorker)
+    monkeypatch.setattr(observation_details_dialog, "AIGuessWorker", expected_worker if source == "arts" else _FailWorker)
     monkeypatch.setattr(observations_tab, "INatAIGuessWorker", expected_worker if source == "inat" else _FailWorker)
+    monkeypatch.setattr(observation_details_dialog, "INatAIGuessWorker", expected_worker if source == "inat" else _FailWorker)
 
     if source == "arts":
         class FailOAuth:
@@ -452,6 +456,7 @@ def test_guess_uses_all_field_images_when_no_thumbnail_is_selected(monkeypatch, 
 
     recording_worker = _recording_worker_class()
     monkeypatch.setattr(observations_tab, "AIGuessWorker", recording_worker)
+    monkeypatch.setattr(observation_details_dialog, "AIGuessWorker", recording_worker)
 
     dialog._on_ai_guess_clicked("arts")
 
@@ -472,7 +477,9 @@ def test_explicit_all_source_starts_both_workers(monkeypatch, qapp, tmp_path: Pa
 
     recording_worker = _recording_worker_class()
     monkeypatch.setattr(observations_tab, "AIGuessWorker", recording_worker)
+    monkeypatch.setattr(observation_details_dialog, "AIGuessWorker", recording_worker)
     monkeypatch.setattr(observations_tab, "INatAIGuessWorker", recording_worker)
+    monkeypatch.setattr(observation_details_dialog, "INatAIGuessWorker", recording_worker)
 
     class LoggedInOAuth:
         def __init__(self, *_args, **_kwargs):
@@ -536,6 +543,7 @@ def test_copying_species_ai_selection_updates_get_data_and_grows_on_does_not(
     )
     monkeypatch.setattr(dialog, "_selected_ai_prediction", lambda _source: next(seen_predictions))
     monkeypatch.setattr(observations_tab, "_current_utc_timestamp_text", lambda: "2026-06-01T12:00:00Z")
+    monkeypatch.setattr(observation_details_dialog, "_current_utc_timestamp_text", lambda: "2026-06-01T12:00:00Z")
     monkeypatch.setattr(
         observations_tab.SettingsDB,
         "get_setting",

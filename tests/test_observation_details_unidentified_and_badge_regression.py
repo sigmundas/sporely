@@ -42,6 +42,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 import ui.observations_tab as observations_tab
+import ui.observation_details_dialog as observation_details_dialog
 from ui.image_import_dialog import ImageImportResult
 from utils.taxon_identity import STATE_NONE, TaxonIdentity, proven_sporely_taxon_id
 
@@ -172,6 +173,11 @@ def _make_dialog_patches(monkeypatch, *, taxonomy_db_path: Path | None = None) -
     )
     monkeypatch.setattr(
         observations_tab,
+        "resolve_vernacular_db_path",
+        lambda _lang: taxonomy_db_path,
+    )
+    monkeypatch.setattr(
+        observation_details_dialog,
         "resolve_vernacular_db_path",
         lambda _lang: taxonomy_db_path,
     )
