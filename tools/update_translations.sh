@@ -43,6 +43,7 @@ files=(
   "ui/mode_bar.py"
   "ui/observation_list_panel.py"
   "ui/files_source_page.py"
+  "ui/image_hud.py"
   "ui/ingestion_hub_tab.py"
   "ui/sync_shot_dialog.py"
   "ui/image_gallery_widget.py"

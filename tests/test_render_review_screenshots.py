@@ -184,6 +184,8 @@ MODE_BAR_IDS = {
     "image-strip.staged", "image-strip.staged-dark",
     "images.live", "images.live-dark",
     "images.files", "images.files-dark", "images.files-small-de",
+    "images.files-microscope", "images.files-info",
+    "images.preferences-image-import", "images.preferences-image-import-de",
 }
 ALL_IDS = (
     REFERENCE_IDS
@@ -218,7 +220,7 @@ def test_registry_has_unique_semantic_ids_and_expected_groups() -> None:
     ids = [scenario.id for scenario in registry.all()]
     assert len(ids) == len(set(ids))
     assert set(registry.groups()) == {
-        "analysis", "conflict", "live-lab", "measure", "observations", "portable-import",
+        "analysis", "conflict", "live-lab", "measure", "mode-bar", "observations", "portable-import",
         "quick-fixes", "raw-processing", "reference-library", "style-tokens",
         "taxon-picker",
     }

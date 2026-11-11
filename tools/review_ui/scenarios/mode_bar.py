@@ -144,16 +144,24 @@ def _images_live(context: ReviewContext) -> QWidget:
     return host
 
 
-def _images_files(context: ReviewContext, *, size: tuple[int, int] = (1500, 950)) -> QWidget:
-    """Bilder › Files and SD card: Prepare Images in place, one saved and one new image (stage 9f)."""
+def _images_files(context: ReviewContext, *, size: tuple[int, int] = (1500, 950), state: str = "field") -> QWidget:
+    """Bilder › Files and SD card: Prepare Images in place (stage 9f), on-image layout (9f2).
+
+    ``state``: ``"field"`` a new field photo with EXIF time and GPS selected;
+    ``"info"`` the same with its Info drawer open; ``"microscope"`` a saved
+    microscope image selected (the objective and contrast bar shows).
+    """
     from database.models import ImageDB
     from ui.main_window import MainWindow
 
+    from ..exif_fixture import jpeg_with_exif
     from .live_lab import _fresh_profile
 
     profile = _fresh_profile(context, "images-files")
     observation_id = create_observation(profile, "images-files")
-    ImageDB.add_image(observation_id, str(profile.jpeg("field1.JPG", seed=31)), "field")
+    ImageDB.add_image(observation_id, str(jpeg_with_exif(profile.fixtures_dir / "field1.JPG", seed=31)), "field")
+    micro_id = ImageDB.add_image(observation_id, str(profile.jpeg("micro1.JPG", seed=33)), "microscope",
+                                 scale=0.1, objective_name="100X", contrast="DIC")
     window = MainWindow()
     host = _DrainingWindow(window)
     host.resize(*size)
@@ -163,9 +171,30 @@ def _images_files(context: ReviewContext, *, size: tuple[int, int] = (1500, 950)
     window.tab_widget.setCurrentWidget(window.live_lab_tab)
     window.live_lab_tab.show_source(window.live_lab_tab.SOURCE_FILES)
     _settle(0.5)
-    window.files_source_page.editor().add_images([str(profile.jpeg("new1.JPG", seed=32))])
+    editor = window.files_source_page.editor()
+    new_photo = jpeg_with_exif(profile.fixtures_dir / "new1.JPG", seed=32, taken="2026:11:07 10:05:00",
+                               latitude=63.4305, longitude=10.3951)
+    editor.add_images([str(new_photo)])
     _settle(0.8)
+    if state == "microscope":
+        index = next(i for i, result in enumerate(editor.import_results) if result.image_id == micro_id)
+        editor._select_image(index)
+    else:
+        editor._select_image(len(editor.import_results) - 1)
+        if state == "info":
+            editor._toggle_info_drawer()
+    _settle(0.6)
     return host
+
+
+def _preferences_image_import(context: ReviewContext) -> QWidget:
+    """Preferences › Image import with the optimal-sampling resize option (stage 9f2)."""
+    from ui.main_window import SettingsHubDialog
+
+    from .quick_fixes import _isolate
+
+    _isolate(context)
+    return SettingsHubDialog(context.host, start_page=SettingsHubDialog.PAGE_IMAGE_IMPORT)
 
 
 def register_mode_bar_scenarios(registry: ScenarioRegistry) -> None:
@@ -183,6 +212,40 @@ def register_mode_bar_scenarios(registry: ScenarioRegistry) -> None:
                 theme=theme,
             )
         )
+    for locale, suffix in (("nb_NO", ""), ("de_DE", "-de")):
+        registry.register(
+            ReviewScenario(
+                id=f"images.preferences-image-import{suffix}",
+                group="mode-bar",
+                title=f"Preferences › Image import ({locale[:2]})",
+                description="Optimal-sampling resizing moved here from Prepare Images, off by default (stage 9f2).",
+                build=_preferences_image_import,
+                viewport=(960, 680),
+                locale=locale,
+            )
+        )
+    registry.register(
+        ReviewScenario(
+            id="images.files-microscope",
+            group="mode-bar",
+            title="Bilder › Files and SD card, microscope image (nb)",
+            description="A saved microscope image selected: objective and contrast on the image (stage 9f2).",
+            build=lambda context: _images_files(context, state="microscope"),
+            viewport=(1500, 950),
+            locale="nb_NO",
+        )
+    )
+    registry.register(
+        ReviewScenario(
+            id="images.files-info",
+            group="mode-bar",
+            title="Bilder › Files and SD card, Info drawer (nb)",
+            description="The photo's EXIF in the Info drawer (stage 9f2).",
+            build=lambda context: _images_files(context, state="info"),
+            viewport=(1500, 950),
+            locale="nb_NO",
+        )
+    )
     registry.register(
         ReviewScenario(
             id="images.files-small-de",

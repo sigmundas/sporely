@@ -68,6 +68,11 @@ class FilesSourcePage(QWidget):
         self._watch.setInterval(700)
         self._watch.timeout.connect(self._refresh_unsaved_state)
         self._last_unsaved: dict[int, tuple] = {}
+        # “Choose files…” sits beside Bilder's source switch (stage 9f2).
+        self.choose_files_btn = QPushButton(self.tr("Choose files…"), self)
+        self.choose_files_btn.setObjectName("outlineButton")
+        self.choose_files_btn.clicked.connect(self._choose_files)
+        self.choose_files_btn.setEnabled(False)
         self._empty = QLabel(self.tr("Choose an observation to add files and photos from an SD card to it."), self)
         self._empty.setAlignment(Qt.AlignCenter)
         self._empty.setWordWrap(True)
@@ -204,6 +209,7 @@ class FilesSourcePage(QWidget):
             editor,
             image_results=results,
             write_gps=editor.gps_changed_since_baseline(),
+            observation_date=editor.time_used_for_observation(),
             reselect=False,
         )
         host = tab.window()
@@ -214,9 +220,19 @@ class FilesSourcePage(QWidget):
         if tab.selected_observation_ids() == [int(observation_id)]:
             tab.on_selection_changed()
 
+    def header_actions(self) -> list[QWidget]:
+        """Widgets for the row with Bilder's source switch, shown with this source."""
+        return [self.choose_files_btn]
+
+    def _choose_files(self) -> None:
+        editor = self.editor()
+        if editor is not None and not self._busy:
+            editor.add_files()
+
     def _set_row_enabled(self, enabled: bool) -> None:
         self.save_btn.setEnabled(enabled)
         self.discard_btn.setEnabled(enabled)
+        self.choose_files_btn.setEnabled(enabled and self.editor() is not None)
 
     def _save(self) -> None:
         editor = self.editor()
@@ -248,6 +264,7 @@ class FilesSourcePage(QWidget):
 
     def _update_save_row(self) -> None:
         editor = self.editor()
+        self.choose_files_btn.setEnabled(editor is not None and not self._busy)
         unsaved = editor is not None and editor.has_unsaved_changes()
         self.save_row.setVisible(bool(unsaved))
         if not unsaved:

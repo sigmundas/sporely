@@ -12879,6 +12879,7 @@ class ObservationsTab(QWidget):
         selected_image_path: str | None = None,
         image_results: list | None = None,
         write_gps: bool = True,
+        observation_date: str | None = None,
         reselect: bool = True,
     ) -> None:
         """Save what Prepare Images (``image_dialog``) holds into observation ``obs_id``.
@@ -12902,17 +12903,18 @@ class ObservationsTab(QWidget):
             obs_lat,
             obs_lon,
         )
-        update_kwargs = dict(
-            gps_latitude=obs_lat,
-            gps_longitude=obs_lon,
-            allow_nulls=True,
-        )
-        if coords_changed:
-            # No fresh geocode here; drop stale geography so a later cloud
-            # push does not carry over the old country/region.
-            update_kwargs["country_code"] = None
-            update_kwargs["region_id"] = None
+        update_kwargs: dict = {}
         if write_gps:
+            update_kwargs.update(gps_latitude=obs_lat, gps_longitude=obs_lon, allow_nulls=True)
+            if coords_changed:
+                # No fresh geocode here; drop stale geography so a later cloud
+                # push does not carry over the old country/region.
+                update_kwargs["country_code"] = None
+                update_kwargs["region_id"] = None
+        if observation_date:
+            # Bilder › Files: “Use for the observation” sets the time as well (stage 9f2).
+            update_kwargs["date"] = observation_date
+        if update_kwargs:
             ObservationDB.update_observation(obs_id, **update_kwargs)
         _obs_timing_log("update_observation gps", step_start)
         step_start = time.perf_counter() if _OBS_DEBUG_TIMING else None

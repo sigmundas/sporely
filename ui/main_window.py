@@ -269,7 +269,7 @@ from .reference_picker_drawer import ReferencePickerPage
 from .reference_create_dialog import ReferenceCreateDialog
 from .microscope_settings_dialog import MicroscopeSettingsDialog
 from .segmented_selector import SegmentedSelector
-from .styles import get_style, apply_palette, pt, _is_dark
+from .styles import get_style, apply_palette, pt, _is_dark, get_design_tokens
 from .window_state import GeometryMixin
 from .hint_status import HintBar, HintProgressStack, HintStatusController
 from .export_image_dialog import ExportImageDialog as SharedExportImageDialog, ExportPlotDialog, ExportGalleryDialog
@@ -1708,6 +1708,29 @@ class SettingsHubDialog(QDialog):
         self._live_lab_watch_dir_input.setReadOnly(running)
         self._live_lab_browse_button.setEnabled(not running)
         layout.addWidget(live_group)
+
+        # Optimal-sampling resizing left Prepare Images for here (stage 9f2), off by default.
+        files_group, files_layout = create_section_card(self.tr("Files and SD card"), parent=page)
+        files_layout.setSpacing(6)
+        self._resize_optimal_checkbox = QCheckBox(
+            self.tr("Resize new microscope images to optimal sampling"), files_group
+        )
+        self._resize_optimal_checkbox.setChecked(bool(SettingsDB.get_setting("resize_to_optimal_sampling", False)))
+        self._resize_optimal_checkbox.toggled.connect(
+            lambda checked: SettingsDB.set_setting("resize_to_optimal_sampling", bool(checked))
+        )
+        files_layout.addWidget(self._resize_optimal_checkbox)
+        resize_note = QLabel(
+            self.tr(
+                "Downsamples to the objective's ideal sampling (a share of the Nyquist limit, "
+                "set per objective in Calibrate objective). Applies to images added in Images › Files and SD card."
+            ),
+            files_group,
+        )
+        resize_note.setWordWrap(True)
+        resize_note.setStyleSheet(f"color: {get_design_tokens()['text_dim']};")
+        files_layout.addWidget(resize_note)
+        layout.addWidget(files_group)
 
         group, form = create_section_card(self.tr("Advanced RAW processing"), QFormLayout, parent=page)
         form.setLabelAlignment(Qt.AlignLeft)

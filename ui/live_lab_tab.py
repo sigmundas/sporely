@@ -3711,6 +3711,10 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         source_row = QHBoxLayout()
         source_row.setContentsMargins(0, 0, 0, 0)
         source_row.addWidget(self.source_selector, 0)
+        self._files_header_actions = list(getattr(page, "header_actions", lambda: [])())
+        for widget in self._files_header_actions:
+            source_row.addWidget(widget, 0)
+            widget.setVisible(False)
         source_row.addStretch(1)
         root.insertLayout(0, source_row)
         self.source_stack = QStackedWidget(self)
@@ -3732,6 +3736,8 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
     def _on_source_chosen(self, value) -> None:
         files = value == self.SOURCE_FILES
         self.source_stack.setCurrentIndex(1 if files else 0)
+        for widget in getattr(self, "_files_header_actions", []):
+            widget.setVisible(files)
         self._hint_area.setVisible(not files)  # the Files editor has its own hint bar
         self.sourceChanged.emit(str(value))
 
