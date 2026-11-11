@@ -12859,6 +12859,31 @@ class ObservationsTab(QWidget):
         if not image_dialog.exec():
             return
 
+        self.save_prepared_images(
+            obs_id,
+            observation,
+            existing_images,
+            image_dialog,
+            prior_image_id=prior_image_id,
+            selected_image_path=selected_image_path,
+        )
+
+    def save_prepared_images(
+        self,
+        obs_id: int,
+        observation: dict,
+        existing_images: list[dict],
+        image_dialog,
+        *,
+        prior_image_id: int | None = None,
+        selected_image_path: str | None = None,
+    ) -> None:
+        """Save what Prepare Images (``image_dialog``) holds into observation ``obs_id``.
+
+        The path after today's dialog closes with Save; Bilder › Files and SD
+        card (stage 9f) saves its in-place editor the same way.
+        """
+        host = self.window()
         post_save_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
 
         image_results       = image_dialog.import_results
