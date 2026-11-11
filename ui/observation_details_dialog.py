@@ -1438,10 +1438,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.submit_observation_btn.clicked.connect(self.accept)
         bottom_buttons.addWidget(self.submit_observation_btn)
         self._bottom_buttons = bottom_buttons
-        main_layout.addLayout(bottom_buttons)
-        main_layout.setStretch(0, 2)  # Observation details
-        main_layout.setStretch(1, 3)  # Taxonomy
-        main_layout.setStretch(2, 0)  # Images gallery stays content-sized
+        # The form and its images (the splitter, stretch 1) take any spare
+        # height; the bottom row keeps its own. (Stretches left from an older
+        # three-row layout gave the bottom row most of it: a tall empty band.)
+        main_layout.addLayout(bottom_buttons, 0)
 
         self._setup_vernacular_autocomplete()
         self._setup_host_autocomplete()
@@ -3101,6 +3101,32 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if row is not None:
             row.addWidget(widget, 0, Qt.AlignRight | Qt.AlignVCenter)
 
+    def take_bottom_bar(self) -> QWidget | None:
+        """The bottom row (hints, Edit images, status) as a widget of its own.
+
+        In place the page pins it below the scrolling form, so it shows
+        whatever the window's height. Its widgets stay this form's (the hint
+        bar, Edit images); the page deletes the bar with the form.
+        """
+        row = getattr(self, "_bottom_buttons", None)
+        layout = self.layout()
+        if row is None or layout is None:
+            return None
+        layout.removeItem(row)
+        row.setParent(None)
+        bar = QWidget()
+        bar.setObjectName("editBottomBar")
+        bar.setLayout(row)  # moves the row's widgets into the bar
+        row.setContentsMargins(0, 6, 0, 0)
+        if getattr(self, "_edit_images_shortcut", None) is not None:
+            # The form's Edit images shortcut covers its own children only:
+            # the bar's buttons are no longer among them.
+            shortcut = QShortcut(self._edit_images_shortcut.key(), bar)
+            shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(self._edit_images_from_modified_shortcut)
+            self._bar_edit_images_shortcut = shortcut
+        return bar
+
     def is_in_place(self) -> bool:
         return bool(getattr(self, "_in_place", False))
 
@@ -3384,12 +3410,26 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         genus, species = self._extract_genus_species_from_taxon(taxon)
         lookup = getattr(self, "_taxon_lookup", None)
         if lookup and genus and species:
-            try:
-                best_choice = lookup.best_common_name_for_taxon(genus, species)
-            except Exception:
-                best_choice = None
-            if best_choice and best_choice.common_name and best_choice.common_name.strip():
-                return best_choice.common_name.strip()
+            # The AI table is drawn several times while the form opens: look
+            # each name up once (a local taxonomy query of tens of ms).
+            # Keyed by the lookup and the language it answers in (which can
+            # differ from the setting until the lookup is next synced).
+            cache = self.__dict__.setdefault("_ai_common_name_cache", {})
+            key = (
+                id(lookup), getattr(lookup, "language_code", None),
+                str(genus).casefold(), str(species).casefold(),
+            )
+            if key in cache:
+                common = cache[key]
+            else:
+                try:
+                    best_choice = lookup.best_common_name_for_taxon(genus, species)
+                except Exception:
+                    best_choice = None
+                common = (best_choice.common_name or "").strip() if best_choice else ""
+                cache[key] = common
+            if common:
+                return common
 
         name = taxon.get("vernacularName")
         if isinstance(name, str) and name.strip():

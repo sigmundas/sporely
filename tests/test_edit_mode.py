@@ -616,3 +616,104 @@ def test_ai_results_that_could_not_be_stored_are_tried_again(qtbot, window, redi
     qtbot.waitUntil(lambda: "NBIC:1" in (ObservationDB.get_observation(first)["ai_state_json"] or ""), timeout=4000)
     qtbot.waitUntil(lambda: not rediger.status_label.text().startswith("Not saved"), timeout=3000)
     assert json.loads(ObservationDB.get_observation(first)["ai_state_json"])["predictions"]
+
+
+# -- Owner's first try of stage 9g2 (2026-11-11) ------------------------------
+
+
+def test_coming_back_keeps_the_form_when_nothing_changed(qtbot, window, rediger):
+    """Building the form takes seconds on real data: coming back reuses it."""
+    first = window.ids_for_test["first"]
+    editor = rediger.editor()
+    _type_into(qtbot, editor.location_input, "Lade")
+    qtbot.mouseClick(window.mode_bar.view_button, Qt.LeftButton)
+    assert ObservationDB.get_observation(first)["location"] == "Lade"  # saved on leaving
+    qtbot.mouseClick(window.mode_bar.edit_button, Qt.LeftButton)
+    qtbot.wait(100)
+    assert rediger.editor() is editor and editor.isVisible()
+    assert editor.location_input.text() == "Lade"
+
+
+def test_coming_back_after_new_images_starts_again(qtbot, window, rediger, profile):
+    first = window.ids_for_test["first"]
+    editor = rediger.editor()
+    qtbot.mouseClick(window.mode_bar.view_button, Qt.LeftButton)
+    ImageDB.add_image(first, str(profile.jpeg("added.JPG", seed=9)), "field")  # Bilder added one
+    qtbot.mouseClick(window.mode_bar.edit_button, Qt.LeftButton)
+    qtbot.waitUntil(lambda: rediger.editor() is not None and rediger.editor() is not editor, timeout=3000)
+    assert len(rediger.editor().image_results) == 2
+
+
+def test_the_bottom_bar_stays_in_view_below_the_form(qtbot, window, rediger):
+    editor = rediger.editor()
+    bar = editor.hint_bar.parentWidget()
+    assert bar.objectName() == "editBottomBar"
+    assert not editor.isAncestorOf(bar)  # pinned below the scrolling form, not in it
+    assert bar.isVisible() and editor.edit_images_btn.isVisible() and rediger.status_label.isVisible()
+    window.resize(1280, 700)  # lower than the form
+    qtbot.wait(50)
+    frame = rediger._frame
+    assert frame.verticalScrollBar().maximum() > 0  # the form scrolls
+    bottom = bar.mapTo(window, bar.rect().bottomLeft()).y()
+    assert bottom <= window.height()  # the bar does not
+
+
+def test_a_tall_window_gives_its_height_to_the_form_not_the_bottom_bar(qtbot, window, rediger):
+    """The bottom row took most spare height (an empty band to scroll into)."""
+    window.resize(1500, 1300)
+    qtbot.wait(50)
+    editor = rediger.editor()
+    bar = editor.hint_bar.parentWidget()
+    assert bar.height() <= editor.edit_images_btn.height() + 12
+    frame = rediger._frame
+    assert frame.verticalScrollBar().maximum() == 0  # nothing to scroll into
+    assert editor.height() == frame.viewport().height()
+
+
+def test_a_change_made_elsewhere_before_a_save_still_reloads(qtbot, window, rediger):
+    """A save writes only its own columns; it must not hide another change from the form."""
+    first = window.ids_for_test["first"]
+    editor = rediger.editor()
+    ObservationDB.update_observation(first, gps_latitude=63.4, gps_longitude=10.4)  # a sync, meanwhile
+    _type_into(qtbot, editor.location_input, "Lade")
+    qtbot.waitUntil(lambda: ObservationDB.get_observation(first)["location"] == "Lade", timeout=3000)
+    assert ObservationDB.get_observation(first)["gps_longitude"] == 10.4
+    qtbot.mouseClick(window.mode_bar.view_button, Qt.LeftButton)
+    qtbot.mouseClick(window.mode_bar.edit_button, Qt.LeftButton)
+    qtbot.waitUntil(lambda: rediger.editor() is not None and rediger.editor() is not editor, timeout=3000)
+    assert abs(rediger.editor().lon_input.value() - 10.4) < 1e-6
+
+
+def test_a_new_name_language_reloads_the_form(qtbot, window, rediger):
+    from database.models import SettingsDB
+
+    editor = rediger.editor()
+    qtbot.mouseClick(window.mode_bar.view_button, Qt.LeftButton)
+    SettingsDB.set_setting("vernacular_language", "sv")
+    qtbot.mouseClick(window.mode_bar.edit_button, Qt.LeftButton)
+    qtbot.waitUntil(lambda: rediger.editor() is not None and rediger.editor() is not editor, timeout=3000)
+
+
+def test_edit_images_shortcut_works_from_the_bottom_bar(qtbot, window, rediger):
+    editor = rediger.editor()
+    opened = []
+    editor.editImagesRequested.disconnect()
+    editor.editImagesRequested.connect(opened.append)
+    editor.edit_images_btn.setFocus(Qt.OtherFocusReason)
+    qtbot.waitUntil(editor.edit_images_btn.hasFocus, timeout=2000)
+    qtbot.keyClick(editor.edit_images_btn, Qt.Key_E, Qt.ControlModifier if __import__("sys").platform == "darwin" else Qt.AltModifier)
+    assert len(opened) == 1
+
+
+def test_coming_back_after_ai_results_keeps_the_form(qtbot, window, rediger):
+    """The form stores AI results itself when they arrive; that is no reason to rebuild it."""
+    first = window.ids_for_test["first"]
+    editor = rediger.editor()
+    editor._persist_ai_paused = False
+    editor._ai_predictions_by_index[0] = [{"taxon_id": "NBIC:1", "probability": 0.9}]
+    editor._persist_ai_state_now()  # an AI result arrives
+    assert "NBIC:1" in (ObservationDB.get_observation(first)["ai_state_json"] or "")
+    qtbot.mouseClick(window.mode_bar.view_button, Qt.LeftButton)
+    qtbot.mouseClick(window.mode_bar.edit_button, Qt.LeftButton)
+    qtbot.wait(100)
+    assert rediger.editor() is editor

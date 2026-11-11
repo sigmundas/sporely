@@ -74,6 +74,9 @@ class EditObservationPage(QWidget):
         self._observation_id: int | None = None
         self._editor = None
         self._frame: QScrollArea | None = None
+        self._holder: QWidget | None = None  # the scrolling form and, pinned below it, its bottom bar
+        self._stored_state = None  # what the form was built from, with its own writes folded in
+        self._must_reload = False  # a change that could not be saved was discarded
         self._saved_updates: dict | None = None  # the columns as last saved (or as opened)
         self._saved_observation: dict = {}
         self._saving = False
@@ -184,6 +187,7 @@ class EditObservationPage(QWidget):
         """The user chose to drop what could not be saved: the form starts again from the database."""
         self._save_error = None
         self._stale = True
+        self._must_reload = True
         if self._editor is not None:
             try:
                 self._saved_updates = self._current_updates()
@@ -216,6 +220,8 @@ class EditObservationPage(QWidget):
             self._stack.setCurrentWidget(self._empty)
             return
         observation, _existing, image_results, draft_observation, ai_state = prepared
+        # What the form is built from, to tell on coming back whether it is out of date.
+        stored_state = self._read_stored_state(observation_id)
         # Opening restores the AI table (selecting a row): that is not an edit,
         # so the form writes no AI state until the user changes something.
         ObservationDetailsDialog._persist_ai_paused = True
@@ -236,14 +242,26 @@ class EditObservationPage(QWidget):
         editor.editImagesRequested.connect(
             lambda path, obs=observation_id: self._on_edit_images_requested(obs, path)
         )
-        frame = QScrollArea(self)
+        # The bottom bar (hints, Edit images, the save status) stays in view
+        # below the form, which scrolls when the window is too low for it.
+        bar = editor.take_bottom_bar()
+        holder = QWidget(self)
+        holder_layout = QVBoxLayout(holder)
+        holder_layout.setContentsMargins(0, 0, 0, 0)
+        holder_layout.setSpacing(0)
+        frame = QScrollArea(holder)
         frame.setWidgetResizable(True)
         frame.setFrameShape(QFrame.NoFrame)
         frame.setWidget(editor)
-        self._stack.addWidget(frame)
-        self._stack.setCurrentWidget(frame)
+        holder_layout.addWidget(frame, 1)
+        if bar is not None:
+            bar.setParent(holder)
+            holder_layout.addWidget(bar, 0)
+        self._stack.addWidget(holder)
+        self._stack.setCurrentWidget(holder)
         self._editor = editor
         self._frame = frame
+        self._holder = holder
         self._observation_id = observation_id
         self._saved_observation = dict(observation)
         self._saved_updates = None
@@ -251,6 +269,9 @@ class EditObservationPage(QWidget):
         self._taxonomy_changed = False
         self._save_error = None
         self._stale = False
+        self._must_reload = False
+        self._stored_state = stored_state
+        self._note_ai_writes(editor, observation_id)
         self._watch_inputs(editor)
         # The form finishes opening on the next turn of the event loop; what it
         # holds then is the baseline (nothing the user changed).
@@ -263,6 +284,52 @@ class EditObservationPage(QWidget):
             self._opened_ai_state = self._ai_state_text(editor)
             self._ai_pending = False
 
+    def _read_stored_state(self, observation_id: int | None = None):
+        """What the form shows depends on: the observation's row, its images
+        and the name language (None when unreadable)."""
+        from database.models import ImageDB, SettingsDB
+
+        if observation_id is None:
+            observation_id = self._observation_id
+        if observation_id is None:
+            return None
+        try:
+            row = ObservationDB.get_observation(observation_id)
+            images = [dict(image) for image in ImageDB.get_images_for_observation(observation_id) or []]
+            language = SettingsDB.get_setting("vernacular_language", "no")
+        except Exception:
+            return None
+        return (dict(row), images, language) if row else None
+
+    def _note_ai_writes(self, editor, observation_id: int) -> None:
+        """The form stores AI results itself when they arrive: those are its own writes too."""
+        persist = editor._persist_ai_state_now
+
+        def persist_and_note(*args, **kwargs):
+            mine = editor is self._editor and self._observation_id == observation_id
+            before = self._read_stored_state(observation_id) if mine else None
+            result = persist(*args, **kwargs)
+            if mine and editor is self._editor:
+                self._note_own_write(before, self._read_stored_state(observation_id))
+            return result
+
+        editor._persist_ai_state_now = persist_and_note
+
+    def _note_own_write(self, before, after) -> None:
+        """Fold this form's own write (``before`` → ``after``) into what it is known to show.
+
+        Only what the write changed: a change made elsewhere before it (another
+        column, other images) still differs, so coming back reloads.
+        """
+        known = self._stored_state
+        if known is None or before is None or after is None:
+            self._stored_state = None  # unknown: coming back reloads
+            return
+        row = dict(known[0])
+        row.update({key: value for key, value in after[0].items() if before[0].get(key) != value})
+        images = after[1] if known[1] == before[1] else known[1]
+        self._stored_state = (row, images, known[2])
+
     @staticmethod
     def _ai_state_text(editor) -> str:
         import json
@@ -270,9 +337,11 @@ class EditObservationPage(QWidget):
         return json.dumps(editor.get_ai_state(), sort_keys=True, default=str)
 
     def _drop_editor(self) -> None:
-        editor, frame = self._editor, self._frame
+        editor, holder = self._editor, self._holder
         self._editor = None
         self._frame = None
+        self._holder = None
+        self._stored_state = None
         self._timer.stop()
         if editor is None:
             return
@@ -280,9 +349,9 @@ class EditObservationPage(QWidget):
         self.status_label.hide()
         self.status_label.setParent(self)  # out of the editor before it goes
         editor.close()  # its closeEvent stops the AI and lookup threads
-        if frame is not None:
-            self._stack.removeWidget(frame)
-            frame.deleteLater()  # and the editor with it
+        if holder is not None:
+            self._stack.removeWidget(holder)
+            holder.deleteLater()  # and the editor and its bottom bar with it
 
     def _watch_inputs(self, editor) -> None:
         """A change in the form schedules a save; the publishing controls ask at once.
@@ -432,8 +501,10 @@ class EditObservationPage(QWidget):
                 changed = self._changed_keys()
                 if not changed:
                     if self._ai_pending:
+                        before = self._read_stored_state(observation_id)
                         self._save_ai_state(editor)
                         self._save_error = None
+                        self._note_own_write(before, self._read_stored_state(observation_id))
                     return True
                 if changed & _PUBLISH_KEYS:
                     accepted = editor.confirm_publish_change(changed_keys=changed)
@@ -457,6 +528,7 @@ class EditObservationPage(QWidget):
                         return True
                 self.status_label.setText(self.tr("Saving…"))
                 written = self._current_updates()
+                before = self._read_stored_state(observation_id)
                 taxonomy_changed = self._observations_tab.write_observation_edits(
                     observation_id, self._saved_observation, editor, only_keys=changed,
                 )
@@ -487,6 +559,8 @@ class EditObservationPage(QWidget):
                 reload_images = getattr(editor, "_reload_observation_images_after_cloud_media_materialization", None)
                 if callable(reload_images):
                     reload_images()
+            # What this form wrote is what it shows: coming back needs no reload for it.
+            self._note_own_write(before, self._read_stored_state(observation_id))
             return True
         finally:
             self._saving = False
@@ -554,9 +628,22 @@ class EditObservationPage(QWidget):
         super().showEvent(event)
         self._watch.start()
         if self._stale and self._editor is not None:
-            # Everything was saved on leaving; start again from the database
-            # (Bilder, Vis or a sync may have changed the observation meanwhile).
-            QTimer.singleShot(0, self, self.reload)
+            QTimer.singleShot(0, self, self._reload_if_changed)
+
+    def _reload_if_changed(self) -> None:
+        """Back in Rediger: keep the form unless the observation changed meanwhile.
+
+        Everything was saved on leaving. Bilder, Vis or a sync may have changed
+        the observation or its images since: then the form starts again from
+        the database. Otherwise it stays as it is (building it takes seconds).
+        """
+        if not self._stale or self._editor is None or self._saving:
+            return
+        stored = self._read_stored_state()
+        if self._must_reload or stored is None or stored != self._stored_state:
+            self.reload()
+        else:
+            self._stale = False
 
     def hideEvent(self, event) -> None:  # noqa: N802 - Qt override
         self._watch.stop()
