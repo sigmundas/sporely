@@ -3722,6 +3722,9 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         self.source_stack.addWidget(page)
         root.insertWidget(1, self.source_stack, 1)
         self._files_source_page = page
+        strip = getattr(self, "_shared_strip", None)
+        if strip is not None and hasattr(page, "use_shared_strip"):
+            page.use_shared_strip(strip)
 
     def current_source(self) -> str:
         selector = getattr(self, "source_selector", None)
@@ -3739,6 +3742,14 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         for widget in getattr(self, "_files_header_actions", []):
             widget.setVisible(files)
         self._hint_area.setVisible(not files)  # the Files editor has its own hint bar
+        # Live's keys (RAW review: arrows, Delete, Enter, Esc; objectives 1-6,
+        # contrast B/D/I/P) are bound to the whole page: with Files shown they
+        # would act on Live's captures and make the editor's keys ambiguous.
+        for shortcut in [*getattr(self, "_raw_review_shortcuts", []), *getattr(self, "_capture_shortcuts", [])]:
+            shortcut.setEnabled(not files)
+        page = getattr(self, "_files_source_page", None)
+        if page is not None and (self.holds_shared_strip() or page.holds_shared_strip()):
+            self.reclaim_shared_strip()  # the strip follows the source shown
         self.sourceChanged.emit(str(value))
 
     # -- the shared strip (stage 9d) ------------------------------------------
@@ -3782,13 +3793,25 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         return strip is not None and self.session_gallery is strip
 
     def reclaim_shared_strip(self) -> None:
-        """Images shows: the strip shows the session's observation, unsaved captures first."""
+        """Images shows: the strip shows the session's observation, unsaved captures first.
+
+        With Files and SD card as the source, Files holds it instead (stage 9f3).
+        """
         strip = getattr(self, "_shared_strip", None)
         if strip is None:
             return
+        files = getattr(self, "_files_source_page", None)
+        if files is not None and self.current_source() == self.SOURCE_FILES:
+            self._release_live_strip()
+            files.claim_shared_strip()
+            return
+        if files is not None:
+            files.release_shared_strip()
         away = self.session_gallery if isinstance(self.session_gallery, _LiveAwayStrip) else None
         strip.set_active_channel("live")
-        strip.set_context_actions(change_settings=False, move_to_observation=False, delete_cloud_copy=False)
+        strip.set_context_actions(
+            change_settings=False, move_to_observation=False, delete_cloud_copy=False, publish_checkbox=False,
+        )
         strip.set_page_behaviour(
             toggle_on_plain_click=True, clear_on_background_click=True, reveal_mode="nudge", reorderable=False,
         )
@@ -3806,7 +3829,14 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         self._refresh_session_gallery(reveal="preserve")
 
     def release_shared_strip(self) -> None:
-        """Another page takes the strip: remember Live Lab's selection, leave none behind."""
+        """Another page takes the strip from Bilder (Live or Files)."""
+        files = getattr(self, "_files_source_page", None)
+        if files is not None:
+            files.release_shared_strip()
+        self._release_live_strip()
+
+    def _release_live_strip(self) -> None:
+        """Remember Live Lab's selection, leave none behind."""
         strip = getattr(self, "_shared_strip", None)
         if strip is None or self.session_gallery is not strip:
             return

@@ -8638,7 +8638,9 @@ class ObservationsTab(QWidget):
     def reclaim_strip(self) -> None:
         """View shows again: the strip shows View's selection."""
         self.gallery_widget.set_active_channel("view")
-        self.gallery_widget.set_context_actions(change_settings=False, move_to_observation=True, delete_cloud_copy=True)
+        self.gallery_widget.set_context_actions(
+            change_settings=False, move_to_observation=True, delete_cloud_copy=True, publish_checkbox=True,
+        )
         self.gallery_widget.set_page_behaviour(
             toggle_on_plain_click=False, clear_on_background_click=False, reveal_mode="precise", reorderable=True,
         )

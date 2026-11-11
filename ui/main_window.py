@@ -17596,7 +17596,9 @@ class MainWindow(GeometryMixin, QMainWindow):
             target_splitter, slot = None, self.observations_tab.gallery_slot
         elif index == 1:
             gallery.set_active_channel("measure")
-            gallery.set_context_actions(change_settings=True, move_to_observation=False, delete_cloud_copy=False)
+            gallery.set_context_actions(
+                change_settings=True, move_to_observation=False, delete_cloud_copy=False, publish_checkbox=True,
+            )
             gallery.set_page_behaviour(
                 toggle_on_plain_click=False, clear_on_background_click=False, reveal_mode="precise", reorderable=True,
             )

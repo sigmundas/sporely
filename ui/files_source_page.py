@@ -9,7 +9,10 @@ switching observation keeps that observation's editor (owner, 2026-11-10:
 staged images wait for the observation they were taken for), and its new
 images show as unsaved in the shared strip and the observation list.
 
-The layout follows the dialog for now; the mockup's layout is stage 9f2.
+Stage 9f2 put the per-image controls on the image. Stage 9f3: the shared
+strip (View, Measure and Live) replaces the editor's own gallery while Bilder
+shows Files; its clicks, selection, removal and reordering go to the editor
+shown, which renders its images there, new ones first.
 """
 from __future__ import annotations
 
@@ -61,6 +64,10 @@ class FilesSourcePage(QWidget):
         row.addWidget(self.save_btn)
         self.save_row.setVisible(False)
         layout.addWidget(self.save_row)
+        # The shared strip (stage 9f3): it takes the shown editor's gallery place.
+        self._strip = None
+        self._holds_strip = False
+        self._strip_editor: ImageImportDialog | None = None
         self._busy = False
         # Not every edit in the editor reports itself (removing, cropping,
         # reordering): look for unsaved work while the page is on screen.
@@ -118,11 +125,13 @@ class FilesSourcePage(QWidget):
             self._observation_id = None
             self._stack.setCurrentWidget(self._empty)
             self._update_save_row()
+            self._sync_strip()
             return
         if observation_id not in self._editors:
             self._create_editor(observation_id)
         self._stack.setCurrentWidget(self._frames[observation_id])
         self._update_save_row()
+        self._sync_strip()
 
     # -- editors ------------------------------------------------------------------
 
@@ -161,6 +170,9 @@ class FilesSourcePage(QWidget):
         frame = self._frames.pop(observation_id, None)
         if editor is None:
             return
+        if editor is self._strip_editor:
+            editor.detach_strip()  # nothing it does while closing reaches the strip
+            self._strip_editor = None
         editor.close()  # its closeEvent cleans threads and temporary previews
         if frame is not None:
             self._stack.removeWidget(frame)
@@ -178,6 +190,71 @@ class FilesSourcePage(QWidget):
             self._create_editor(observation_id)
             self._stack.setCurrentWidget(self._frames[observation_id])
         self._update_save_row()
+        self._sync_strip()
+
+    # -- the shared strip (stage 9f3) -----------------------------------------
+
+    def use_shared_strip(self, strip) -> None:
+        """The main window's strip (shared with View, Measure and Live)."""
+        self._strip = strip
+        channel = strip.channel("files", accepts_staged=True)
+        channel.imageClicked.connect(lambda key, path: self._to_editor("_on_gallery_clicked", key, path))
+        channel.editRequested.connect(lambda key, path: self._to_editor("_on_gallery_clicked", key, path))
+        channel.selectionChanged.connect(lambda paths: self._to_editor("_on_gallery_selection_changed", paths))
+        channel.deleteImagesRequested.connect(lambda keys: self._to_editor("_on_gallery_delete_images_requested", keys))
+        channel.itemsReordered.connect(lambda keys: self._to_editor("_on_gallery_items_reordered", keys))
+
+    def holds_shared_strip(self) -> bool:
+        return self._holds_strip
+
+    def claim_shared_strip(self) -> None:
+        """Bilder shows Files: the strip shows the editor's images."""
+        strip = self._strip
+        if strip is None:
+            return
+        strip.set_active_channel("files")
+        strip.set_context_actions(
+            change_settings=False, move_to_observation=False, delete_cloud_copy=False, publish_checkbox=False,
+        )
+        strip.set_page_behaviour(
+            toggle_on_plain_click=False, clear_on_background_click=False, reveal_mode="nudge", reorderable=True,
+        )
+        self._holds_strip = True
+        self._strip_editor = None
+        self._sync_strip()
+
+    def release_shared_strip(self) -> None:
+        """Another page takes the strip: the editor goes back to its own gallery."""
+        if not self._holds_strip:
+            return
+        self._holds_strip = False
+        editor, self._strip_editor = self._strip_editor, None
+        if editor is not None:
+            editor.detach_strip()
+        if self._strip is not None:
+            self._strip.select_image(None, center=False)  # leave no selection behind
+
+    def _sync_strip(self) -> None:
+        """While Files holds the strip it shows the editor on screen, or nothing."""
+        if not self._holds_strip or self._strip is None:
+            return
+        editor = self.editor()
+        if editor is self._strip_editor:
+            return
+        if self._strip_editor is not None:
+            self._strip_editor.detach_strip()
+        self._strip_editor = editor
+        if editor is None:
+            self._strip.clear()  # and out of sight: no editor holds it
+            self._strip.hide()
+        else:
+            editor.attach_strip(self._strip)
+
+    def _to_editor(self, handler: str, *args) -> None:
+        editor = self._strip_editor
+        if editor is None or not self._holds_strip or self._busy:
+            return
+        getattr(editor, handler)(*args)
 
     # -- unsaved images, for the shared strip and the observation list ---------
 
@@ -296,6 +373,7 @@ class FilesSourcePage(QWidget):
         return any(editor.has_unsaved_changes() for editor in self._editors.values())
 
     def shutdown(self) -> None:
+        self.release_shared_strip()
         for observation_id in list(self._editors):
             editor = self._editors.pop(observation_id)
             editor.close()

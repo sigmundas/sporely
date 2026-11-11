@@ -190,7 +190,7 @@ from .adaptive_choice_selector import (
 )
 from .section_card import create_section_card
 from .segmented_selector import SegmentedSelector
-from .styles import pt, _is_dark
+from .styles import STAGING_BORDER, pt, _is_dark
 from .window_state import GeometryMixin
 
 SUPPORTED_IMAGE_EXTENSIONS = {
@@ -4795,6 +4795,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
         old_results = list(self.import_results)
         if len(old_results) < 2:
             return
+        if getattr(self, "_own_gallery", None) is not None:
+            # The strip shows new images first; they are still saved after the others.
+            new_keys = {self._image_result_key(result) for result in old_results if result.image_id is None}
+            keys = list(ordered_keys or [])
+            ordered_keys = [key for key in keys if key not in new_keys] + [key for key in keys if key in new_keys]
 
         ordered_results: list[ImageImportResult] = []
         seen: set[object] = set()
@@ -6392,8 +6397,62 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self._current_exif_lat, self._current_exif_lon
         )
 
+    # -- Bilder's shared strip (stage 9f3) ------------------------------------
+
+    def attach_strip(self, strip) -> None:
+        """Show the images in Bilder's shared strip instead of the editor's own gallery.
+
+        The page routes the strip's clicks, selection, removal and reordering
+        to this editor; the editor stays the source of truth and renders its
+        images there, its new (unsaved) ones first, as Live does.
+        """
+        if strip is None or self.holds_strip():
+            return
+        own = self.gallery
+        splitter = self.dialog_gallery_splitter
+        height = splitter.sizes()[1] if splitter.count() == 2 else 0
+        self._own_gallery = own
+        self.gallery = strip
+        # The strip takes the gallery's place under the image, at its height.
+        splitter.replaceWidget(splitter.indexOf(own), strip)
+        own.hide()
+        strip.show()
+        if height > 0:
+            sizes = splitter.sizes()
+            splitter.setSizes([max(1, sum(sizes) - height), height])
+        # The editor's selection comes along (the strip holds the last page's).
+        self._pending_gallery_selection = own.selected_paths()
+        self._refresh_gallery()
+
+    def detach_strip(self) -> None:
+        """Another page takes the strip: the editor's own gallery comes back."""
+        own = getattr(self, "_own_gallery", None)
+        if own is None:
+            return
+        strip = self.gallery
+        self._own_gallery = None
+        self.gallery = own
+        self._pending_gallery_selection = strip.selected_paths()  # what was chosen in the strip
+        splitter = self.dialog_gallery_splitter
+        index = splitter.indexOf(strip)
+        if index >= 0:
+            splitter.replaceWidget(index, own)
+        strip.hide()  # out of the editor; the page that takes it shows it again
+        strip.setParent(None)
+        own.show()
+        self._refresh_gallery()
+
+    def holds_strip(self) -> bool:
+        return getattr(self, "_own_gallery", None) is not None
+
     def _refresh_gallery(self) -> None:
-        selected = self.gallery.selected_paths() if hasattr(self, "gallery") else []
+        # A gallery swap (Bilder's shared strip, stage 9f3) hands over the selection.
+        pending = getattr(self, "_pending_gallery_selection", None)
+        self._pending_gallery_selection = None
+        if pending is not None:
+            selected = list(pending)
+        else:
+            selected = self.gallery.selected_paths() if hasattr(self, "gallery") else []
         image_ids = [
             int(result.image_id)
             for result in self.import_results
@@ -6525,8 +6584,18 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     "frame_border_color": "#e74c3c" if raw_source_kind == "camera_raw" else None,
                 }
             )
+        if getattr(self, "_own_gallery", None) is not None:
+            # New images first, orange and in their own order, as Live's
+            # captures are; saved ones keep their order after them.
+            for item, result in zip(items, self.import_results):
+                if result.image_id is None:
+                    item["staged"] = True
+                    item["frame_border_color"] = STAGING_BORDER
+            items = [item for item in items if item.get("staged")] + [
+                item for item in items if not item.get("staged")
+            ]
         self.gallery.set_items(items, reveal="preserve")
-        if selected:
+        if selected or pending is not None:
             self.gallery.select_paths(selected, center=False)
         self._update_action_buttons_state()
 

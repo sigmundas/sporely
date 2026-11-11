@@ -7,7 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
 
-from PySide6.QtCore import Qt, Signal, QEvent, QSize, QRectF, QTimer, QMimeData, QPoint, QPointF, QThread, QObject
+from PySide6.QtCore import Qt, Signal, QEvent, QSize, QRectF, QTimer, QMimeData, QPoint, QPointF, QThread, QObject, QT_TRANSLATE_NOOP, QCoreApplication
 from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QDrag, QShortcut, QKeySequence, QIcon, QPalette
 from PySide6.QtWidgets import QGraphicsDropShadowEffect
 from shiboken6 import isValid
@@ -114,6 +114,21 @@ def _tag_text_color(background: QColor) -> str:
     if background.isValid() and background.lightness() >= 180:
         return "#000000"
     return "#ffffff"
+
+
+def _badge_translator(translate=None):
+    """Badge labels live in the gallery's context, whichever page builds them.
+
+    Pages pass their own ``tr`` (another context, where these strings were
+    never translated): look in the gallery's context first, then theirs.
+    """
+    def tr(text: str) -> str:
+        translated = QCoreApplication.translate("ImageGalleryWidget", text)
+        if translated != text or translate is None:
+            return translated
+        return translate(text)
+
+    return tr
 
 
 @dataclass(frozen=True)
@@ -810,8 +825,17 @@ class ImageGalleryWidget(QGroupBox):
         change_settings: bool | None = None,
         move_to_observation: bool | None = None,
         delete_cloud_copy: bool | None = None,
+        publish_checkbox: bool | None = None,
     ) -> None:
-        """The right-click actions the page shown offers."""
+        """The right-click actions (and cloud checkboxes) the page shown offers.
+
+        Cloud checkboxes only where a page saves them (View, Measure): elsewhere
+        a click would change nothing that lasts.
+        """
+        if publish_checkbox is not None and bool(publish_checkbox) != self._show_publish_checkbox:
+            self._show_publish_checkbox = bool(publish_checkbox)
+            if self._items:
+                self._render()
         if change_settings is not None:
             self._show_change_settings = bool(change_settings)
         if move_to_observation is not None:
@@ -1674,14 +1698,14 @@ class ImageGalleryWidget(QGroupBox):
 
     @staticmethod
     def _short_objective_label(name: str | None, translate=None) -> str | None:
-        tr = translate if translate is not None else (lambda text: text)
+        tr = _badge_translator(translate)
         if not name:
             return None
         text = str(name).strip()
         if not text:
             return None
         if text.lower() == "custom":
-            return tr("Scale bar")
+            return tr(QT_TRANSLATE_NOOP("ImageGalleryWidget", "Scale bar"))
         match = re.search(r"(\d+(?:\.\d+)?)\s*[xX]", text)
         if match:
             return f"{match.group(1)}X"
@@ -1701,34 +1725,34 @@ class ImageGalleryWidget(QGroupBox):
         resize_to_optimal: bool = False,
         translate=None,
     ) -> list[str]:
-        tr = translate if translate is not None else (lambda text: text)
+        tr = _badge_translator(translate)
         image_type = (image_type or "field").strip().lower()
         badges: list[str] = []
 
         if image_type == "microscope":
             detail = None
             if custom_scale:
-                detail = tr("Scale bar")
+                detail = tr(QT_TRANSLATE_NOOP("ImageGalleryWidget", "Scale bar"))
             elif objective_name:
                 if str(objective_name).strip().lower() == "custom":
-                    detail = tr("Scale bar")
+                    detail = tr(QT_TRANSLATE_NOOP("ImageGalleryWidget", "Scale bar"))
                 else:
                     detail = ImageGalleryWidget._short_objective_label(objective_name, tr)
                     if not detail:
-                        detail = tr("Micro")
+                        detail = tr(QT_TRANSLATE_NOOP("ImageGalleryWidget", "Micro"))
             elif scale_microns_per_pixel:
-                detail = tr("Scale bar")
+                detail = tr(QT_TRANSLATE_NOOP("ImageGalleryWidget", "Scale bar"))
             else:
-                detail = tr("Micro")
+                detail = tr(QT_TRANSLATE_NOOP("ImageGalleryWidget", "Micro"))
             if contrast:
                 detail = f"{detail} {DatabaseTerms.translate_contrast(contrast)}"
             badges.append(detail)
             if resize_to_optimal:
                 badges.append("R")
             if needs_scale:
-                badges.append(tr("(!) needs scale"))
+                badges.append(tr(QT_TRANSLATE_NOOP("ImageGalleryWidget", "(!) needs scale")))
         else:
-            badges.append(tr("Field"))
+            badges.append(tr(QT_TRANSLATE_NOOP("ImageGalleryWidget", "Field")))
 
         return badges
 
@@ -1759,7 +1783,7 @@ class ImageGalleryWidget(QGroupBox):
 
     @staticmethod
     def build_raw_source_badges(lab_metadata, translate=None) -> list[str]:
-        tr = translate if translate is not None else (lambda text: text)
+        tr = _badge_translator(translate)
         if not isinstance(lab_metadata, dict):
             return []
         raw_processing = lab_metadata.get("raw_processing")
@@ -1769,7 +1793,7 @@ class ImageGalleryWidget(QGroupBox):
         if not isinstance(source, dict):
             return []
         if str(source.get("kind") or "").strip().lower() == "camera_raw":
-            return [tr("From raw")]
+            return [tr(QT_TRANSLATE_NOOP("ImageGalleryWidget", "From raw"))]
         return []
 
     def select_image(self, image_id: int | None, center: bool = True) -> None:
