@@ -6,8 +6,9 @@ bar only drives navigation: the pages themselves stay in the main window's
 ``QTabWidget`` (its own tab bar is hidden), so ``tab_widget`` remains the one
 source of truth for the current page.
 
-Until stage 9f Edit is not a mode: it opens today's observation editor and
-never shows as the current mode.
+Edit is the Rediger mode since stage 9g2. Its click goes through
+``editRequested`` (the window chooses the observation, and cloud-only rows
+still open the dialog); it is checked while Rediger shows.
 """
 from __future__ import annotations
 
@@ -48,7 +49,7 @@ class ModeBar(QWidget):
         self._group.buttonClicked.connect(self._on_mode_clicked)
 
         self.view_button = self._mode_button(self.tr("View"), "O")
-        self.edit_button = self._mode_button(self.tr("Edit"), None, checkable=False)
+        self.edit_button = self._mode_button(self.tr("Edit"), None)
         self.edit_button.setToolTip(
             self.tr("Edit the selected observation ({shortcut})").format(
                 shortcut=QKeySequence("Ctrl+E").toString(QKeySequence.NativeText)
@@ -108,6 +109,10 @@ class ModeBar(QWidget):
     def bind_page(self, button: QToolButton, page_index: int) -> None:
         """Clicking ``button`` asks for ``page_index``; that page checks it."""
         self._page_by_button[button] = int(page_index)
+        self._button_by_page[int(page_index)] = button
+
+    def bind_display_page(self, button: QToolButton, page_index: int) -> None:
+        """``button`` is checked while ``page_index`` shows; its click is handled elsewhere."""
         self._button_by_page[int(page_index)] = button
 
     def set_corner_widget(self, widget: QWidget) -> None:

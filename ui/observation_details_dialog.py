@@ -40,6 +40,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import (
     Qt,
+    Signal,
     QDateTime,
     QSize,
     QStringListModel,
@@ -185,6 +186,10 @@ from .observations_tab import (
 
 
 class ObservationDetailsDialog(GeometryMixin, QDialog):
+    # In place (Rediger, stage 9g2): "Edit images" and an image's Edit or
+    # double-click ask the page to open Bilder › Files and SD card (path, or "").
+    editImagesRequested = Signal(str)
+
     """Dialog for creating or editing an observation after image import."""
 
     _geometry_key = "ObservationDetailsDialog"
@@ -1422,6 +1427,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         cancel_btn.setStyleSheet("background-color: #e74c3c;")
         cancel_btn.clicked.connect(self.reject)
         bottom_buttons.addWidget(cancel_btn)
+        self.cancel_btn = cancel_btn
         self.submit_observation_btn = QPushButton(
             self.tr("Save Observation") if self.edit_mode else self.tr("Create Observation")
         )
@@ -1431,6 +1437,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.submit_observation_btn.setDefault(True)
         self.submit_observation_btn.clicked.connect(self.accept)
         bottom_buttons.addWidget(self.submit_observation_btn)
+        self._bottom_buttons = bottom_buttons
         main_layout.addLayout(bottom_buttons)
         main_layout.setStretch(0, 2)  # Observation details
         main_layout.setStretch(1, 3)  # Taxonomy
@@ -1834,8 +1841,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             "image_ids": [item.image_id for item in self.image_results],
         }
 
-    def _persist_ai_state_now(self) -> None:
-        """Persist AI lookup state for an existing observation without waiting for Save."""
+    # Rediger (stage 9g2) pauses this while the form opens and until the user edits.
+    _persist_ai_paused = False
+
+    def _persist_ai_state_now(self, raise_errors: bool = False) -> None:
+        """Persist AI lookup state for an existing observation without waiting for Save.
+
+        ``raise_errors``: Rediger's autosave reports a failed write (the dialog ignores it).
+        """
+        if self._persist_ai_paused:
+            return
         obs = self.observation if isinstance(self.observation, dict) else {}
         obs_id = obs.get("id")
         try:
@@ -1845,7 +1860,15 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if obs_id <= 0:
             return
         try:
-            raw_state = json.dumps(self.get_ai_state(), ensure_ascii=False)
+            state = self.get_ai_state()
+            raw_state = json.dumps(state, ensure_ascii=False)
+            stored = self.observation.get("ai_state_json")
+            if stored:
+                try:
+                    if json.loads(stored) == json.loads(raw_state):
+                        return  # unchanged (restoring the saved selection on opening): nothing to write
+                except (TypeError, ValueError):
+                    pass
             ObservationDB.update_observation(
                 obs_id,
                 ai_state_json=raw_state,
@@ -1853,7 +1876,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             )
             self.observation["ai_state_json"] = raw_state
         except Exception:
-            pass
+            if raise_errors:
+                raise
 
     def _select_initial_ai_image(self) -> None:
         index = self._current_ai_index()
@@ -3042,21 +3066,78 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             baseline["location_precision"] = cloud_precision
         return baseline
 
+    # -- in place: the Rediger mode (stage 9g2) ------------------------------
+
+    def set_in_place(self) -> None:
+        """Show as Rediger's page rather than a window (owner 2026-11-11).
+
+        The page saves as you go, so Save and Cancel go, and Esc keeps the
+        page. Images are changed in Bilder, Vis and Mål: here the strip only
+        chooses which images AI looks at, and Edit images opens Bilder ›
+        Files and SD card.
+        """
+        self._in_place = True
+        self.setWindowFlags(Qt.Widget)
+        self.setMinimumSize(0, 0)  # the dialog's window minimum; the page's scroll area handles small windows
+        if self.layout() is not None:
+            self.layout().setContentsMargins(0, 0, 0, 0)  # the page has its own margins; a window's are not needed
+            self.layout().setSpacing(6)
+        try:
+            self.finished.disconnect(self._save_geometry)  # a page has no window geometry to remember
+        except (RuntimeError, TypeError):
+            pass
+        for button in (getattr(self, "submit_observation_btn", None), getattr(self, "cancel_btn", None)):
+            if button is not None:
+                button.hide()
+                button.setEnabled(False)  # Enter in a field must not press the hidden Save
+        gallery = getattr(self, "image_gallery", None)
+        if gallery is not None:
+            gallery.set_reorderable(False)
+            gallery.set_context_actions(delete=False, delete_cloud_copy=False)
+
+    def add_in_place_status(self, widget) -> None:
+        """The page's save status, where Save was (bottom right)."""
+        row = getattr(self, "_bottom_buttons", None)
+        if row is not None:
+            row.addWidget(widget, 0, Qt.AlignRight | Qt.AlignVCenter)
+
+    def is_in_place(self) -> bool:
+        return bool(getattr(self, "_in_place", False))
+
+    def unfinished_taxon_text(self) -> str:
+        """Species search text typed but not picked (never saved in place)."""
+        picker = getattr(self, "taxon_picker", None)
+        if picker is None or not picker.isEnabled():
+            return ""
+        try:
+            return str(picker.unfinished_text() or "")
+        except Exception:
+            return ""
+
+    def reject(self) -> None:  # noqa: D401 - Qt API
+        if self.is_in_place():
+            return  # Esc keeps the page; what is typed is saved as you go
+        super().reject()
+
     def accept(self) -> None:  # noqa: D401 - Qt API
         """Stage 2c publish notice: confirm before a save that makes the
         observation public and not a draft. Cancel keeps the previous state."""
+        if self.is_in_place():
+            return  # Rediger saves as you go; nothing closes the page
         if not self._confirm_unfinished_taxon_search():
             return
         if not self.confirm_publish_change():
             return
         super().accept()
 
-    def confirm_publish_change(self) -> bool:
+    def confirm_publish_change(self, changed_keys=None) -> bool:
         """The publish notice and the precision record before a save.
 
-        Extracted unchanged from ``accept`` (stage 9g2) so Rediger's autosave
-        asks the same way: False when the user cancels (the draft and
-        visibility controls are put back).
+        Extracted from ``accept`` (stage 9g2) so Rediger's autosave asks the
+        same way: False when the user cancels (the draft and visibility
+        controls are put back). ``changed_keys``: Rediger writes only these
+        columns, so the notice judges the stored row with them applied (a
+        value changed elsewhere meanwhile is what will be published).
         """
         from ui.publish_notice import confirm_publish_if_needed, load_local_facts
 
@@ -3065,6 +3146,14 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             new_state = dict(self.get_data())
         except Exception:
             new_state = {}
+        if changed_keys is not None and new_state:
+            # The stored row as it is (not the cloud-adjusted baseline), with
+            # only the changed columns applied: exactly what will be saved.
+            obs_id = (self.observation or {}).get("id") if self.edit_mode else None
+            stored = ObservationDB.get_observation(int(obs_id)) if obs_id else None
+            merged = dict(stored or previous or {})
+            merged.update({key: value for key, value in new_state.items() if key in changed_keys})
+            new_state = merged
         if new_state and "has_photos" not in new_state:
             new_state["has_photos"] = bool(self.image_results)
         obs_id = (self.observation or {}).get("id") if self.edit_mode else None
@@ -3177,6 +3266,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._update_ai_controls_state()
 
     def _on_edit_images_clicked(self):
+        if self.is_in_place():
+            self.editImagesRequested.emit("")
+            return
         # Leaving for Prepare Images keeps the identification; unfinished
         # species search text needs the same decision as on Save.
         if not self._confirm_unfinished_taxon_search():
@@ -3185,6 +3277,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.reject()
 
     def _on_image_double_clicked(self, _img_id, path: str) -> None:
+        if self.is_in_place():
+            self.editImagesRequested.emit(path or "")
+            return
         # Leaving for Prepare Images keeps the identification; unfinished
         # species search text needs the same decision as on Save.
         if not self._confirm_unfinished_taxon_search():
@@ -3194,6 +3289,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.reject()
 
     def _on_gallery_edit_requested(self, _image_id, filepath: str) -> None:
+        if self.is_in_place():
+            self.editImagesRequested.emit((filepath or "").strip())
+            return
         # Right-click "Edit photo" routes through the same reject+
         # request_edit_images flag as the "Edit images" button and the
         # double-click handler — the parent tab picks it up and opens

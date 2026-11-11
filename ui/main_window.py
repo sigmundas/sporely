@@ -241,6 +241,7 @@ from .calibration_dialog import CalibrationDialog
 from .ingestion_hub_tab import IngestionHubTab
 from .mode_bar import ModeBar
 from .files_source_page import FilesSourcePage
+from .edit_page import EditObservationPage
 from .observation_list_panel import ObservationListPanel, VerticalRailButton
 from .measurement_overlay_style import (
     DEFAULT_RECTANGLE_STYLE,
@@ -5941,6 +5942,24 @@ class MainWindow(GeometryMixin, QMainWindow):
         if files_page is not None and files_page.has_unsaved_work() and not self._confirm_discard_files_work():
             event.ignore()
             return
+        edit_page = getattr(self, "edit_page", None)
+        if edit_page is not None and edit_page.is_busy():
+            event.ignore()  # Edit's publish notice is open: answer it first
+            return
+        if edit_page is not None and not edit_page.save_now(leaving=True):
+            # Rediger saves as you go; its last change could not be saved.
+            answer = QMessageBox.question(
+                self,
+                self.tr("Edit could not save"),
+                self.tr("Your last change in Edit could not be saved. Quit anyway and lose it?"),
+                QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Cancel,
+            )
+            if answer != QMessageBox.Discard:
+                event.ignore()
+                return
+        if edit_page is not None:
+            edit_page.shutdown()
         self._close_after_cloud_sync = False
         self._save_current_image_measure_view_settings()
         self._save_geometry()
@@ -6115,6 +6134,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.ingestion_hub_tab = IngestionHubTab(self)
         self.tab_widget.addTab(self.ingestion_hub_tab, self.tr("Camera import ({alt}+C)").format(alt=_ALT_LABEL))
 
+        # Stage 9g2: Rediger in place (appended, so the other pages keep their index).
+        self.edit_page = EditObservationPage(self.observations_tab)
+        self.edit_page.editImagesRequested.connect(self._on_edit_page_images_requested)
+        self.tab_widget.addTab(self.edit_page, self.tr("Edit"))
+
         # Stage 9a: a mode bar replaces the tab bar. The pages stay in
         # tab_widget, which remains the one source of truth for the page shown.
         self.tab_widget.tabBar().hide()
@@ -6124,6 +6148,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.mode_bar.bind_page(self.mode_bar.measure_button, 1)
         self.mode_bar.bind_page(self.mode_bar.analysis_button, 2)
         self.mode_bar.bind_page(self.mode_bar.camera_import_button, 4)
+        # Edit is checked while Rediger shows; its click still goes through the
+        # edit request (it chooses the observation and keeps cloud rows' dialog).
+        self.mode_bar.bind_display_page(self.mode_bar.edit_button, self.EDIT_PAGE)
         self.mode_bar.modeRequested.connect(self.tab_widget.setCurrentIndex)
         self.mode_bar.editRequested.connect(self._on_mode_bar_edit_requested)
         self.tab_widget.currentChanged.connect(self.mode_bar.set_current_page)
@@ -17437,7 +17464,8 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     # -- the observation list's rail and drawer (stage 9b) -------------------
 
-    RAIL_PAGES = (1, 2, 3)  # Measure, Analysis, Images (Live Lab)
+    EDIT_PAGE = 5  # Rediger (stage 9g2), after Camera import
+    RAIL_PAGES = (1, 2, 3, 5)  # Measure, Analysis, Images (Live Lab), Edit
 
     def _update_observation_rail(self, index: int) -> None:
         on_rail_page = int(index) in self.RAIL_PAGES
@@ -17546,18 +17574,81 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.mode_bar.set_edit_enabled(self._mode_bar_edit_row() >= 0)
 
     def _on_mode_bar_edit_requested(self) -> None:
-        """Edit in the mode bar opens today's observation editor (until stage 9f)."""
+        """Edit in the mode bar opens Rediger for the observation shown (stage 9g2)."""
+        if self.tab_widget.currentIndex() == self.EDIT_PAGE:
+            self.mode_bar.set_current_page(self.EDIT_PAGE)
+            return
         row = self._mode_bar_edit_row()
         self._refresh_mode_bar_edit_enabled()
-        if row < 0:
-            return
+        if row >= 0:
+            tab = self.observations_tab
+            model = tab.table.selectionModel()
+            selected = [index.row() for index in model.selectedRows()] if model is not None else []
+            if selected != [row]:
+                # Align the list with the observation shown, so the editor opens it.
+                tab.table.selectRow(row)
+            tab.edit_observation()
+        # The button checks itself on click; it shows the page actually shown.
+        self.mode_bar.set_current_page(self.tab_widget.currentIndex())
+
+    # -- Rediger (stage 9g2) --------------------------------------------------
+
+    def open_edit_mode(self, observation_id) -> bool:
+        """Show Rediger for a local observation; False leaves it to the dialog."""
+        page = getattr(self, "edit_page", None)
+        try:
+            observation_id = int(observation_id or 0)
+        except (TypeError, ValueError):
+            return False
+        if page is None or observation_id <= 0 or ObservationDB.get_observation(observation_id) is None:
+            return False
+        if int(getattr(self, "active_observation_id", 0) or 0) != observation_id:
+            selected = self.observations_tab.get_selected_observation()
+            name = selected[1] if selected and selected[0] == observation_id else ""
+            self.on_observation_selected(observation_id, name, switch_tab=False)
+        self.tab_widget.setCurrentWidget(page)
+        page.show_observation(observation_id)
+        return True
+
+    def _sync_edit_page(self) -> None:
+        """Rediger shows the active observation, created only when it is on screen."""
+        page = getattr(self, "edit_page", None)
+        if page is not None and self.tab_widget.currentIndex() == self.EDIT_PAGE:
+            page.show_observation(getattr(self, "active_observation_id", None))
+
+    def refresh_after_observation_edits(self, observation_id, *, taxonomy_changed: bool = False) -> None:
+        """Rediger saved: refresh the table, list and header once, after it settles."""
+        QTimer.singleShot(
+            0, self, lambda: self._refresh_after_observation_edits(observation_id, taxonomy_changed)
+        )
+
+    def _refresh_after_observation_edits(self, observation_id, taxonomy_changed: bool) -> None:
         tab = self.observations_tab
-        model = tab.table.selectionModel()
-        selected = [index.row() for index in model.selectedRows()] if model is not None else []
-        if selected != [row]:
-            # Align the list with the observation shown, so the editor opens it.
-            tab.table.selectRow(row)
-        tab.edit_observation()
+        tab.refresh_observations()  # keeps the table's selection
+        selected = tab.get_selected_observation()
+        active = int(getattr(self, "active_observation_id", 0) or 0)
+        # Re-activate only the observation still shown: Rediger may have moved
+        # on to another (a refresh must never switch it back).
+        if selected and int(selected[0]) == int(observation_id or 0) == active:
+            tab._refresh_active_observation_after_edit(refresh_reference_species_availability=taxonomy_changed)
+        elif taxonomy_changed and hasattr(self, "_refresh_reference_species_availability"):
+            try:
+                self._refresh_reference_species_availability(force_refresh=True)
+            except Exception:
+                pass
+
+    def _on_edit_page_images_requested(self, observation_id: int, path: str) -> None:
+        """Edit images in Rediger: Bilder › Files and SD card, on that image."""
+        live = getattr(self, "live_lab_tab", None)
+        files = getattr(self, "files_source_page", None)
+        if live is None or files is None:
+            return
+        self.tab_widget.setCurrentWidget(live)
+        live.show_source(live.SOURCE_FILES)
+        self._sync_files_source()
+        editor = files.editor()
+        if path and editor is not None and files.observation_id() == int(observation_id):
+            editor.select_image_by_path(path)
 
     def _switch_tab_from_observations(self, target_index: int) -> None:
         """Switch tabs only when Observations tab is currently active."""
@@ -17659,6 +17750,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                     )
                     self.update_measurements_table()
                     self._show_measure_image_for_selected_observation(selected_image_id)
+        if index == self.EDIT_PAGE:
+            self._sync_edit_page()
         if index == 3 and hasattr(self, "live_lab_tab"):
             self.live_lab_tab.sync_from_active_observation()
             self._sync_files_source()
@@ -23588,6 +23681,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._schedule_mode_bar_edit_refresh()
 
     def on_observation_deleted(self, observation_id: int):
+        edit_page = getattr(self, "edit_page", None)
+        if edit_page is not None:
+            edit_page.forget_observation(observation_id)  # Rediger never saves into a deleted row
         if observation_id != getattr(self, "active_observation_id", None):
             return
         self.active_observation_id = None
@@ -23624,6 +23720,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self._sync_files_source()
             except Exception:
                 pass
+        self._sync_edit_page()
         if hasattr(self, "ingestion_hub_tab") and self.ingestion_hub_tab is not None:
             try:
                 self.ingestion_hub_tab.sync_from_active_observation()

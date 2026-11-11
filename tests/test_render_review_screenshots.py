@@ -186,6 +186,7 @@ MODE_BAR_IDS = {
     "images.files", "images.files-dark", "images.files-small-de",
     "images.files-microscope", "images.files-info",
     "images.preferences-image-import", "images.preferences-image-import-de",
+    "edit.rediger", "edit.rediger-dark", "edit.rediger-small-de",
 }
 ALL_IDS = (
     REFERENCE_IDS

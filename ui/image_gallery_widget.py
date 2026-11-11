@@ -826,6 +826,7 @@ class ImageGalleryWidget(QGroupBox):
         move_to_observation: bool | None = None,
         delete_cloud_copy: bool | None = None,
         publish_checkbox: bool | None = None,
+        delete: bool | None = None,
     ) -> None:
         """The right-click actions (and cloud checkboxes) the page shown offers.
 
@@ -834,6 +835,10 @@ class ImageGalleryWidget(QGroupBox):
         """
         if publish_checkbox is not None and bool(publish_checkbox) != self._show_publish_checkbox:
             self._show_publish_checkbox = bool(publish_checkbox)
+            if self._items:
+                self._render()
+        if delete is not None and bool(delete) != self._show_delete:
+            self._show_delete = bool(delete)
             if self._items:
                 self._render()
         if change_settings is not None:

@@ -12564,11 +12564,32 @@ class ObservationsTab(QWidget):
                 observation_updates.pop(field, None)
         return observation_updates
 
-    def write_observation_edits(self, obs_id: int, observation: dict, dialog) -> bool:
+    def prepare_observation_edit(self, obs_id: int):
+        """What the editor opens with: (observation, its images, their import
+        results, the observation with any unsaved draft merged in, AI state),
+        or None when the observation is gone."""
+        observation = ObservationDB.get_observation(obs_id)
+        if not observation:
+            return None
+        existing_images = ImageDB.get_images_for_observation(obs_id)
+        image_results = self._build_import_results_from_images(existing_images)
+        draft_observation = self._merge_observation_edit_draft(
+            observation,
+            self._observation_edit_draft_cache.get(obs_id),
+        )
+        ai_state = self._remap_ai_state_to_images(
+            self._load_observation_ai_state(observation),
+            image_results,
+        )
+        return observation, existing_images, image_results, draft_observation, ai_state
+
+    def write_observation_edits(self, obs_id: int, observation: dict, dialog, *, only_keys=None) -> bool:
         """Write the editor's observation fields (not its images); True when the taxon changed.
 
-        Extracted unchanged from ``edit_observation`` (stage 9g2) so Rediger's
-        autosave writes exactly what the dialog's Save did.
+        Extracted from ``edit_observation`` (stage 9g2) so Rediger's autosave
+        writes what the dialog's Save did. ``only_keys``: Rediger writes only
+        the columns that changed since its last save (None: all of them, as
+        the dialog does), so newer values elsewhere in the row are kept.
         """
         ai_state = dialog.get_ai_state()
         self._ai_suggestions_cache[obs_id] = ai_state
@@ -12583,14 +12604,20 @@ class ObservationsTab(QWidget):
             ai_state_json=self._serialize_ai_state(ai_state),
             unidentified=dialog.is_unidentified(),
         )
-        if dialog.is_unidentified():
+        if only_keys is not None:
+            observation_updates = {
+                key: value for key, value in observation_updates.items()
+                if key in only_keys or key == "allow_nulls"
+            }
+        if dialog.is_unidentified() and (only_keys is None or "genus" in only_keys):
             ObservationDB.clear_observation_identification(
                 obs_id,
             )
-        ObservationDB.update_observation(
-            obs_id,
-            **observation_updates,
-        )
+        if only_keys is None or len(observation_updates) > 1:
+            ObservationDB.update_observation(
+                obs_id,
+                **observation_updates,
+            )
         self.schedule_metadata_cloud_sync(obs_id)
         return taxonomy_changed
 
@@ -12607,26 +12634,20 @@ class ObservationsTab(QWidget):
             if isinstance(row_data, dict) and str(row_data.get("row_kind") or "") == "cloud":
                 self._open_cloud_observation_editor(row_data)
             return
-        observation = ObservationDB.get_observation(obs_id)
-        if not observation:
+        host = self.window()
+        open_edit_mode = getattr(host, "open_edit_mode", None)
+        if callable(open_edit_mode) and open_edit_mode(obs_id):
+            return  # Rediger in place (stage 9g2); cloud-only rows keep the dialog until 9g4
+        prepared = self.prepare_observation_edit(obs_id)
+        if prepared is None:
             return
+        observation, existing_images, image_results, draft_observation, ai_state = prepared
 
         obs_dt = _parse_observation_datetime(observation.get("date"))
         obs_lat = observation.get("gps_latitude")
         obs_lon = observation.get("gps_longitude")
 
-        existing_images = ImageDB.get_images_for_observation(obs_id)
-        image_results = self._build_import_results_from_images(existing_images)
-        draft_observation = self._merge_observation_edit_draft(
-            observation,
-            self._observation_edit_draft_cache.get(obs_id),
-        )
-
         ai_taxon = None
-        ai_state = self._remap_ai_state_to_images(
-            self._load_observation_ai_state(observation),
-            image_results,
-        )
         while True:
             dialog = ObservationDetailsDialog(
                 self,

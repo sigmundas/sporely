@@ -187,6 +187,40 @@ def _images_files(context: ReviewContext, *, size: tuple[int, int] = (1500, 950)
     return host
 
 
+def _edit_mode(context: ReviewContext, *, size: tuple[int, int] = (1500, 950), typed: bool = False) -> QWidget:
+    """Rediger in place (stage 9g2): Edit in the mode bar shows the form as a mode.
+
+    ``typed``: a change was made and saved (the status reads “Saved”).
+    """
+    from database.models import ImageDB
+    from ui.main_window import MainWindow
+
+    from .live_lab import _fresh_profile
+
+    profile = _fresh_profile(context, "edit-mode")
+    observation_id = create_observation(profile, "edit-mode")
+    ImageDB.add_image(observation_id, str(profile.jpeg("field1.JPG", seed=41)), "field")
+    window = MainWindow()
+    host = _DrainingWindow(window)
+    host.resize(*size)
+    host.show()
+    _settle(0.3)
+    tab = window.observations_tab
+    tab.refresh_observations()
+    _settle(0.3)
+    row = tab._find_table_row_for_observation(observation_id)
+    if row >= 0:
+        tab.table.selectRow(row)
+    window.open_edit_mode(observation_id)
+    _settle(0.8)
+    if typed:
+        page = window.edit_page
+        page.editor().location_input.setText("Lade, Trondheim")
+        page.save_now()
+    _settle(0.4)
+    return host
+
+
 def _preferences_image_import(context: ReviewContext) -> QWidget:
     """Preferences › Image import with the optimal-sampling resize option (stage 9f2)."""
     from ui.main_window import SettingsHubDialog
@@ -326,6 +360,31 @@ def register_mode_bar_scenarios(registry: ScenarioRegistry) -> None:
                     theme=theme,
                 )
             )
+    for theme in ("light", "dark"):
+        suffix = "" if theme == "light" else "-dark"
+        registry.register(
+            ReviewScenario(
+                id=f"edit.rediger{suffix}",
+                group="mode-bar",
+                title=f"Rediger in place (nb{', dark' if theme == 'dark' else ''})",
+                description="Edit shows the observation form as the Rediger mode; changes save as you go (stage 9g2).",
+                build=lambda context: _edit_mode(context, typed=True),
+                viewport=(1500, 950),
+                locale="nb_NO",
+                theme=theme,
+            )
+        )
+    registry.register(
+        ReviewScenario(
+            id="edit.rediger-small-de",
+            group="mode-bar",
+            title="Rediger in place, small window (de)",
+            description="Rediger with German strings in a 1100 × 720 window.",
+            build=lambda context: _edit_mode(context, size=(1100, 720)),
+            viewport=(1100, 720),
+            locale="de_DE",
+        )
+    )
     registry.register(
         ReviewScenario(
             id="mode-bar.view-de",
