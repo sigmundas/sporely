@@ -880,6 +880,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
     """Prepare images before creating or editing an observation."""
 
     continueRequested = Signal(list)
+    # In place in Bilder (stage 9f): unsaved changes or new images changed.
+    unsavedChanged = Signal()
     _geometry_key = "ImageImportDialog"
     _gallery_splitter_key = "splitter/ImageImportDialogBottom"
     CUSTOM_OBJECTIVE_KEY = "__custom__"
@@ -2557,10 +2559,107 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 return True
         return False
 
+    # -- in place in Bilder › Files and SD card (stage 9f) ---------------------
+
+    _IN_PLACE_FIELDS = (
+        "filepath", "image_type", "objective", "custom_scale", "contrast", "mount_medium", "stain",
+        "sample_type", "sample_source", "notes", "gps_latitude", "gps_longitude", "calibration_id",
+        "ai_crop_box", "crop_mode", "pending_image_crop_offset", "resample_scale_factor",
+        "resize_to_optimal", "store_original", "lab_metadata",
+    )
+
+    def set_in_place(self) -> None:
+        """Show as a page in Bilder rather than a window: save and discard stay
+        on the page, and Esc does not throw the work away."""
+        self._in_place = True
+        self.setWindowFlags(Qt.Widget)
+        try:
+            self.finished.disconnect(self._save_geometry)  # a page has no window geometry to remember
+        except (RuntimeError, TypeError):
+            pass
+        self.mark_in_place_baseline()
+        self._update_action_buttons_state()
+
+    @classmethod
+    def _result_signature(cls, result) -> str:
+        values = [repr(getattr(result, name, None)) for name in cls._IN_PLACE_FIELDS]
+        captured = getattr(result, "captured_at", None)
+        values.append(captured.toString(Qt.ISODate) if captured is not None and hasattr(captured, "toString") else "")
+        return "|".join(values)
+
+    def mark_in_place_baseline(self) -> None:
+        """What the saved images look like now; changes are measured from here."""
+        self._baseline_by_id = {
+            int(result.image_id): self._result_signature(result)
+            for result in self.import_results
+            if isinstance(result, ImageImportResult) and result.image_id is not None
+        }
+        self._baseline_order = [
+            int(result.image_id) for result in self.import_results
+            if isinstance(result, ImageImportResult) and result.image_id is not None
+        ]
+        self._baseline_gps = self.get_observation_gps()
+
+    def changed_existing_ids(self) -> set[int]:
+        """Saved images edited here (any of their fields), by image id."""
+        baseline = getattr(self, "_baseline_by_id", {})
+        return {
+            int(result.image_id)
+            for result in self.import_results
+            if isinstance(result, ImageImportResult)
+            and result.image_id is not None
+            and baseline.get(int(result.image_id)) != self._result_signature(result)
+        }
+
+    def gps_changed_since_baseline(self) -> bool:
+        return self.get_observation_gps() != getattr(self, "_baseline_gps", self.get_observation_gps())
+
+    def is_in_place(self) -> bool:
+        return bool(getattr(self, "_in_place", False))
+
+    def has_unsaved_changes(self) -> bool:
+        """New images, edited fields, removed or reordered saved images, or a new GPS."""
+        if bool(getattr(self, "_is_dirty", False)) or self.unsaved_new_results():
+            return True
+        if not hasattr(self, "_baseline_by_id"):
+            return False
+        order = [
+            int(result.image_id) for result in self.import_results
+            if isinstance(result, ImageImportResult) and result.image_id is not None
+        ]
+        return (
+            order != self._baseline_order
+            or bool(self.changed_existing_ids())
+            or self.gps_changed_since_baseline()
+        )
+
+    def save_in_place(self) -> None:
+        """Save, as the dialog's Save button does (Bilder's save row)."""
+        self._accept_and_close()
+
+    def unsaved_new_results(self) -> list:
+        """Images added here and not saved to the observation yet."""
+        return [
+            result for result in self.import_results
+            if isinstance(result, ImageImportResult) and result.image_id is None
+        ]
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if self.is_in_place() and event.key() == Qt.Key_Escape:
+            event.accept()  # a page in Bilder: Esc keeps the work
+            return
+        super().keyPressEvent(event)
+
     def _update_action_buttons_state(self) -> None:
         if not hasattr(self, "next_btn") or not hasattr(self, "cancel_btn"):
             return
         dirty = bool(getattr(self, "_is_dirty", False))
+        if self.is_in_place():
+            # Bilder's page has its own save row, outside the scrolled editor.
+            self.next_btn.setVisible(False)
+            self.cancel_btn.setVisible(False)
+            self.unsavedChanged.emit()
+            return
         if self._continue_to_observation_details:
             self.cancel_btn.setVisible(True)
             self.cancel_btn.setText(self.tr("Discard") if dirty else self.tr("Cancel"))
@@ -4312,6 +4411,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self._select_image(target_index)
         elif self.selected_index is None and self.import_results:
             self._select_image(0)
+        if getattr(self, "_in_place", False):
+            self._update_action_buttons_state()  # new images are unsaved: Save shows, Bilder mirrors them
 
     def select_image_by_path(self, path: str) -> None:
         """Select and preview a specific image by its file path."""

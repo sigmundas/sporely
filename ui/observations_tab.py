@@ -12877,16 +12877,23 @@ class ObservationsTab(QWidget):
         *,
         prior_image_id: int | None = None,
         selected_image_path: str | None = None,
+        image_results: list | None = None,
+        write_gps: bool = True,
+        reselect: bool = True,
     ) -> None:
         """Save what Prepare Images (``image_dialog``) holds into observation ``obs_id``.
 
         The path after today's dialog closes with Save; Bilder › Files and SD
-        card (stage 9f) saves its in-place editor the same way.
+        card (stage 9f) saves its in-place editor the same way, passing the
+        results to save (unchanged ones re-read from the database), whether its
+        GPS changed, and ``reselect=False``: its observation need not be the
+        table's selection, so the table and the active observation stay.
         """
         host = self.window()
         post_save_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
 
-        image_results       = image_dialog.import_results
+        if image_results is None:
+            image_results = image_dialog.import_results
         obs_lat, obs_lon    = image_dialog.get_observation_gps()
         step_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
         coords_changed = self._coords_meaningfully_changed(
@@ -12905,7 +12912,8 @@ class ObservationsTab(QWidget):
             # push does not carry over the old country/region.
             update_kwargs["country_code"] = None
             update_kwargs["region_id"] = None
-        ObservationDB.update_observation(obs_id, **update_kwargs)
+        if write_gps:
+            ObservationDB.update_observation(obs_id, **update_kwargs)
         _obs_timing_log("update_observation gps", step_start)
         step_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
         self.schedule_metadata_cloud_sync(obs_id)
@@ -12927,31 +12935,31 @@ class ObservationsTab(QWidget):
         # to the row we're already sitting on: just re-issue the selection
         # so downstream signal handlers refresh the gallery / image
         # browser.
-        step_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
-        current_row = None
-        selected_rows_now = self.table.selectionModel().selectedRows()
-        if selected_rows_now:
-            current_row = selected_rows_now[0].row()
-        if current_row is not None and self._observation_id_for_row(current_row) == obs_id:
-            self.selected_observation_id = obs_id
-            self.on_selection_changed()
-        else:
-            # Row moved (unlikely for image edits, but be defensive) — do a
-            # full refresh + re-select as a fallback.
-            fallback_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
-            self.refresh_observations()
-            _obs_timing_log("refresh_observations (fallback)", fallback_start)
-            for r, obs in enumerate(ObservationDB.get_all_observations()):
-                if obs["id"] == obs_id:
-                    self.table.selectRow(r)
+        if reselect:
+            step_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
+            current_row = None
+            selected_rows_now = self.table.selectionModel().selectedRows()
+            if selected_rows_now:
+                current_row = selected_rows_now[0].row()
+            if current_row is not None and self._observation_id_for_row(current_row) == obs_id:
+                self.selected_observation_id = obs_id
+                self.on_selection_changed()
+            else:
+                # Row moved (unlikely for image edits, but be defensive) — do a
+                # full refresh + re-select as a fallback.
+                fallback_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
+                self.refresh_observations()
+                _obs_timing_log("refresh_observations (fallback)", fallback_start)
+                row = self._find_table_row_for_observation(obs_id)  # filtered or sorted tables too
+                if row >= 0:
+                    self.table.selectRow(row)
                     self.selected_observation_id = obs_id
                     self.on_selection_changed()
-                    break
-        _obs_timing_log("re-select current row", step_start)
-        step_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
-        # Force Measure tab to reload updated scale/measurements without switching tabs
-        self.set_selected_as_active(switch_tab=False)
-        _obs_timing_log("set_selected_as_active", step_start)
+            _obs_timing_log("re-select current row", step_start)
+            step_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
+            # Force Measure tab to reload updated scale/measurements without switching tabs
+            self.set_selected_as_active(switch_tab=False)
+            _obs_timing_log("set_selected_as_active", step_start)
         _obs_timing_log("TOTAL post-save flow (to set_selected_as_active)", post_save_start)
 
         # Invalidate cached thumbnails for the edited files and reselect

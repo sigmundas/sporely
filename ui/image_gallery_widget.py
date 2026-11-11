@@ -669,7 +669,7 @@ class ImageGalleryWidget(QGroupBox):
         self._active_channel: str | None = None
         self._shown_observation_id: int | None = None
         self._observation_base_items: list[dict] = []
-        self._staged_by_observation: dict[int, list[dict]] = {}
+        self._staged_by_observation: dict[int, dict[str, list[dict]]] = {}
         self._selected_id = None
         self._selected_keys: set[str | int] = set()
         # Filepaths to re-select on the next set_items / observation reload
@@ -832,10 +832,14 @@ class ImageGalleryWidget(QGroupBox):
         """The observation whose images the strip shows, if it shows one."""
         return self._shown_observation_id
 
-    def set_staged_items(self, observation_id: int, items: Iterable[dict], *, render: bool = True) -> None:
+    def set_staged_items(
+        self, observation_id: int, items: Iterable[dict], *, render: bool = True, source: str = "live",
+    ) -> None:
         """Unsaved images for ``observation_id``: shown first, with an orange border.
 
-        They stay with that observation and show whenever its images do.
+        They stay with that observation and show whenever its images do. Each
+        ``source`` (Live's captures, Files and SD card's new files) keeps its
+        own list, so one never replaces the other's.
         """
         try:
             key = int(observation_id)
@@ -847,20 +851,26 @@ class ImageGalleryWidget(QGroupBox):
             entry["staged"] = True
             entry.setdefault("frame_border_color", STAGING_BORDER)
             staged.append(entry)
+        by_source = self._staged_by_observation.setdefault(key, {})
         if staged:
-            self._staged_by_observation[key] = staged
+            by_source[str(source)] = staged
         else:
+            by_source.pop(str(source), None)
+        if not by_source:
             self._staged_by_observation.pop(key, None)
         if render and self._shown_observation_id == key:
             shown = key
-            self.set_items(staged + list(self._observation_base_items), reveal="preserve")
+            self.set_items(self.staged_items(key) + list(self._observation_base_items), reveal="preserve")
             self._shown_observation_id = shown
 
-    def staged_items(self, observation_id: int) -> list[dict]:
+    def staged_items(self, observation_id: int, source: str | None = None) -> list[dict]:
         try:
-            return list(self._staged_by_observation.get(int(observation_id), []))
+            by_source = self._staged_by_observation.get(int(observation_id), {})
         except (TypeError, ValueError):
             return []
+        if source is not None:
+            return list(by_source.get(str(source), []))
+        return [item for items in by_source.values() for item in items]
 
     def clear(self) -> None:
         self._shown_observation_id = None

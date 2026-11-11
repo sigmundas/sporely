@@ -240,6 +240,7 @@ from .dialog_helpers import ask_measurements_exist_delete, ask_wrapped_yes_no, m
 from .calibration_dialog import CalibrationDialog
 from .ingestion_hub_tab import IngestionHubTab
 from .mode_bar import ModeBar
+from .files_source_page import FilesSourcePage
 from .observation_list_panel import ObservationListPanel, VerticalRailButton
 from .measurement_overlay_style import (
     DEFAULT_RECTANGLE_STYLE,
@@ -5913,9 +5914,18 @@ class MainWindow(GeometryMixin, QMainWindow):
         if getattr(self, "_allow_immediate_close", False):
             self._allow_immediate_close = False
 
+        files_page = getattr(self, "files_source_page", None)
+        if files_page is not None and files_page.has_unsaved_work() and not self._confirm_discard_files_work():
+            event.ignore()
+            return
         self._close_after_cloud_sync = False
         self._save_current_image_measure_view_settings()
         self._save_geometry()
+        if files_page is not None:
+            try:
+                files_page.shutdown()
+            except Exception:
+                pass
         if hasattr(self, "observations_tab") and self.observations_tab is not None:
             try:
                 self.observations_tab.shutdown()
@@ -6072,6 +6082,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.live_lab_tab = LiveLabTab(self)
         # Stage 9d: Images (Live Lab) shares the strip with View and Measure.
         self.live_lab_tab.adopt_shared_strip(self.measure_gallery)
+        # Stage 9f: Bilder's second source, today's Prepare Images in place.
+        self.files_source_page = FilesSourcePage(self.observations_tab)
+        self.live_lab_tab.add_files_source(self.files_source_page)
+        self.live_lab_tab.sourceChanged.connect(lambda _source: self._sync_files_source())
+        self.files_source_page.unsavedChanged.connect(self._on_files_unsaved_changed)
         self.tab_widget.addTab(self.live_lab_tab, self.tr("Live Lab ({alt}L)").format(alt=_ALT_LABEL))
 
         self.ingestion_hub_tab = IngestionHubTab(self)
@@ -6126,10 +6141,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         main_layout.addWidget(pages, 1)
         self.observation_list_panel = ObservationListPanel()
         self.observation_list_panel.set_source_model(table.model())
-        self.live_lab_tab.unsavedCountsChanged.connect(self.observation_list_panel.set_unsaved_counts)
+        self.live_lab_tab.unsavedCountsChanged.connect(lambda _counts: self._refresh_unsaved_counts())
         # Stage 9e: a running session shows on Images: “Live 00:14” / “Logging 00:14”.
         self.live_lab_tab.sessionBadgeChanged.connect(lambda text: self.mode_bar.set_page_badge(3, text))
-        self.observation_list_panel.set_unsaved_counts(self.live_lab_tab.unsaved_counts())
+        self._refresh_unsaved_counts()
         self.observation_list_panel.rowChosen.connect(self._on_observation_list_row_chosen)
         self.observation_list_panel.tableRequested.connect(self._on_observation_list_table_requested)
         self.observation_list_panel.newRequested.connect(self._on_observation_list_new_requested)
@@ -17407,6 +17422,45 @@ class MainWindow(GeometryMixin, QMainWindow):
         if not on_rail_page:
             self.observation_drawer.close_drawer()
 
+    # -- Bilder › Files and SD card (stage 9f) --------------------------------
+
+    def _confirm_discard_files_work(self) -> bool:
+        """Quitting with unsaved work in Bilder › Files and SD card: ask first."""
+        answer = QMessageBox.question(
+            self,
+            self.tr("Unsaved images"),
+            self.tr("Images › Files and SD card has images that are not saved. Quit and discard them?"),
+            QMessageBox.Discard | QMessageBox.Cancel,
+            QMessageBox.Cancel,
+        )
+        return answer == QMessageBox.Discard
+
+    def _sync_files_source(self) -> None:
+        """Files shows Bilder's observation, created only when it is on screen."""
+        live = getattr(self, "live_lab_tab", None)
+        page = getattr(self, "files_source_page", None)
+        if live is None or page is None:
+            return
+        if self.tab_widget.currentIndex() == 3 and live.current_source() == live.SOURCE_FILES:
+            page.show_observation(live._target_observation_id)
+
+    def _on_files_unsaved_changed(self, observation_id: int, items) -> None:
+        self.measure_gallery.set_staged_items(observation_id, items, source="files")
+        self._refresh_unsaved_counts()
+
+    def _refresh_unsaved_counts(self) -> None:
+        """Unsaved images per observation, Live's captures and Files' new files together."""
+        panel = getattr(self, "observation_list_panel", None)
+        if panel is None:
+            return
+        counts: dict[int, int] = {}
+        for source in (getattr(self, "live_lab_tab", None), getattr(self, "files_source_page", None)):
+            if source is None:
+                continue
+            for observation_id, count in source.unsaved_counts().items():
+                counts[observation_id] = counts.get(observation_id, 0) + int(count)
+        panel.set_unsaved_counts(counts)
+
     def _toggle_observation_drawer(self) -> None:
         self.observation_drawer.toggle_page("observations")
 
@@ -17582,6 +17636,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                     self._show_measure_image_for_selected_observation(selected_image_id)
         if index == 3 and hasattr(self, "live_lab_tab"):
             self.live_lab_tab.sync_from_active_observation()
+            self._sync_files_source()
             if self.live_lab_tab.holds_shared_strip():
                 self.live_lab_tab._refresh_session_gallery(reveal="preserve")  # the target may have changed
         if index == 4 and hasattr(self, "ingestion_hub_tab"):
@@ -23541,6 +23596,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         if hasattr(self, "live_lab_tab") and self.live_lab_tab is not None:
             try:
                 self.live_lab_tab.set_target_observation(observation_id, display_name=display_name)
+                self._sync_files_source()
             except Exception:
                 pass
         if hasattr(self, "ingestion_hub_tab") and self.ingestion_hub_tab is not None:

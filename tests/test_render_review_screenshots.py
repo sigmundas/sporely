@@ -183,6 +183,7 @@ MODE_BAR_IDS = {
     "observation-list.drawer-dark", "observation-list.drawer-de",
     "image-strip.staged", "image-strip.staged-dark",
     "images.live", "images.live-dark",
+    "images.files", "images.files-dark", "images.files-small-de",
 }
 ALL_IDS = (
     REFERENCE_IDS

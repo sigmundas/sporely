@@ -106,6 +106,7 @@ class _DrainingWindow(QWidget):
         from ..live_lab_harness import drain_live_lab, pump_until
 
         drain_live_lab(self.window_under_review.live_lab_tab, pump_until)
+        self.window_under_review.files_source_page.shutdown()  # discard: no quit question offscreen
         super().closeEvent(event)
 
 
@@ -143,7 +144,56 @@ def _images_live(context: ReviewContext) -> QWidget:
     return host
 
 
+def _images_files(context: ReviewContext, *, size: tuple[int, int] = (1500, 950)) -> QWidget:
+    """Bilder › Files and SD card: Prepare Images in place, one saved and one new image (stage 9f)."""
+    from database.models import ImageDB
+    from ui.main_window import MainWindow
+
+    from .live_lab import _fresh_profile
+
+    profile = _fresh_profile(context, "images-files")
+    observation_id = create_observation(profile, "images-files")
+    ImageDB.add_image(observation_id, str(profile.jpeg("field1.JPG", seed=31)), "field")
+    window = MainWindow()
+    host = _DrainingWindow(window)
+    host.resize(*size)
+    host.show()
+    _settle(0.3)
+    window.on_observation_selected(observation_id, "Inocybe geophylla", switch_tab=False)
+    window.tab_widget.setCurrentWidget(window.live_lab_tab)
+    window.live_lab_tab.show_source(window.live_lab_tab.SOURCE_FILES)
+    _settle(0.5)
+    window.files_source_page.editor().add_images([str(profile.jpeg("new1.JPG", seed=32))])
+    _settle(0.8)
+    return host
+
+
 def register_mode_bar_scenarios(registry: ScenarioRegistry) -> None:
+    for theme in ("light", "dark"):
+        suffix = "" if theme == "light" else "-dark"
+        registry.register(
+            ReviewScenario(
+                id=f"images.files{suffix}",
+                group="mode-bar",
+                title=f"Bilder › Files and SD card (nb{', dark' if theme == 'dark' else ''})",
+                description="Prepare Images in place in Bilder, one new unsaved image (stage 9f).",
+                build=lambda context: _images_files(context),
+                viewport=(1500, 950),
+                locale="nb_NO",
+                theme=theme,
+            )
+        )
+    registry.register(
+        ReviewScenario(
+            id="images.files-small-de",
+            group="mode-bar",
+            title="Bilder › Files and SD card, small window (de)",
+            description="German strings in a 1100 × 720 window.",
+            build=lambda context: _images_files(context, size=(1100, 720)),
+            viewport=(1100, 720),
+            locale="de_DE",
+        )
+    )
     for theme in ("light", "dark"):
         suffix = "" if theme == "light" else "-dark"
         registry.register(

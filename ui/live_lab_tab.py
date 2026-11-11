@@ -215,6 +215,8 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
     unsavedCountsChanged = Signal(object)
     # “Live 00:14” / “Logging 00:14” while a session runs, "" otherwise (the mode bar).
     sessionBadgeChanged = Signal(str)
+    # Bilder's source: "live" or "files" (stage 9f).
+    sourceChanged = Signal(str)
 
     SETTING_WATCH_DIR = "live_lab_watch_dir"
     SETTING_LAST_OBJECTIVE = "live_lab_last_objective"
@@ -384,6 +386,8 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
 
         main_splitter = QSplitter(Qt.Horizontal)
         main_splitter.setChildrenCollapsible(False)
+        self._root_layout = root_layout
+        self._live_content = main_splitter
         root_layout.addWidget(main_splitter, 1)
 
         left_panel = QWidget()
@@ -833,6 +837,7 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         self.hint_progress_stack.setFixedHeight(stable_hint_height)
         self.hint_progress_stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         hint_area_layout.addWidget(self.hint_progress_stack)
+        self._hint_area = hint_area
         root_layout.addWidget(hint_area)
 
     def _register_hint_widgets(self) -> None:
@@ -3689,6 +3694,46 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             lab_metadata=ingest_context,
             observation_id=observation_id,
         )
+
+    # -- Bilder's sources: Live and Files and SD card (stage 9f) ----------------
+
+    SOURCE_LIVE = "live"
+    SOURCE_FILES = "files"
+
+    def add_files_source(self, page: QWidget) -> None:
+        """Bilder gets a second source next to Live: Files and SD card (``page``)."""
+        root = self._root_layout
+        root.removeWidget(self._live_content)
+        self.source_selector = SegmentedSelector(self, compact=True)
+        self.source_selector.add_option(self.tr("Live (microscope)"), self.SOURCE_LIVE, checked=True)
+        self.source_selector.add_option(self.tr("Files and SD card"), self.SOURCE_FILES)
+        self.source_selector.selectionChanged.connect(self._on_source_chosen)
+        source_row = QHBoxLayout()
+        source_row.setContentsMargins(0, 0, 0, 0)
+        source_row.addWidget(self.source_selector, 0)
+        source_row.addStretch(1)
+        root.insertLayout(0, source_row)
+        self.source_stack = QStackedWidget(self)
+        self.source_stack.addWidget(self._live_content)
+        self.source_stack.addWidget(page)
+        root.insertWidget(1, self.source_stack, 1)
+        self._files_source_page = page
+
+    def current_source(self) -> str:
+        selector = getattr(self, "source_selector", None)
+        return selector.selected_value(self.SOURCE_LIVE) if selector is not None else self.SOURCE_LIVE
+
+    def show_source(self, source: str) -> None:
+        selector = getattr(self, "source_selector", None)
+        if selector is None:
+            return
+        selector.set_selected_value(source, emit=True)
+
+    def _on_source_chosen(self, value) -> None:
+        files = value == self.SOURCE_FILES
+        self.source_stack.setCurrentIndex(1 if files else 0)
+        self._hint_area.setVisible(not files)  # the Files editor has its own hint bar
+        self.sourceChanged.emit(str(value))
 
     # -- the shared strip (stage 9d) ------------------------------------------
 
