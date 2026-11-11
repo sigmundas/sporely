@@ -787,8 +787,8 @@ landed through PRs before the branch existed), the commit that brought it into
 Found during stage 9g2, not fixed there (rule 1):
 
 - Rediger keeps today's form layout, which needs about 815 px of height: a
-  small window scrolls to reach the bottom bar (Rediger bilder, the status).
-  9g3 brings the mockup's layout.
+  small window scrolls the form (the bottom bar stays in view since the
+  follow-up below). 9g3 brings the mockup's layout.
 - The form's own image row stays (it chooses which photos AI looks at; no
   removing or reordering here); the shared strip comes with 9g3's layout.
 - The list, table and title refresh when Rediger is left or the
@@ -797,6 +797,42 @@ Found during stage 9g2, not fixed there (rule 1):
   images; Rediger changes no images, so it does not.
 - `_persist_ai_state_now` now skips writing an unchanged AI state, in the
   dialog too (opening wrote it again before).
+
+The owner's first try of 9g2 (2026-11-11), fixed in a follow-up commit on the
+same branch (agent-verified; tests in `tests/test_edit_mode.py`, renders
+`edit.rediger*`, timings on a copy of the owner's database with cloud sign-in
+blocked):
+
+- Slow to open (about 5 s reported; 1.3–2 s measured here, offscreen and
+  cocoa). Rediger rebuilt the form every time it was shown again; it now
+  keeps it unless the observation's row, its images or the name language
+  changed meanwhile (coming back: 0.04 s). The form's own writes (its saves,
+  AI results it stores) are folded in column by column, so a change made
+  elsewhere before a save still reloads it. The AI table looked each suggestion's common name
+  up again on every redraw; it is looked up once per form. Most of the
+  remaining cost is the form's own setup, chiefly about 225 short-lived
+  database connections and a slow local taxon-record query in
+  `database/taxon_lookup.py`, which other screens share; not changed here.
+- The bottom bar was out of view and the page scrolled into an empty band:
+  the dialog's outer layout kept stretches from an older three-row layout,
+  giving the bottom row more spare height than the form, and in place the
+  save status let that row grow. The stale stretches are gone and Rediger
+  pins the bottom bar below the scrolling form (Edit images' shortcut works
+  from it too).
+- “Changed 1045 to private, then public; nothing happened”: the profile has
+  the publish notice switched off (“Don't show this again”; Settings ›
+  Online publishing restores it). Rediger behaved as designed.
+- “In Bilder I no longer see image details (such as folder location)”: not
+  yet identified; asked the owner which panel they mean.
+
+Codex reviewed the follow-up in two rounds, five findings, all fixed: a
+save's snapshot of the whole stored row hid changes made elsewhere (a later
+point move could have written a stale longitude back); a changed name
+language and AI results the form stored itself were not considered; the AI
+common-name cache was keyed by the setting rather than the lookup's language;
+Edit images' shortcut did not reach the moved bottom bar. Related tests: 531
+passed (the two renderer tests that start `.venv/bin/python` in the worktree
+need the project venv there; CI runs them).
 
 Found during stage 9f3, not fixed there (rule 1):
 
