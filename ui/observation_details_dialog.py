@@ -185,6 +185,30 @@ from .observations_tab import (
 )
 
 
+# The private-slot line's cloud usage (plan profile and private-observation
+# count): two network requests on the window's thread. Every form opened them
+# again; they are informational (the server enforces the limit), so a few
+# minutes' answer is shared by the forms that follow (owner 2026-11-11:
+# Rediger took 4-5 s to open on a signed-in profile).
+CLOUD_USAGE_SUMMARY_TTL_S = 180.0
+
+
+def _cached_cloud_usage_summary(client) -> dict:
+    """``fetch_cloud_usage_summary``, kept on the client for a few minutes.
+
+    The window keeps one client (a new sign-in makes a new one), so forms
+    opened one after another share the answer.
+    """
+    store = getattr(client, "__dict__", None)
+    cached = store.get("_sporely_usage_summary") if isinstance(store, dict) else None
+    if cached is not None and time.monotonic() - cached[0] < CLOUD_USAGE_SUMMARY_TTL_S:
+        return dict(cached[1])
+    summary = fetch_cloud_usage_summary(client)
+    if isinstance(store, dict) and summary.get("cloud_usage_loaded"):
+        store["_sporely_usage_summary"] = (time.monotonic(), dict(summary))
+    return summary
+
+
 class ObservationDetailsDialog(GeometryMixin, QDialog):
     # In place (Rediger, stage 9g2): "Edit images" and an image's Edit or
     # double-click ask the page to open Bilder › Files and SD card (path, or "").
@@ -273,7 +297,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return
 
         try:
-            summary = fetch_cloud_usage_summary(client)
+            summary = _cached_cloud_usage_summary(client)
             self._cloud_privacy_usage_summary = summary
         except Exception:
             summary = {}

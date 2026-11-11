@@ -717,3 +717,31 @@ def test_coming_back_after_ai_results_keeps_the_form(qtbot, window, rediger):
     qtbot.mouseClick(window.mode_bar.edit_button, Qt.LeftButton)
     qtbot.wait(100)
     assert rediger.editor() is editor
+
+
+def test_forms_share_the_cloud_usage_answer(qtbot, profile, monkeypatch):
+    """Two cloud requests per form made Rediger slow on a signed-in profile."""
+    from types import SimpleNamespace
+
+    from ui import observation_details_dialog as details
+
+    calls = []
+
+    def fake_client():
+        return SimpleNamespace(
+            user_id="user-1",
+            fetch_cloud_plan_profile=lambda: calls.append("profile") or {"cloud_plan": "free"},
+            count_remote_privacy_slots=lambda: calls.append("count") or 2,
+        )
+
+    client = fake_client()
+    monkeypatch.setattr(details.ObservationDetailsDialog, "_cloud_privacy_usage_client", lambda self: client)
+    for _ in range(2):
+        dialog = details.ObservationDetailsDialog(None, observation=None, image_results=[])
+        qtbot.addWidget(dialog)
+        dialog._refresh_cloud_privacy_slots_summary(force=True)
+        assert "of" in dialog.cloud_privacy_slots_label.text()  # “Available private slots: … of …”
+    assert calls == ["profile", "count"]
+    client = fake_client()  # signed in again: a new client asks again
+    dialog._refresh_cloud_privacy_slots_summary(force=True)
+    assert calls == ["profile", "count", "profile", "count"]
