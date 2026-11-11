@@ -3045,10 +3045,21 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def accept(self) -> None:  # noqa: D401 - Qt API
         """Stage 2c publish notice: confirm before a save that makes the
         observation public and not a draft. Cancel keeps the previous state."""
-        from ui.publish_notice import confirm_publish_if_needed, load_local_facts
-
         if not self._confirm_unfinished_taxon_search():
             return
+        if not self.confirm_publish_change():
+            return
+        super().accept()
+
+    def confirm_publish_change(self) -> bool:
+        """The publish notice and the precision record before a save.
+
+        Extracted unchanged from ``accept`` (stage 9g2) so Rediger's autosave
+        asks the same way: False when the user cancels (the draft and
+        visibility controls are put back).
+        """
+        from ui.publish_notice import confirm_publish_if_needed, load_local_facts
+
         previous = self._publish_baseline_state()
         try:
             new_state = dict(self.get_data())
@@ -3062,7 +3073,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             lambda: load_local_facts(obs_id, new_state),
         ):
             self._restore_publish_controls(previous)
-            return
+            return False
         # An explicit precision choice on this device (confirmed above when it
         # publishes or widens) is what lets sync push a more precise level.
         self.confirmed_location_precision = None
@@ -3078,7 +3089,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 from utils.cloud_sync import record_confirmed_location_precision
 
                 record_confirmed_location_precision(obs_id, chosen)
-        super().accept()
+        return True
 
     def _restore_publish_controls(self, previous: dict | None) -> None:
         """Put the draft and visibility controls back to the previous state."""

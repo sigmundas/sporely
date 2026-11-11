@@ -12564,6 +12564,36 @@ class ObservationsTab(QWidget):
                 observation_updates.pop(field, None)
         return observation_updates
 
+    def write_observation_edits(self, obs_id: int, observation: dict, dialog) -> bool:
+        """Write the editor's observation fields (not its images); True when the taxon changed.
+
+        Extracted unchanged from ``edit_observation`` (stage 9g2) so Rediger's
+        autosave writes exactly what the dialog's Save did.
+        """
+        ai_state = dialog.get_ai_state()
+        self._ai_suggestions_cache[obs_id] = ai_state
+        data = dialog.get_data()
+        taxonomy_changed = (
+            str(data.get("genus") or "").strip() != str(observation.get("genus") or "").strip()
+            or str(data.get("species") or "").strip() != str(observation.get("species") or "").strip()
+        )
+        self._observation_edit_draft_cache.pop(obs_id, None)
+        observation_updates = self._edit_observation_updates(
+            data,
+            ai_state_json=self._serialize_ai_state(ai_state),
+            unidentified=dialog.is_unidentified(),
+        )
+        if dialog.is_unidentified():
+            ObservationDB.clear_observation_identification(
+                obs_id,
+            )
+        ObservationDB.update_observation(
+            obs_id,
+            **observation_updates,
+        )
+        self.schedule_metadata_cloud_sync(obs_id)
+        return taxonomy_changed
+
     def edit_observation(self):
         """Edit the selected observation."""
         selected_rows = self.table.selectionModel().selectedRows()
@@ -12608,28 +12638,7 @@ class ObservationsTab(QWidget):
             )
             if dialog.exec():
                 image_results = list(dialog.image_results)
-                ai_state = dialog.get_ai_state()
-                self._ai_suggestions_cache[obs_id] = ai_state
-                data = dialog.get_data()
-                taxonomy_changed = (
-                    str(data.get("genus") or "").strip() != str(observation.get("genus") or "").strip()
-                    or str(data.get("species") or "").strip() != str(observation.get("species") or "").strip()
-                )
-                self._observation_edit_draft_cache.pop(obs_id, None)
-                observation_updates = self._edit_observation_updates(
-                    data,
-                    ai_state_json=self._serialize_ai_state(ai_state),
-                    unidentified=dialog.is_unidentified(),
-                )
-                if dialog.is_unidentified():
-                    ObservationDB.clear_observation_identification(
-                        obs_id,
-                    )
-                ObservationDB.update_observation(
-                    obs_id,
-                    **observation_updates,
-                )
-                self.schedule_metadata_cloud_sync(obs_id)
+                taxonomy_changed = self.write_observation_edits(obs_id, observation, dialog)
 
                 self._apply_import_results_to_observation(
                     obs_id,
