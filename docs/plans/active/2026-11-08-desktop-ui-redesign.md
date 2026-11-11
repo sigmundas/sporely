@@ -825,6 +825,15 @@ blocked):
 - “In Bilder I no longer see image details (such as folder location)”: not
   yet identified; asked the owner which panel they mean.
 
+Still 4–5 s for the owner after that: on a signed-in profile every form's
+deferred setup fetched the cloud usage summary (the plan profile and an exact
+count of private observations, two Supabase requests) on the GUI thread, for
+the informational private-slot line only. Forms now share the answer, kept on
+the window's cloud client for three minutes (a new sign-in makes a new
+client). The first opening after that still waits for the two requests;
+moving them off the GUI thread touches the client's token refresh and is left
+for a decision. Codex: no findings.
+
 Codex reviewed the follow-up in two rounds, five findings, all fixed: a
 save's snapshot of the whole stored row hid changes made elsewhere (a later
 point move could have written a stale longitude back); a changed name
