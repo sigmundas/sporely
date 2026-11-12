@@ -780,15 +780,20 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         top_content_layout.setSpacing(10)
 
         # ===== OBSERVATION DETAILS SECTION =====
+        # Stage 9g3a, the mockup's layout (owner 2026-11-12): a heading with
+        # the status badge; Taksonomi beside AI-forslag; date, place and the
+        # position beside both comments side by side, the map tools behind a
+        # one-line toggle; the Sporely Cloud controls in Status og publisering.
+        # The panels are added to the page below, after Taksonomi is built.
         details_group, details_layout = self._create_dialog_box(
-            self.tr("Observation Details"),
+            "",
             QHBoxLayout,
             body_margins=(12, 12, 12, 12),
             body_spacing=12,
         )
-        details_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-        details_layout.setSpacing(12)
-        details_layout.setAlignment(Qt.AlignTop)
+        details_group._box_header.setVisible(False)
+        details_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        details_layout.setSpacing(16)
 
         left_panel = QWidget()
         left_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -822,68 +827,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.datetime_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         datetime_layout.addWidget(self.datetime_input, 1)
         left_layout.addWidget(QLabel(self.tr("Date & time:")), _details_row, 0)
-        left_layout.addWidget(datetime_container, _details_row, 1, 1, 2)
+        left_layout.addWidget(datetime_container, _details_row, 1)
         _details_row += 1
-
-        # GPS fields split across two rows with the Map button spanning both rows.
-        self.lat_input = QDoubleSpinBox()
-        self.lat_input.setRange(-90.0, 90.0)
-        self.lat_input.setDecimals(6)
-        self.lat_input.setSpecialValueText("--")
-        self.lat_input.setValue(self.lat_input.minimum())
-        self.lat_label = QLabel(self.tr("Latitude:"))
-
-        self.lon_input = QDoubleSpinBox()
-        self.lon_input.setRange(-180.0, 180.0)
-        self.lon_input.setDecimals(6)
-        self.lon_input.setSpecialValueText("--")
-        self.lon_input.setValue(self.lon_input.minimum())
-        self.lon_label = QLabel(self.tr("Longitude:"))
-
-        # Map button - opens location in browser
-        self.map_btn = QPushButton(self.tr("Map"))
-        self.map_btn.setMinimumWidth(64)
-        self.map_btn.clicked.connect(self.open_map)
-        self.map_btn.setEnabled(False)
-
-        left_layout.addWidget(self.lat_label, _details_row, 0)
-        left_layout.addWidget(self.lat_input, _details_row, 1)
-        left_layout.addWidget(self.map_btn, _details_row, 2, 2, 1, Qt.AlignVCenter)
-        _details_row += 1
-        left_layout.addWidget(self.lon_label, _details_row, 0)
-        left_layout.addWidget(self.lon_input, _details_row, 1)
-        _details_row += 1
-
-        maplink_container = QWidget()
-        maplink_layout = QHBoxLayout(maplink_container)
-        maplink_layout.setContentsMargins(0, 0, 0, 0)
-        self.maplink_input = QLineEdit()
-        self.maplink_input.setPlaceholderText(self.tr("Paste OpenStreetMap link"))
-        self.maplink_input.setClearButtonEnabled(True)
-        self.maplink_input.textChanged.connect(self._on_map_link_changed)
-        self.maplink_open_btn = QPushButton(self.tr("Get map link"))
-        self.maplink_open_btn.clicked.connect(self._open_map_url)
-        maplink_layout.addWidget(self.maplink_input, 1)
-        maplink_layout.addWidget(self.maplink_open_btn)
-        self.paste_link_label = QLabel(self.tr("Paste link:"))
-        left_layout.addWidget(self.paste_link_label, _details_row, 0)
-        left_layout.addWidget(maplink_container, _details_row, 1, 1, 2)
-        _details_row += 1
-
-        # Enable map button when coordinates are manually changed
-        self.lat_input.valueChanged.connect(self._update_map_button)
-        self.lon_input.valueChanged.connect(self._update_map_button)
-        self.lat_input.valueChanged.connect(self._maybe_autoselect_publish_target_from_coords)
-        self.lon_input.valueChanged.connect(self._maybe_autoselect_publish_target_from_coords)
-
-        # Location lookup from coordinates (debounced)
-        self._location_lookup_timer = QTimer(self)
-        self._location_lookup_timer.setSingleShot(True)
-        self._location_lookup_timer.setInterval(600)
-        self._location_lookup_timer.timeout.connect(self._do_location_lookup)
-        self._location_lookup_worker = None
-        self.lat_input.valueChanged.connect(self._schedule_location_lookup)
-        self.lon_input.valueChanged.connect(self._schedule_location_lookup)
 
         # Location (text)
         location_container = QWidget()
@@ -901,24 +846,120 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.location_input.setCompleter(self._location_suggestions_completer)
         location_layout.addWidget(self.location_input, 1)
         left_layout.addWidget(QLabel(self.tr("Location:")), _details_row, 0)
-        left_layout.addWidget(location_container, _details_row, 1, 1, 2)
+        left_layout.addWidget(location_container, _details_row, 1)
         _details_row += 1
 
-        self.country_summary_label = QLabel("")
+        # Position: latitude and longitude on one row.
+        self.lat_input = QDoubleSpinBox()
+        self.lat_input.setRange(-90.0, 90.0)
+        self.lat_input.setDecimals(6)
+        self.lat_input.setSpecialValueText("--")
+        self.lat_input.setValue(self.lat_input.minimum())
+        self.lat_label = QLabel(self.tr("Latitude:"), self)  # kept for its hint; the fields carry the names
+        self.lat_label.hide()
+        self.lat_input.setToolTip(self.tr("Latitude"))
+        self.lat_input.setAccessibleName(self.tr("Latitude"))
+
+        self.lon_input = QDoubleSpinBox()
+        self.lon_input.setRange(-180.0, 180.0)
+        self.lon_input.setDecimals(6)
+        self.lon_input.setSpecialValueText("--")
+        self.lon_input.setValue(self.lon_input.minimum())
+        self.lon_label = QLabel(self.tr("Longitude:"), self)
+        self.lon_label.hide()
+        self.lon_input.setToolTip(self.tr("Longitude"))
+        self.lon_input.setAccessibleName(self.tr("Longitude"))
+
+        position_row = QWidget()
+        position_layout = QHBoxLayout(position_row)
+        position_layout.setContentsMargins(0, 0, 0, 0)
+        position_layout.setSpacing(6)
+        position_layout.addWidget(self.lat_input, 1)
+        position_layout.addWidget(self.lon_input, 1)
+        left_layout.addWidget(QLabel(self.tr("Position:")), _details_row, 0)
+        left_layout.addWidget(position_row, _details_row, 1)
+        _details_row += 1
+
+        # Map button - opens location in browser
+        self.map_btn = QPushButton(self.tr("Map"))
+        self.map_btn.setMinimumWidth(64)
+        self.map_btn.clicked.connect(self.open_map)
+        self.map_btn.setEnabled(False)
+
+        self.maplink_input = QLineEdit()
+        self.maplink_input.setPlaceholderText(self.tr("Paste OpenStreetMap link"))
+        self.maplink_input.setClearButtonEnabled(True)
+        self.maplink_input.textChanged.connect(self._on_map_link_changed)
+        self.maplink_open_btn = QPushButton(self.tr("Get map link"))
+        self.maplink_open_btn.clicked.connect(self._open_map_url)
+        self.paste_link_label = QLabel(self.tr("Paste link:"))
+
+        # The map on one line: ▸ Map, then the place and country; the tools
+        # (open the map, get a map link, the link field) open below it.
+        map_line = QFrame()
+        map_line.setObjectName("observationMapLine")
+        map_line_layout = QHBoxLayout(map_line)
+        map_line_layout.setContentsMargins(0, 0, 0, 0)
+        map_line_layout.setSpacing(6)
+        self.map_tools_toggle = QToolButton(map_line)
+        self.map_tools_toggle.setCheckable(True)
+        self.map_tools_toggle.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.map_tools_toggle.setAutoRaise(True)
+        self.map_tools_toggle.toggled.connect(self._on_map_tools_toggled)
+        map_line_layout.addWidget(self.map_tools_toggle, 0)
+        self.map_summary_label = QLabel("", map_line)
+        self.map_summary_label.setStyleSheet("color: palette(placeholder-text);")
+        self.map_summary_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.map_summary_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        map_line_layout.addWidget(self.map_summary_label, 1)
+        self.paste_map_link_btn = QPushButton(self.tr("Paste map link"), map_line)
+        self.paste_map_link_btn.setToolTip(self.tr("Set the position from a map link on the clipboard"))
+        self.paste_map_link_btn.clicked.connect(self._paste_map_link_from_clipboard)
+        map_line_layout.addWidget(self.paste_map_link_btn, 0)
+        left_layout.addWidget(map_line, _details_row, 0, 1, 2)
+        _details_row += 1
+
+        self.map_tools = QWidget()
+        self.map_tools.setObjectName("observationMapTools")
+        map_tools_layout = QHBoxLayout(self.map_tools)
+        map_tools_layout.setContentsMargins(0, 0, 0, 0)
+        map_tools_layout.setSpacing(6)
+        map_tools_layout.addWidget(self.paste_link_label, 0)
+        map_tools_layout.addWidget(self.maplink_input, 1)
+        map_tools_layout.addWidget(self.maplink_open_btn, 0)
+        map_tools_layout.addWidget(self.map_btn, 0)
+        self.map_tools.setVisible(False)
+        left_layout.addWidget(self.map_tools, _details_row, 0, 1, 2)
+        _details_row += 1
+        self._on_map_tools_toggled(False)
+
+        # GPS info label (shows source of coordinates)
+        self.gps_info_label = QLabel("")
+        self.gps_info_label.setStyleSheet(f"color: #7f8c8d; font-size: {pt(9)}pt;")
+        left_layout.addWidget(self.gps_info_label, _details_row, 1)
+        _details_row += 1
+        self.location_input.textChanged.connect(lambda _text: self._update_map_line_summary())
+
+        # Enable map button when coordinates are manually changed
+        self.lat_input.valueChanged.connect(self._update_map_button)
+        self.lon_input.valueChanged.connect(self._update_map_button)
+        self.lat_input.valueChanged.connect(self._maybe_autoselect_publish_target_from_coords)
+        self.lon_input.valueChanged.connect(self._maybe_autoselect_publish_target_from_coords)
+
+        # Location lookup from coordinates (debounced)
+        self._location_lookup_timer = QTimer(self)
+        self._location_lookup_timer.setSingleShot(True)
+        self._location_lookup_timer.setInterval(600)
+        self._location_lookup_timer.timeout.connect(self._do_location_lookup)
+        self._location_lookup_worker = None
+        self.lat_input.valueChanged.connect(self._schedule_location_lookup)
+        self.lon_input.valueChanged.connect(self._schedule_location_lookup)
+
+        # The country (from the position); shown on the map line.
+        self.country_summary_label = QLabel("", self)
         self.country_summary_label.setStyleSheet("color: #2c3e50;")
         self.country_summary_label.setVisible(False)
-        left_layout.addWidget(self.country_summary_label, _details_row, 1, 1, 2)
-        _details_row += 1
-
-        cloud_divider = QFrame()
-        cloud_divider.setFrameShape(QFrame.HLine)
-        cloud_divider.setFixedHeight(1)
-        data_brd = get_design_tokens()["data_brd"]
-        cloud_divider.setStyleSheet(
-            f"QFrame {{ height: 1px; max-height: 1px; color: {data_brd}; background-color: {data_brd}; border: none; }}"
-        )
-        left_layout.addWidget(cloud_divider, _details_row, 0, 1, 3)
-        _details_row += 1
+        left_layout.setRowStretch(_details_row, 1)
 
         cloud_controls = QWidget()
         cloud_controls.setObjectName("observationCloudControls")
@@ -929,6 +970,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         cloud_title = QLabel(self.tr("Sporely Cloud").upper())
         cloud_title.setObjectName("metaLabel")
+        cloud_title.setVisible(False)  # the panel's heading names it (Status and publishing)
         cloud_layout.addWidget(cloud_title)
 
         self.sharing_scope_selector = SegmentedSelector(self, compact=True)
@@ -977,6 +1019,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         cloud_grid.setContentsMargins(0, 0, 0, 0)
         cloud_grid.setHorizontalSpacing(18)
         cloud_grid.setVerticalSpacing(4)
+        cloud_grid.setColumnStretch(3, 1)  # the controls keep their width, left-aligned
 
         share_label = QLabel(self.tr("Share with.."), cloud_controls)
         precision_label = QLabel(self.tr("Location precision:"), cloud_controls)
@@ -1001,14 +1044,22 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         cloud_layout.addWidget(self.cloud_privacy_slots_label)
         self._update_cloud_privacy_slots_label()
 
-        left_layout.addWidget(cloud_controls, _details_row, 0, 1, 3)
-        _details_row += 1
+        status_group, status_layout = self._create_dialog_box(
+            self.tr("Status and publishing"),
+            QVBoxLayout,
+            body_margins=(12, 10, 12, 12),
+            body_spacing=6,
+        )
+        status_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        status_layout.addWidget(cloud_controls)
+        self.status_publishing_group = status_group
 
+        # Both comments side by side.
         comments_container = QWidget()
         comments_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        comments_layout = QVBoxLayout(comments_container)
+        comments_layout = QHBoxLayout(comments_container)
         comments_layout.setContentsMargins(0, 0, 0, 0)
-        comments_layout.setSpacing(8)
+        comments_layout.setSpacing(10)
 
         open_comment_container = QWidget()
         open_comment_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -1040,17 +1091,26 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         private_comment_layout.addWidget(self.private_comment_input, 1)
         comments_layout.addWidget(private_comment_container, 1)
         right_layout.addWidget(comments_container, 1)
-
-        # GPS info label (shows source of coordinates)
-        self.gps_info_label = QLabel("")
-        self.gps_info_label.setStyleSheet(f"color: #7f8c8d; font-size: {pt(9)}pt;")
-        left_layout.addWidget(self.gps_info_label, _details_row, 1, 1, 2)
+        for comment in (self.open_comment_input, self.private_comment_input):
+            comment.setMinimumHeight(72)
         left_layout.setColumnStretch(1, 1)
 
-        # Put location/date/GPS on the left, and comments on the right (about 40/60 split).
-        details_layout.addWidget(left_panel, 4)
-        details_layout.addWidget(right_panel, 6)
-        top_content_layout.addWidget(details_group, 1)
+        details_layout.addWidget(left_panel, 1)
+        details_layout.addWidget(right_panel, 1)
+        self.details_group = details_group
+
+        # The heading, with the status badge (Draft / Finished).
+        details_header = QHBoxLayout()
+        details_header.setContentsMargins(2, 0, 2, 0)
+        details_title = QLabel(self.tr("Observation Details").upper())
+        details_title.setObjectName("metaLabel")
+        details_header.addWidget(details_title, 0, Qt.AlignVCenter)
+        details_header.addStretch(1)
+        self.status_badge = QLabel()
+        self.status_badge.setObjectName("observationStatusBadge")
+        details_header.addWidget(self.status_badge, 0, Qt.AlignVCenter)
+        self.is_draft_checkbox.toggled.connect(lambda _checked: self._update_status_badge())
+        self._update_status_badge()
 
         # ===== TAXONOMY SECTION =====
         taxonomy_group, taxonomy_layout = self._create_dialog_box(
@@ -1217,36 +1277,23 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.publish_target_hint.setStyleSheet("color: #6b7280; font-size: 11px;")
         self.publish_target_hint.setVisible(False)
 
-        unidentified_row = QHBoxLayout()
-        unidentified_row.setContentsMargins(0, 0, 0, 0)
-        unidentified_row.setSpacing(4)
-        unidentified_row.addSpacing(taxonomy_label_width)
+        # Uidentifisert, Usikker and Fremmed eller dyrket in one row (9g3a).
+        flags_row = QHBoxLayout()
+        flags_row.setContentsMargins(0, 2, 0, 0)
+        flags_row.setSpacing(16)
+        flags_row.addSpacing(taxonomy_label_width)
         self.unidentified_checkbox = QCheckBox(self.tr("Unidentified"))
         self.unidentified_checkbox.toggled.connect(self._on_unidentified_toggled)
-        unidentified_row.addWidget(self.unidentified_checkbox)
-        unidentified_row.addStretch()
-        identified_layout.addLayout(unidentified_row)
-
-        uncertain_row = QHBoxLayout()
-        uncertain_row.setContentsMargins(0, 0, 0, 0)
-        uncertain_row.setSpacing(4)
-        uncertain_row.addSpacing(taxonomy_label_width)
+        flags_row.addWidget(self.unidentified_checkbox)
         self.uncertain_checkbox = QCheckBox(self.tr("Uncertain"))
         self.uncertain_checkbox.toggled.connect(self._update_taxonomy_tab_indicators)
         self.uncertain_checkbox.toggled.connect(self.taxon_picker.set_uncertain)
-        uncertain_row.addWidget(self.uncertain_checkbox)
-        uncertain_row.addStretch()
-        identified_layout.addLayout(uncertain_row)
-
-        unspontaneous_row = QHBoxLayout()
-        unspontaneous_row.setContentsMargins(0, 0, 0, 0)
-        unspontaneous_row.setSpacing(4)
-        unspontaneous_row.addSpacing(taxonomy_label_width)
+        flags_row.addWidget(self.uncertain_checkbox)
         self.unspontaneous_checkbox = QCheckBox(self.tr("Alien or cultivated"))
         self.unspontaneous_checkbox.toggled.connect(self._update_taxonomy_tab_indicators)
-        unspontaneous_row.addWidget(self.unspontaneous_checkbox)
-        unspontaneous_row.addStretch()
-        identified_layout.addLayout(unspontaneous_row)
+        flags_row.addWidget(self.unspontaneous_checkbox)
+        flags_row.addStretch(1)
+        identified_layout.addLayout(flags_row)
 
         identified_layout.addStretch(1)
 
@@ -1373,6 +1420,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         taxonomy_layout.addWidget(left_container)
 
         self.ai_group = self._build_ai_suggestions_group()
+        for name_input in (self.genus_input, self.species_input, self.scientific_name_input):
+            name_input.textChanged.connect(lambda _text: self._refresh_ai_use_cells())
+        # The picker sets those fields with their signals blocked: refresh after it.
+        for picker_signal in (
+            self.taxon_picker.concept_picked, self.taxon_picker.free_text_committed, self.taxon_picker.cleared,
+        ):
+            picker_signal.connect(lambda *_args: self._refresh_ai_use_cells())
         self.taxonomy_row_splitter = QSplitter(Qt.Horizontal)
         self.taxonomy_row_splitter.setChildrenCollapsible(False)
         self.taxonomy_row_splitter.setHandleWidth(8)
@@ -1382,7 +1436,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.taxonomy_row_splitter.setStretchFactor(1, 2)
         self._apply_taxonomy_splitter_sizes()
         self.taxonomy_row_splitter.splitterMoved.connect(self._on_taxonomy_splitter_moved)
-        top_content_layout.addWidget(self.taxonomy_row_splitter)
+        top_content_layout.addLayout(details_header)
+        top_content_layout.addWidget(self.taxonomy_row_splitter, 1)
+        top_content_layout.addWidget(details_group, 0)
+        top_content_layout.addWidget(status_group, 0)
 
         # ===== IMAGES SUMMARY (BOTTOM) =====
         self.image_gallery = ImageGalleryWidget(
@@ -1756,6 +1813,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         guess_btn.clicked.connect(lambda _checked=False, src=source: self._on_ai_guess_clicked(src))
         copy_btn = QPushButton(self.tr("Copy"))
         copy_btn.clicked.connect(lambda _checked=False, src=source: self._on_ai_copy_to_taxonomy(src))
+        copy_btn.clicked.connect(lambda _checked=False: self._refresh_ai_use_cells())
         copy_btn.setEnabled(False)
         guess_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         copy_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -1765,6 +1823,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         controls.setStretch(1, 1)
         tab_layout.addLayout(controls)
 
+        # The last column: Use (Bruk) on each row, Chosen (Valgt) on the
+        # row that is the observation's name (stage 9g3a, the mockup).
+        headers = [*headers, ""]
         table = QTableWidget(0, len(headers))
         table.setFocusPolicy(Qt.NoFocus)
         table.setObjectName("aiTable")
@@ -2064,6 +2125,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     if link_item:
                         table.setItem(row, 2, link_item)
                 table.setRowHeight(row, max(table.verticalHeader().defaultSectionSize(), 28))
+            self._refresh_ai_use_cells(source)
             if predictions:
                 selected = (
                     self._inat_selected_by_index.get(index)
@@ -2083,6 +2145,47 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 if source == self._ai_source_key():
                     self._ai_selected_taxon = None
                 self._set_ai_copy_enabled(False, source=source)
+
+    def _refresh_ai_use_cells(self, source: str | None = None) -> None:
+        """Use on each suggestion; Chosen on the one that is the observation's name."""
+        tables = getattr(self, "ai_tables", {}) or {}
+        def _key(text) -> str:
+            return " ".join(str(text or "").split()).casefold()
+
+        scientific = self.scientific_name_input.text() if hasattr(self, "scientific_name_input") else ""
+        current = _key(scientific) or _key(
+            f"{self.genus_input.text() if hasattr(self, 'genus_input') else ''} "
+            f"{self.species_input.text() if hasattr(self, 'species_input') else ''}"
+        )
+        for key, table in tables.items():
+            if source is not None and key != source:
+                continue
+            column = table.columnCount() - 1
+            for row in range(table.rowCount()):
+                item = table.item(row, 0)
+                pred = item.data(Qt.UserRole) if item is not None else None
+                taxon = _normalize_ai_prediction_taxon(pred, source=key) if isinstance(pred, dict) else {}
+                # The full name: two varieties of one species are two names.
+                name = _key(self._scientific_name_from_taxon(taxon)) if taxon else ""
+                chosen = bool(name) and name == current
+                cell = QTableWidgetItem(self.tr("Chosen") if chosen else self.tr("Use"))
+                cell.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                cell.setData(Qt.UserRole, "chosen" if chosen else "use")
+                font = cell.font()
+                font.setBold(not chosen)
+                cell.setFont(font)
+                cell.setForeground(QColor("#3f9e98"))
+                cell.setToolTip("" if chosen else self.tr("Use this suggestion as the observation's name"))
+                table.setItem(row, column, cell)
+
+    def _use_ai_suggestion(self, source: str, row: int) -> None:
+        """Use (Bruk): this row as the name, the same way Copy uses the selected one."""
+        table = (getattr(self, "ai_tables", {}) or {}).get(source)
+        if table is None or not (0 <= row < table.rowCount()):
+            return
+        table.selectRow(row)
+        self._on_ai_copy_to_taxonomy(source, to_species=True)
+        self._refresh_ai_use_cells()
 
     @staticmethod
     def _ai_prediction_score(pred: dict) -> float:
@@ -2335,6 +2438,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         table = self.ai_tables.get(source) if hasattr(self, "ai_tables") else None
         if table is None:
             return
+        if column == table.columnCount() - 1:
+            # Use (Bruk), stage 9g3a; Chosen does nothing.
+            use = table.item(row, column)
+            if use is not None and use.data(Qt.UserRole) == "use":
+                self._use_ai_suggestion(source, row)
+            return
         link_column = 3 if source == "arts" else 2
         if column != link_column:
             return
@@ -2345,9 +2454,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
     def _on_ai_table_double_clicked(self, source: str, index: QModelIndex) -> None:
         link_column = 3 if source == "arts" else 2
-        if index.isValid() and index.column() == link_column:
-            self._on_ai_table_cell_clicked(source, index.row(), index.column())
-            return
+        table = (getattr(self, "ai_tables", {}) or {}).get(source)
+        use_column = table.columnCount() - 1 if table is not None else -1
+        if index.isValid() and index.column() in (link_column, use_column):
+            if index.column() == link_column:
+                self._on_ai_table_cell_clicked(source, index.row(), index.column())
+            return  # a double-click on Use was already its click
         self._on_ai_copy_to_taxonomy(source)
 
     def _on_ai_selection_changed(self, source: str | None = None) -> None:
@@ -2577,7 +2689,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         pred = item.data(Qt.UserRole) if item else None
         return pred if isinstance(pred, dict) else {}
 
-    def _on_ai_copy_to_taxonomy(self, source: str | None = None, prediction: dict | None = None) -> None:
+    def _on_ai_copy_to_taxonomy(
+        self, source: str | None = None, prediction: dict | None = None, *, to_species: bool = False,
+    ) -> None:
         source = source or self._ai_source_key()
         concept_before = self._committed_sporely_taxon_id()
         index = self._current_ai_index()
@@ -2626,7 +2740,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         else:
             scientific_name = genus.strip() if genus else None
         current_tab = self.taxonomy_tabs.currentWidget() if hasattr(self, "taxonomy_tabs") else None
-        target_grows = current_tab == getattr(self, "grows_tab", None)
+        # Copy fills the tab shown (Grows on: the host); Use always names the observation.
+        target_grows = not to_species and current_tab == getattr(self, "grows_tab", None)
         if target_grows:
             self._host_suppress_taxon_autofill = True
             self.host_genus_input.setText(genus)
@@ -3867,6 +3982,55 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.gps_info_label.setText(self.tr("No GPS data in selected image"))
             self.map_btn.setEnabled(False)
 
+    def _on_map_tools_toggled(self, open_: bool) -> None:
+        """The map line (9g3a): ▸ Map shows the map tools below it."""
+        if hasattr(self, "map_tools"):
+            self.map_tools.setVisible(bool(open_))
+        if hasattr(self, "map_tools_toggle"):
+            arrow = "▾" if open_ else "▸"
+            self.map_tools_toggle.setText(f"{arrow}  {self.tr('Map')}")
+        self._update_map_line_summary()
+
+    def _update_map_line_summary(self) -> None:
+        """The place and country, on the map line."""
+        label = getattr(self, "map_summary_label", None)
+        if label is None:
+            return
+        place = (self.location_input.text() if hasattr(self, "location_input") else "").strip()
+        country = str(getattr(self, "_map_line_country", "") or "").strip()
+        parts = [part for part in (place, country) if part]
+        text = ", ".join(parts)
+        label.setText(text)
+        label.setToolTip(text)
+
+    def _paste_map_link_from_clipboard(self) -> None:
+        """Paste map link: the clipboard's link sets the position, as the link field does."""
+        text = (QApplication.clipboard().text() or "").strip()
+        if not text:
+            return
+        if not _extract_coords_from_osm_url(text):
+            self.map_tools_toggle.setChecked(True)  # show the field, with what was pasted
+        if self.maplink_input.text() == text:
+            self._on_map_link_changed(text)  # the same link again: set its position again
+        else:
+            self.maplink_input.setText(text)
+
+    def _update_status_badge(self) -> None:
+        """The heading's badge: Draft while the draft flag is set, otherwise Finished."""
+        badge = getattr(self, "status_badge", None)
+        if badge is None:
+            return
+        draft = bool(self.is_draft_checkbox.isChecked()) if hasattr(self, "is_draft_checkbox") else True
+        if draft:
+            text, colour = self.tr("Draft"), "232, 197, 71"
+        else:
+            text, colour = self.tr("Finished"), "63, 174, 106"
+        badge.setText(f"●  {text}")
+        badge.setStyleSheet(
+            f"QLabel#observationStatusBadge {{ background: rgba({colour}, 0.18);"
+            f" border: 1px solid rgba({colour}, 0.6); border-radius: 10px; padding: 2px 10px; }}"
+        )
+
     def _update_map_button(self):
         """Enable/disable the Map button based on whether valid coordinates are entered."""
         lat = self.lat_input.value()
@@ -4408,7 +4572,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 if country_name
                 else ""
             )
-            self.country_summary_label.setVisible(bool(country_name))
+            self.country_summary_label.setVisible(False)  # 9g3a: shown on the map line
+        self._map_line_country = country_name or ""
+        self._update_map_line_summary()
         if hasattr(self, "reporting_system_summary_label"):
             system_name = self._reporting_system_name()
             self.reporting_system_summary_label.setText(
