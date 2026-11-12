@@ -200,6 +200,8 @@ def _edit_mode(context: ReviewContext, *, size: tuple[int, int] = (1500, 950), t
     profile = _fresh_profile(context, "edit-mode")
     observation_id = create_observation(profile, "edit-mode")
     ImageDB.add_image(observation_id, str(profile.jpeg("field1.JPG", seed=41)), "field")
+    ImageDB.add_image(observation_id, str(profile.jpeg("field2.JPG", seed=42)), "field")
+    ImageDB.add_image(observation_id, str(profile.jpeg("micro1.JPG", seed=43)), "microscope")
     window = MainWindow()
     host = _DrainingWindow(window)
     host.resize(*size)

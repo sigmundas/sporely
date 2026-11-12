@@ -30,10 +30,12 @@ from __future__ import annotations
 from PySide6.QtCore import QEvent, QObject, QTimer, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractButton, QAbstractItemView, QAbstractSpinBox, QApplication, QComboBox, QDateTimeEdit, QFrame, QLabel,
-    QLineEdit, QPlainTextEdit, QScrollArea, QStackedWidget, QTextEdit, QVBoxLayout, QWidget,
+    QLineEdit, QPlainTextEdit, QScrollArea, QSplitter, QStackedWidget, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from database.models import ObservationDB
+
+from .splitter_state import GALLERY_MIN_HEIGHT, install_persistent_splitter
 
 _PUBLISH_KEYS = frozenset({"is_draft", "sharing_scope", "location_public", "location_precision"})
 # What publishing to a service writes on the observation: its id there.
@@ -96,7 +98,8 @@ class EditObservationPage(QWidget):
         self._observation_id: int | None = None
         self._editor = None
         self._frame: QScrollArea | None = None
-        self._holder: QWidget | None = None  # the scrolling form and, pinned below it, its bottom bar
+        self._holder: QWidget | None = None  # the scrolling form
+        self._bar: QWidget | None = None  # the form's bottom bar, pinned below the strip
         self._stored_state = None  # what the form was built from, with its own writes folded in
         self._must_reload = False  # a change that could not be saved was discarded
         self._saved_updates: dict | None = None  # the columns as last saved (or as opened)
@@ -113,10 +116,38 @@ class EditObservationPage(QWidget):
         self._opened_ai_state: str | None = None  # the AI state as the form opened (or last saved it)
         self._ai_pending = False  # the AI state could not be saved: try again
 
+        # The shared strip (stage 9g3c): Vis's, Mål's and Bilder's strip sits
+        # below the form while Rediger shows, at the height it had there.
+        self._strip = None
+        self._holds_strip = False
+        self._strip_editor = None
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self._stack = QStackedWidget(self)
-        layout.addWidget(self._stack, 1)
+        layout.setSpacing(0)
+        self._layout = layout
+        self.strip_splitter = QSplitter(Qt.Vertical, self)
+        self.strip_splitter.setObjectName("editStripSplitter")
+        self.strip_splitter.setChildrenCollapsible(False)
+        self._stack = QStackedWidget(self.strip_splitter)
+        self.strip_slot = QWidget(self.strip_splitter)
+        self.strip_slot.setObjectName("imageStripSlot")
+        slot_layout = QVBoxLayout(self.strip_slot)
+        slot_layout.setContentsMargins(0, 0, 0, 0)
+        self.strip_splitter.addWidget(self._stack)
+        self.strip_splitter.addWidget(self.strip_slot)
+        self.strip_splitter.setStretchFactor(0, 1)
+        self.strip_splitter.setStretchFactor(1, 0)
+        # Its own height, one compact row to start with: the form needs the
+        # room (Vis, Mål and Bilder keep theirs, see MainWindow._place_shared_strip).
+        install_persistent_splitter(
+            self.strip_splitter,
+            key="edit_strip_splitter_sizes",
+            default_sizes=[700, GALLERY_MIN_HEIGHT],
+            minimum_sizes=[240, GALLERY_MIN_HEIGHT],
+        )
+        self.strip_slot.hide()  # until a form shows its images there
+        layout.addWidget(self.strip_splitter, 1)
         self._empty = QLabel(self.tr("Choose an observation to edit it."), self)
         self._empty.setAlignment(Qt.AlignCenter)
         self._empty.setWordWrap(True)
@@ -270,7 +301,8 @@ class EditObservationPage(QWidget):
             lambda key, obs=observation_id, ed=editor: self._on_publish_requested(obs, key, ed)
         )
         # The bottom bar (hints, Edit images, the save status) stays in view
-        # below the form, which scrolls when the window is too low for it.
+        # below the form, which scrolls when the window is too low for it, and
+        # below the shared strip.
         bar = editor.take_bottom_bar()
         holder = QWidget(self)
         holder_layout = QVBoxLayout(holder)
@@ -282,13 +314,14 @@ class EditObservationPage(QWidget):
         frame.setWidget(editor)
         holder_layout.addWidget(frame, 1)
         if bar is not None:
-            bar.setParent(holder)
-            holder_layout.addWidget(bar, 0)
+            bar.setParent(self)
+            self._layout.addWidget(bar, 0)
         self._stack.addWidget(holder)
         self._stack.setCurrentWidget(holder)
         self._editor = editor
         self._frame = frame
         self._holder = holder
+        self._bar = bar
         self._observation_id = observation_id
         self._saved_observation = dict(observation)
         self._saved_updates = None
@@ -305,6 +338,7 @@ class EditObservationPage(QWidget):
         # holds then is the baseline (nothing the user changed).
         QTimer.singleShot(0, self, lambda ed=editor: self._take_baseline(ed))
         self._update_status()
+        self._sync_strip()
 
     def _take_baseline(self, editor) -> None:
         if editor is self._editor and self._saved_updates is None:
@@ -370,21 +404,138 @@ class EditObservationPage(QWidget):
         return json.dumps(editor.get_ai_state(), sort_keys=True, default=str)
 
     def _drop_editor(self) -> None:
-        editor, holder = self._editor, self._holder
+        editor, holder, bar = self._editor, self._holder, self._bar
         self._editor = None
         self._frame = None
         self._holder = None
+        self._bar = None
         self._stored_state = None
         self._timer.stop()
         if editor is None:
             return
+        if self._strip_editor is editor:
+            self._strip_editor = None
+            editor.detach_strip(refresh=False)  # nothing it does while closing reaches the strip
         QApplication.instance().removeEventFilter(self)
         self.status_label.hide()
         self.status_label.setParent(self)  # out of the editor before it goes
         editor.close()  # its closeEvent stops the AI and lookup threads
+        if bar is not None:
+            self._layout.removeWidget(bar)
+            bar.hide()
+            bar.deleteLater()
         if holder is not None:
             self._stack.removeWidget(holder)
-            holder.deleteLater()  # and the editor and its bottom bar with it
+            holder.deleteLater()  # and the editor with it
+        self._sync_strip()
+
+    # -- the shared strip (stage 9g3c) ----------------------------------------
+
+    def use_shared_strip(self, strip) -> None:
+        """The main window's strip (shared with Vis, Mål and Bilder)."""
+        self._strip = strip
+        channel = strip.channel("edit")
+        channel.imageClicked.connect(lambda key, path: self._to_editor("_on_gallery_image_clicked", key, path))
+        channel.imageSelected.connect(lambda key, path: self._to_editor("_on_gallery_image_clicked", key, path))
+        channel.imageDoubleClicked.connect(lambda key, path: self._to_editor("_on_image_double_clicked", key, path))
+        channel.editRequested.connect(lambda key, path: self._to_editor("_on_gallery_edit_requested", key, path))
+        channel.selectionChanged.connect(
+            lambda paths: self._to_editor("_on_details_dialog_gallery_selection_changed", paths)
+        )
+
+    def holds_shared_strip(self) -> bool:
+        return self._holds_strip
+
+    def claim_shared_strip(self) -> None:
+        """Rediger shows: the strip shows the form's images below it.
+
+        Images are changed in Bilder, Vis and Mål: here the strip chooses which
+        images AI looks at, and Edit (or a double-click) opens Bilder › Files
+        and SD card on the image. No removing, reordering or cloud checkboxes.
+        """
+        strip = self._strip
+        if strip is None:
+            return
+        strip.set_active_channel("edit")
+        strip.set_context_actions(
+            change_settings=False, move_to_observation=False, delete_cloud_copy=False, publish_checkbox=False,
+            delete=False,
+        )
+        strip.set_page_behaviour(
+            toggle_on_plain_click=False, clear_on_background_click=False, reveal_mode="nudge", reorderable=False,
+        )
+        layout = self.strip_slot.layout()
+        if layout.indexOf(strip) < 0:
+            layout.addWidget(strip)
+        self._holds_strip = True
+        self._strip_editor = None
+        self._sync_strip()
+
+    def release_shared_strip(self) -> None:
+        """Another page takes the strip: the form goes back to its own (hidden) row."""
+        if not self._holds_strip:
+            return
+        self._holds_strip = False
+        editor, self._strip_editor = self._strip_editor, None
+        if editor is not None:
+            editor.detach_strip()
+        strip = self._strip
+        if strip is not None:
+            strip.set_context_actions(delete=True)  # Vis, Mål and Bilder remove images with ×
+            strip.select_image(None, center=False)  # leave no selection behind
+
+    def _sync_strip(self) -> None:
+        """While Rediger holds the strip it shows the form on screen, or nothing."""
+        if not self._holds_strip or self._strip is None:
+            return
+        editor = self._editor
+        if editor is not None and editor is self._strip_editor:
+            return
+        if self._strip_editor is not None:
+            self._strip_editor.detach_strip()
+        self._strip_editor = editor
+        if editor is None:
+            self._strip.clear()
+            self._strip.hide()
+            self.strip_slot.hide()  # no empty band under the empty page
+        else:
+            self.strip_slot.show()
+            editor.attach_strip(self._strip)
+            self._ensure_strip_shortcut(editor)
+
+    def _in_held_strip(self, widget: QWidget) -> bool:
+        """A click in the strip chooses the image AI looks at: the user's input too."""
+        strip = self._strip
+        return (
+            strip is not None
+            and self._holds_strip
+            and self._strip_editor is self._editor
+            and (widget is strip or strip.isAncestorOf(widget))
+        )
+
+    def _ensure_strip_shortcut(self, editor) -> None:
+        """Edit images' key also works with a thumbnail focused (the strip is outside the form)."""
+        own = getattr(editor, "_edit_images_shortcut", None)
+        if own is None or getattr(self, "_strip_edit_images_shortcut", None) is not None:
+            return
+        from PySide6.QtGui import QShortcut
+
+        # On the slot, a sibling of the form and the bar: never two shortcuts for one key press.
+        shortcut = QShortcut(own.key(), self.strip_slot)
+        shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        shortcut.activated.connect(self._edit_images_from_strip)
+        self._strip_edit_images_shortcut = shortcut
+
+    def _edit_images_from_strip(self) -> None:
+        editor = self._editor
+        if editor is not None and self._holds_strip and self._strip_editor is editor:
+            editor._edit_images_from_modified_shortcut()
+
+    def _to_editor(self, handler: str, *args) -> None:
+        editor = self._strip_editor
+        if editor is None or not self._holds_strip or editor is not self._editor:
+            return
+        getattr(editor, handler)(*args)
 
     def _watch_inputs(self, editor) -> None:
         """A change in the form schedules a save; the publishing controls ask at once.
@@ -466,7 +617,7 @@ class EditObservationPage(QWidget):
             and editor._persist_ai_paused
             and event.type() in self._INPUT_EVENTS
             and isinstance(watched, QWidget)
-            and (watched is editor or editor.isAncestorOf(watched))
+            and (watched is editor or editor.isAncestorOf(watched) or self._in_held_strip(watched))
         ):
             editor._persist_ai_paused = False
         return super().eventFilter(watched, event)

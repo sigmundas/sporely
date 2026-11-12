@@ -6137,6 +6137,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         # Stage 9g2: Rediger in place (appended, so the other pages keep their index).
         self.edit_page = EditObservationPage(self.observations_tab)
         self.edit_page.editImagesRequested.connect(self._on_edit_page_images_requested)
+        self.edit_page.use_shared_strip(self.observations_tab.gallery_widget)  # stage 9g3c
         self.tab_widget.addTab(self.edit_page, self.tr("Edit"))
 
         # Stage 9a: a mode bar replaces the tab bar. The pages stay in
@@ -17677,9 +17678,22 @@ class MainWindow(GeometryMixin, QMainWindow):
         # The page that held it is already hidden; its geometry is kept.
         height = gallery.height()
         live = getattr(self, "live_lab_tab", None)
-        if index in (0, 1, 3) and live is not None and hasattr(live, "release_shared_strip") and index != 3:
+        edit_page = getattr(self, "edit_page", None)
+        # Rediger keeps a height of its own (a compact row under the form,
+        # stage 9g3c): the other pages pass theirs on around it.
+        edit_slot = getattr(edit_page, "strip_slot", None)
+        if edit_slot is not None and gallery.parentWidget() is edit_slot:
+            height = getattr(self, "_strip_height_outside_edit", height)
+        else:
+            self._strip_height_outside_edit = height
+        if index in (0, 1, 3) and edit_page is not None:
+            edit_page.release_shared_strip()  # first: the form stops writing to the strip
+        if index in (0, 1, self.EDIT_PAGE) and live is not None and hasattr(live, "release_shared_strip"):
             live.release_shared_strip()
-        if index == 3 and live is not None and hasattr(live, "reclaim_shared_strip"):
+        if index == self.EDIT_PAGE and edit_page is not None:
+            edit_page.claim_shared_strip()  # stage 9g3c: below the form, at Rediger's own height
+            return
+        elif index == 3 and live is not None and hasattr(live, "reclaim_shared_strip"):
             live.reclaim_shared_strip()
             target_splitter, slot = None, live.strip_slot
         elif index == 0:

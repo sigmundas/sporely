@@ -3238,7 +3238,52 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if gallery is not None:
             gallery.set_reorderable(False)
             gallery.set_context_actions(delete=False, delete_cloud_copy=False)
+            # The shared strip shows the images instead, below the form (stage 9g3c).
+            gallery.hide()
         self._build_in_place_publishing()
+
+    # -- the shared strip in place (stage 9g3c) -------------------------------
+
+    def attach_strip(self, strip) -> None:
+        """Show this form's images in the shared strip instead of its own row.
+
+        The page places the strip and routes its clicks and selection here;
+        the form stays the source of truth and renders its images there. The
+        selection in the strip is what AI looks at, as in the form's own row.
+        """
+        if strip is None or self.holds_strip():
+            return
+        own = self.image_gallery
+        self._own_image_gallery = own
+        self.image_gallery = strip
+        own.hide()
+        strip.show()
+        if getattr(self, "_initial_gallery_refresh_pending", False):
+            strip.clear()  # the form fills it as it finishes opening
+            return
+        selected = own.selected_paths()
+        self._refresh_image_gallery_summary()
+        strip.select_paths(selected, center=False)
+
+    def detach_strip(self, *, refresh: bool = True) -> None:
+        """Another page takes the strip: the form's own (hidden) row comes back.
+
+        ``refresh``: carry the strip's images and selection into it (the form
+        stays; False when it is about to go).
+        """
+        own = getattr(self, "_own_image_gallery", None)
+        if own is None:
+            return
+        strip = self.image_gallery
+        self._own_image_gallery = None
+        self.image_gallery = own
+        if refresh and not getattr(self, "_initial_gallery_refresh_pending", False):
+            selected = strip.selected_paths()
+            self._refresh_image_gallery_summary()
+            own.select_paths(selected, center=False)
+
+    def holds_strip(self) -> bool:
+        return getattr(self, "_own_image_gallery", None) is not None
 
     # -- Status and publishing in place (stage 9g3b) --------------------------
 
