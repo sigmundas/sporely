@@ -36,6 +36,8 @@ from PySide6.QtWidgets import (
 from database.models import ObservationDB
 
 _PUBLISH_KEYS = frozenset({"is_draft", "sharing_scope", "location_public", "location_precision"})
+# What publishing to a service writes on the observation: its id there.
+_SERVICE_ID_COLUMNS = frozenset({"artsdata_id", "inaturalist_id", "artportalen_id", "mushroomobserver_id"})
 
 
 def _key_groups() -> tuple[tuple[frozenset, frozenset], ...]:
@@ -100,6 +102,7 @@ class EditObservationPage(QWidget):
         self._saved_updates: dict | None = None  # the columns as last saved (or as opened)
         self._saved_observation: dict = {}
         self._saving = False
+        self._publishing = False  # Publish runs (it keeps the event loop turning)
         self._saved_any = False
         self._taxonomy_changed = False
         self._save_error: str | None = None
@@ -143,10 +146,11 @@ class EditObservationPage(QWidget):
         return self._editor
 
     def is_busy(self) -> bool:
-        """The publish notice is open (a save is waiting for its answer)."""
-        return self._saving
+        """The publish notice is open (a save is waiting for its answer), or Publish runs."""
+        return self._saving or self._publishing
 
     def show_observation(self, observation_id: int | None, _token: int | None = None) -> None:
+        self._switch_queued = False  # this switch (or a newer one) is happening now
         if _token is not None and _token != self._show_token:
             return  # a newer switch or a deletion came after this held one
         self._show_token += 1
@@ -158,8 +162,8 @@ class EditObservationPage(QWidget):
             self._pending_show = None
             self._has_pending_show = False
             return
-        if self._saving:
-            # The publish notice is open: switch (once) when it is answered.
+        if self._saving or self._publishing:
+            # The publish notice is open or Publish runs: switch (once) when it is done.
             self._pending_show = observation_id
             self._has_pending_show = True
             return
@@ -177,8 +181,8 @@ class EditObservationPage(QWidget):
     def reload(self) -> None:
         """Start again from what is saved (shown again: images or sync may have changed it)."""
         observation_id = self._observation_id
-        if observation_id is None or self._saving:
-            return
+        if observation_id is None or self._saving or self._publishing:
+            return  # Publish or the notice is running: _reload_if_changed comes back to it
         if not self.leave():
             return  # a change is still pending (the save failed): keep the form as it is
         self._drop_editor()
@@ -262,6 +266,9 @@ class EditObservationPage(QWidget):
         editor.editImagesRequested.connect(
             lambda path, obs=observation_id: self._on_edit_images_requested(obs, path)
         )
+        editor.publishRequested.connect(
+            lambda key, obs=observation_id, ed=editor: self._on_publish_requested(obs, key, ed)
+        )
         # The bottom bar (hints, Edit images, the save status) stays in view
         # below the form, which scrolls when the window is too low for it.
         bar = editor.take_bottom_bar()
@@ -292,6 +299,7 @@ class EditObservationPage(QWidget):
         self._must_reload = False
         self._stored_state = stored_state
         self._note_ai_writes(editor, observation_id)
+        self._refresh_publish_state()
         self._watch_inputs(editor)
         # The form finishes opening on the next turn of the event loop; what it
         # holds then is the baseline (nothing the user changed).
@@ -335,7 +343,7 @@ class EditObservationPage(QWidget):
 
         editor._persist_ai_state_now = persist_and_note
 
-    def _note_own_write(self, before, after) -> None:
+    def _note_own_write(self, before, after, columns=None) -> None:
         """Fold this form's own write (``before`` → ``after``) into what it is known to show.
 
         Only what the write changed: a change made elsewhere before it (another
@@ -346,8 +354,13 @@ class EditObservationPage(QWidget):
             self._stored_state = None  # unknown: coming back reloads
             return
         row = dict(known[0])
-        row.update({key: value for key, value in after[0].items() if before[0].get(key) != value})
-        images = after[1] if known[1] == before[1] else known[1]
+        row.update({
+            key: value for key, value in after[0].items()
+            if before[0].get(key) != value and (columns is None or key in columns)
+        })
+        # ``columns``: only those are this form's write (anything else that
+        # changed meanwhile, images included, still makes coming back reload).
+        images = after[1] if columns is None and known[1] == before[1] else known[1]
         self._stored_state = (row, images, known[2])
 
     @staticmethod
@@ -386,6 +399,7 @@ class EditObservationPage(QWidget):
                 getattr(editor, "is_draft_checkbox", None),
                 *getattr(getattr(editor, "sharing_scope_selector", None), "findChildren", lambda _t: [])(QAbstractButton),
                 *getattr(getattr(editor, "location_precision_selector", None), "findChildren", lambda _t: [])(QAbstractButton),
+                *(getattr(editor, "status_step_buttons", None) or [])[:2],
             )
             if widget is not None
         }
@@ -585,11 +599,17 @@ class EditObservationPage(QWidget):
         finally:
             self._saving = False
             self._update_status()
-            if getattr(self, "_has_pending_show", False):
-                self._has_pending_show = False
-                pending, self._pending_show = self._pending_show, None
-                token = self._show_token
-                QTimer.singleShot(0, self, lambda obs=pending, tok=token: self.show_observation(obs, _token=tok))
+            if not self._publishing:
+                self._run_pending_show()
+
+    def _run_pending_show(self) -> None:
+        """A switch asked for while the notice was open or Publish ran: do it now (once)."""
+        if getattr(self, "_has_pending_show", False):
+            self._has_pending_show = False
+            pending, self._pending_show = self._pending_show, None
+            token = self._show_token
+            self._switch_queued = True  # a reload queued meanwhile must not cancel it
+            QTimer.singleShot(0, self, lambda obs=pending, tok=token: self.show_observation(obs, _token=tok))
 
     def _save_ai_state(self, editor) -> None:
         """Write the AI state if this form changed it (never a copy older than the stored one)."""
@@ -617,6 +637,82 @@ class EditObservationPage(QWidget):
             if callable(refresh):
                 refresh(observation_id, taxonomy_changed=taxonomy_changed)
         return saved
+
+    # -- Status and publishing (stage 9g3b) -----------------------------------
+
+    def _refresh_publish_state(self) -> None:
+        """The services enabled for publishing and where the observation is published,
+        from the Observations tab's Publish (the same checks as Vis)."""
+        editor, observation_id = self._editor, self._observation_id
+        if editor is None or observation_id is None or not hasattr(editor, "set_publish_state"):
+            return
+        tab = self._observations_tab
+        try:
+            from utils.artsobs_uploaders import list_uploaders
+
+            uploaders = list(list_uploaders() or [])
+            enabled = set(tab._enabled_publish_uploader_keys(uploaders))
+            row = ObservationDB.get_observation(observation_id) or {}
+        except Exception:
+            editor.set_publish_state([], [], set())
+            return
+        services = [(uploader.key, tab.tr(uploader.label)) for uploader in uploaders if uploader.key in enabled]
+        published = [tab.tr(uploader.label) for uploader in uploaders if tab._observation_has_existing_upload(row, uploader.key)]
+        blocked = {
+            key for key, _label in services
+            if tab._existing_upload_blocks_publish(key) and tab._observation_has_existing_upload(row, key)
+        }
+        if {"web", "inat"} <= enabled:
+            services.append(("both", tab.tr("Both")))
+            # Both cannot repair a stored link on either half (as in Vis).
+            if any(tab._observation_has_existing_upload(row, key) for key in ("web", "inat")):
+                blocked.add("both")
+        editor.set_publish_state(services, published, blocked)
+
+    def _on_publish_requested(self, observation_id: int, key: str, requested_by=None) -> None:
+        """Finished and publish: save as Finished (the publish notice asks if it makes
+        the observation public), then today's Publish for this observation only."""
+        editor = self._editor
+        if editor is None or observation_id != self._observation_id or self._saving or self._publishing:
+            return
+        if requested_by is not None and requested_by is not editor:
+            return  # asked by a form that has since been replaced
+        tab = self._observations_tab
+        # The service must still be on (Settings may have changed since the form opened).
+        self._refresh_publish_state()
+        services = {service for service, _label in getattr(editor, "_publish_services", [])}
+        if key not in services or key in getattr(editor, "_blocked_services", set()):
+            tab.set_status_message(self.tr("That service is not available for this observation now."), level="warning")
+            return
+        editor.last_publish_change_cancelled = False
+        if editor.is_draft_checkbox.isChecked():
+            editor.is_draft_checkbox.setChecked(False)
+        if not self.save_now():
+            return  # not saved: the status says why; nothing is published
+        if editor is not self._editor or observation_id != self._observation_id:
+            return
+        if getattr(editor, "last_publish_change_cancelled", False) or editor.is_draft_checkbox.isChecked():
+            return  # the notice was cancelled: nothing is published
+        row = ObservationDB.get_observation(observation_id)
+        if not row or row.get("is_draft"):
+            return  # still a draft as stored: nothing is published
+        self._publishing = True
+        editor.set_publishing(True)
+        before = self._read_stored_state(observation_id)
+        try:
+            tab.publish_observation(observation_id, key)
+        finally:
+            self._publishing = False
+            if editor is self._editor:
+                editor.set_publishing(False)
+            self._run_pending_show()
+            if self._stale and self.isVisible():
+                QTimer.singleShot(0, self, self._reload_if_changed)  # held while Publish ran
+        if editor is self._editor and observation_id == self._observation_id:
+            # Only the service ids are this form's write: anything else that
+            # changed during the upload (a sync) still reloads the form.
+            self._note_own_write(before, self._read_stored_state(observation_id), columns=_SERVICE_ID_COLUMNS)
+            self._refresh_publish_state()
 
     def _on_edit_images_requested(self, observation_id: int, path: str) -> None:
         self._leave_or_discard()
@@ -657,8 +753,10 @@ class EditObservationPage(QWidget):
         the observation or its images since: then the form starts again from
         the database. Otherwise it stays as it is (building it takes seconds).
         """
-        if not self._stale or self._editor is None or self._saving:
-            return
+        if not self._stale or self._editor is None or self._saving or self._publishing:
+            return  # after Publish has finished (see _on_publish_requested)
+        if not self.isVisible() or getattr(self, "_switch_queued", False):
+            return  # hidden again (showing checks then), or a switch replaces the form anyway
         stored = self._read_stored_state()
         if self._must_reload or stored is None or _content(stored) != _content(self._stored_state):
             self.reload()

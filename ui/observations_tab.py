@@ -2359,6 +2359,17 @@ class _AwayStrip:
         return lambda *args, **kwargs: None
 
 
+def _publish_observation_ids(tab) -> list[int]:
+    """The observations Publish works on: the list's selection, or the one
+    observation Rediger publishes (``ObservationsTab.publish_observation``),
+    whatever the list shows meanwhile. Only the publish path reads this; a
+    module function, so code that calls these methods on a stand-in works too."""
+    pinned = getattr(tab, "_publish_pinned_observation_ids", None)
+    if pinned is not None:
+        return list(pinned)
+    return tab._selected_observation_ids()
+
+
 class ObservationsTab(QWidget):
     """Tab for viewing and managing observations."""
 
@@ -5184,6 +5195,9 @@ class ObservationsTab(QWidget):
         if enabled_keys != current_keys:
             self._build_publish_menu()
 
+    def _publish_observation_ids(self) -> list[int]:
+        return _publish_observation_ids(self)
+
     def _selected_observation_ids(self) -> list[int]:
         selection_model = self.table.selectionModel()
         if not selection_model:
@@ -5341,7 +5355,7 @@ class ObservationsTab(QWidget):
         return True
 
     def _selection_matches_uploader_target(self, uploader_key: str) -> bool:
-        observation_ids = self._selected_observation_ids()
+        observation_ids = _publish_observation_ids(self)
         if not observation_ids:
             return False
         for observation_id in observation_ids:
@@ -5353,7 +5367,7 @@ class ObservationsTab(QWidget):
         return True
 
     def _selection_has_existing_upload_for_uploader(self, uploader_key: str) -> bool:
-        observation_ids = self._selected_observation_ids()
+        observation_ids = _publish_observation_ids(self)
         if not observation_ids:
             return False
         for observation_id in observation_ids:
@@ -5396,7 +5410,7 @@ class ObservationsTab(QWidget):
         An observation that is no longer in the database counts as unlinked: it
         has no stored id to update.
         """
-        observation_ids = self._selected_observation_ids()
+        observation_ids = _publish_observation_ids(self)
         if not observation_ids:
             return INAT_SELECTION_EMPTY
         linked = 0
@@ -5652,7 +5666,8 @@ class ObservationsTab(QWidget):
         if not hasattr(self, "publish_btn"):
             return
         both_action = getattr(self, "_publish_both_action", None)
-        if self._delete_in_progress:
+        if self._delete_in_progress or getattr(self, "_publish_pinned_observation_ids", None) is not None:
+            # Deleting, or Rediger publishing one observation: Vis' Publish waits.
             for action in self._publish_actions.values():
                 action.setEnabled(False)
             if both_action is not None:
@@ -5662,6 +5677,9 @@ class ObservationsTab(QWidget):
                 self.plate_btn.setEnabled(False)
             return
         self._refresh_publish_targets_if_needed()
+        # The refresh rebuilds the menu when the enabled services changed: its
+        # old Both action is deleted, so read it again.
+        both_action = getattr(self, "_publish_both_action", None)
 
         observation_ids = self._selected_observation_ids()
         has_selection = bool(observation_ids)
@@ -5826,7 +5844,7 @@ class ObservationsTab(QWidget):
         observation_ids = (
             list(observation_ids)
             if observation_ids is not None
-            else self._selected_observation_ids()
+            else _publish_observation_ids(self)
         )
         if not observation_ids:
             self.set_status_message(
@@ -5965,8 +5983,24 @@ class ObservationsTab(QWidget):
             summary = f"{summary} {partial_detail}"
         self.set_status_message(summary, level=level, auto_clear_ms=15000)
 
+    def publish_observation(self, observation_id: int, uploader_key: str) -> None:
+        """Publish one observation (Rediger, stage 9g3b): today's Publish, with every
+        selection check made for exactly this observation, whatever the list shows
+        or the user does in it meanwhile."""
+        previous = getattr(self, "_publish_pinned_observation_ids", None)
+        self._publish_pinned_observation_ids = [int(observation_id)]
+        self._update_publish_controls()  # Vis' Publish is off meanwhile
+        try:
+            if str(uploader_key or "").strip().lower() == "both":
+                self._publish_selected_observations("both")
+            else:
+                self._publish_selected_observations(uploader_key, observation_ids=[int(observation_id)])
+        finally:
+            self._publish_pinned_observation_ids = previous
+            self._update_publish_controls()  # Vis' Publish follows the list again
+
     def _publish_selected_observations_both(self) -> None:
-        observation_ids = self._selected_observation_ids()
+        observation_ids = _publish_observation_ids(self)
         if not observation_ids:
             self.set_status_message(
                 self.tr("Select one or more observations to publish."),

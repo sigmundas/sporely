@@ -213,6 +213,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     # In place (Rediger, stage 9g2): "Edit images" and an image's Edit or
     # double-click ask the page to open Bilder › Files and SD card (path, or "").
     editImagesRequested = Signal(str)
+    # In place (Rediger, stage 9g3b): “Finished and publish to …” for this
+    # service key ("web", "inat", "both", …); the page saves, then publishes.
+    publishRequested = Signal(str)
 
     """Dialog for creating or editing an observation after image import."""
 
@@ -1053,6 +1056,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         status_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         status_layout.addWidget(cloud_controls)
         self.status_publishing_group = status_group
+        self._status_layout = status_layout
+        self._cloud_grid = cloud_grid
 
         # Both comments side by side.
         comments_container = QWidget()
@@ -3233,6 +3238,198 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if gallery is not None:
             gallery.set_reorderable(False)
             gallery.set_context_actions(delete=False, delete_cloud_copy=False)
+        self._build_in_place_publishing()
+
+    # -- Status and publishing in place (stage 9g3b) --------------------------
+
+    def _build_in_place_publishing(self) -> None:
+        """Rediger's Status and publishing (owner 2026-11-12).
+
+        The steps Draft → Finished → Published to a service replace the draft
+        checkbox (which stays as the form's state, hidden): Draft and Finished
+        set the draft flag; Published follows what is stored. “Finished and
+        publish to …” clears the draft flag, then runs today's Publish for the
+        service chosen with ▾. Sharing and location precision stay their own
+        settings and never change here implicitly.
+        """
+        if getattr(self, "status_step_buttons", None):
+            return
+        steps_row = QHBoxLayout()
+        steps_row.setContentsMargins(0, 0, 0, 0)
+        steps_row.setSpacing(0)
+        self.status_step_buttons = []
+        for index in range(3):
+            button = QPushButton()
+            button.setObjectName("statusStep")
+            button.setCursor(Qt.PointingHandCursor if index < 2 else Qt.ArrowCursor)
+            button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            button.setMinimumHeight(30)
+            button.setFocusPolicy(Qt.TabFocus if index < 2 else Qt.NoFocus)
+            if index < 2:
+                button.clicked.connect(lambda _checked=False, draft=(index == 0): self._set_draft_from_steps(draft))
+            steps_row.addWidget(button, 1)
+            self.status_step_buttons.append(button)
+        hint = QLabel(self.tr("Finished clears the draft mark. Visibility changes only here, never automatically."))
+        hint.setObjectName("statusStepsHint")
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: palette(placeholder-text);")
+        header = getattr(self.status_publishing_group, "_box_header", None)
+        if header is not None and header.layout() is not None:
+            hint.setWordWrap(False)
+            hint.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            hint.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+            header.layout().addWidget(hint, 1)  # in the heading, as in the mockup
+        else:
+            self._status_layout.insertWidget(0, hint)
+        self._status_layout.insertLayout(0, steps_row)
+
+        draft_container = self.is_draft_checkbox.parentWidget()
+        if draft_container is not None and draft_container is not self._cloud_controls:
+            draft_container.hide()  # the steps set it
+
+        # “Finished and publish to …” and ▾ for the service, side by side.
+        publish_row = QWidget()
+        publish_layout = QHBoxLayout(publish_row)
+        publish_layout.setContentsMargins(0, 0, 0, 0)
+        publish_layout.setSpacing(1)
+        self.publish_service_button = QPushButton()
+        self.publish_service_button.setObjectName("publishServiceButton")
+        self.publish_service_button.clicked.connect(self._on_publish_service_clicked)
+        self.publish_service_menu_button = QPushButton("▾")
+        self.publish_service_menu_button.setObjectName("publishServiceMenuButton")
+        self.publish_service_menu_button.setToolTip(self.tr("Choose the service"))
+        self.publish_service_menu_button.setFixedWidth(30)
+        self.publish_service_menu = QMenu(self.publish_service_menu_button)
+        self.publish_service_menu_button.setMenu(self.publish_service_menu)
+        publish_layout.addWidget(self.publish_service_button)
+        publish_layout.addWidget(self.publish_service_menu_button)
+        self._cloud_grid.addWidget(publish_row, 1, 4, Qt.AlignRight | Qt.AlignVCenter)
+        self._publish_services: list[tuple[str, str]] = []
+        self._published_labels: list[str] = []
+        self._blocked_services: set[str] = set()
+        self._publish_service_key: str | None = None
+        self.is_draft_checkbox.toggled.connect(lambda _checked: self._refresh_publishing_controls())
+        self._refresh_publishing_controls()
+
+    def set_publishing(self, busy: bool) -> None:
+        """While Publish runs (it shows its own progress and questions), the
+        steps and the publish controls take no second click."""
+        self._publishing_busy = bool(busy)
+        for widget in (
+            *(getattr(self, "status_step_buttons", None) or []),
+            getattr(self, "publish_service_button", None),
+            getattr(self, "publish_service_menu_button", None),
+        ):
+            if widget is not None:
+                widget.setEnabled(not busy)
+        if not busy:
+            self._refresh_publishing_controls()
+
+    def _set_draft_from_steps(self, draft: bool) -> None:
+        """Draft or Finished in the steps: the draft flag, saved (and asked) like the checkbox."""
+        if bool(self.is_draft_checkbox.isChecked()) != bool(draft):
+            self.is_draft_checkbox.setChecked(bool(draft))
+        self._refresh_publishing_controls()
+
+    def set_publish_state(self, services, published_labels, blocked) -> None:
+        """What the page knows: the services enabled for publishing (key, label), the
+        services the observation is published to (labels), and those it cannot be
+        published to again (keys)."""
+        self._publish_services = [(str(key), str(label)) for key, label in (services or [])]
+        self._published_labels = [str(label) for label in (published_labels or [])]
+        self._blocked_services = {str(key) for key in (blocked or [])}
+        keys = [key for key, _label in self._publish_services]
+        if self._publish_service_key not in keys:
+            remembered = str(SettingsDB.get_setting("edit_publish_service", "") or "")
+            available = [key for key in keys if key not in self._blocked_services]
+            self._publish_service_key = (
+                remembered if remembered in keys else (available[0] if available else (keys[0] if keys else None))
+            )
+        menu = self.publish_service_menu
+        menu.clear()
+        for key, label in self._publish_services:
+            action = menu.addAction(label)
+            action.setEnabled(key not in self._blocked_services)
+            action.triggered.connect(lambda _checked=False, k=key: self._choose_publish_service(k))
+        self._refresh_publishing_controls()
+
+    def _choose_publish_service(self, key: str) -> None:
+        self._publish_service_key = key
+        try:
+            SettingsDB.set_setting("edit_publish_service", key)
+        except Exception:
+            pass
+        self._refresh_publishing_controls()
+        # After the menu has closed: publishing refreshes the menu, which must
+        # not delete the action that is still being triggered.
+        QTimer.singleShot(0, self, lambda k=key: self.publishRequested.emit(k))
+
+    def _on_publish_service_clicked(self) -> None:
+        key = self._publish_service_key
+        if key and key not in self._blocked_services:
+            self.publishRequested.emit(key)
+
+    def _publish_service_label(self, key: str | None) -> str:
+        return next((label for k, label in getattr(self, "_publish_services", []) if k == key), "")
+
+    def _refresh_publishing_controls(self) -> None:
+        buttons = getattr(self, "status_step_buttons", None)
+        if not buttons:
+            return
+        draft = bool(self.is_draft_checkbox.isChecked())
+        published = list(getattr(self, "_published_labels", []))
+        current = 0 if draft else (2 if published else 1)
+        texts = [
+            self.tr("Draft"),
+            self.tr("Finished"),
+            self.tr("Published to {services}").format(services=", ".join(published)) if published
+            else self.tr("Published to a service"),
+        ]
+        last = len(buttons) - 1
+        for index, (button, text) in enumerate(zip(buttons, texts)):
+            now = self.tr("now") if index == current else ""
+            button.setText(f"{index + 1}   {text}" + (f"   ·   {now}" if now else ""))
+            colour = "232, 197, 71" if current == 0 else "63, 174, 106"
+            radius = (
+                "border-top-left-radius: 8px; border-bottom-left-radius: 8px;" if index == 0
+                else "border-top-right-radius: 8px; border-bottom-right-radius: 8px;" if index == last else ""
+            )
+            base = (
+                f"QPushButton#statusStep {{ text-align: left; padding: 6px 12px; border-radius: 0; {radius}"
+                " border: 1px solid palette(mid); color: palette(text);"
+            )
+            if index == current:
+                button.setStyleSheet(
+                    f"{base} background: rgba({colour}, 0.20); border-color: rgba({colour}, 0.7); font-weight: 600; }}"
+                )
+            else:
+                button.setStyleSheet(f"{base} background: transparent; }}")
+        publish = getattr(self, "publish_service_button", None)
+        if publish is None:
+            return
+        key = getattr(self, "_publish_service_key", None)
+        label = self._publish_service_label(key)
+        if getattr(self, "_publishing_busy", False):
+            return  # set_publishing(False) refreshes them
+        menu_button = getattr(self, "publish_service_menu_button", None)
+        if menu_button is not None:
+            menu_button.setEnabled(bool(getattr(self, "_publish_services", [])))
+        if not label:
+            publish.setText(self.tr("No publishing service enabled"))
+            publish.setEnabled(False)
+            publish.setToolTip(self.tr("Choose services under Settings › Online publishing."))
+            return
+        publish.setText(
+            self.tr("Finished and publish to {service}").format(service=label) if draft
+            else self.tr("Publish to {service}").format(service=label)
+        )
+        blocked = key in getattr(self, "_blocked_services", set())
+        publish.setEnabled(not blocked)
+        publish.setToolTip(
+            self.tr("Already published to {service}. Choose another service with ▾.").format(service=label)
+            if blocked else ""
+        )
+        publish.setProperty("_blocked", blocked)
 
     def add_in_place_status(self, widget) -> None:
         """The page's save status, where Save was (bottom right)."""
@@ -3327,6 +3524,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             lambda: load_local_facts(obs_id, new_state),
         ):
             self._restore_publish_controls(previous)
+            self.last_publish_change_cancelled = True  # Rediger's Publish stops on this
             return False
         # An explicit precision choice on this device (confirmed above when it
         # publishes or widens) is what lets sync push a more precise level.
