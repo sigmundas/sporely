@@ -94,6 +94,7 @@ class IngestionHubTab(QWidget):
         self._selected_match_path: str | None = None
 
         self._build_ui()
+        self._register_hints()
         self._restore_scan_dir()
         self._restore_offset()
         self.refresh_observation_queue()
@@ -102,10 +103,9 @@ class IngestionHubTab(QWidget):
         self._update_action_state()
         self._set_hint(
             self.tr(
-                "Scan a folder with field and microscope images, optionally create a Sync Shot QR, "
-                "then choose a photographed QR image to calibrate the batch clock offset before "
-                "matching field photos to nearby observation times and microscope photos to "
-                "retrospective sessions."
+                "Scan a folder with field and microscope images. Field photos are matched to nearby "
+                "observation times and microscope photos to Live lab sessions. If the camera clock is "
+                "off, photograph a time code and choose that photo under Camera time offset."
             )
         )
 
@@ -123,18 +123,6 @@ class IngestionHubTab(QWidget):
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(10)
 
-        queue_group, queue_layout = create_section_card(
-            self.tr("Microscope sessions"),
-            body_margins=(10, 12, 10, 10),
-        )
-        self.observation_queue = QListWidget()
-        self.observation_queue.currentItemChanged.connect(self._on_observation_changed)
-        queue_layout.addWidget(self.observation_queue, 1)
-        self.queue_summary_label = QLabel("")
-        self.queue_summary_label.setWordWrap(True)
-        self.queue_summary_label.setStyleSheet("color: #6b7280;")
-        queue_layout.addWidget(self.queue_summary_label)
-        left_layout.addWidget(queue_group, 1)
 
         folder_group, folder_layout = create_section_card(
             self.tr("Import folder"),
@@ -157,7 +145,7 @@ class IngestionHubTab(QWidget):
         left_layout.addWidget(folder_group)
 
         sync_group, sync_layout = create_section_card(
-            self.tr("Sync Shot"),
+            self.tr("Camera time offset"),
             body_margins=(10, 12, 10, 10),
         )
         self.sync_shot_summary_label = QLabel("")
@@ -178,7 +166,7 @@ class IngestionHubTab(QWidget):
         sync_button_row = QHBoxLayout()
         sync_button_row.setContentsMargins(0, 0, 0, 0)
         sync_button_row.setSpacing(8)
-        self.new_sync_shot_btn = QPushButton(self.tr("New Sync Shot"))
+        self.new_sync_shot_btn = QPushButton(self.tr("Show time code"))
         self.new_sync_shot_btn.clicked.connect(self._create_sync_shot)
         sync_button_row.addWidget(self.new_sync_shot_btn)
         self.choose_sync_shot_image_btn = QPushButton(self.tr("Choose QR image..."))
@@ -189,6 +177,21 @@ class IngestionHubTab(QWidget):
         sync_button_row.addWidget(self.clear_sync_shot_btn)
         sync_layout.addLayout(sync_button_row)
         left_layout.addWidget(sync_group)
+
+        # Live lab sessions third (stage 9h: Import folder, Camera time offset,
+        # sessions, actions); the list takes the room left.
+        queue_group, queue_layout = create_section_card(
+            self.tr("Live lab sessions"),
+            body_margins=(10, 12, 10, 10),
+        )
+        self.observation_queue = QListWidget()
+        self.observation_queue.currentItemChanged.connect(self._on_observation_changed)
+        queue_layout.addWidget(self.observation_queue, 1)
+        self.queue_summary_label = QLabel("")
+        self.queue_summary_label.setWordWrap(True)
+        self.queue_summary_label.setStyleSheet("color: #6b7280;")
+        queue_layout.addWidget(self.queue_summary_label)
+        left_layout.addWidget(queue_group, 1)
 
         actions_group, actions_layout = create_section_card(
             self.tr("Actions"),
@@ -336,6 +339,28 @@ class IngestionHubTab(QWidget):
 
         self._clear_viewer()
 
+    def _register_hints(self) -> None:
+        """What each control does, in the hint bar on hover (stage 9h)."""
+        controller = self._hint_controller
+        if controller is None:
+            return
+        for widget, text in (
+            (self.browse_scan_dir_btn, self.tr("Choose the folder with the photos, for example the camera's SD card.")),
+            (self.scan_folder_btn, self.tr("Read the photos in the folder and match them to observations.")),
+            (self.new_sync_shot_btn, self.tr("Show a time code on screen to photograph with the camera.")),
+            (
+                self.choose_sync_shot_image_btn,
+                self.tr("Choose the photo of the time code: the camera time offset is set from it."),
+            ),
+            (self.clear_sync_shot_btn, self.tr("Clear the camera time offset.")),
+            (self.offset_spin, self.tr("Seconds added to the camera's photo times; set from a time code, or typed.")),
+            (self.observation_queue, self.tr("Observations with recorded Live lab sessions, and those matched to photos in the scanned folder.")),
+            (self.refresh_matches_btn, self.tr("Match the photos again, for example after changing the offset.")),
+            (self.commit_matches_btn, self.tr("Add the photos selected below to the chosen observation.")),
+            (self.add_all_images_btn, self.tr("Add all of the chosen observation's matched photos to it.")),
+        ):
+            controller.register_widget(widget, text)
+
     def _set_hint(self, text: str | None, tone: str = "info") -> None:
         if self._hint_controller is not None:
             self._hint_controller.set_hint(text, tone=tone)
@@ -481,7 +506,7 @@ class IngestionHubTab(QWidget):
 
         if self.observation_queue.count() == 0:
             self.queue_summary_label.setText(
-                self.tr("No matching observations or retrospective microscope sessions were found yet.")
+                self.tr("No matching observations or Live lab sessions were found yet.")
             )
             self._refresh_gallery()
             self._update_action_state()
@@ -503,7 +528,7 @@ class IngestionHubTab(QWidget):
         delete_btn = QToolButton(row_widget)
         delete_btn.setText("x")
         delete_btn.setFixedSize(22, 22)
-        delete_btn.setToolTip(self.tr("Delete microscope session(s) for this row"))
+        delete_btn.setToolTip(self.tr("Delete the Live lab sessions for this row"))
         delete_btn.setEnabled(session_count > 0)
         delete_btn.clicked.connect(
             lambda _checked=False, obs_id=int(observation_id): self._delete_sessions_for_observation(obs_id)
@@ -1103,7 +1128,7 @@ class IngestionHubTab(QWidget):
         parts: list[str] = []
         match_kind = str(match_row.get("match_kind") or "").strip().lower()
         if match_kind == "session":
-            parts.append(self.tr("Microscope session match"))
+            parts.append(self.tr("Live lab session match"))
         elif match_kind == "observation_window":
             parts.append(self.tr("Observation time match"))
         captured_at = match_row.get("captured_at")
@@ -1162,8 +1187,8 @@ class IngestionHubTab(QWidget):
             return
         self._show_status(
             self.tr(
-                "Sync Shot created. Photograph it, then use 'Choose QR image...' in Camera import "
-                "to calibrate from the photographed QR image."
+                "Photograph the time code, then choose that photo with 'Choose QR image...' "
+                "to set the camera time offset."
             ),
             tone="success",
             timeout_ms=5000,
@@ -1270,7 +1295,7 @@ class IngestionHubTab(QWidget):
         except Exception:
             if show_status:
                 self._show_status(
-                    self.tr("Sporely could not decode a Sync Shot QR code from that image."),
+                    self.tr("Sporely could not read a time code in that image."),
                     tone="warning",
                     timeout_ms=5000,
                 )
@@ -1279,13 +1304,13 @@ class IngestionHubTab(QWidget):
         if not matches or decode_result.get("multiple"):
             if show_status and decode_result.get("multiple"):
                 self._show_status(
-                    self.tr("Multiple Sync Shot QR timestamps were detected. Choose a clearer image."),
+                    self.tr("More than one time code was found. Choose a clearer image."),
                     tone="warning",
                     timeout_ms=6000,
                 )
             elif show_status and show_missing_qr_warning:
                 self._show_status(
-                    self.tr("No Sync Shot QR code was found in the chosen image."),
+                    self.tr("No time code was found in the chosen image."),
                     tone="warning",
                     timeout_ms=5000,
                 )
@@ -1327,7 +1352,7 @@ class IngestionHubTab(QWidget):
         self._update_sync_shot_summary()
         if show_status:
             self._show_status(
-                self.tr("Applied Sync Shot offset from {name} using QR time {time} and the {basis}.").format(
+                self.tr("Camera time offset set from {name}, using the code's time {time} and the {basis}.").format(
                     name=display_name or Path(normalized_path).name,
                     time=str(parsed.get("utc_text") or ""),
                     basis=basis,
@@ -1349,7 +1374,7 @@ class IngestionHubTab(QWidget):
         self._recompute_matches()
         self._update_sync_shot_summary()
         self._show_status(
-            self.tr("Cleared Sync Shot calibration."),
+            self.tr("Camera time offset cleared."),
             tone="info",
             timeout_ms=3000,
         )
@@ -1357,7 +1382,7 @@ class IngestionHubTab(QWidget):
     def _update_sync_shot_summary(self) -> None:
         if not self._sync_shot_record:
             self.sync_shot_summary_label.setText(
-                self.tr("No Sync Shot created for this batch yet.")
+                self.tr("No time code shown for this batch yet.")
             )
             return
         session_text = str(
@@ -1366,7 +1391,7 @@ class IngestionHubTab(QWidget):
             or ""
         ).strip()
         parts = [
-            self.tr("QR session: {value}").format(value=session_text),
+            self.tr("Time code: {value}").format(value=session_text),
             self.tr("Offset: {value:+.1f}s").format(value=float(self.offset_spin.value())),
         ]
         if self._sync_shot_image_path:
@@ -1805,13 +1830,13 @@ class IngestionHubTab(QWidget):
         self._recompute_matches()
         if deleted:
             self._show_status(
-                self.tr("Deleted {count} microscope session event(s).").format(count=deleted),
+                self.tr("Deleted {count} Live lab session event(s).").format(count=deleted),
                 tone="success",
                 timeout_ms=4000,
             )
         else:
             self._show_status(
-                self.tr("No microscope sessions were found for that row."),
+                self.tr("No Live lab sessions were found for that row."),
                 tone="info",
                 timeout_ms=3000,
             )

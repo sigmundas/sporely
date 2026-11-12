@@ -25,7 +25,7 @@ class SyncShotDialog(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle(self.tr("Sync Shot"))
+        self.setWindowTitle(self.tr("Camera time offset"))
         self.setModal(True)
         self.resize(620, 620)
         self.shot_record: dict | None = None
@@ -41,7 +41,7 @@ class SyncShotDialog(QDialog):
         intro_label = QLabel(
             self.tr(
                 "Photograph this screen with your camera, then close this dialog. In Camera import, "
-                "you can use 'Choose QR image...' to calibrate from any photographed Sync Shot QR, "
+                "choose that photo with 'Choose QR image...' to set the camera time offset, "
                 "even before you scan an import folder."
             )
         )
@@ -132,7 +132,7 @@ class SyncShotDialog(QDialog):
             qr_image = render_sync_shot_qr(payload)
         except ImportError:
             self.qr_label.setPixmap(QPixmap())
-            self.qr_label.setText(self.tr("Install Sync Shot QR dependencies to use this tool."))
+            self.qr_label.setText(self.tr("Install the QR code dependencies to use this tool."))
             self.token_label.setText(self.tr("QR dependencies missing"))
             self.local_time_label.setText("")
             self.utc_time_label.setText("")
@@ -145,7 +145,7 @@ class SyncShotDialog(QDialog):
             Qt.SmoothTransformation,
         )
         self.qr_label.setPixmap(pixmap)
-        self.token_label.setText(self.tr("SYNC-SHOT {value}").format(value=self.shot_record["current_utc_text"]))
+        self.token_label.setText(self.tr("TIME CODE {value}").format(value=self.shot_record["current_utc_text"]))
         self.local_time_label.setText(
             self.tr("Local clock: {value}").format(value=self.shot_record["current_local_text"])
         )
@@ -210,7 +210,7 @@ class SyncShotQrView(QLabel):
         try:
             image = render_sync_shot_qr(payload)
         except ImportError:
-            self.setText(self.tr("Install Sync Shot QR dependencies to use this tool."))
+            self.setText(self.tr("Install the QR code dependencies to use this tool."))
             self.setWordWrap(True)
             return
         pixmap = QPixmap.fromImage(ImageQt(image)).scaled(
