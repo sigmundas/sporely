@@ -24,11 +24,9 @@ $files = @(
     "ui\\main_window.py",
     "ui\\image_import_dialog.py",
     "ui\\observations_tab.py",
-    "ui\\measurement_tool.py",
     "ui\\calibration_dialog.py",
     "ui\\species_plate_dialog.py",
     "ui\\zoomable_image_widget.py",
-    "ui\\stats_table_widget.py",
     "ui\\spore_preview_widget.py",
     "ui\\reference_library_attach_dialog.py",
     "ui\\reference_library_manager_dialog.py"

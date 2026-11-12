@@ -16,7 +16,6 @@ from PySide6.QtGui import (
     QAction,
     QActionGroup,
     QColor,
-    QImage,
     QImageReader,
     QPainter,
     QPen,
@@ -666,55 +665,6 @@ class JumpSlider(QSlider):
             self.setValue(value)
         super().mousePressEvent(event)
 
-class SpinnerWidget(QWidget):
-    """Simple spinning doughnut indicator."""
-
-    def __init__(self, parent=None, size=56):
-        super().__init__(parent)
-        self._angle = 0
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._tick)
-        self._timer.start(60)
-        self.setFixedSize(size, size)
-
-    def _tick(self):
-        self._angle = (self._angle + 30) % 360
-        self.update()
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-        size = min(self.width(), self.height())
-        rect = QRectF(6, 6, size - 12, size - 12)
-
-        base_pen = QPen(QColor(220, 220, 220), 6)
-        base_pen.setCapStyle(Qt.RoundCap)
-        painter.setPen(base_pen)
-        painter.drawEllipse(rect)
-
-        arc_pen = QPen(QColor(52, 152, 219), 6)
-        arc_pen.setCapStyle(Qt.RoundCap)
-        painter.setPen(arc_pen)
-        painter.drawArc(rect, int(self._angle * 16), int(120 * 16))
-
-
-class LoadingDialog(QDialog):
-    """Modal loading dialog with a spinner."""
-
-    def __init__(self, parent=None, text="Loading..."):
-        super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
-        self.setModal(True)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(8)
-        self.spinner = SpinnerWidget(self, size=60)
-        layout.addWidget(self.spinner, alignment=Qt.AlignCenter)
-        label = QLabel(text)
-        label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(label)
-
 
 class CollapsibleSplitterHandle(QSplitterHandle):
     """Splitter handle with a collapse/expand button."""
@@ -813,93 +763,6 @@ class CollapsibleSection(QWidget):
     def _on_toggled(self, checked):
         self._toggle_btn.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
         self._content.setVisible(bool(checked))
-class ScaleBarCalibrationDialog(QDialog):
-    """Simple scale bar calibration dialog for two-point measurement."""
-
-    def __init__(
-        self,
-        main_window,
-        initial_value: float | None = None,
-        unit_label: str = "\u03bcm",
-        unit_multiplier: float = 1.0,
-        previous_key: str | None = None,
-    ):
-        super().__init__(main_window)
-        self.setWindowTitle(self.tr("Scale bar"))
-        self.setModal(False)
-        self.main_window = main_window
-        self.previous_key = previous_key
-        self.scale_applied = False
-        self.auto_apply = False
-        self.unit_label = unit_label
-        self.unit_multiplier = unit_multiplier
-        if initial_value is None:
-            initial_value = 10.0 if unit_label == "\u03bcm" else 1.0
-
-        layout = QVBoxLayout(self)
-        form = QFormLayout()
-
-        self.length_input = QDoubleSpinBox()
-        if unit_label == "mm":
-            self.length_input.setRange(1.0, 100000.0)
-            self.length_input.setDecimals(0)
-            self.length_input.setSingleStep(1.0)
-        else:
-            self.length_input.setRange(0.1, 100000.0)
-            self.length_input.setDecimals(2)
-        self.length_input.setValue(initial_value)
-        self.length_input.setSuffix(f" {unit_label}")
-        form.addRow(self.tr("Scale bar length:"), self.length_input)
-
-        self.scale_label = QLabel("--")
-        form.addRow(self.tr("Custom scale:"), self.scale_label)
-
-        layout.addLayout(form)
-
-        btn_row = QHBoxLayout()
-        self.select_btn = QPushButton(self.tr("Select scale bar endpoints"))
-        self.select_btn.clicked.connect(self._on_select)
-        btn_row.addWidget(self.select_btn)
-        btn_row.addStretch()
-
-        close_btn = QPushButton(self.tr("Close"))
-        close_btn.clicked.connect(self.close)
-        btn_row.addWidget(close_btn)
-
-        layout.addLayout(btn_row)
-
-    def _on_select(self):
-        if not self.main_window:
-            return
-        self.hide()
-        self.main_window.enter_calibration_mode(self)
-
-    def set_calibration_distance(self, distance_pixels: float):
-        if not distance_pixels or distance_pixels <= 0:
-            return
-        length_um = float(self.length_input.value()) * self.unit_multiplier
-        scale_um = length_um / distance_pixels
-        scale_nm = scale_um * 1000.0
-        self.scale_label.setText(f"{scale_nm:.2f} nm/px")
-        self.show()
-        self._pending_scale_um = scale_um
-
-    def apply_scale(self, distance_pixels: float):
-        if not distance_pixels or distance_pixels <= 0:
-            return
-        length_um = float(self.length_input.value()) * self.unit_multiplier
-        scale_um = length_um / distance_pixels
-        scale_nm = scale_um * 1000.0
-        self.scale_label.setText(f"{scale_nm:.2f} nm/px")
-        applied = False
-        if self.main_window:
-            applied = bool(self.main_window.set_custom_scale(scale_um))
-        self.scale_applied = applied
-
-    def closeEvent(self, event):
-        if not self.scale_applied and self.previous_key:
-            self.main_window._populate_scale_combo(self.previous_key)
-        super().closeEvent(event)
 
 
 class DatabaseBundleOptionsDialog(QDialog):
@@ -999,164 +862,6 @@ class DatabaseBundleOptionsDialog(QDialog):
             "calibrations": self.calibrations_check.isChecked(),
             "reference_values": self.references_check.isChecked(),
         }
-
-
-class LanguageSettingsDialog(QDialog):
-    """Dialog for UI and vernacular language settings."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(self.tr("Language"))
-        self.setModal(True)
-        self.setMinimumWidth(420)
-        self._ui_changed = False
-        self._vernacular_changed = False
-        self.init_ui()
-
-    def init_ui(self):
-        layout = QVBoxLayout(self)
-        form = QFormLayout()
-
-        restart_notice = QLabel(
-            self.tr("Language change will apply after restart.")
-        )
-        restart_notice.setWordWrap(True)
-        restart_notice.setStyleSheet("color: #34495e;")
-        layout.addWidget(restart_notice)
-
-        self.ui_combo = QComboBox()
-        self.ui_combo.addItem(self.tr("English"), "en")
-        self.ui_combo.addItem(self.tr("Norwegian"), "nb_NO")
-        self.ui_combo.addItem(self.tr("Swedish"), "sv_SE")
-        self.ui_combo.addItem(self.tr("German"), "de_DE")
-        form.addRow(self.tr("UI language:"), self.ui_combo)
-
-        self.vernacular_combo = QComboBox()
-        self._populate_vernacular_languages()
-        form.addRow(self.tr("Vernacular names:"), self.vernacular_combo)
-
-        layout.addLayout(form)
-
-        buttons = QDialogButtonBox(self)
-        ok_btn = buttons.addButton(self.tr("OK"), QDialogButtonBox.AcceptRole)
-        cancel_btn = buttons.addButton(self.tr("Cancel"), QDialogButtonBox.RejectRole)
-        ok_btn.clicked.connect(self._save)
-        cancel_btn.clicked.connect(self.reject)
-        layout.addWidget(buttons)
-
-        self._load_settings()
-
-    def _populate_vernacular_languages(self):
-        self.vernacular_combo.blockSignals(True)
-        self.vernacular_combo.clear()
-        for code in list_available_vernacular_languages():
-            label = vernacular_language_label(code) or code
-            self.vernacular_combo.addItem(self.tr(label), code)
-        self.vernacular_combo.blockSignals(False)
-
-    def _load_settings(self):
-        current_ui = str(SettingsDB.get_setting("ui_language", "en") or "en").replace("-", "_")
-        current_prefix = current_ui.split("_", 1)[0].lower()
-        if current_prefix == "de":
-            current_ui = "de_DE"
-        elif current_prefix in {"nb", "nn", "no"}:
-            current_ui = "nb_NO"
-        elif current_prefix == "sv":
-            current_ui = "sv_SE"
-        else:
-            current_ui = "en"
-        stored_vern = SettingsDB.get_setting("vernacular_language", "no")
-        current_vern = resolve_available_vernacular_language(stored_vern) or normalize_vernacular_language(stored_vern)
-        ui_index = self.ui_combo.findData(current_ui)
-        if ui_index >= 0:
-            self.ui_combo.setCurrentIndex(ui_index)
-        vern_index = self.vernacular_combo.findData(current_vern)
-        if vern_index >= 0:
-            self.vernacular_combo.setCurrentIndex(vern_index)
-        elif self.vernacular_combo.count():
-            self.vernacular_combo.setCurrentIndex(0)
-
-    def _save(self):
-        old_ui = SettingsDB.get_setting("ui_language", "en")
-        stored_vern = SettingsDB.get_setting("vernacular_language", "no")
-        old_vern = resolve_available_vernacular_language(stored_vern) or normalize_vernacular_language(stored_vern)
-
-        new_ui = self.ui_combo.currentData()
-        new_vern = normalize_vernacular_language(self.vernacular_combo.currentData())
-
-        if new_ui and new_ui != old_ui:
-            SettingsDB.set_setting("ui_language", new_ui)
-            update_app_settings({"ui_language": new_ui})
-            self._ui_changed = True
-
-        if new_vern and new_vern != old_vern:
-            SettingsDB.set_setting("vernacular_language", new_vern)
-            update_app_settings({"vernacular_language": new_vern})
-            self._vernacular_changed = True
-
-        if self._vernacular_changed:
-            parent = self.parent()
-            if parent and hasattr(parent, "apply_vernacular_language_change"):
-                parent.apply_vernacular_language_change()
-
-        self.accept()
-
-
-class AppearanceDialog(QDialog):
-    """Dialog for colour-theme preference (Auto / Light / Dark)."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(self.tr("Appearance"))
-        self.setModal(True)
-        self.setMinimumWidth(320)
-        self.init_ui()
-
-    def init_ui(self):
-        layout = QVBoxLayout(self)
-
-        label = QLabel(self.tr("Color theme:"))
-        layout.addWidget(label)
-        layout.addSpacing(4)
-
-        self.btn_auto  = QRadioButton(self.tr("Auto (follow system)"))
-        self.btn_light = QRadioButton(self.tr("Light"))
-        self.btn_dark  = QRadioButton(self.tr("Dark"))
-        layout.addWidget(self.btn_auto)
-        layout.addWidget(self.btn_light)
-        layout.addWidget(self.btn_dark)
-        layout.addSpacing(8)
-
-        buttons = QDialogButtonBox(self)
-        ok_btn     = buttons.addButton(self.tr("OK"),     QDialogButtonBox.AcceptRole)
-        cancel_btn = buttons.addButton(self.tr("Cancel"), QDialogButtonBox.RejectRole)
-        ok_btn.clicked.connect(self._save)
-        cancel_btn.clicked.connect(self.reject)
-        layout.addWidget(buttons)
-
-        self._load_settings()
-
-    def _load_settings(self):
-        theme = SettingsDB.get_setting("ui_theme", "auto")
-        if theme == "dark":
-            self.btn_dark.setChecked(True)
-        elif theme == "light":
-            self.btn_light.setChecked(True)
-        else:
-            self.btn_auto.setChecked(True)
-
-    def _save(self):
-        if self.btn_dark.isChecked():
-            theme = "dark"
-        elif self.btn_light.isChecked():
-            theme = "light"
-        else:
-            theme = "auto"
-        SettingsDB.set_setting("ui_theme", theme)
-        parent = self.parent()
-        if parent and hasattr(parent, "_apply_theme"):
-            parent._apply_theme()
-        self.accept()
 
 
 class SettingsHubDialog(QDialog):
@@ -2541,162 +2246,6 @@ class SettingsHubDialog(QDialog):
                 self.tr("Cloud Sync"),
                 self.tr("Cloud sync is already running or could not start."),
             )
-
-    def _request_settings_calibration_conflict_repair(self) -> None:
-        main_window = self._settings_hub_main_window()
-        if main_window is None:
-            QMessageBox.warning(
-                self,
-                self.tr("Calibration Repair"),
-                self.tr("Calibration repair is not available right now."),
-            )
-            return
-        try:
-            from utils import cloud_sync as cloud_sync_module
-        except Exception as exc:
-            QMessageBox.warning(
-                self,
-                self.tr("Calibration Repair"),
-                self.tr("Calibration repair is not available right now.\n\n{error}").format(error=exc),
-            )
-            return
-
-        client = None
-        getter = getattr(main_window, "_cached_cloud_client", None)
-        if callable(getter):
-            try:
-                client = getter()
-            except Exception:
-                client = None
-        if client is None:
-            client = getattr(main_window, "_cloud_client", None)
-        if client is None:
-            try:
-                client = cloud_sync_module.SporelyCloudClient.from_stored_credentials()
-            except Exception as exc:
-                QMessageBox.warning(
-                    self,
-                    self.tr("Calibration Repair"),
-                    self.tr("Could not load cloud credentials.\n\n{error}").format(error=exc),
-                )
-                return
-            if client is not None:
-                setattr(main_window, "_cloud_client", client)
-
-        if client is None:
-            QMessageBox.information(
-                self,
-                self.tr("Calibration Repair"),
-                self.tr("Sign in first, then click Repair calibration conflicts (local wins)."),
-            )
-            return
-
-        try:
-            conflicts = cloud_sync_module.list_calibration_conflicts(client)
-        except Exception as exc:
-            QMessageBox.warning(
-                self,
-                self.tr("Calibration Repair"),
-                self.tr("Could not inspect calibration conflicts.\n\n{error}").format(error=exc),
-            )
-            return
-
-        conflict_uuids = [
-            str((row or {}).get("calibration_uuid") or "").strip()
-            for row in conflicts
-            if str((row or {}).get("calibration_uuid") or "").strip()
-        ]
-        if not conflict_uuids:
-            QMessageBox.information(
-                self,
-                self.tr("Calibration Repair"),
-                self.tr("No calibration conflicts were found."),
-            )
-            return
-
-        preview_lines = []
-        for row in conflicts[:10]:
-            fields = ", ".join(str(field) for field in (row.get("fields") or []) if str(field).strip())
-            preview_lines.append(
-                self.tr("{uuid}: {fields}").format(
-                    uuid=str(row.get("calibration_uuid") or "").strip(),
-                    fields=fields or self.tr("metadata"),
-                )
-            )
-        if len(conflicts) > len(preview_lines):
-            preview_lines.append(self.tr("…and {count} more.").format(count=len(conflicts) - len(preview_lines)))
-
-        reply = QMessageBox.question(
-            self,
-            self.tr("Calibration Repair"),
-            self.tr(
-                "Repair {count} calibration conflict(s) using local wins?\n\n"
-                "This will overwrite the cloud metadata fields listed below.\n\n{details}"
-            ).format(count=len(conflict_uuids), details="\n".join(preview_lines)),
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-        if reply != QMessageBox.Yes:
-            return
-
-        try:
-            result = cloud_sync_module.repair_calibrations_local_wins(
-                client,
-                calibration_uuids=conflict_uuids,
-            )
-        except Exception as exc:
-            QMessageBox.warning(
-                self,
-                self.tr("Calibration Repair"),
-                self.tr("Calibration repair failed.\n\n{error}").format(error=exc),
-            )
-            return
-        finally:
-            self.refresh_cloud_sync_status()
-
-        repaired_lines = []
-        for row in result.get("repairs", []):
-            fields = ", ".join(str(field) for field in (row.get("fields") or []) if str(field).strip())
-            repaired_lines.append(
-                self.tr("{uuid}: {fields}").format(
-                    uuid=str(row.get("calibration_uuid") or "").strip(),
-                    fields=fields or self.tr("metadata"),
-                )
-            )
-            if row.get("remaining_fields") and row.get("normalized_local_measurements_json") is not None:
-                repaired_lines.append(
-                    self.tr("  measurements_json still differs after repair:")
-                )
-                repaired_lines.append(
-                    self.tr("  local: {value}").format(
-                        value=json.dumps(row.get("normalized_local_measurements_json"), ensure_ascii=False, sort_keys=True)
-                    )
-                )
-                repaired_lines.append(
-                    self.tr("  cloud: {value}").format(
-                        value=json.dumps(row.get("normalized_remote_measurements_json"), ensure_ascii=False, sort_keys=True)
-                    )
-                )
-
-        message_lines = [
-            self.tr("Repaired {count} calibration conflict(s) with local wins.").format(
-                count=int(result.get("repaired", 0) or 0)
-            )
-        ]
-        if int(result.get("repaired", 0) or 0) > 0:
-            message_lines.append(self.tr("Run Sync now again to confirm the skipped warnings are gone."))
-        if repaired_lines:
-            message_lines.extend(repaired_lines)
-        if result.get("errors"):
-            message_lines.append("")
-            message_lines.append(self.tr("Errors:"))
-            message_lines.extend(str(error) for error in result.get("errors", []))
-
-        message = "\n".join(message_lines)
-        if result.get("errors"):
-            QMessageBox.warning(self, self.tr("Calibration Repair"), message)
-        else:
-            QMessageBox.information(self, self.tr("Calibration Repair"), message)
 
     def _build_cloud_sync_details_dialog(self, lines: list[str]) -> QDialog:
         dialog = QDialog(self)
@@ -4987,7 +4536,6 @@ class ReferenceValuesDialog(QDialog):
         except ValueError:
             return None
 
-
     def get_data(self):
         return {
             "genus": self.genus_input.text().strip() or None,
@@ -7142,7 +6690,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         finally:
             reply.deleteLater()
 
-
     def _parse_version(self, version: str | None) -> tuple[int, ...] | None:
         if not version:
             return None
@@ -8812,38 +8359,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         if not hasattr(self, "plot_width_splitter"):
             return
         self._save_gallery_settings()
-
-    def _build_spore_sharing_panel(self):
-        panel = QWidget()
-        panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
-
-        self.spore_sharing_group = QButtonGroup(self)
-        self.spore_sharing_public_radio = QRadioButton(self.tr("Public (share with everyone)"))
-        self.spore_sharing_friends_radio = QRadioButton(self.tr("Friends only"))
-        self.spore_sharing_private_radio = QRadioButton(self.tr("Private (keep to myself)"))
-        self.spore_sharing_public_radio.setChecked(True)
-
-        self.spore_sharing_group.addButton(self.spore_sharing_public_radio)
-        self.spore_sharing_group.addButton(self.spore_sharing_friends_radio)
-        self.spore_sharing_group.addButton(self.spore_sharing_private_radio)
-
-        layout.addWidget(self.spore_sharing_public_radio)
-        layout.addWidget(self.spore_sharing_friends_radio)
-        layout.addWidget(self.spore_sharing_private_radio)
-
-        note = QLabel(self.tr("Controls who can find and use this observation's spore measurements in community search."))
-        note.setWordWrap(True)
-        note.setStyleSheet(f"color: #7f8c8d; font-size: {pt(8)}pt;")
-        layout.addWidget(note)
-
-        self.spore_sharing_group.buttonClicked.connect(self._on_spore_sharing_changed)
-
-        section = CollapsibleSection(self.tr("Spore data sharing"), panel, expanded=False)
-        section.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        return section
 
     def _update_spore_sharing_ui(self, observation_id: int | None) -> None:
         if not hasattr(self, 'spore_sharing_group'):
@@ -12762,7 +12277,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             return False
         return True
 
-
     @staticmethod
     def _measurement_set_is_attached_to_observation(
         observation_id: int, measurement_set_id: str
@@ -12966,7 +12480,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         if dialog.exec() != QDialog.Accepted:
             return
         self._submit_reference_editor_result(dialog, sync_panel=True)
-
 
     def _on_reference_panel_edit_clicked(self):
         genus = self._clean_ref_genus_text(self.ref_genus_input.text())
@@ -14007,16 +13520,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             return float(self._snap_scale_bar_length_um(derived_um))
         return float(self._snap_scale_bar_length_um(self._scale_bar_overlay_micro_um))
 
-    def _register_microscope_scale_bar_manual_value(self, value_um: float) -> None:
-        key = (self.current_objective_name or "").strip()
-        if not key or key.lower() == "custom":
-            self._scale_bar_overlay_micro_um = float(self._snap_scale_bar_length_um(value_um))
-            return
-        snapped_um = float(self._snap_scale_bar_length_um(value_um))
-        self._scale_bar_micro_manual_by_objective[key] = snapped_um
-        self._scale_bar_micro_basis_objective = key
-        self._scale_bar_overlay_micro_um = snapped_um
-
     def _sync_scale_bar_unit_for_image_type(self, is_field: bool) -> None:
         if not hasattr(self, "scale_bar_length_input"):
             return
@@ -14453,36 +13956,6 @@ class MainWindow(GeometryMixin, QMainWindow):
     def _publish_excluded_images_setting_key(self, observation_id: int | None) -> str:
         return f"artsobs_publish_excluded_image_ids_{int(observation_id or 0)}"
 
-    def _get_publish_excluded_image_ids_for_observation(self, observation_id: int | None) -> set[int]:
-        if not observation_id:
-            return set()
-        obs_id = int(observation_id)
-        key = self._publish_excluded_images_setting_key(obs_id)
-        raw = SettingsDB.get_setting(key, "[]")
-        parsed: set[int] = set()
-        try:
-            loaded = json.loads(raw or "[]")
-            if isinstance(loaded, list):
-                parsed = {int(v) for v in loaded}
-        except Exception:
-            parsed = set()
-        self._publish_excluded_image_ids_by_observation[obs_id] = set(parsed)
-        return parsed
-
-    def _set_publish_excluded_image_ids_for_observation(self, observation_id: int | None, excluded_ids: set[int]) -> None:
-        if not observation_id:
-            return
-        obs_id = int(observation_id)
-        normalized = {int(v) for v in (excluded_ids or set())}
-        key = self._publish_excluded_images_setting_key(obs_id)
-        self._publish_excluded_image_ids_by_observation[obs_id] = set(normalized)
-        try:
-            SettingsDB.set_setting(
-                key,
-                json.dumps(sorted(normalized)),
-            )
-        except Exception:
-            pass
 
     # Stage 1: cloud-storage-desired excluded set. Split out of the Artsobs
     # publication-exclusion key so the Measure gallery checkbox no longer
@@ -15222,28 +14695,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         )
         self._update_measure_copyright_overlay()
         self._save_current_image_measure_view_settings()
-
-    def _observation_year_for_copyright(self, observation_date) -> int:
-        """Return a year extracted from observation date input."""
-        value = observation_date
-        if hasattr(value, "year") and callable(getattr(value, "year", None)):
-            try:
-                return int(value.year())
-            except Exception:
-                pass
-        if hasattr(value, "date") and callable(getattr(value, "date", None)):
-            try:
-                return int(value.date().year())
-            except Exception:
-                pass
-        text = str(observation_date or "").strip()
-        match = re.match(r"^(\d{4})", text)
-        if match:
-            try:
-                return int(match.group(1))
-            except ValueError:
-                pass
-        return int(time.localtime().tm_year)
 
     def _measure_publish_license_watermark_text(self) -> str:
         code = str(
@@ -16224,111 +15675,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._measure_image_note_save_timer.stop()
         self._commit_measure_image_note()
 
-    def _get_gray_image(self):
-        """Return a cached grayscale numpy array of the current image."""
-        if not self.current_pixmap or not self.current_image_id:
-            return None
-        if self.auto_gray_cache_id == self.current_image_id and self.auto_gray_cache is not None:
-            return self.auto_gray_cache
-
-        image = self.current_pixmap.toImage().convertToFormat(QImage.Format.Format_Grayscale8)
-        width = image.width()
-        height = image.height()
-        buf = image.constBits() if hasattr(image, "constBits") else image.bits()
-        arr = np.frombuffer(buf, dtype=np.uint8)
-        bytes_per_line = image.bytesPerLine()
-        gray = arr.reshape((height, bytes_per_line))[:, :width].copy()
-        self.auto_gray_cache = gray
-        self.auto_gray_cache_id = self.current_image_id
-        return gray
-
-    def _update_auto_threshold_from_points(self, points):
-        """Update the auto threshold based on a refined measurement."""
-        if not self.active_observation_id or len(points) != 4:
-            return
-        gray = self._get_gray_image()
-        if gray is None:
-            return
-        h, w = gray.shape
-        line1_mid = QPointF((points[0].x() + points[1].x()) / 2,
-                            (points[0].y() + points[1].y()) / 2)
-        line2_mid = QPointF((points[2].x() + points[3].x()) / 2,
-                            (points[2].y() + points[3].y()) / 2)
-        center = QPointF((line1_mid.x() + line2_mid.x()) / 2,
-                         (line1_mid.y() + line2_mid.y()) / 2)
-        cx = int(round(center.x()))
-        cy = int(round(center.y()))
-        if cx < 0 or cy < 0 or cx >= w or cy >= h:
-            return
-        center_intensity = float(gray[cy, cx])
-        edge_samples = []
-        for pt in points:
-            x = int(round(pt.x()))
-            y = int(round(pt.y()))
-            if 0 <= x < w and 0 <= y < h:
-                edge_samples.append(float(gray[y, x]))
-        if not edge_samples:
-            return
-        edge_mean = float(np.mean(edge_samples))
-        max_radius = self._update_auto_max_radius_from_points(points)
-        max_radius = max_radius or min(h, w) / 2
-        ring_radius = int(min(max_radius * 1.2, min(h, w) / 2))
-        ring_samples = []
-        for angle in range(0, 360, 30):
-            rad = math.radians(angle)
-            rx = int(round(cx + math.cos(rad) * ring_radius))
-            ry = int(round(cy + math.sin(rad) * ring_radius))
-            if 0 <= rx < w and 0 <= ry < h:
-                ring_samples.append(float(gray[ry, rx]))
-        bg_mean = float(np.mean(ring_samples)) if ring_samples else center_intensity
-        threshold = abs(bg_mean - edge_mean) / 255.0
-        threshold = max(0.02, min(0.6, threshold))
-        self.auto_threshold = threshold
-        ObservationDB.set_auto_threshold(self.active_observation_id, threshold)
-
-    def _auto_find_radii(self, cx, cy, gray, background_mean,
-                         threshold, max_radius, angle_step=10):
-        """Return radii at sampled angles using inward search."""
-        height, width = gray.shape
-        delta = max(2.0, threshold * 255.0)
-        def hit(val):
-            return abs(val - background_mean) >= delta
-
-        radii = {}
-        for angle in range(0, 180, angle_step):
-            rad = math.radians(angle)
-            dx = math.cos(rad)
-            dy = math.sin(rad)
-            for r in range(max_radius, 0, -1):
-                x = int(round(cx + dx * r))
-                y = int(round(cy + dy * r))
-                if x < 0 or y < 0 or x >= width or y >= height:
-                    break
-                if hit(float(gray[y, x])):
-                    radii[angle] = r
-                    break
-        return radii
-
-    def _update_auto_max_radius_from_points(self, points):
-        """Update max recorded spore radius (pixels) from measurement points."""
-        if len(points) != 4:
-            return self.auto_max_radius
-        line1_mid = QPointF((points[0].x() + points[1].x()) / 2,
-                            (points[0].y() + points[1].y()) / 2)
-        line2_mid = QPointF((points[2].x() + points[3].x()) / 2,
-                            (points[2].y() + points[3].y()) / 2)
-        center = QPointF((line1_mid.x() + line2_mid.x()) / 2,
-                         (line1_mid.y() + line2_mid.y()) / 2)
-        max_radius = 0.0
-        for pt in points:
-            dx = pt.x() - center.x()
-            dy = pt.y() - center.y()
-            max_radius = max(max_radius, math.hypot(dx, dy))
-        if max_radius > 0:
-            if self.auto_max_radius is None or max_radius > self.auto_max_radius:
-                self.auto_max_radius = max_radius
-        return self.auto_max_radius
-
     def _compute_observation_max_radius(self, observation_id):
         """Initialize auto max radius from stored measurements."""
         if not observation_id:
@@ -16357,293 +15703,6 @@ class MainWindow(GeometryMixin, QMainWindow):
                 if max_radius is None or radius > max_radius:
                     max_radius = radius
         self.auto_max_radius = max_radius
-
-    def auto_measure_at_click(self, pos):
-        """Auto-detect spore axes based on intensity drop from a click point."""
-        if not self.current_pixmap or not self.current_image_id:
-            return
-        gray = self._get_gray_image()
-        if gray is None:
-            return
-        height, width = gray.shape
-        cx = int(round(pos.x()))
-        cy = int(round(pos.y()))
-        if cx < 0 or cy < 0 or cx >= width or cy >= height:
-            return
-
-        center_intensity = float(gray[cy, cx])
-        threshold = self.auto_threshold if self.auto_threshold is not None else self.auto_threshold_default
-        max_radius = self.auto_max_radius if self.auto_max_radius else min(width, height) / 2
-        max_radius = int(min(max_radius * 1.2, min(width, height) / 2))
-        max_radius = max(10, max_radius)
-        ring_samples = []
-        for angle in range(0, 360, 30):
-            rad = math.radians(angle)
-            rx = int(round(cx + math.cos(rad) * max_radius))
-            ry = int(round(cy + math.sin(rad) * max_radius))
-            if 0 <= rx < width and 0 <= ry < height:
-                ring_samples.append(float(gray[ry, rx]))
-        bg_mean = float(np.mean(ring_samples)) if ring_samples else center_intensity
-
-        radii = self._auto_find_radii(cx, cy, gray, bg_mean, threshold, max_radius, angle_step=10)
-
-        if len(radii) < 4:
-            self.show_auto_debug_dialog(
-                pos, radii, None, None, threshold, center_intensity, bg_mean, max_radius
-            )
-            self.measure_status_label.setText(self.tr("Auto: Edge not found"))
-            self.measure_status_label.setStyleSheet(f"color: #e67e22; font-weight: bold; font-size: {pt(9)}pt;")
-            return
-
-        major_angle = max(radii, key=lambda a: radii[a])
-        major_radius = radii[major_angle]
-        target_minor = (major_angle + 90) % 180
-        minor_angle = min(
-            radii.keys(),
-            key=lambda a: min(
-                abs(a - target_minor),
-                abs(a - target_minor + 180),
-                abs(a - target_minor - 180)
-            )
-        )
-        minor_radius = radii.get(minor_angle, min(radii.values()))
-
-        major_rad = math.radians(major_angle)
-        minor_rad = math.radians(minor_angle)
-        center = QPointF(cx, cy)
-        major_dir = QPointF(math.cos(major_rad), math.sin(major_rad))
-        minor_dir = QPointF(math.cos(minor_rad), math.sin(minor_rad))
-
-        p1 = center - major_dir * major_radius
-        p2 = center + major_dir * major_radius
-        p3 = center - minor_dir * minor_radius
-        p4 = center + minor_dir * minor_radius
-
-        self.points = [p1, p2, p3, p4]
-        self.temp_lines = [
-            [p1.x(), p1.y(), p2.x(), p2.y()],
-            [p3.x(), p3.y(), p4.x(), p4.y()]
-        ]
-        self.update_display_lines()
-        self._update_auto_max_radius_from_points(self.points)
-        self.show_auto_debug_dialog(
-            pos, radii, major_angle, minor_angle, threshold, center_intensity, bg_mean, max_radius
-        )
-        self.complete_measurement()
-
-    def show_auto_debug_dialog(self, pos, radii, major_angle, minor_angle,
-                               threshold, center_intensity, background_mean,
-                               max_radius):
-        """Show a debug popup with auto-measure traces and stats."""
-        if not self.current_pixmap:
-            return
-        dialog = QDialog(self)
-        dialog.setWindowTitle(self.tr("Auto Measure Debug"))
-        layout = QVBoxLayout(dialog)
-
-        center = QPointF(pos.x(), pos.y())
-        crop_size = 300
-        half = crop_size / 2
-        left = max(0, int(center.x() - half))
-        top = max(0, int(center.y() - half))
-        right = min(self.current_pixmap.width(), int(center.x() + half))
-        bottom = min(self.current_pixmap.height(), int(center.y() + half))
-        crop_rect = QRectF(left, top, right - left, bottom - top)
-
-        gray = self._get_gray_image()
-        gray_crop = None
-        if gray is not None:
-            gray_crop = gray[int(crop_rect.y()):int(crop_rect.y() + crop_rect.height()),
-                            int(crop_rect.x()):int(crop_rect.x() + crop_rect.width())].copy()
-
-        image_label = QLabel()
-        layout.addWidget(image_label)
-
-        controls_row = QHBoxLayout()
-        threshold_label = QLabel(self.tr("Threshold:"))
-        threshold_input = QDoubleSpinBox()
-        threshold_input.setRange(0.02, 0.6)
-        threshold_input.setDecimals(3)
-        threshold_input.setSingleStep(0.01)
-        threshold_input.setValue(float(threshold))
-        show_gray_checkbox = QCheckBox(self.tr("Show grayscale"))
-        controls_row.addWidget(threshold_label)
-        controls_row.addWidget(threshold_input)
-        controls_row.addStretch()
-        controls_row.addWidget(show_gray_checkbox)
-        layout.addLayout(controls_row)
-
-        stats_label = QLabel()
-        stats_label.setStyleSheet(f"font-size: {pt(9)}pt; color: #2c3e50;")
-        layout.addWidget(stats_label)
-
-        plot_label = QLabel()
-        layout.addWidget(plot_label)
-
-        def render_overlay(current_threshold):
-            base_radii = self._auto_find_radii(
-                int(round(center.x())),
-                int(round(center.y())),
-                gray,
-                background_mean,
-                current_threshold,
-                max_radius,
-                angle_step=10
-            ) if gray is not None else {}
-
-            full_radii = dict(base_radii)
-            for angle, radius in base_radii.items():
-                full_radii[(angle + 180) % 360] = radius
-
-            major = None
-            minor = None
-            if base_radii:
-                major = max(base_radii, key=lambda a: base_radii[a])
-                target_minor = (major + 90) % 180
-                minor = min(
-                    base_radii.keys(),
-                    key=lambda a: min(
-                        abs(a - target_minor),
-                        abs(a - target_minor + 180),
-                        abs(a - target_minor - 180)
-                    )
-                )
-
-            if show_gray_checkbox.isChecked() and gray_crop is not None:
-                h, w = gray_crop.shape
-                gray_img = QImage(gray_crop.data, w, h, w, QImage.Format.Format_Grayscale8)
-                base_pixmap = QPixmap.fromImage(gray_img.copy())
-            else:
-                base_pixmap = self.current_pixmap.copy(crop_rect.toRect())
-
-            target_size = 360
-            scale = min(target_size / max(1, base_pixmap.width()),
-                        target_size / max(1, base_pixmap.height()))
-            scaled = base_pixmap.scaled(
-                int(base_pixmap.width() * scale),
-                int(base_pixmap.height() * scale),
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation
-            )
-
-            overlay = QPixmap(scaled.size())
-            overlay.fill(Qt.transparent)
-            painter = QPainter(overlay)
-            painter.setRenderHint(QPainter.Antialiasing)
-            painter.drawPixmap(0, 0, scaled)
-
-            center_local = QPointF((center.x() - crop_rect.x()) * scale,
-                                   (center.y() - crop_rect.y()) * scale)
-
-            for angle, radius in full_radii.items():
-                rad = math.radians(angle)
-                dx = math.cos(rad)
-                dy = math.sin(rad)
-                end = QPointF(center_local.x() + dx * radius * scale,
-                              center_local.y() + dy * radius * scale)
-                pen_color = QColor(200, 200, 200)
-                if major is not None and angle == major:
-                    pen_color = QColor(46, 204, 113)
-                elif minor is not None and angle % 180 == minor:
-                    pen_color = QColor(231, 76, 60)
-                painter.setPen(QPen(pen_color, 2))
-                painter.drawLine(center_local, end)
-                painter.setBrush(pen_color)
-                painter.drawEllipse(end, 3, 3)
-
-            painter.setPen(QPen(QColor(52, 152, 219), 2))
-            painter.setBrush(Qt.NoBrush)
-            painter.drawEllipse(center_local, 4, 4)
-            painter.end()
-
-            image_label.setPixmap(overlay)
-
-            direction = "darker" if background_mean < center_intensity else "brighter"
-            stats_text = (
-                f"Threshold: {current_threshold:.3f} ({direction} edge)\n"
-                f"Center intensity: {center_intensity:.1f}  Background: {background_mean:.1f}\n"
-                f"Rays found: {len(full_radii)}  Max radius: {max_radius}px"
-            )
-            stats_label.setText(stats_text)
-
-            if self.active_observation_id:
-                self.auto_threshold = current_threshold
-                ObservationDB.set_auto_threshold(self.active_observation_id, current_threshold)
-
-            if gray is None:
-                plot_label.clear()
-                return
-
-            plot_w = 360
-            plot_h = 200
-            plot_pixmap = QPixmap(plot_w, plot_h)
-            plot_pixmap.fill(QColor(255, 255, 255))
-            plot_painter = QPainter(plot_pixmap)
-            plot_painter.setRenderHint(QPainter.Antialiasing)
-
-            left_pad = 30
-            right_pad = 10
-            top_pad = 10
-            bottom_pad = 25
-            axis_w = plot_w - left_pad - right_pad
-            axis_h = plot_h - top_pad - bottom_pad
-
-            plot_painter.setPen(QPen(QColor(200, 200, 200), 1))
-            for i in range(1, 5):
-                y = top_pad + axis_h * (i / 5)
-                plot_painter.drawLine(left_pad, int(y), left_pad + axis_w, int(y))
-            for i in range(1, 5):
-                x = left_pad + axis_w * (i / 5)
-                plot_painter.drawLine(int(x), top_pad, int(x), top_pad + axis_h)
-
-            plot_painter.setPen(QPen(QColor(120, 120, 120), 1))
-            plot_painter.drawLine(left_pad, top_pad, left_pad, top_pad + axis_h)
-            plot_painter.drawLine(left_pad, top_pad + axis_h, left_pad + axis_w, top_pad + axis_h)
-
-            max_radius_local = max(1, max_radius)
-
-            def map_point(r, intensity):
-                x = left_pad + ((max_radius_local - r) / max_radius_local) * axis_w
-                y = top_pad + axis_h - (intensity / 255.0) * axis_h
-                return QPointF(x, y)
-
-            def line_color(angle):
-                if major is not None and angle == major:
-                    return QColor(46, 204, 113)
-                if minor is not None and angle % 180 == minor:
-                    return QColor(231, 76, 60)
-                return QColor(120, 120, 120, 140)
-
-            cx = int(round(center.x()))
-            cy = int(round(center.y()))
-            for angle in range(0, 180, 10):
-                rad = math.radians(angle)
-                dx = math.cos(rad)
-                dy = math.sin(rad)
-                points = []
-                for r in range(max_radius_local, -1, -1):
-                    x = int(round(cx + dx * r))
-                    y = int(round(cy + dy * r))
-                    if x < 0 or y < 0 or x >= gray.shape[1] or y >= gray.shape[0]:
-                        break
-                    points.append(map_point(r, float(gray[y, x])))
-                if len(points) > 1:
-                    plot_painter.setPen(QPen(line_color(angle), 1))
-                    for i in range(1, len(points)):
-                        plot_painter.drawLine(points[i - 1], points[i])
-
-            plot_painter.setPen(QPen(QColor(120, 120, 120), 1))
-            plot_painter.drawText(5, top_pad + 10, "I")
-            plot_painter.drawText(plot_w - 24, plot_h - 8, "r")
-            plot_painter.end()
-            plot_label.setPixmap(plot_pixmap)
-
-        threshold_input.valueChanged.connect(lambda value: render_overlay(value))
-        show_gray_checkbox.toggled.connect(lambda _: render_overlay(threshold_input.value()))
-        render_overlay(threshold_input.value())
-
-        dialog.setLayout(layout)
-        dialog.exec()
 
     def select_measurement_in_table(self, measurement_id):
         """Select a measurement row by id."""
@@ -16803,7 +15862,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             else:
                 exported.save(filename, fmt)
                 self.export_format = "png"
-
 
     def _compute_measurement_center(self, line1, line2):
         """Compute center point for a measurement from two lines."""
@@ -18159,9 +17217,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._gallery_thumb_cache = {}
             self._gallery_thumb_geometry_cache = {}
             self._gallery_pixmap_cache = {}
-
-    def _analysis_gallery_frame_style(self, selected: bool = False) -> str:
-        return "QWidget { border: none; background: transparent; }"
 
     def _apply_analysis_gallery_frame_glow(self, frame: QFrame, selected: bool, hovered: bool = False) -> None:
         frame.setGraphicsEffect(None)
@@ -21117,7 +20172,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         conn.close()
         self.schedule_gallery_refresh()
 
-
     def create_spore_thumbnail(self, pixmap, points, length_um, width_um, size,
                                measurement_num=0, orient=False, extra_rotation=0,
                                color=None,
@@ -21625,48 +20679,6 @@ class MainWindow(GeometryMixin, QMainWindow):
                         pass
         self._update_corner_ui()
 
-    def open_profile_dialog(self):
-        """Open profile settings dialog."""
-        profile = SettingsDB.get_profile()
-        dialog = QDialog(self)
-        dialog.setWindowTitle(self.tr("Profile"))
-        form = QFormLayout(dialog)
-        info_label = QLabel(
-            self.tr(
-                "Name is used for the copyright watermark on images.\n"
-                "Name and email (optional) are added to observations in the database, "
-                "useful if you share your observations with others."
-            )
-        )
-        info_label.setWordWrap(True)
-        name_input = QLineEdit(profile.get("name", ""))
-        email_input = QLineEdit(profile.get("email", ""))
-        form.addRow(info_label)
-        form.addRow(self.tr("Name"), name_input)
-        form.addRow(self.tr("Email"), email_input)
-
-        buttons = QDialogButtonBox(dialog)
-        ok_btn = buttons.addButton(self.tr("OK"), QDialogButtonBox.AcceptRole)
-        cancel_btn = buttons.addButton(self.tr("Cancel"), QDialogButtonBox.RejectRole)
-        ok_btn.clicked.connect(dialog.accept)
-        cancel_btn.clicked.connect(dialog.reject)
-        form.addRow(buttons)
-        dialog.resize(560, dialog.sizeHint().height())
-
-        if dialog.exec() == QDialog.Accepted:
-            SettingsDB.set_profile(
-                name_input.text().strip(),
-                email_input.text().strip(),
-                profile.get("bio", ""),
-                profile.get("username", ""),
-                profile.get("avatar_url", ""),
-            )
-            self._update_measure_copyright_overlay()
-
-    def open_cloud_sync_dialog(self):
-        """Open the Preferences → Profile & Cloud page."""
-        self.open_settings_hub(page=SettingsHubDialog.PAGE_PROFILE)
-
     def start_cloud_sync(
         self,
         *,
@@ -21739,13 +20751,6 @@ class MainWindow(GeometryMixin, QMainWindow):
                 raise
             return [], None, [str(exc)]
 
-    def open_database_settings_dialog(self):
-        """Open database settings dialog."""
-        dialog = DatabaseSettingsDialog(self)
-        dialog.microscopeTagsChanged.connect(self._refresh_microscope_tag_preferences)
-        if dialog.exec() == QDialog.Accepted:
-            self._populate_measure_categories()
-
     def open_artsobservasjoner_settings_dialog(self):
         """Open online publishing settings dialog."""
         dialog = ArtsobservasjonerSettingsDialog(self)
@@ -21758,16 +20763,6 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self.observations_tab.refresh_observations(show_status=False)
             except Exception:
                 pass
-
-    def open_language_settings_dialog(self):
-        """Open language settings dialog."""
-        dialog = LanguageSettingsDialog(self)
-        dialog.exec()
-
-    def open_appearance_dialog(self):
-        """Open appearance (theme) settings dialog."""
-        dialog = AppearanceDialog(self)
-        dialog.exec()
 
     def _refresh_microscope_tag_preferences(self) -> None:
         observations_tab = getattr(self, "observations_tab", None)
@@ -21786,10 +20781,6 @@ class MainWindow(GeometryMixin, QMainWindow):
                     refresher()
                 except Exception:
                     pass
-
-    def _set_ui_theme(self, theme: str) -> None:
-        SettingsDB.set_setting("ui_theme", theme)
-        self._apply_theme()
 
     def _sync_appearance_menu(self) -> None:
         actions = getattr(self, "_appearance_actions", None)
@@ -21849,11 +20840,6 @@ class MainWindow(GeometryMixin, QMainWindow):
                     widget.apply_vernacular_language_change()
                 except Exception:
                     pass
-
-    def set_ui_language(self, code):
-        """Persist the UI language setting."""
-        SettingsDB.set_setting("ui_language", code)
-        update_app_settings({"ui_language": code})
 
     def _populate_measure_categories(self):
         setting_key = DatabaseTerms.setting_key("measure")
@@ -22208,218 +21194,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             # attachments to keep visible.
             self._set_reference_series(list(preserved_normalized))
             self._update_reference_add_state()
-
-    def open_gallery_plot_settings(self):
-        """Open plot settings dialog for analysis charts."""
-        dialog = QDialog(self)
-        dialog.setWindowTitle(self.tr("Plot settings"))
-        dialog.setModal(True)
-
-        layout = QFormLayout(dialog)
-        layout.setLabelAlignment(Qt.AlignLeft)
-
-        settings = getattr(self, "gallery_plot_settings", {}) or {}
-
-        bins_spin = QSpinBox()
-        bins_spin.setRange(3, 50)
-        bins_spin.setValue(int(settings.get("bins", 8)))
-        layout.addRow(self.tr("Bins:"), bins_spin)
-
-        plot_style_row = QWidget()
-        plot_style_layout = QHBoxLayout(plot_style_row)
-        plot_style_layout.setContentsMargins(0, 0, 0, 0)
-        plot_style_layout.setSpacing(10)
-        plot_style_layout.addWidget(QLabel(self.tr("Plot:")))
-        plot_style_selector = SegmentedSelector(dialog, compact=True)
-        plot_style_ellipse_radio = plot_style_selector.add_option(self.tr("Ellipse"), "ellipse", checked=True)
-        plot_style_kde_radio = plot_style_selector.add_option(self.tr("Kernel density"), "kde")
-        plot_style_mean_radio = plot_style_selector.add_option(self.tr("Mean range"), "mean")
-        plot_style_ellipse_radio.setToolTip(
-            self.tr("Show data ellipses for the current specimen and any spore-point reference sets. Coverage is set by the slider below.")
-        )
-        plot_style_kde_radio.setToolTip(
-            self.tr("Show Gaussian KDE filled density bands for the measured spore distribution.")
-        )
-        plot_style_mean_radio.setToolTip(
-            self.tr("Parmasto-style mean comparison with mean point, mean Q line, and expected mean range.")
-        )
-        plot_style_layout.addWidget(plot_style_selector, 0, Qt.AlignLeft)
-        layout.addRow("", plot_style_row)
-
-        plot_style = self._gallery_plot_style(settings)
-        if plot_style == "kde":
-            plot_style_kde_radio.setChecked(True)
-        elif plot_style == "mean":
-            plot_style_mean_radio.setChecked(True)
-        else:
-            plot_style_ellipse_radio.setChecked(True)
-
-        ellipse_coverage_row = QWidget()
-        ellipse_coverage_layout = QHBoxLayout(ellipse_coverage_row)
-        ellipse_coverage_layout.setContentsMargins(0, 0, 0, 0)
-        ellipse_coverage_layout.setSpacing(6)
-        ellipse_coverage_layout.addSpacing(16)
-        ellipse_coverage_layout.addWidget(QLabel(self.tr("Coverage:")))
-        ellipse_coverage_slider = JumpSlider(Qt.Horizontal)
-        ellipse_coverage_slider.setRange(50, 99)
-        ellipse_coverage_slider.setSingleStep(1)
-        ellipse_coverage_slider.setPageStep(5)
-        ellipse_coverage_slider.setValue(int(settings.get("ellipse_coverage_percent", 95)))
-        ellipse_coverage_layout.addWidget(ellipse_coverage_slider, 1)
-        ellipse_coverage_value = QLabel()
-        ellipse_coverage_value.setMinimumWidth(40)
-        ellipse_coverage_layout.addWidget(ellipse_coverage_value)
-        layout.addRow("", ellipse_coverage_row)
-
-        kde_bandwidth_row = QWidget()
-        kde_bandwidth_layout = QHBoxLayout(kde_bandwidth_row)
-        kde_bandwidth_layout.setContentsMargins(0, 0, 0, 0)
-        kde_bandwidth_layout.setSpacing(8)
-        kde_bandwidth_layout.addSpacing(16)
-        kde_bandwidth_layout.addWidget(QLabel(self.tr("Bandwidth:")))
-        kde_bandwidth_slider = JumpSlider(Qt.Horizontal)
-        kde_bandwidth_slider.setRange(50, 150)
-        kde_bandwidth_slider.setSingleStep(1)
-        kde_bandwidth_slider.setPageStep(5)
-        kde_bandwidth_slider.setValue(
-            int(round(max(0.5, min(1.5, float(settings.get("kde_bandwidth", 1.0)))) * 100.0))
-        )
-        kde_bandwidth_layout.addWidget(kde_bandwidth_slider, 1)
-        kde_bandwidth_value = QLabel()
-        kde_bandwidth_value.setMinimumWidth(36)
-        kde_bandwidth_layout.addWidget(kde_bandwidth_value)
-        layout.addRow("", kde_bandwidth_row)
-
-        kde_contours_row = QWidget()
-        kde_contours_layout = QHBoxLayout(kde_contours_row)
-        kde_contours_layout.setContentsMargins(0, 0, 0, 0)
-        kde_contours_layout.setSpacing(6)
-        kde_contours_layout.addSpacing(16)
-        kde_contours_layout.addWidget(QLabel(self.tr("Contours:")))
-        kde_contours_slider = JumpSlider(Qt.Horizontal)
-        kde_contours_slider.setRange(1, 10)
-        kde_contours_slider.setSingleStep(1)
-        kde_contours_slider.setPageStep(1)
-        kde_contours_slider.setValue(int(settings.get("kde_contours", 6)))
-        kde_contours_layout.addWidget(kde_contours_slider, 1)
-        kde_contours_value = QLabel()
-        kde_contours_value.setMinimumWidth(24)
-        kde_contours_layout.addWidget(kde_contours_value)
-        layout.addRow("", kde_contours_row)
-
-        kde_coverage_row = QWidget()
-        kde_coverage_layout = QHBoxLayout(kde_coverage_row)
-        kde_coverage_layout.setContentsMargins(0, 0, 0, 0)
-        kde_coverage_layout.setSpacing(6)
-        kde_coverage_layout.addSpacing(16)
-        kde_coverage_layout.addWidget(QLabel(self.tr("Coverage:")))
-        kde_coverage_slider = JumpSlider(Qt.Horizontal)
-        kde_coverage_slider.setRange(50, 99)
-        kde_coverage_slider.setSingleStep(1)
-        kde_coverage_slider.setPageStep(5)
-        kde_coverage_slider.setValue(int(settings.get("kde_coverage_percent", 95)))
-        kde_coverage_layout.addWidget(kde_coverage_slider, 1)
-        kde_coverage_value = QLabel()
-        kde_coverage_value.setMinimumWidth(40)
-        kde_coverage_layout.addWidget(kde_coverage_value)
-        layout.addRow("", kde_coverage_row)
-
-        def _sync_dialog_kde_controls() -> None:
-            ellipse_enabled = bool(plot_style_ellipse_radio.isChecked())
-            ellipse_coverage_row.setVisible(ellipse_enabled)
-            ellipse_coverage_value.setText(f"{int(ellipse_coverage_slider.value())}%")
-            bandwidth = max(0.5, min(1.5, float(kde_bandwidth_slider.value()) / 100.0))
-            kde_bandwidth_value.setText(f"{bandwidth:.2f}")
-            kde_enabled = bool(plot_style_kde_radio.isChecked())
-            kde_bandwidth_row.setVisible(kde_enabled)
-            kde_contours_row.setVisible(kde_enabled)
-            kde_contours_value.setText(str(int(kde_contours_slider.value())))
-            kde_coverage_row.setVisible(kde_enabled)
-            kde_coverage_value.setText(f"{int(kde_coverage_slider.value())}%")
-            reference_shape_row.setEnabled(not bool(plot_style_mean_radio.isChecked()))
-
-        plot_style_selector.selectionChanged.connect(lambda _value: _sync_dialog_kde_controls())
-        ellipse_coverage_slider.valueChanged.connect(_sync_dialog_kde_controls)
-        kde_bandwidth_slider.valueChanged.connect(_sync_dialog_kde_controls)
-        kde_contours_slider.valueChanged.connect(_sync_dialog_kde_controls)
-        kde_coverage_slider.valueChanged.connect(_sync_dialog_kde_controls)
-
-        image_color_checkbox = QCheckBox(self.tr("Image color"))
-        image_color_checkbox.setChecked(bool(settings.get("image_color", False)))
-        layout.addRow("", image_color_checkbox)
-
-        avg_q_checkbox = QCheckBox(self.tr("Plot Avg Q"))
-        avg_q_checkbox.setChecked(bool(settings.get("avg_q", False)))
-        layout.addRow("", avg_q_checkbox)
-
-        q_minmax_checkbox = QCheckBox(self.tr("Plot Q inner range"))
-        q_minmax_checkbox.setToolTip(self.tr("Show the measured 5th–95th percentile interval and each reference's published inner Q interval"))
-        q_minmax_checkbox.setChecked(bool(settings.get("q_minmax", False)))
-        layout.addRow("", q_minmax_checkbox)
-
-        q_extreme_minmax_checkbox = QCheckBox(self.tr("Plot Q min/max"))
-        q_extreme_minmax_checkbox.setToolTip(self.tr("Show Q lines for the true minimum and maximum values"))
-        q_extreme_minmax_checkbox.setChecked(bool(settings.get("q_extreme_minmax", False)))
-        layout.addRow("", q_extreme_minmax_checkbox)
-
-        reference_shape_row = QWidget()
-        reference_shape_layout = QHBoxLayout(reference_shape_row)
-        reference_shape_layout.setContentsMargins(0, 0, 0, 0)
-        reference_shape_layout.setSpacing(8)
-        reference_shape_layout.addWidget(QLabel(self.tr("Shape:")))
-        reference_shape_selector = SegmentedSelector(dialog, compact=True)
-        reference_shape_ellipse_radio = reference_shape_selector.add_option(self.tr("Ellipse"), "ellipse", checked=True)
-        reference_shape_square_radio = reference_shape_selector.add_option(self.tr("Square"), "square")
-        if str(settings.get("reference_shape", "ellipse") or "ellipse").strip().lower() == "square":
-            reference_shape_selector.set_selected_value("square")
-        reference_shape_layout.addWidget(reference_shape_selector, 0, Qt.AlignLeft)
-        layout.addRow("", reference_shape_row)
-        _sync_dialog_kde_controls()
-
-        axis_equal_checkbox = QCheckBox(self.tr("Axis equal"))
-        axis_equal_checkbox.setToolTip(self.tr("Use the same scale on X and Y axes"))
-        axis_equal_checkbox.setChecked(bool(settings.get("axis_equal", False)))
-        layout.addRow("", axis_equal_checkbox)
-
-        buttons = QDialogButtonBox(dialog)
-        ok_btn = buttons.addButton(self.tr("OK"), QDialogButtonBox.AcceptRole)
-        cancel_btn = buttons.addButton(self.tr("Cancel"), QDialogButtonBox.RejectRole)
-        ok_btn.clicked.connect(dialog.accept)
-        cancel_btn.clicked.connect(dialog.reject)
-        layout.addRow(buttons)
-
-        if dialog.exec() != QDialog.Accepted:
-            return
-
-        new_settings = {
-            "bins": int(bins_spin.value()),
-            "histogram": bool(settings.get("histogram", self.gallery_plot_settings.get("histogram", True))),
-            "ellipse_coverage_percent": int(ellipse_coverage_slider.value()),
-            "kde_bandwidth": max(0.5, min(1.5, float(kde_bandwidth_slider.value()) / 100.0)),
-            "kde_contours": int(kde_contours_slider.value()),
-            "kde_coverage_percent": int(kde_coverage_slider.value()),
-            "reference_minmax": bool(settings.get("reference_minmax", self.gallery_plot_settings.get("reference_minmax", True))),
-            "reference_shape": "square" if reference_shape_square_radio.isChecked() else "ellipse",
-            "image_color": bool(image_color_checkbox.isChecked()),
-            "legend": bool(settings.get("legend", False)),
-            "avg_q": bool(avg_q_checkbox.isChecked()),
-            "q_minmax": bool(q_minmax_checkbox.isChecked()),
-            "q_extreme_minmax": bool(q_extreme_minmax_checkbox.isChecked()),
-            "axis_equal": bool(axis_equal_checkbox.isChecked()),
-            "x_min": None,
-            "x_max": None,
-            "y_min": None,
-            "y_max": None,
-        }
-        selected_plot_style = "ellipse"
-        if plot_style_kde_radio.isChecked():
-            selected_plot_style = "kde"
-        elif plot_style_mean_radio.isChecked():
-            selected_plot_style = "mean"
-        self.gallery_plot_settings = self._apply_gallery_plot_style(new_settings, selected_plot_style)
-
-        self._save_gallery_settings()
-        self.update_graph_plots_only()
 
     def _gallery_settings_key(self):
         if not self.active_observation_id:
@@ -23403,8 +22177,6 @@ class MainWindow(GeometryMixin, QMainWindow):
                 auto_clear_ms=12000,
             )
 
-
-
     def delete_measurement(self, measurement_id):
         """Delete a measurement and its associated lines."""
         previous_row = None
@@ -23579,11 +22351,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.loading_dialog.setWindowTitle(message)
         self.loading_dialog.show()
         QApplication.processEvents()
-
-    def _hide_loading(self):
-        """Hide the loading indicator."""
-        if self.loading_dialog is not None:
-            self.loading_dialog.hide()
 
     def _question_yes_no(self, title, text, default_yes=True):
         """Show a localized Yes/No confirmation dialog."""
@@ -23789,7 +22556,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         dialog.save_requested.connect(self._handle_reference_save)
         dialog.exec()
 
-
     def on_observation_selected(self, observation_id, display_name, switch_tab=True, suppress_gallery=False):
         """Handle observation selection from the Observations tab."""
         _t0 = time.perf_counter()
@@ -23894,95 +22660,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         # Switch to the Measure tab
         if switch_tab:
             self.tab_widget.setCurrentIndex(1)
-
-    def load_image_for_observation(self):
-        """Load microscope images and link them to the active observation."""
-        paths, _ = QFileDialog.getOpenFileNames(
-            self, "Open Microscope Image", self._get_default_import_dir(),
-            self.tr(LOCAL_IMPORT_IMAGE_FILTER + ";;All Files (*)")
-        )
-
-        if not paths:
-            return
-        self._remember_import_dir(paths[0])
-
-        output_dir = get_images_dir() / "imports"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        last_image_data = None
-        for path in paths:
-            try:
-                ingest = prepare_local_ingest_image(
-                    path,
-                    lab_metadata=merge_image_lab_metadata({"image_type": "microscope"}),
-                    output_dir=output_dir,
-                )
-            except RawRenderingUnavailableError as exc:
-                QMessageBox.warning(
-                    self,
-                    "RAW Rendering Unavailable",
-                    f"Could not import {Path(path).name}: {exc}",
-                )
-                continue
-            except RuntimeError as exc:
-                QMessageBox.warning(
-                    self,
-                    "Image Preparation Failed",
-                    f"Could not prepare {Path(path).name}: {exc}",
-                )
-                continue
-
-            objective_name = self.get_objective_name_for_storage()
-            calibration_id = CalibrationDB.get_active_calibration_id(objective_name) if objective_name else None
-            contrast_fallback = SettingsDB.get_list_setting(
-                "contrast_options",
-                DatabaseTerms.CONTRAST_METHODS,
-            )
-            contrast_value = SettingsDB.get_setting(DatabaseTerms.last_used_key("contrast"), None)
-            if not contrast_value:
-                contrast_value = SettingsDB.get_setting(
-                    "contrast_default",
-                    contrast_fallback[0] if contrast_fallback else DatabaseTerms.CONTRAST_METHODS[0],
-                )
-            contrast_value = DatabaseTerms.canonicalize("contrast", contrast_value)
-            if not contrast_value:
-                contrast_value = contrast_fallback[0] if contrast_fallback else DatabaseTerms.CONTRAST_METHODS[0]
-            provenance_kwargs = ingest.provenance_kwargs()
-            original_filepath = path if ingest.working_path != path else None
-            image_id = ImageDB.add_image(
-                observation_id=self.active_observation_id,
-                filepath=ingest.working_path,
-                image_type='microscope',
-                scale=self.microns_per_pixel,
-                objective_name=objective_name,
-                contrast=contrast_value,
-                calibration_id=calibration_id,
-                resample_scale_factor=1.0,
-                original_filepath=original_filepath,
-                lab_metadata=merge_image_lab_metadata({"image_type": "microscope"}, getattr(ingest, "lab_metadata", None)),
-                **provenance_kwargs,
-            )
-
-            image_data = ImageDB.get_image(image_id)
-            stored_path = image_data.get("filepath") if image_data else ingest.working_path
-
-            try:
-                generate_all_sizes(stored_path, image_id)
-            except Exception as e:
-                print(f"Warning: Could not generate thumbnails: {e}")
-
-            last_image_data = ImageDB.get_image(image_id)
-            cleanup_import_temp_file(path, ingest.working_path, stored_path, output_dir)
-
-        if last_image_data:
-            try:
-                ObservationsTab._ensure_microscope_publish_defaults(
-                    self.active_observation_id,
-                    ImageDB.get_images_for_observation(int(self.active_observation_id or 0)),
-                )
-            except Exception:
-                pass
-            self.load_image_record(last_image_data, refresh_table=True)
-            self.refresh_observation_images(select_image_id=last_image_data['id'])
 
     def on_image_selected(self, image_id, observation_id, display_name):
         """Handle image selection from the Observations tab - load the image."""

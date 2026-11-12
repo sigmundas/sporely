@@ -1662,18 +1662,6 @@ class LiveLabRawMixin:
         return entry.preview_rgb
 
     @staticmethod
-    def _raw_preview_source_auto_bounds(
-        entry: "_RawPreviewCacheEntry",
-    ) -> tuple[float | None, float | None]:
-        if entry.source_auto_bounds is None:
-            preview = LiveLabRawMixin._raw_preview_resized_for_entry(entry)
-            luminance = preview @ np.asarray([0.2126, 0.7152, 0.0722], dtype=np.float32)
-            entry.source_auto_bounds = compute_auto_level_bounds_from_luminance(
-                luminance, 0.0, 1.0
-            )
-        return entry.source_auto_bounds
-
-    @staticmethod
     def _raw_preview_wb_inputs(
         entry: "_RawPreviewCacheEntry",
         settings: RawRenderSettings,

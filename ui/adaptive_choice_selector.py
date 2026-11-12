@@ -740,12 +740,6 @@ class AdaptiveChoiceSelector(QWidget):
                 return True
         return False
 
-    def _selected_item_is_unset(self) -> bool:
-        item = self._item_at(self._current_index)
-        if item is None:
-            return False
-        return self._is_unset_choice_item(item)
-
     def _apply_button_style(self, button: QPushButton, item: ChoiceItem) -> None:
         tokens = get_design_tokens()
         base_text = tokens["text"]

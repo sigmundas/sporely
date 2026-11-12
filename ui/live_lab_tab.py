@@ -2588,15 +2588,6 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             self.watch_dir_input.setCursorPosition(len(chosen))
             self.watch_dir_input.setToolTip(chosen)
 
-    def _open_observations_tab(self) -> None:
-        self._main_window.tab_widget.setCurrentIndex(0)
-        table = getattr(getattr(self._main_window, "observations_tab", None), "table", None)
-        if table is not None:
-            try:
-                table.setFocus()
-            except Exception:
-                pass
-
     def _reset_viewer(self) -> None:
         self.live_image_label.reset_view()
 

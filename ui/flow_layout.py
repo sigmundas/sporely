@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QMargins, QPoint, QRect, QSize, Qt
-from PySide6.QtWidgets import QLayout, QLayoutItem, QSizePolicy, QWidget, QWidgetItem
+from PySide6.QtWidgets import QLayout, QLayoutItem, QWidget, QWidgetItem
 
 
 class FlowLayout(QLayout):
@@ -100,6 +100,3 @@ class FlowLayout(QLayout):
         return y + line_height - rect.y() + margins.bottom()
 
 
-def fixed_chip_policy() -> QSizePolicy:
-    """Size policy for a chip: its own width, its own height."""
-    return QSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)

@@ -620,120 +620,6 @@ class NewObjectiveDialog(QDialog):
         }
 
 
-class ObservationSelectionDialog(QDialog):
-    """Dialog for selecting observations to update when calibration changes."""
-
-    def __init__(self, parent=None, observations: list[dict] = None, old_scale: float = 0, new_scale: float = 0):
-        super().__init__(parent)
-        self.setWindowTitle(self.tr("Update Observations"))
-        self.setModal(True)
-        self.setMinimumSize(700, 500)
-        self.observations = observations or []
-        self.old_scale = old_scale
-        self.new_scale = new_scale
-        self.selected_observation_ids = []
-
-        self._init_ui()
-
-    def _init_ui(self):
-        layout = QVBoxLayout(self)
-
-        # Info
-        diff_percent = ((self.new_scale - self.old_scale) / self.old_scale * 100) if self.old_scale > 0 else 0
-        sign = "+" if diff_percent >= 0 else ""
-        info_label = QLabel(
-            self.tr(
-                "This calibration is used for the following observations.\n"
-                "Scale change: {old:.4f} → {new:.4f} nm/px ({sign}{diff:.2f}%)\n\n"
-                "Select the observations you would like to update:"
-            ).format(
-                old=um_to_nm(self.old_scale),
-                new=um_to_nm(self.new_scale),
-                sign=sign,
-                diff=diff_percent,
-            )
-        )
-        info_label.setWordWrap(True)
-        layout.addWidget(info_label)
-
-        # Table with multi-select
-        self.table = QTableWidget(0, 5)
-        self.table.setFocusPolicy(Qt.NoFocus)
-        self.table.setHorizontalHeaderLabels([
-            self.tr("Species"),
-            self.tr("Common Name"),
-            self.tr("Date"),
-            self.tr("Images"),
-            self.tr("Measurements"),
-        ])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        for col in range(2, 5):
-            self.table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeToContents)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.MultiSelection)
-        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-
-        # Populate table
-        for obs in self.observations:
-            row = self.table.rowCount()
-            self.table.insertRow(row)
-
-            species = f"{obs.get('genus', '')} {obs.get('species', '')}".strip() or "--"
-            self.table.setItem(row, 0, QTableWidgetItem(species))
-
-            common = obs.get("common_name", "") or "--"
-            self.table.setItem(row, 1, QTableWidgetItem(common))
-
-            date = obs.get("date", "")[:10] if obs.get("date") else "--"
-            self.table.setItem(row, 2, QTableWidgetItem(date))
-
-            img_count = obs.get("image_count", 0)
-            self.table.setItem(row, 3, QTableWidgetItem(str(img_count)))
-
-            measure_count = obs.get("measurement_count", 0)
-            self.table.setItem(row, 4, QTableWidgetItem(str(measure_count)))
-
-        layout.addWidget(self.table, 1)
-
-        # Select all / none buttons
-        select_row = QHBoxLayout()
-        select_all_btn = QPushButton(self.tr("Select All"))
-        select_all_btn.clicked.connect(self.table.selectAll)
-        select_row.addWidget(select_all_btn)
-
-        select_none_btn = QPushButton(self.tr("Select None"))
-        select_none_btn.clicked.connect(self.table.clearSelection)
-        select_row.addWidget(select_none_btn)
-
-        select_row.addStretch()
-        layout.addLayout(select_row)
-
-        # Buttons
-        button_row = QHBoxLayout()
-        button_row.addStretch()
-
-        skip_btn = QPushButton(self.tr("Skip (Don't Update)"))
-        skip_btn.clicked.connect(self.reject)
-        button_row.addWidget(skip_btn)
-
-        update_btn = QPushButton(self.tr("Update Selected"))
-        update_btn.clicked.connect(self._on_update)
-        button_row.addWidget(update_btn)
-
-        layout.addLayout(button_row)
-
-    def _on_update(self):
-        selected_rows = set(idx.row() for idx in self.table.selectedIndexes())
-        self.selected_observation_ids = [
-            self.observations[row].get("observation_id")
-            for row in selected_rows
-            if row < len(self.observations) and self.observations[row].get("observation_id")
-        ]
-        self.accept()
-
-
 class _AutoCalibrationWorker(QObject):
     progress = Signal(str, float)
     finished = Signal(object, float, object, object)
@@ -1820,7 +1706,6 @@ class CalibrationDialog(GeometryMixin, QDialog):
         outer.addStretch()
 
         return tab
-
 
     def _on_image_mode_tab_changed(self, _index: int):
         """Refresh overlays when switching between auto/manual modes."""
@@ -4032,10 +3917,6 @@ class CalibrationDialog(GeometryMixin, QDialog):
             draw.text((text_x, text_y), text, font=font, fill=color)
             text_y += h + line_gap
 
-    def _draw_export_results_box(self, image: Image.Image) -> None:
-        lines = self._collect_export_result_lines()
-        self._draw_export_results_box_from_lines(image, lines)
-
     def _collect_export_layers(self, img_data: dict) -> list[dict]:
         if self._is_auto_tab_active():
             auto_data = img_data.get("auto")
@@ -4101,79 +3982,6 @@ class CalibrationDialog(GeometryMixin, QDialog):
         if x2 - x1 < 2 or y2 - y1 < 2:
             return None
         return (x1, y1, x2, y2)
-
-    @staticmethod
-    def _shift_lines_for_crop(lines: list, crop_offset: tuple[int, int]) -> list[list[float]]:
-        shifted: list[list[float]] = []
-        ox, oy = crop_offset
-        for line in lines or []:
-            if not isinstance(line, (list, tuple)) or len(line) != 4:
-                continue
-            try:
-                x1, y1, x2, y2 = (float(v) for v in line)
-            except Exception:
-                continue
-            shifted.append([x1 - ox, y1 - oy, x2 - ox, y2 - oy])
-        return shifted
-
-    def _export_calibration_svg_with_widget(
-        self,
-        image_path: str,
-        crop_box: tuple[float, float, float, float] | None,
-        img_data: dict,
-        filename: str,
-        target_size: tuple[int, int] | None = None,
-    ) -> bool:
-        pixmap = QPixmap(str(image_path))
-        if pixmap.isNull():
-            return False
-        crop_offset = (0, 0)
-        crop_rect = self._crop_rect_from_normalized(pixmap.width(), pixmap.height(), crop_box)
-        if crop_rect is not None:
-            x1, y1, x2, y2 = crop_rect
-            pixmap = pixmap.copy(x1, y1, x2 - x1, y2 - y1)
-            crop_offset = (x1, y1)
-
-        export_view = ZoomableImageLabel()
-        export_view.set_image(pixmap, preserve_view=False)
-        export_view.set_measurement_rectangles([])
-        export_view.set_measurement_labels([])
-        export_view.set_overlay_boxes([])
-        export_view.set_preview_line(None)
-        export_view.set_debug_lines([])
-        export_view.set_measurement_lines([])
-
-        if self._is_auto_tab_active():
-            auto_data = img_data.get("auto")
-            if auto_data:
-                use_edges = self._auto_use_edges()
-                if self._show_auto_debug_overlays:
-                    layers = self._collect_export_layers(img_data)
-                    debug_layers = []
-                    for layer in layers:
-                        debug_layers.append(
-                            {
-                                **layer,
-                                "lines": self._shift_lines_for_crop(layer.get("lines", []), crop_offset),
-                            }
-                        )
-                    export_view.set_debug_lines(debug_layers)
-                else:
-                    lines = auto_data["overlay_edges"] if use_edges else auto_data["overlay_parabola"]
-                    export_view.set_measurement_color(self.auto_measure_color if use_edges else self.auto_parabola_color)
-                    export_view.set_show_line_endcaps(False)
-                    export_view.set_measurement_lines(self._shift_lines_for_crop(lines, crop_offset))
-        else:
-            export_view.set_measurement_color(self.manual_measure_color)
-            export_view.set_show_line_endcaps(True)
-            manual_lines = []
-            for m in img_data.get("measurements", []):
-                coords = m.get("line_coords", [])
-                if len(coords) == 4:
-                    manual_lines.append(coords)
-            export_view.set_measurement_lines(self._shift_lines_for_crop(manual_lines, crop_offset))
-
-        return export_view.export_annotated_svg(str(filename), target_size)
 
     def _on_export_image(self) -> None:
         """Export the current image with overlay lines."""
@@ -4346,10 +4154,6 @@ class CalibrationDialog(GeometryMixin, QDialog):
         self._set_export_controls_enabled(True)
         self._set_hint_progress_visible(False)
 
-    def _add_calibration_image(self, path: str):
-        """Add a calibration image."""
-        self._load_calibration_image_candidates([path])
-
     def _refresh_image_gallery(self):
         """Refresh the image gallery with loaded calibration images."""
         items = []
@@ -4369,14 +4173,6 @@ class CalibrationDialog(GeometryMixin, QDialog):
     def _on_calibration_gallery_delete_selection_requested(self, keys) -> None:
         for key in keys or []:
             self._on_gallery_image_deleted(key)
-
-    def _resolve_main_window(self):
-        parent = self.parent()
-        while parent is not None:
-            if hasattr(parent, "observations_tab"):
-                return parent
-            parent = parent.parent() if hasattr(parent, "parent") else None
-        return None
 
     def _on_calibration_gallery_items_reordered(self, ordered_keys) -> None:
         # Keys are "cal_<original-index>" strings assigned at set_items time.
@@ -4421,22 +4217,6 @@ class CalibrationDialog(GeometryMixin, QDialog):
         if not path:
             return None
         return get_camera_model(path)
-
-    def _collect_camera_summary(self) -> str | None:
-        cameras = []
-        for img in self.calibration_images:
-            cam = img.get("camera")
-            if cam:
-                cameras.append(cam)
-        if not cameras:
-            return None
-        unique = []
-        for cam in cameras:
-            if cam not in unique:
-                unique.append(cam)
-        if len(unique) == 1:
-            return unique[0]
-        return "; ".join(unique)
 
     def _selected_camera_text(self) -> str | None:
         if self.current_image_index < 0 or self.current_image_index >= len(self.calibration_images):
@@ -5237,21 +5017,6 @@ class CalibrationDialog(GeometryMixin, QDialog):
         )
         self.manual_scale_input.setValue(scale_nm)
         self._update_history_table()
-
-    def _clear_measurements(self):
-        """Clear all measurements from all images."""
-        for img_data in self.calibration_images:
-            img_data["measurements"] = []
-        self.measurement_points = []
-        self.is_measuring = False
-        self.add_measurement_btn.setText(self.tr("Add Measurement"))
-        self.add_measurement_btn.setEnabled(True)
-        self.image_viewer.clear_preview_line()
-        self.image_viewer.setCursor(Qt.ArrowCursor)
-        self._update_measurement_list()
-        self._update_results()
-        self._refresh_image_gallery()
-        self._apply_current_overlay()
 
     def _update_auto_progress(self, step: str, frac: float):
         """Update progress UI from calibration steps."""
@@ -6384,24 +6149,6 @@ class CalibrationDialog(GeometryMixin, QDialog):
         except Exception as e:
             print(f"Warning: Could not copy calibration image: {e}")
             return None
-
-    def _emit_calibration(self, microns_per_pixel: float):
-        """Emit the calibration_saved signal with objective data."""
-        if not self.current_objective_key:
-            return
-
-        obj = self.objectives.get(self.current_objective_key, {})
-        objective_data = {
-            "key": self.current_objective_key,
-            "objective_key": self.current_objective_key,
-            "name": objective_display_name(obj, self.current_objective_key),
-            "objective_name": obj.get("objective_name"),
-            "magnification": obj.get("magnification"),
-            "na": obj.get("na"),
-            "microns_per_pixel": microns_per_pixel,
-            "notes": obj.get("notes", ""),
-        }
-        self.calibration_saved.emit(objective_data)
 
     def select_custom_tab(self):
         """Select the calibration tab (for compatibility)."""

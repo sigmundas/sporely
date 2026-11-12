@@ -7,9 +7,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
 
-from PySide6.QtCore import Qt, Signal, QEvent, QSize, QRectF, QTimer, QMimeData, QPoint, QPointF, QThread, QObject, QT_TRANSLATE_NOOP, QCoreApplication
+from PySide6.QtCore import Qt, Signal, QEvent, QSize, QRectF, QTimer, QMimeData, QPoint, QThread, QObject, QT_TRANSLATE_NOOP, QCoreApplication
 from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QDrag, QShortcut, QKeySequence, QIcon, QPalette
-from PySide6.QtWidgets import QGraphicsDropShadowEffect
 from shiboken6 import isValid
 from PySide6.QtWidgets import (
     QApplication,
@@ -209,74 +208,6 @@ def thumbnail_selection_colors(dark_theme: bool, palette: QPalette | None = None
     )
 
 
-def _draw_thumbnail_corner_brackets(
-    painter: QPainter,
-    rect: QRectF,
-    color: QColor,
-    stroke_width: float,
-    corner_len: float,
-) -> None:
-    if rect.isEmpty() or corner_len <= 0.0:
-        return
-    edge = rect.adjusted(stroke_width / 2.0, stroke_width / 2.0, -stroke_width / 2.0, -stroke_width / 2.0)
-    if edge.width() <= 0.0 or edge.height() <= 0.0:
-        return
-    painter.save()
-    pen = QPen(QColor(color), max(1.0, stroke_width))
-    pen.setCapStyle(Qt.RoundCap)
-    pen.setJoinStyle(Qt.RoundJoin)
-    painter.setPen(pen)
-    left = edge.left()
-    top = edge.top()
-    right = edge.right()
-    bottom = edge.bottom()
-    painter.drawLine(QPointF(left, top + corner_len), QPointF(left, top))
-    painter.drawLine(QPointF(left, top), QPointF(left + corner_len, top))
-    painter.drawLine(QPointF(right - corner_len, top), QPointF(right, top))
-    painter.drawLine(QPointF(right, top), QPointF(right, top + corner_len))
-    painter.drawLine(QPointF(left, bottom - corner_len), QPointF(left, bottom))
-    painter.drawLine(QPointF(left, bottom), QPointF(left + corner_len, bottom))
-    painter.drawLine(QPointF(right - corner_len, bottom), QPointF(right, bottom))
-    painter.drawLine(QPointF(right, bottom - corner_len), QPointF(right, bottom))
-    painter.restore()
-
-
-def _draw_thumbnail_selection_badge(
-    painter: QPainter,
-    rect: QRectF,
-    text: str,
-    colors: ThumbnailSelectionColors,
-    size_hint: float,
-) -> None:
-    badge_text = str(text or "").strip()
-    if not badge_text:
-        return
-    badge_margin = max(3.0, min(5.0, size_hint * 0.04))
-    badge_pad_x = max(4.0, min(7.0, size_hint * 0.06))
-    badge_pad_y = max(2.0, min(4.0, size_hint * 0.03))
-
-    badge_font = painter.font()
-    badge_font.setBold(True)
-    badge_font.setPixelSize(max(8, min(12, int(round(size_hint * 0.11)))))
-    painter.setFont(badge_font)
-
-    metrics = painter.fontMetrics()
-    text_width = float(metrics.horizontalAdvance(badge_text))
-    text_height = float(metrics.height())
-    badge_width = min(max(0.0, rect.width() - (badge_margin * 2.0)), text_width + (badge_pad_x * 2.0))
-    badge_height = min(max(0.0, rect.height() - (badge_margin * 2.0)), text_height + (badge_pad_y * 2.0))
-    if badge_width <= 0.0 or badge_height <= 0.0:
-        return
-
-    badge_rect = QRectF(rect.left() + badge_margin, rect.top() + badge_margin, badge_width, badge_height)
-    badge_radius = max(3.0, min(5.5, badge_height / 2.0))
-    painter.setPen(QPen(colors.badge_border, max(1.0, min(2.0, size_hint * 0.012))))
-    painter.setBrush(colors.badge_fill)
-    painter.drawRoundedRect(badge_rect, badge_radius, badge_radius)
-    painter.setPen(colors.badge_text)
-    painter.drawText(badge_rect.adjusted(0.0, -1.0, 0.0, 1.0), Qt.AlignCenter, badge_text)
-
-
 def paint_thumbnail_selection_overlay(
     painter: QPainter,
     rect: QRectF,
@@ -349,21 +280,6 @@ def paint_thumbnail_selection_overlay(
             painter.drawRoundedRect(halo_rect, max(1.0, radius - 0.5), max(1.0, radius - 0.5))
 
     painter.restore()
-
-
-def _visible_fraction(viewport_rect: QRectF, item_rect: QRectF | None) -> float:
-    if item_rect is None:
-        return 0.0
-    viewport_width = float(viewport_rect.width())
-    item_width = float(item_rect.width())
-    if viewport_width <= 0.0 or item_width <= 0.0:
-        return 0.0
-    viewport_left = float(viewport_rect.x())
-    viewport_right = viewport_left + viewport_width
-    item_left = float(item_rect.x())
-    item_right = item_left + item_width
-    visible_width = max(0.0, min(viewport_right, item_right) - max(viewport_left, item_left))
-    return visible_width / item_width
 
 
 def center_horizontal_scroll_target(
@@ -1125,11 +1041,6 @@ class ImageGalleryWidget(QGroupBox):
         frame._thumbnail_hovered = hovered
         self._update_thumbnail_selection_overlay(frame)
 
-    def set_fixed_thumbnail_size(self, enabled: bool) -> None:
-        self._fixed_thumbnail_size = bool(enabled)
-        self._thumb_size = self._target_thumb_size()
-        self._update_thumbnail_sizes()
-
     def set_center_reveal_mode(self, mode: str) -> None:
         text = str(mode or "").strip().lower()
         if text not in {"precise", "nudge"}:
@@ -1205,20 +1116,6 @@ class ImageGalleryWidget(QGroupBox):
             self._scroll.viewport().setAcceptDrops(self._reorderable)
         for frame in getattr(self, "_frames", []):
             frame.setAcceptDrops(self._reorderable)
-
-    def set_images(self, image_paths: Iterable[str]) -> None:
-        items = []
-        for idx, path in enumerate(image_paths):
-            if path:
-                items.append(
-                    {
-                        "id": None,
-                        "filepath": str(path),
-                        "has_measurements": False,
-                        "image_number": idx + 1,
-                    }
-                )
-        self.set_items(items)
 
     def set_items(
         self,
@@ -2036,36 +1933,6 @@ class ImageGalleryWidget(QGroupBox):
         return (
             "QFrame { border: 2px solid %s; border-radius: 5px; background: white; }"
         ) % border
-
-    @staticmethod
-    def _apply_frame_glow(frame: QFrame, selected: bool, hovered: bool = False) -> None:
-        raw_halo_color = getattr(frame, "raw_halo_color", None)
-        # Selection is now indicated by the outer square backdrop — the old
-        # drop-shadow was too soft and combined weirdly with the backdrop.
-        # Keep the shadow only for RAW halo + hover states.
-        if selected and raw_halo_color:
-            # Retain the RAW halo when a RAW thumbnail is selected.
-            pass  # falls through into the raw_halo_color branch below
-        if raw_halo_color:
-            effect = QGraphicsDropShadowEffect(frame)
-            effect.setBlurRadius(22)
-            effect.setOffset(0, 0)
-            effect_color = QColor(raw_halo_color)
-            if not effect_color.isValid():
-                effect_color = QColor(231, 76, 60, 190)
-            effect.setColor(effect_color)
-            frame.setGraphicsEffect(effect)
-        elif hovered:
-            from PySide6.QtWidgets import QApplication
-            is_dark = QApplication.instance().palette().window().color().lightness() < 128
-            hover_color = QColor(255, 255, 255, 220) if is_dark else QColor(80, 80, 80, 160)
-            effect = QGraphicsDropShadowEffect(frame)
-            effect.setBlurRadius(26)
-            effect.setOffset(0, 0)
-            effect.setColor(hover_color)
-            frame.setGraphicsEffect(effect)
-        else:
-            frame.setGraphicsEffect(None)
 
     def _create_thumbnail_widget(self, item: dict) -> QFrame:
         frame = QFrame()
@@ -3038,10 +2905,3 @@ class ImageGalleryWidget(QGroupBox):
         painter.end()
         return annotated
 
-    def _has_spore_measurements(self, image_id: int) -> bool:
-        measurements = MeasurementDB.get_measurements_for_image(image_id)
-        for measurement in measurements:
-            measurement_type = (measurement.get("measurement_type") or "").lower()
-            if measurement_type in ("", "manual", "spore"):
-                return True
-        return False

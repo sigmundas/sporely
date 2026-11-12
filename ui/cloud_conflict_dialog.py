@@ -171,18 +171,6 @@ class ConflictPlanApplyWorker(QThread):
             self.failed.emit(str(exc), None)
 
 
-def _format_timestamp(value) -> str:
-    text = str(value or '').strip()
-    if not text:
-        return 'Unknown'
-    normalized = text.replace('Z', '+00:00')
-    try:
-        dt = datetime.fromisoformat(normalized)
-        return dt.strftime('%Y-%m-%d %H:%M:%S')
-    except Exception:
-        return text.replace('T', ' ')
-
-
 def _format_compare_value(field: str, value) -> str:
     if value is None or value == '':
         return '—'
@@ -291,17 +279,6 @@ def _conflict_list_label(detail: dict) -> str:
     headline = _conflict_headline(identity)
     subtitle = _conflict_subtitle(identity, detail)
     return f'{headline}\n{subtitle}' if subtitle else headline
-
-
-def _join_english(items: list[str]) -> str:
-    values = [str(item or '').strip() for item in (items or []) if str(item or '').strip()]
-    if not values:
-        return ''
-    if len(values) == 1:
-        return values[0]
-    if len(values) == 2:
-        return f'{values[0]} and {values[1]}'
-    return ', '.join(values[:-1]) + f', and {values[-1]}'
 
 
 def _readable_text_color(background: QColor) -> QColor:

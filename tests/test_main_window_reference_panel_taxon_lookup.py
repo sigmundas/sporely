@@ -569,57 +569,6 @@ def test_reference_panel_focus_populates_blank_prefix_species_and_common_name_mo
     assert window.ref_vernacular_input.text() == "Button mushroom"
 
 
-def test_language_settings_dialog_lists_available_languages_and_falls_back(
-    monkeypatch,
-    qapp,
-) -> None:
-    monkeypatch.setattr(
-        main_window.SettingsDB,
-        "get_setting",
-        lambda key, default=None: "en" if key == "vernacular_language" else default,
-    )
-    monkeypatch.setattr(
-        main_window,
-        "list_available_vernacular_languages",
-        lambda: ["en", "de", "no"],
-    )
-
-    dialog = main_window.LanguageSettingsDialog()
-    dialog.show()
-    qapp.processEvents()
-
-    assert [dialog.vernacular_combo.itemData(i) for i in range(dialog.vernacular_combo.count())] == ["en", "de", "no"]
-    assert dialog.vernacular_combo.currentData() == "en"
-
-    dialog.deleteLater()
-
-
-def test_language_settings_dialog_falls_back_to_norwegian_when_only_that_language_is_available(
-    monkeypatch,
-    qapp,
-) -> None:
-    monkeypatch.setattr(
-        main_window.SettingsDB,
-        "get_setting",
-        lambda key, default=None: "en" if key == "vernacular_language" else default,
-    )
-    monkeypatch.setattr(
-        main_window,
-        "list_available_vernacular_languages",
-        lambda: ["no"],
-    )
-
-    dialog = main_window.LanguageSettingsDialog()
-    dialog.show()
-    qapp.processEvents()
-
-    assert dialog.vernacular_combo.count() == 1
-    assert dialog.vernacular_combo.itemData(0) == "no"
-    assert dialog.vernacular_combo.currentData() == "no"
-
-    dialog.deleteLater()
-
-
 def test_reference_panel_ambiguous_common_name_does_not_autofill(
     monkeypatch,
     qapp,

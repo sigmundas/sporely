@@ -1581,11 +1581,6 @@ class PlatePreviewCanvas(QWidget):
             return self._dlg._background_crops.get(self._active)
         return self._dlg._crops.get(self._active)
 
-    def _active_label(self, key: str) -> str:
-        if key.startswith("bg:"):
-            return self._dlg._background_label(key)
-        return self._dlg._slot_labels.get(key, key)
-
     def show_label_overlay(self, slot: str) -> None:
         """Position and show the inline label editor over the circle's label box."""
         rect = self._label_rect_preview(slot)
@@ -2550,11 +2545,6 @@ class SpeciesPlateDialog(QDialog):
 
     # ── Slot value handlers ───────────────────────────────────────────────────
 
-    def _on_size(self, v: int) -> None:
-        self._ins_r = v
-        _cover_cache.clear()
-        self._refresh_preview()
-
     def _on_inset_position(self, v: int) -> None:
         self._inset_position = max(0, min(100, int(v)))
         self._refresh_preview()
@@ -3465,37 +3455,6 @@ class SpeciesPlateDialog(QDialog):
 
     # ── Background helpers ────────────────────────────────────────────────────
 
-    def _background_panels(self) -> list[tuple[str, str, QRectF]]:
-        rects = _background_panel_rects(self._bg_count)
-        panels: list[tuple[str, str, QRectF]] = []
-        for idx in range(self._bg_count):
-            img = self._bg_slots[idx] if idx < len(self._bg_slots) else None
-            if not img:
-                continue
-            filepath = img.get("filepath")
-            if not filepath or not os.path.isfile(filepath):
-                continue
-            if idx < len(rects):
-                panels.append((f"bg:{idx}", filepath, rects[idx]))
-        return panels
-
-    def _bg_slot_for_key(self, key: str) -> Optional[dict]:
-        try:
-            idx = int(key.split(":", 1)[1])
-        except (IndexError, ValueError):
-            return None
-        return self._bg_slots[idx] if 0 <= idx < len(self._bg_slots) else None
-
-    def _background_label(self, key: str) -> str:
-        try:
-            idx = int(key.split(":", 1)[1])
-        except (IndexError, ValueError):
-            return self.tr("Background")
-        img = self._bg_slots[idx] if 0 <= idx < len(self._bg_slots) else None
-        itype = (img.get("image_type") or "") if img else ""
-        if itype == "field":
-            return self.tr("Field photo {0}").format(idx + 1)
-        return self.tr("Background {0}").format(idx + 1)
 
     # ── Export folder helpers ─────────────────────────────────────────────────
 

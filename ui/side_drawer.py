@@ -94,12 +94,6 @@ class SideDrawer(QFrame):
         self._pages[key] = (title, widget)
         self._stack.addWidget(widget)
 
-    def set_page_title(self, key: str, title: str) -> None:
-        if key in self._pages:
-            self._pages[key] = (title, self._pages[key][1])
-            if key == self._current:
-                self.title_label.setText(title)
-
     def current_page(self) -> str | None:
         return self._current if self._open else None
 

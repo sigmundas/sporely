@@ -12,12 +12,10 @@ files=(
   "ui/observations_tab.py"
   "ui/observation_details_dialog.py"
   "ui/edit_page.py"
-  "ui/measurement_tool.py"
   "ui/calibration_dialog.py"
   "ui/cloud_conflict_dialog.py"
   "ui/species_plate_dialog.py"
   "ui/zoomable_image_widget.py"
-  "ui/stats_table_widget.py"
   "ui/spore_preview_widget.py"
   "ui/reference_library_attach_dialog.py"
   "ui/add_reference_dialog.py"
@@ -51,7 +49,6 @@ files=(
   "ui/image_gallery_widget.py"
   "ui/export_image_dialog.py"
   "ui/dialog_helpers.py"
-  "ui/observation_list.py"
   "ui/cloud_sync_dialog.py"
 )
 

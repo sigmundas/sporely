@@ -46,7 +46,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
-    QListView,
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
@@ -190,7 +189,7 @@ from .adaptive_choice_selector import (
 )
 from .section_card import create_section_card
 from .segmented_selector import SegmentedSelector
-from .styles import STAGING_BORDER, pt, _is_dark
+from .styles import STAGING_BORDER, pt
 from .window_state import GeometryMixin
 
 SUPPORTED_IMAGE_EXTENSIONS = {
@@ -366,7 +365,6 @@ class ImageImportResult:
     raw_preview_path: Optional[str] = None
     raw_unsaved_changes: bool = False
     processing_status: Optional[str] = None
-
 
 
 @dataclass
@@ -864,11 +862,6 @@ class ScaleBarImportDialog(QDialog):
         length_px = self._pending_distance_px or 0.0
         width_px = max(2.0, length_px * 0.1) if length_px > 0 else 2.0
         self.preview.set_spore(pixmap, points, length_px, width_px, 1.0, measurement_id=1)
-
-    def apply_scale(self, distance_pixels: float):
-        self.set_calibration_distance(distance_pixels)
-        if self._pending_distance_px:
-            self._on_apply()
 
     def closeEvent(self, event):
         if not self.scale_applied and self.image_dialog:
@@ -1374,27 +1367,6 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self._select_image(index)
         elif hasattr(self, "preview_stack") and self.preview_stack.currentWidget() != self.preview:
             self.preview_stack.setCurrentWidget(self.preview)
-
-    def _apply_combo_popup_style(self, combo: QComboBox) -> None:
-        dark = _is_dark("auto")
-        view = QListView()
-        view.setSpacing(0)
-        view.setUniformItemSizes(True)
-        if dark:
-            view.setStyleSheet(
-                "QListView { background: #2b2b2d; color: #e8e8e8; }"
-                "QListView::item { color: #e8e8e8; background: #2b2b2d; padding: 4px 8px; min-height: 24px; margin: 0px; }"
-                "QListView::item:hover { background: #1c3a5e; color: #c0deff; }"
-                "QListView::item:selected { background: #4a90d9; color: white; }"
-            )
-        else:
-            view.setStyleSheet(
-                "QListView { background: white; color: #2c3e50; }"
-                "QListView::item { color: #2c3e50; background: white; padding: 4px 8px; min-height: 24px; margin: 0px; }"
-                "QListView::item:hover { background: #d9e9f8; color: #2c3e50; }"
-                "QListView::item:selected { background: #3498db; color: white; }"
-            )
-        combo.setView(view)
 
     def _load_tag_options(self, category: str) -> list[str]:
         setting_key = DatabaseTerms.setting_key(category)
@@ -2394,19 +2366,6 @@ class ImageImportDialog(GeometryMixin, QDialog):
         indices = self.selected_indices or ([self.selected_index] if self.selected_index is not None else [])
         if indices:
             self._apply_settings_to_indices(indices, action="scale")
-
-    def _on_calibration_saved(self, objective: dict) -> None:
-        if not isinstance(objective, dict):
-            return
-        custom_scale = objective.get("microns_per_pixel")
-        if isinstance(custom_scale, (int, float)):
-            self._custom_scale = float(custom_scale)
-            if hasattr(self, "scale_bar_mode_checkbox"):
-                self.scale_bar_mode_checkbox.blockSignals(True)
-                self.scale_bar_mode_checkbox.setChecked(True)
-                self.scale_bar_mode_checkbox.blockSignals(False)
-            self._update_scalebar_controls_visibility()
-            self._update_objective_selector_state()
 
     def _load_objectives(self):
         return load_objectives()
@@ -5737,11 +5696,6 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._cache_pixmap(path)
         return self._pixmap_cache.get(path)
 
-    def _apply_to_all(self) -> None:
-        if not self.import_results:
-            return
-        self._apply_settings_to_indices(list(range(len(self.import_results))))
-
     def _apply_to_selected(self) -> None:
         indices = self.selected_indices or ([self.selected_index] if self.selected_index is not None else [])
         if not indices:
@@ -6241,7 +6195,6 @@ class ImageImportDialog(GeometryMixin, QDialog):
             hint_tone="warning",
         )
         self.scale_warning_label.setVisible(True)
-
 
     def _clear_current_image_exif(self) -> None:
         self._current_exif_present = False
@@ -7919,18 +7872,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
             if result.preview_path:
                 result.raw_preview_path = result.preview_path
 
-    def _pending_raw_indices(self) -> list[int]:
-        return [
-            idx
-            for idx, result in enumerate(self.import_results)
-            if self._result_is_raw_backed(result)
-            and (bool(getattr(result, "raw_pending", False)) or bool(getattr(result, "raw_unsaved_changes", False)))
-        ]
-
     def done(self, result: int) -> None:  # noqa: N802 - Qt API
         self._cleanup_dialog_threads()
         super().done(result)
-
 
     def closeEvent(self, event):
         dialog = getattr(self, "_scale_bar_dialog", None)

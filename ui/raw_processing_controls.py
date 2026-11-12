@@ -757,9 +757,6 @@ class RawProcessingControls(QWidget):
             bool(self._pick_context_enabled and not self._multi_selection_mode)
         )
 
-    def set_controls_enabled(self, enabled: bool) -> None:
-        self.setEnabled(bool(enabled))
-
     def set_tone_controls_enabled(self, enabled: bool) -> None:
         self._set_tone_controls_enabled(bool(enabled))
 
@@ -901,9 +898,6 @@ class RawProcessingControls(QWidget):
         ):
             widget.setVisible(visible)
             widget.setEnabled(bool(enabled))
-
-    def is_auto_levels_enabled(self) -> bool:
-        return bool(self.auto_levels_btn.isChecked())
 
     @staticmethod
     def _ev_value_text(value: int) -> str:

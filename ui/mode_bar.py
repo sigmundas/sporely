@@ -166,9 +166,6 @@ class ModeBar(QWidget):
             self.tr("%n matched photo(s) from the last scan are waiting to be imported", "", count)
         )
 
-    def waiting_count(self) -> int:
-        return self._waiting_count
-
     def camera_import_text_is_short(self) -> bool:
         return self.camera_import_button.text() == self._camera_short_text
 

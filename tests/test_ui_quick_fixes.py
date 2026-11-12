@@ -258,3 +258,50 @@ def test_publishing_page_does_not_overlap_at_default_size(qapp, scratch_db, monk
         assert rect_in_content(notice).top() >= rect_in_content(hub._artsobs_dialog).bottom()
     finally:
         hub.close()
+
+
+# ---------------------------------------------------------------------------
+# Preferanser › Language: the vernacular list (moved from the retired
+# LanguageSettingsDialog's tests, stage 10a1)
+# ---------------------------------------------------------------------------
+
+
+def _language_hub(monkeypatch, tmp_path, available, stored):
+    import ui.main_window as main_window
+    from utils.cloud_sync import SporelyCloudClient
+
+    monkeypatch.setattr(main_window, "app_data_dir", lambda: tmp_path / "app-data")
+    monkeypatch.setattr(SporelyCloudClient, "from_stored_credentials", classmethod(lambda cls: None))
+    monkeypatch.setattr(
+        main_window.ArtsobservasjonerSettingsDialog,
+        "_refresh_target_status",
+        lambda dialog: setattr(dialog, "_target_status", {}),
+    )
+    monkeypatch.setattr(main_window, "list_available_vernacular_languages", lambda: list(available))
+    real_get = main_window.SettingsDB.get_setting
+    monkeypatch.setattr(
+        main_window.SettingsDB,
+        "get_setting",
+        lambda key, default=None: stored if key == "vernacular_language" else real_get(key, default),
+    )
+    return main_window.SettingsHubDialog(None, start_page=main_window.SettingsHubDialog.PAGE_LANGUAGE)
+
+
+def test_language_page_lists_available_vernacular_languages(qapp, scratch_db, monkeypatch, tmp_path):
+    hub = _language_hub(monkeypatch, tmp_path, ["en", "de", "no"], "en")
+    try:
+        combo = hub._lang_vern_combo
+        assert [combo.itemData(i) for i in range(combo.count())] == ["en", "de", "no"]
+        assert combo.currentData() == "en"
+    finally:
+        hub.close()
+
+
+def test_language_page_falls_back_to_norwegian_when_only_that_is_available(qapp, scratch_db, monkeypatch, tmp_path):
+    hub = _language_hub(monkeypatch, tmp_path, ["no"], "en")
+    try:
+        combo = hub._lang_vern_combo
+        assert combo.count() == 1 and combo.itemData(0) == "no"
+        assert combo.currentData() == "no"
+    finally:
+        hub.close()

@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, fields
-from typing import Any, Iterable
+from typing import Any
 
 from PySide6.QtCore import QT_TRANSLATE_NOOP, QObject, QThread, Qt, Signal, Slot
 from PySide6.QtGui import QColor
@@ -576,27 +576,6 @@ class _PersonListEditor(QWidget):
         if mark_dirty:
             self._on_row_changed()
         return row
-
-    def load_entries(
-        self, entries: Iterable[dict[str, Any]] | None
-    ) -> None:
-        """Clear and repopulate rows from a list of dicts.
-
-        Does NOT mark the editor dirty. Used both when loading from an
-        existing work and when re-populating after external edits.
-        """
-        self._clear_rows()
-        for entry in (entries or []):
-            if not isinstance(entry, dict):
-                continue
-            self.add_row(
-                family=str(entry.get("family") or ""),
-                given=str(entry.get("given") or ""),
-                organization=str(entry.get("literal") or ""),
-                mark_dirty=False,
-            )
-        self._dirty = False
-        self._refresh_empty_state()
 
     def load_json(self, raw: str | None) -> None:
         """Load from a canonical JSON string.
@@ -2432,11 +2411,6 @@ class ReferenceLibraryManagerDialog(QDialog):
             self._current_work = None
             self._clear_hierarchy()
             self._clear_detail()
-
-    def _completeness_hints_for(self, work: ReferenceWork) -> list[str]:
-        """Public accessor for tests + subclasses. Returns the derived,
-        non-persisted list of missing bibliographic fields for a work."""
-        return reference_work_completeness_hints(work)
 
     def _add_hierarchy_placeholder(self, text: str) -> None:
         """Insert a disabled placeholder item into the hierarchy tree so
