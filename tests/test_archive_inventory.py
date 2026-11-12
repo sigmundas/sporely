@@ -167,6 +167,36 @@ def test_database_setting_policy_covers_resolvable_production_accesses():
     assert unclassified == []
 
 
+def test_database_setting_policy_covers_setting_constants_and_ui_state_keys():
+    """Keys reached through class or module constants and UI-state helpers are classified too.
+
+    The AST check above resolves literal keys and same-module constants only.
+    These are written through ``self.SETTING_*``, ``module.SETTING_*``,
+    ``install_persistent_splitter(key=…)`` and ``SummarySection(settings_key=…)``;
+    an unclassified one makes every later full backup fail (the staged
+    settings are sanitized fail-closed).
+    """
+    import re
+
+    root = Path(__file__).resolve().parents[1]
+    sources = [root / "config.py", *(root / "database").glob("*.py"), *(root / "ui").glob("*.py"),
+               *(root / "utils").rglob("*.py")]
+    keys = set()
+    for path in sources:
+        text = path.read_text(encoding="utf-8").lstrip("\ufeff")
+        keys.update(re.findall(r"\bSETTING_\w+\s*=\s*\"([^\"]+)\"", text))
+        keys.update(re.findall(r"\bkey=\"([^\"]*splitter[^\"]*)\"", text))
+        keys.update(re.findall(r"\bsettings_key=\"([^\"]+)\"", text))
+    assert {"measure_main_splitter_sizes_v2", "measure_scale_section_expanded", "files_sd_card_folder"} <= keys
+    unclassified = []
+    for key in sorted(keys):
+        try:
+            database_setting_policy(key)
+        except KeyError:
+            unclassified.append(key)
+    assert unclassified == []
+
+
 @pytest.mark.parametrize(
     "key",
     (
@@ -271,3 +301,30 @@ def test_cloud_auth_method_stays_with_the_session_tokens():
 
 def test_reference_device_id_stays_on_its_machine():
     assert app_setting_policy("reference_client_device_id") is SettingPolicy.MACHINE_SPECIFIC
+
+
+def test_full_backup_sanitizes_settings_with_the_redesign_ui_state_keys(tmp_path):
+    """A database where the redesign's UI state was saved still backs up (it failed closed before)."""
+    import sqlite3
+
+    from utils.archive import full_backup
+
+    database = tmp_path / "staged.db"
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
+        connection.executemany(
+            "INSERT INTO settings (key, value) VALUES (?, ?)",
+            [
+                ("measure_main_splitter_sizes_v2", "[700, 300]"),
+                ("measure_scale_section_expanded", "1"),
+                ("edit_publish_service", "artsobs"),
+                ("files_sd_card_folder", "/Volumes/CARD"),
+                ("inat_client_secret", "x"),
+            ],
+        )
+    full_backup._sanitize_staged_settings(database)
+    with sqlite3.connect(database) as connection:
+        kept = {row[0] for row in connection.execute("SELECT key FROM settings")}
+    assert kept == {
+        "measure_main_splitter_sizes_v2", "measure_scale_section_expanded", "edit_publish_service", "files_sd_card_folder",
+    }

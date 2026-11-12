@@ -240,8 +240,12 @@ def app_setting_policy(key: str) -> SettingPolicy:
 _DB_SECRET_KEYS = {
     "inat_client_secret", "mushroomobserver_app_api_key", "mushroomobserver_user_api_key",
 }
-_DB_MACHINE_KEYS = {"originals_dir", "live_lab_watch_dir", "ingestion_hub_scan_dir"}
-_DB_REGENERABLE_SUFFIXES = ("_splitter_sizes",)
+_DB_MACHINE_KEYS = {
+    "originals_dir", "live_lab_watch_dir", "ingestion_hub_scan_dir",
+    # The folder read when no SD card is found (Bilder › Files, UI redesign 9i).
+    "files_sd_card_folder",
+}
+_DB_REGENERABLE_SUFFIXES = ("_splitter_sizes", "_splitter_sizes_v2")
 # Completion markers of idempotent per-database repairs: re-derived by
 # re-running the repair, so a restore never trusts a marker over the rows.
 _DB_REGENERABLE_KEYS = {"cloud_location_precision_repair_v1_done"}
@@ -262,6 +266,10 @@ _DB_EXACT_KEYS = {
     # The user's "Don't show this again" choice for the publish notice
     # (ui/publish_notice.py): a per-profile preference restored with backups.
     "show_publish_notice",
+    # Remembered UI choices from the desktop UI redesign: Mål's Skala section
+    # open or closed (stage 6), Rediger's “Ferdig og publiser til” service
+    # (stage 9g3b).
+    "measure_scale_section_expanded", "edit_publish_service",
 }
 _DB_EXACT_PREFIXES = (
     "artsobs_", "sporely_cloud_", "profile_", "last_used_", "gallery_settings_",
