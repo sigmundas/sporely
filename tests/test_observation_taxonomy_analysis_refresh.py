@@ -9,7 +9,6 @@ import pytest
 from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QLineEdit, QTableWidget
 
 import ui.main_window as main_window
-import ui.observations_tab as observations_tab
 from ui.observations_tab import ObservationsTab
 
 
@@ -50,81 +49,6 @@ class _NoVernacularLookup:
     language_code = "en"
 
 
-class _FakeSelectionIndex:
-    def __init__(self, row: int):
-        self._row = row
-
-    def row(self) -> int:
-        return self._row
-
-
-class _FakeSelectionModel:
-    def __init__(self, table: "_FakeTable"):
-        self._table = table
-
-    def selectedRows(self):
-        if self._table.selected_row is None:
-            return []
-        return [_FakeSelectionIndex(self._table.selected_row)]
-
-
-class _FakeTable:
-    def __init__(self, selected_row: int | None = 0):
-        self.selected_row = selected_row
-
-    def selectionModel(self):
-        return _FakeSelectionModel(self)
-
-    def selectRow(self, row: int) -> None:
-        self.selected_row = row
-
-
-class _FakeObservationDetailsDialog:
-    def __init__(self, *args, **kwargs):
-        self.image_results = []
-
-    def exec(self) -> bool:
-        return True
-
-    def get_ai_state(self) -> dict:
-        return {}
-
-    def is_unidentified(self) -> bool:
-        return False
-
-    def get_data(self) -> dict:
-        return {
-            "genus": "Entoloma",
-            "species": "sericeum",
-            "common_name": None,
-            "publish_target": None,
-            "is_draft": None,
-            "sharing_scope": None,
-            "location_public": None,
-            "location_precision": None,
-            "species_guess": None,
-            "uncertain": False,
-            "unspontaneous": False,
-            "determination_method": None,
-            "date": "2026-05-25",
-            "location": None,
-            "habitat": None,
-            "habitat_nin2_path": None,
-            "habitat_substrate_path": None,
-            "habitat_host_genus": None,
-            "habitat_host_species": None,
-            "habitat_host_common_name": None,
-            "habitat_nin2_note": None,
-            "habitat_substrate_note": None,
-            "habitat_grows_on_note": None,
-            "open_comment": None,
-            "private_comment": None,
-            "interesting_comment": False,
-            "gps_latitude": None,
-            "gps_longitude": None,
-        }
-
-
 def _build_minimal_window(monkeypatch) -> main_window.MainWindow:
     monkeypatch.setattr(
         main_window.SettingsDB,
@@ -156,59 +80,38 @@ def _build_minimal_window(monkeypatch) -> main_window.MainWindow:
     return window
 
 
-def test_edit_observation_refreshes_active_state_and_reference_cache(monkeypatch, qapp) -> None:
-    tab = ObservationsTab.__new__(ObservationsTab)
-    tab.table = _FakeTable(selected_row=0)
-    tab.selected_observation_id = None
-    tab._observation_edit_draft_cache = {}
-    tab._ai_suggestions_cache = {}
-    tab._merge_observation_edit_draft = lambda observation, draft: dict(observation)
-    tab._build_import_results_from_images = lambda images: []
-    tab._remap_ai_state_to_images = lambda ai_state, image_results: ai_state
-    tab._load_observation_ai_state = lambda observation: {}
-    tab._apply_import_results_to_observation = lambda *args, **kwargs: None
-    tab.refresh_observations = lambda: None
-    tab.on_selection_changed = lambda: None
-    tab._upload_pending_artsobs_web_images = lambda: "none"
-    tab.set_status_message = lambda *args, **kwargs: None
-    tab._observation_id_for_row = lambda row: 1
+def test_rediger_taxon_change_refreshes_reference_cache_then_active_state(qapp) -> None:
+    """A taxon saved in Rediger (stage 9g2) refreshes the reference cache, then the active state.
 
-    observation = {
-        "id": 1,
-        "genus": "Tricholoma",
-        "species": "inamoenum",
-        "date": "2026-05-25",
-        "gps_latitude": None,
-        "gps_longitude": None,
-    }
-    update_calls: list[tuple[int, dict]] = []
+    Rediger replaced the Edit observation dialog (stage 9g4c), whose save did
+    the same: ``refresh_after_observation_edits`` → ``_refresh_after_observation_edits``
+    → ``ObservationsTab._refresh_active_observation_after_edit``.
+    """
     call_order: list[object] = []
-    host_calls: list[bool] = []
+    tab = ObservationsTab.__new__(ObservationsTab)
+    tab.refresh_observations = lambda: call_order.append("table")
+    tab.get_selected_observation = lambda: (1, "Tricholoma inamoenum")
+    tab.set_selected_as_active = lambda switch_tab=True: call_order.append(("active", switch_tab))
+    tab.parent = lambda: None
 
     class _Host:
+        active_observation_id = 1
+        observations_tab = tab
+
         def _refresh_reference_species_availability(self, force_refresh: bool = False):
-            host_calls.append(force_refresh)
             call_order.append(("cache_refresh", force_refresh))
 
     host = _Host()
     tab.window = lambda: host
-    tab.parent = lambda: None
-    tab.set_selected_as_active = lambda switch_tab=True: call_order.append(("active", switch_tab))
 
-    monkeypatch.setattr(observations_tab.ObservationDB, "get_observation", lambda obs_id: dict(observation))
-    monkeypatch.setattr(observations_tab.ObservationDB, "get_all_observations", lambda: [{"id": 1}])
-    monkeypatch.setattr(observations_tab.ObservationDB, "update_observation", lambda observation_id, **kwargs: update_calls.append((observation_id, kwargs)))
-    monkeypatch.setattr(observations_tab.ImageDB, "get_images_for_observation", lambda obs_id: [])
-    monkeypatch.setattr(observations_tab, "ObservationDetailsDialog", _FakeObservationDetailsDialog)
+    main_window.MainWindow._refresh_after_observation_edits(host, 1, True)
+    assert call_order == ["table", ("cache_refresh", True), ("active", False)]
 
-    ObservationsTab.edit_observation(tab)
-
-    assert update_calls
-    assert update_calls[0][0] == 1
-    assert update_calls[0][1]["genus"] == "Entoloma"
-    assert update_calls[0][1]["species"] == "sericeum"
-    assert host_calls == [True]
-    assert call_order == [("cache_refresh", True), ("active", False)]
+    # Another observation shown meanwhile: no switch back, the cache still refreshes.
+    call_order.clear()
+    host.active_observation_id = 2
+    main_window.MainWindow._refresh_after_observation_edits(host, 1, True)
+    assert call_order == ["table", ("cache_refresh", True)]
 
 
 def test_load_reference_values_replaces_stale_fields_when_new_taxon_has_no_reference(
