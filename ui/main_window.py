@@ -14807,12 +14807,8 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def _on_measure_gallery_edit_requested(self, _image_id, filepath: str) -> None:
         path = (filepath or "").strip() or None
-        if not path:
-            return
-        observations_tab = getattr(self, "observations_tab", None)
-        opener = getattr(observations_tab, "open_edit_images_direct", None) if observations_tab is not None else None
-        if callable(opener):
-            opener(selected_image_path=path)
+        if path:
+            self.open_files_for_image(self.active_observation_id, path)
 
     def _on_measure_gallery_delete_selection_requested(self, keys) -> None:
         # Multi-select delete via the right-click menu: delegate to the
@@ -17640,16 +17636,55 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def _on_edit_page_images_requested(self, observation_id: int, path: str) -> None:
         """Edit images in Rediger: Bilder › Files and SD card, on that image."""
+        self.open_files_for_image(observation_id, path)
+
+    def open_files_for_image(self, observation_id, path: str | None = None) -> bool:
+        """Bilder › Files and SD card for ``observation_id``, on ``path`` (stage 9g4a).
+
+        Every “Edit photo” comes here; the Add images dialog is retired. The
+        observation becomes the one shown. A running Live session keeps Bilder
+        on its own observation, so another observation's photo is not opened
+        then: the status line says why. False when there is nothing to open.
+        """
         live = getattr(self, "live_lab_tab", None)
         files = getattr(self, "files_source_page", None)
-        if live is None or files is None:
-            return
+        try:
+            observation_id = int(observation_id or 0)
+        except (TypeError, ValueError):
+            observation_id = 0
+        if live is None or files is None or observation_id <= 0:
+            return False
+        if ObservationDB.get_observation(observation_id) is None:
+            return False
+        if live.is_session_running() and int(live._target_observation_id or 0) != observation_id:
+            QMessageBox.information(
+                self,
+                self.tr("Live session running"),
+                self.tr(
+                    "Images shows the Live session's observation while the session runs. "
+                    "End the session to edit this photo."
+                ),
+            )
+            return True
+        if int(getattr(self, "active_observation_id", 0) or 0) != observation_id:
+            self._activate_for_files(observation_id)
+            # Showing Bilder activates the table's selected row: select this
+            # one now (deferred otherwise), so the switch keeps it.
+            self._select_active_observation_row()
         self.tab_widget.setCurrentWidget(live)
+        if int(getattr(self, "active_observation_id", 0) or 0) != observation_id:
+            self._activate_for_files(observation_id)  # its row is filtered out of the table
         live.show_source(live.SOURCE_FILES)
         self._sync_files_source()
         editor = files.editor()
-        if path and editor is not None and files.observation_id() == int(observation_id):
+        if path and editor is not None and files.observation_id() == observation_id:
             editor.select_image_by_path(path)
+        return True
+
+    def _activate_for_files(self, observation_id: int) -> None:
+        selected = self.observations_tab.get_selected_observation()
+        name = selected[1] if selected and selected[0] == observation_id else ""
+        self.on_observation_selected(observation_id, name, switch_tab=False)
 
     def _switch_tab_from_observations(self, target_index: int) -> None:
         """Switch tabs only when Observations tab is currently active."""

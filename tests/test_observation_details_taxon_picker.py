@@ -577,7 +577,7 @@ def test_the_main_gallery_edit_photo_opens_prepare_images():
     opened = []
 
     class Tab:
-        def open_edit_images_direct(self, selected_image_path=None):
+        def open_edit_images_direct(self, selected_image_path=None, *, observation_id=None):
             opened.append(selected_image_path)
 
     observations_tab.ObservationsTab._on_gallery_edit_requested(Tab(), 3, " /x/photo.jpg ")

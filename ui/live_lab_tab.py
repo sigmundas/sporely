@@ -4077,17 +4077,11 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         self._sidebar_binds_to_selection = False
 
     def _on_session_gallery_edit_requested(self, _image_id, filepath: str) -> None:
-        # Route to the Observations tab's Prepare Images dialog, same as the
-        # Observations-panel "Edit photo" menu.
+        # Edit photo: Bilder › Files and SD card on it (stage 9g4a).
         path = (filepath or "").strip() or None
-        if not path:
-            return
-        observations_tab = getattr(self._main_window, "observations_tab", None) if getattr(self, "_main_window", None) else None
-        if observations_tab is None:
-            return
-        opener = getattr(observations_tab, "open_edit_images_direct", None)
-        if callable(opener):
-            opener(selected_image_path=path)
+        opener = getattr(getattr(self, "_main_window", None), "open_files_for_image", None)
+        if path and callable(opener):
+            opener(self._target_observation_id, path)
 
     def _selection_is_this_sessions(self) -> bool:
         """Shared strip: the selection holds an unsaved capture or one saved this session.

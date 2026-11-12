@@ -12860,79 +12860,30 @@ class ObservationsTab(QWidget):
             self._observation_edit_draft_cache.pop(obs_id, None)
             return
 
-    def open_edit_images_direct(self, selected_image_path: str | None = None):
-        """Open Prepare Images dialog directly for the selected observation.
+    def open_edit_images_direct(
+        self, selected_image_path: str | None = None, *, observation_id: int | None = None,
+    ):
+        """Edit photo: Bilder › Files and SD card on that photo (stage 9g4a).
 
-        Skips ObservationDetailsDialog — useful when triggered via keyboard
-        shortcut (Ctrl/Cmd+E or Alt+E) from the observations table.
+        The observation is ``observation_id`` when the caller knows it (the
+        strip shows one), otherwise the table's single selected row. A
+        cloud-only row opens its cloud editor, as before. The Add images
+        dialog is retired: without the main window nothing opens.
         """
-        selected_rows = self.table.selectionModel().selectedRows()
-        if len(selected_rows) != 1:
-            return
-        row = selected_rows[0].row()
-        obs_id = self._observation_id_for_row(row)
-        if obs_id is None:
-            row_data = self._observation_row_data_for_row(row)
-            if isinstance(row_data, dict) and str(row_data.get("row_kind") or "") == "cloud":
-                self._open_cloud_observation_editor(row_data)
-            return
-        observation = ObservationDB.get_observation(obs_id)
-        if not observation:
-            return
-
-        obs_dt  = _parse_observation_datetime(observation.get("date"))
-        obs_lat = observation.get("gps_latitude")
-        obs_lon = observation.get("gps_longitude")
-
-        existing_images = ImageDB.get_images_for_observation(obs_id)
-        image_results   = self._build_import_results_from_images(existing_images)
-
-        # Capture the currently-viewed image + zoom BEFORE showing the
-        # dialog. On return we want to restore both — an edit triggered
-        # from a Measure/Analysis thumbnail should feel like tab-switching
-        # away and back, not like a fresh observation load that resets
-        # everything to image 1 with default zoom.
-        host = self.window()
-        prior_image_id = None
-        if host is not None:
-            try:
-                prior_image_id = int(getattr(host, "current_image_id", 0) or 0) or None
-            except Exception:
-                prior_image_id = None
-            save_view = getattr(host, "_save_current_image_measure_session_view", None)
-            if callable(save_view):
-                try:
-                    save_view()
-                except Exception:
-                    pass
-
-        image_dialog = ImageImportDialog(
-            self,
-            import_results=image_results,
-            observation_datetime=obs_dt,
-            observation_lat=obs_lat,
-            observation_lon=obs_lon,
-            continue_to_observation_details=False,
-        )
-        # Jump to requested image when provided, otherwise first image.
-        if selected_image_path:
-            image_dialog.select_image_by_path(selected_image_path)
-        elif existing_images:
-            first_path = existing_images[0].get("filepath")
-            if first_path:
-                image_dialog.select_image_by_path(first_path)
-
-        if not image_dialog.exec():
-            return
-
-        self.save_prepared_images(
-            obs_id,
-            observation,
-            existing_images,
-            image_dialog,
-            prior_image_id=prior_image_id,
-            selected_image_path=selected_image_path,
-        )
+        if observation_id is None:
+            selected_rows = self.table.selectionModel().selectedRows()
+            if len(selected_rows) != 1:
+                return
+            row = selected_rows[0].row()
+            observation_id = self._observation_id_for_row(row)
+            if observation_id is None:
+                row_data = self._observation_row_data_for_row(row)
+                if isinstance(row_data, dict) and str(row_data.get("row_kind") or "") == "cloud":
+                    self._open_cloud_observation_editor(row_data)
+                return
+        opener = getattr(self.window(), "open_files_for_image", None)
+        if callable(opener):
+            opener(observation_id, selected_image_path)
 
     def save_prepared_images(
         self,
@@ -13098,7 +13049,9 @@ class ObservationsTab(QWidget):
 
     def _on_gallery_edit_requested(self, _image_id, filepath: str) -> None:
         target_path = (filepath or "").strip() or None
-        self.open_edit_images_direct(selected_image_path=target_path)
+        strip = getattr(self, "gallery_widget", None)
+        shown = strip.shown_observation_id() if strip is not None and hasattr(strip, "shown_observation_id") else None
+        self.open_edit_images_direct(selected_image_path=target_path, observation_id=shown)
 
     def _mark_cloud_observation_imported(
         self,

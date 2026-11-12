@@ -921,18 +921,41 @@ class IngestionHubTab(QWidget):
 
     def _on_staging_gallery_edit_requested(self, _image_id, filepath: str) -> None:
         # "Edit photo" only makes sense for images that have already been
-        # imported into the DB (they carry the "Imported" badge). Route to
-        # Prepare Images via the Observations tab; otherwise no-op.
+        # imported into the DB (they carry the "Imported" badge): Bilder ›
+        # Files and SD card for the match's observation (stage 9g4a).
         path = (filepath or "").strip() or None
         if not path:
             return
         match = self._match_for_path(path)
         if not match or not bool(match.get("already_imported")):
             return
-        observations_tab = getattr(self._main_window, "observations_tab", None) if getattr(self, "_main_window", None) else None
-        opener = getattr(observations_tab, "open_edit_images_direct", None) if observations_tab is not None else None
+        opener = getattr(getattr(self, "_main_window", None), "open_files_for_image", None)
         if callable(opener):
-            opener(selected_image_path=path)
+            opener(match.get("observation_id"), self._stored_path_for_imported_match(match) or path)
+
+    def _stored_path_for_imported_match(self, match: dict) -> str | None:
+        """The saved image a match was recognised as (the rule of ``_filter_already_imported_matches``).
+
+        The card's photo is stored under another path (a copy, a RAW
+        conversion): by file name and capture time, or file name alone.
+        """
+        try:
+            obs_id = int(match.get("observation_id") or 0)
+        except (TypeError, ValueError):
+            return None
+        filename = Path(str(match.get("filepath") or "")).name.casefold()
+        if obs_id <= 0 or not filename:
+            return None
+        captured_key = self._timestamp_key(match.get("captured_at"))
+        by_name = None
+        for image in ImageDB.get_images_for_observation(obs_id):
+            names = {Path(str(image.get(key) or "")).name.casefold() for key in ("filepath", "original_filepath")}
+            if filename not in names:
+                continue
+            if self._timestamp_key(image.get("captured_at")) == captured_key:
+                return image.get("filepath")
+            by_name = by_name or image.get("filepath")
+        return by_name
 
     def _on_staging_gallery_delete_selection_requested(self, keys) -> None:
         # "Delete" in the staging context means exclude from this ingest
