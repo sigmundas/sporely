@@ -13,6 +13,14 @@ Stage 9f2 put the per-image controls on the image. Stage 9f3: the shared
 strip (View, Measure and Live) replaces the editor's own gallery while Bilder
 shows Files; its clicks, selection, removal and reordering go to the editor
 shown, which renders its images there, new ones first.
+
+Stage 9g4b: Ny observasjon starts here, for a not-yet-saved observation
+(owner 2026-11-12). Nothing is written before its Save, which creates it as
+Utkast with the photos' date and GPS and the New observation form's defaults
+(Deling, Posisjon), then Rediger opens. Bilder keeps the new observation on
+screen while the observation it showed stays; choosing another observation
+leaves it, and its photos are kept until saved or discarded (New shows them
+again, quitting asks).
 """
 from __future__ import annotations
 
@@ -31,6 +39,12 @@ class FilesSourcePage(QWidget):
 
     # (observation id, unsaved new images as strip items)
     unsavedChanged = Signal(int, object)
+    # Ny observasjon was saved: the new observation's id (Rediger opens it).
+    newObservationCreated = Signal(int)
+    # Ny observasjon's editor came on screen (True) or went (False).
+    newShownChanged = Signal(bool)
+
+    NEW = -1  # the key of Ny observasjon's editor: there is no observation yet
 
     def __init__(self, observations_tab, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -42,6 +56,10 @@ class FilesSourcePage(QWidget):
         self._frames: dict[int, QScrollArea] = {}
         self._context: dict[int, tuple[dict, list[dict]]] = {}
         self._observation_id: int | None = None
+        # Ny observasjon (stage 9g4b): the observation Bilder showed when it
+        # started; re-showing that one keeps the new observation on screen.
+        self._new_anchor: int | None = None
+        self._new_data: tuple[dict, dict | None] | None = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self._stack = QStackedWidget(self)
@@ -88,7 +106,11 @@ class FilesSourcePage(QWidget):
     # -- which observation ----------------------------------------------------
 
     def observation_id(self) -> int | None:
-        return self._observation_id
+        """The observation shown; None for none and for Ny observasjon."""
+        return None if self._observation_id == self.NEW else self._observation_id
+
+    def is_showing_new(self) -> bool:
+        return self._observation_id == self.NEW
 
     def editor(self) -> ImageImportDialog | None:
         return self._editors.get(self._observation_id) if self._observation_id else None
@@ -97,7 +119,7 @@ class FilesSourcePage(QWidget):
         super().showEvent(event)
         self._watch.start()
         editor = self.editor()
-        if editor is not None and not editor.has_unsaved_changes() and not self._busy:
+        if editor is not None and not editor.has_unsaved_changes() and not self._busy and not self.is_showing_new():
             # Shown again with nothing unsaved: start from what is saved now.
             observation_id = self._observation_id
             self._drop_editor(observation_id)
@@ -113,7 +135,11 @@ class FilesSourcePage(QWidget):
             observation_id = int(observation_id or 0) or None
         except (TypeError, ValueError):
             observation_id = None
-        if observation_id == self._observation_id and (observation_id is None or observation_id in self._editors):
+        if self.is_showing_new():
+            if observation_id == self._new_anchor:
+                return  # Bilder showing its observation again: the new one stays on screen
+            self._leave_new()
+        elif observation_id == self._observation_id and (observation_id is None or observation_id in self._editors):
             return
         previous = self._observation_id
         if previous is not None and previous != observation_id:
@@ -152,17 +178,123 @@ class FilesSourcePage(QWidget):
         if existing_images and existing_images[0].get("filepath"):
             editor.select_image_by_path(existing_images[0]["filepath"])
         editor.set_in_place()  # after the first image loads: the baseline for “unsaved”
-        editor.finished.connect(lambda result, obs=observation_id, ed=editor: self._on_editor_finished(obs, ed, result))
-        editor.unsavedChanged.connect(lambda obs=observation_id, ed=editor: self._mirror_unsaved(obs, ed))
-        self._editors[observation_id] = editor
         self._context[observation_id] = (observation, existing_images)
+        return self._install_editor(observation_id, editor)
+
+    def _install_editor(self, key: int, editor: ImageImportDialog) -> ImageImportDialog:
+        editor.finished.connect(lambda result, obs=key, ed=editor: self._on_editor_finished(obs, ed, result))
+        editor.unsavedChanged.connect(lambda obs=key, ed=editor: self._mirror_unsaved(obs, ed))
+        self._editors[key] = editor
         frame = QScrollArea(self)
         frame.setWidgetResizable(True)
         frame.setFrameShape(QFrame.NoFrame)
         frame.setWidget(editor)
-        self._frames[observation_id] = frame
+        self._frames[key] = frame
         self._stack.addWidget(frame)
         return editor
+
+    # -- Ny observasjon (stage 9g4b) --------------------------------------------
+
+    def start_new_observation(self, paths: list[str] | None = None, *, anchor: int | None = None) -> bool:
+        """Show Ny observasjon's editor, with ``paths`` added (dropped files).
+
+        ``anchor`` is the observation Bilder shows now: it stays the active
+        one, and showing it again keeps the new observation on screen. Photos
+        kept from an earlier start that was left come back.
+        """
+        if self._busy:
+            return False
+        try:
+            self._new_anchor = int(anchor or 0) or None
+        except (TypeError, ValueError):
+            self._new_anchor = None
+        previous = self._observation_id
+        if previous is not None and previous != self.NEW:
+            editor = self._editors.get(previous)
+            if editor is not None and not editor.has_unsaved_changes():
+                self._drop_editor(previous)  # nothing to keep: free it
+        editor = self._editors.get(self.NEW)
+        if editor is None:
+            editor = ImageImportDialog(self, continue_to_observation_details=False)
+            editor.set_in_place()  # nothing saved: every photo added is new
+            self._install_editor(self.NEW, editor)
+        self._observation_id = self.NEW
+        self._stack.setCurrentWidget(self._frames[self.NEW])
+        if paths:
+            editor.add_images(list(paths))
+        self._update_save_row()
+        self._sync_strip()
+        self.newShownChanged.emit(True)
+        return True
+
+    def leave_new_observation(self) -> None:
+        """An explicit choice of what Bilder shows (Edit photo): leave Ny observasjon."""
+        if self.is_showing_new():
+            self._leave_new()
+
+    def observation_chosen(self, observation_id) -> None:
+        """Another observation became the active one: Ny observasjon leaves the screen.
+
+        Also while a Live session keeps Bilder on its own observation (the
+        anchor), so choosing any other observation always leaves it.
+        """
+        try:
+            observation_id = int(observation_id or 0) or None
+        except (TypeError, ValueError):
+            observation_id = None
+        if self.is_showing_new() and observation_id != self._new_anchor:
+            self._leave_new()
+
+    def _leave_new(self) -> None:
+        """Another observation is shown: the new one's photos wait, or it goes."""
+        editor = self._editors.get(self.NEW)
+        self._observation_id = None
+        self._stack.setCurrentWidget(self._empty)  # until Bilder shows its observation
+        self._update_save_row()
+        self._sync_strip()
+        self.newShownChanged.emit(False)
+        if editor is None:
+            return
+        if editor.has_unsaved_changes():
+            set_status = getattr(self._observations_tab, "set_status_message", None)
+            if callable(set_status):
+                set_status(
+                    self.tr("The new observation's photos are kept. New shows them again."),
+                    level="info",
+                    auto_clear_ms=8000,
+                )
+        elif not self._busy:
+            self._drop_editor(self.NEW)
+
+    def _finish_new(self, editor: ImageImportDialog, result: int) -> None:
+        """Ny observasjon's editor closed: Save creates the observation, Discard drops it."""
+        prepared, self._new_data = self._new_data, None
+        created = None
+        try:
+            if result == QDialog.Accepted and prepared is not None:
+                obs_data, ai_state = prepared
+                created = self._observations_tab.create_observation_from_prepared(
+                    obs_data, ai_state, list(editor.import_results),
+                )
+        finally:
+            # Whatever was written (a failure part way included), these photos
+            # are never saved a second time: the editor goes.
+            self._close_new(created)
+        if created is not None:
+            self.newObservationCreated.emit(int(created))
+
+    def _close_new(self, created: int | None) -> None:
+        showing = self.is_showing_new()
+        self._drop_editor(self.NEW)
+        if showing:
+            self._observation_id = None
+            self.newShownChanged.emit(False)
+            self._stack.setCurrentWidget(self._empty)  # Saved: Rediger opens the new one
+            if created is None:
+                self.show_observation(self._new_anchor)  # Discarded: the observation Bilder shows
+        self._new_anchor = None
+        self._update_save_row()
+        self._sync_strip()
 
     def _drop_editor(self, observation_id: int) -> None:
         editor = self._editors.pop(observation_id, None)
@@ -177,10 +309,14 @@ class FilesSourcePage(QWidget):
         if frame is not None:
             self._stack.removeWidget(frame)
             frame.deleteLater()  # and the editor with it
-        self.unsavedChanged.emit(int(observation_id), [])
+        if observation_id != self.NEW:
+            self.unsavedChanged.emit(int(observation_id), [])
 
     def _on_editor_finished(self, observation_id: int, editor: ImageImportDialog, result: int) -> None:
         if self._editors.get(observation_id) is not editor:
+            return
+        if observation_id == self.NEW:
+            self._finish_new(editor, result)
             return
         if result == QDialog.Accepted:
             self._save_editor(observation_id, editor)
@@ -318,6 +454,21 @@ class FilesSourcePage(QWidget):
         self._busy = True  # saving can process events (RAW renders): no second click meanwhile
         self._set_row_enabled(False)
         try:
+            if self.is_showing_new():
+                # The form's defaults, its publish notice and the duplicate
+                # question first: cancelling writes nothing and keeps the photos.
+                # The photo shown gives the date and GPS, as after the dialog's
+                # Continue (“Use for the observation” sets them on it).
+                shown = editor.primary_index
+                chosen = editor.import_results[shown] if shown is not None and 0 <= shown < len(editor.import_results) else None
+                results = editor.results_to_save()
+                self._new_data = self._observations_tab.prepare_new_observation(
+                    results,
+                    primary_index=next((i for i, result in enumerate(results) if result is chosen), None),
+                    suggested_taxon=editor.get_ai_selected_taxon(),
+                )
+                if self._new_data is None:
+                    return
             editor.save_in_place()
         finally:
             self._busy = False
@@ -342,6 +493,19 @@ class FilesSourcePage(QWidget):
     def _update_save_row(self) -> None:
         editor = self.editor()
         self.choose_files_btn.setEnabled(editor is not None and not self._busy)
+        if editor is not None and self.is_showing_new():
+            # A new observation can be saved without photos, as the dialog's could.
+            self.save_row.setVisible(True)
+            self.save_btn.setText(self.tr("Save new observation"))
+            self.discard_btn.setText(self.tr("Discard"))
+            count = len(editor.unsaved_new_results())
+            self.unsaved_label.setText(
+                self.tr("New observation, %n not saved", "", count) if count
+                else self.tr("New observation, no photos yet")
+            )
+            return
+        self.save_btn.setText(self.tr("Save to observation"))
+        self.discard_btn.setText(self.tr("Discard changes"))
         unsaved = editor is not None and editor.has_unsaved_changes()
         self.save_row.setVisible(bool(unsaved))
         if not unsaved:
@@ -354,6 +518,8 @@ class FilesSourcePage(QWidget):
             return
         if observation_id == self._observation_id:
             self._update_save_row()
+        if observation_id == self.NEW:
+            return  # no observation yet: nothing else shows its photos
         items = []
         for number, result in enumerate(editor.unsaved_new_results(), start=1):
             path = str(result.preview_path or result.filepath or "")
@@ -366,7 +532,7 @@ class FilesSourcePage(QWidget):
         return {
             observation_id: len(editor.unsaved_new_results())
             for observation_id, editor in self._editors.items()
-            if editor.unsaved_new_results()
+            if observation_id != self.NEW and editor.unsaved_new_results()
         }
 
     def has_unsaved_work(self) -> bool:

@@ -2847,6 +2847,15 @@ class ImageImportDialog(GeometryMixin, QDialog):
         """Save, as the dialog's Save button does (Bilder's save row)."""
         self._accept_and_close()
 
+    def results_to_save(self) -> list:
+        """The images a save would keep, with the shown photo's edits applied (stage 9g4b).
+
+        Ny observasjon's form is built from these before saving, as it was
+        after the dialog's Continue; failed and skipped imports are left out.
+        """
+        self._apply_to_selected()
+        return self._accepted_import_results()
+
     def unsaved_new_results(self) -> list:
         """Images added here and not saved to the observation yet."""
         return [

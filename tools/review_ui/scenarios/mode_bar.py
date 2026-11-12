@@ -187,6 +187,37 @@ def _images_files(context: ReviewContext, *, size: tuple[int, int] = (1500, 950)
     return host
 
 
+def _images_new(context: ReviewContext, *, size: tuple[int, int] = (1500, 950), photo: bool = True) -> QWidget:
+    """Ny observasjon in Bilder › Files and SD card (stage 9g4b): nothing saved yet.
+
+    ``photo``: one field photo with EXIF time and GPS added; otherwise none yet.
+    """
+    from database.models import ImageDB
+    from ui.main_window import MainWindow
+
+    from ..exif_fixture import jpeg_with_exif
+    from .live_lab import _fresh_profile
+
+    profile = _fresh_profile(context, "images-new")
+    observation_id = create_observation(profile, "images-new")
+    ImageDB.add_image(observation_id, str(jpeg_with_exif(profile.fixtures_dir / "field1.JPG", seed=31)), "field")
+    window = MainWindow()
+    host = _DrainingWindow(window)
+    host.resize(*size)
+    host.show()
+    _settle(0.3)
+    window.on_observation_selected(observation_id, "Inocybe geophylla", switch_tab=False)
+    window.start_new_observation()  # what New does (the tab's window() is the review host here)
+    _settle(0.5)
+    if photo:
+        new_photo = jpeg_with_exif(profile.fixtures_dir / "new1.JPG", seed=32, taken="2026:11:07 10:05:00",
+                                   latitude=63.4305, longitude=10.3951)
+        window.files_source_page.editor().add_images([str(new_photo)])
+        _settle(0.8)
+    _settle(0.6)
+    return host
+
+
 def _edit_mode(context: ReviewContext, *, size: tuple[int, int] = (1500, 950), typed: bool = False) -> QWidget:
     """Rediger in place (stage 9g2): Edit in the mode bar shows the form as a mode.
 
@@ -260,6 +291,42 @@ def register_mode_bar_scenarios(registry: ScenarioRegistry) -> None:
                 locale=locale,
             )
         )
+    for theme in ("light", "dark"):
+        suffix = "" if theme == "light" else "-dark"
+        registry.register(
+            ReviewScenario(
+                id=f"images.new{suffix}",
+                group="mode-bar",
+                title=f"Ny observasjon in Bilder › Files and SD card (nb{', dark' if theme == 'dark' else ''})",
+                description="New opens Files for a not-yet-saved observation, one photo added (stage 9g4b).",
+                build=lambda context: _images_new(context),
+                viewport=(1500, 950),
+                locale="nb_NO",
+                theme=theme,
+            )
+        )
+    registry.register(
+        ReviewScenario(
+            id="images.new-empty",
+            group="mode-bar",
+            title="Ny observasjon, no photos yet (nb)",
+            description="New before any photo is added: Save still creates the observation (stage 9g4b).",
+            build=lambda context: _images_new(context, photo=False),
+            viewport=(1500, 950),
+            locale="nb_NO",
+        )
+    )
+    registry.register(
+        ReviewScenario(
+            id="images.new-small-de",
+            group="mode-bar",
+            title="Ny observasjon, small window (de)",
+            description="German strings in a 1100 × 720 window (stage 9g4b).",
+            build=lambda context: _images_new(context, size=(1100, 720)),
+            viewport=(1100, 720),
+            locale="de_DE",
+        )
+    )
     registry.register(
         ReviewScenario(
             id="images.files-microscope",

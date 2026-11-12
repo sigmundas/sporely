@@ -6129,6 +6129,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.live_lab_tab.add_files_source(self.files_source_page)
         self.live_lab_tab.sourceChanged.connect(lambda _source: self._sync_files_source())
         self.files_source_page.unsavedChanged.connect(self._on_files_unsaved_changed)
+        self.files_source_page.newObservationCreated.connect(self._on_new_observation_created)
+        self.files_source_page.newShownChanged.connect(self._refresh_new_observation_header)
+        self.live_lab_tab.sourceChanged.connect(lambda _source: self._refresh_new_observation_header())
         self.tab_widget.addTab(self.live_lab_tab, self.tr("Live Lab ({alt}L)").format(alt=_ALT_LABEL))
 
         self.ingestion_hub_tab = IngestionHubTab(self)
@@ -14950,6 +14953,10 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def update_observation_header(self, observation_id):
         """Update the observation header label."""
+        if self._files_shows_new_observation():
+            # Ny observasjon (stage 9g4b): not the observation that stays active.
+            self.observation_header_label.setText(self.tr("New observation"))
+            return
         if not observation_id:
             self.observation_header_label.setText("")
             return
@@ -17675,11 +17682,49 @@ class MainWindow(GeometryMixin, QMainWindow):
         if int(getattr(self, "active_observation_id", 0) or 0) != observation_id:
             self._activate_for_files(observation_id)  # its row is filtered out of the table
         live.show_source(live.SOURCE_FILES)
+        files.leave_new_observation()  # this photo, not Ny observasjon (its photos are kept)
         self._sync_files_source()
         editor = files.editor()
         if path and editor is not None and files.observation_id() == observation_id:
             editor.select_image_by_path(path)
         return True
+
+    def start_new_observation(self, paths: list[str] | None = None) -> bool:
+        """Ny observasjon: Bilder › Files and SD card for a not-yet-saved observation (stage 9g4b).
+
+        New (the button, N, the list's New) and files dropped on View come
+        here. Nothing is written before its Save; the observation shown
+        stays the active one meanwhile.
+        """
+        live = getattr(self, "live_lab_tab", None)
+        files = getattr(self, "files_source_page", None)
+        if live is None or files is None:
+            return False
+        self.tab_widget.setCurrentWidget(live)
+        live.show_source(live.SOURCE_FILES)
+        self._sync_files_source()
+        return files.start_new_observation(paths, anchor=live._target_observation_id)
+
+    def _files_shows_new_observation(self) -> bool:
+        live = getattr(self, "live_lab_tab", None)
+        files = getattr(self, "files_source_page", None)
+        tabs = getattr(self, "tab_widget", None)
+        return bool(
+            live is not None and files is not None and tabs is not None
+            and files.is_showing_new()
+            and tabs.currentWidget() is live
+            and live.current_source() == live.SOURCE_FILES
+        )
+
+    def _refresh_new_observation_header(self, *_args) -> None:
+        """The header names Ny observasjon while Bilder shows it, the active observation otherwise."""
+        files = getattr(self, "files_source_page", None)
+        if files is not None and (files.is_showing_new() or _args):
+            self.update_observation_header(getattr(self, "active_observation_id", None))
+
+    def _on_new_observation_created(self, observation_id: int) -> None:
+        """Ny observasjon was saved: Rediger opens it, once Files has settled."""
+        QTimer.singleShot(0, self, lambda: self.open_edit_mode(observation_id))
 
     def _activate_for_files(self, observation_id: int) -> None:
         selected = self.observations_tab.get_selected_observation()
@@ -17768,6 +17813,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Handle tab changes for analysis/measure."""
         _t0 = time.perf_counter()
         self._place_shared_strip(index)
+        self._refresh_new_observation_header()
         if index == 0 and hasattr(self, "_sync_observations_tab_publish_state"):
             self._sync_observations_tab_publish_state(self.active_observation_id)
         if index in (1, 2, 3, 4) and hasattr(self, "observations_tab"):
@@ -23766,6 +23812,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         if hasattr(self, "live_lab_tab") and self.live_lab_tab is not None:
             try:
                 self.live_lab_tab.set_target_observation(observation_id, display_name=display_name)
+                if getattr(self, "files_source_page", None) is not None:
+                    self.files_source_page.observation_chosen(observation_id)  # leaves Ny observasjon
                 self._sync_files_source()
             except Exception:
                 pass

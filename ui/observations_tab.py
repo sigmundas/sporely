@@ -13248,115 +13248,125 @@ class ObservationsTab(QWidget):
             return
 
     def create_new_observation(self, initial_image_paths: list[str] | None = None):
-        """Show dialog to create new observation."""
-        image_results: list[ImageImportResult] = []
-        primary_index = None
-        draft_observation: dict | None = None
-        ai_state: dict | None = None
-        ai_taxon: dict | None = None
-        while True:
-            image_dialog = ImageImportDialog(
-                self,
-                image_paths=initial_image_paths if not image_results else None,
-                import_results=image_results or None,
-                continue_to_observation_details=True,
+        """Ny observasjon: Bilder › Files and SD card for a not-yet-saved observation.
+
+        Stage 9g4b (owner 2026-11-12): the Add images and New observation
+        dialogs are retired. Nothing is written until Files' Save, which
+        creates it as Utkast (``prepare_new_observation`` and
+        ``create_observation_from_prepared``); then Rediger opens.
+        """
+        start = getattr(self.window(), "start_new_observation", None)
+        if callable(start):
+            start(list(initial_image_paths or []) or None)
+
+    def prepare_new_observation(
+        self,
+        image_results: list[ImageImportResult],
+        primary_index: int | None = None,
+        suggested_taxon: dict | None = None,
+    ) -> tuple[dict, dict | None] | None:
+        """What the New observation form saves when OK is pressed unchanged (stage 9g4b).
+
+        The form is built off-screen from the photos, as the dialog opened
+        after Prepare Images, so the date, GPS and its attribution, Deling,
+        Posisjon and Utkast are its defaults. Its publish notice and the
+        possible-duplicate question are asked as before. ``(data, AI state)``,
+        or None when the user cancelled (nothing is written).
+        """
+        form = ObservationDetailsDialog(
+            self,
+            image_results=image_results,
+            primary_index=primary_index,
+            suggested_taxon=suggested_taxon,
+        )
+        try:
+            try:
+                form.finished.disconnect(form._save_geometry)  # never shown: no window geometry to remember
+            except (RuntimeError, TypeError):
+                pass
+            if not form.confirm_publish_change():
+                return None
+            obs_data = form.get_data()
+            ai_state = form.get_ai_state()
+        finally:
+            form._cleanup_dialog_threads()
+            # The form queued its layout setup on opening; it runs on a form
+            # never shown, then the form goes (deleting it now would leave
+            # those calls a deleted form). No place-name lookup starts.
+            form._initial_gallery_refresh_pending = False
+            form._deferred_location_lookup_pending = False
+            QTimer.singleShot(0, form.deleteLater)
+        author = SettingsDB.get_profile().get("name")
+        if author:
+            obs_data["author"] = author
+        if not self._confirm_duplicate_observation_creation(obs_data, image_results):
+            return None
+        return obs_data, ai_state
+
+    def create_observation_from_prepared(
+        self,
+        obs_data: dict,
+        ai_state: dict | None,
+        image_results: list[ImageImportResult],
+    ) -> int:
+        """Create the observation and save its photos, as the New observation dialog did."""
+        obs_id = ObservationDB.create_observation(**obs_data)
+        if ai_state:
+            ObservationDB.update_observation(
+                obs_id,
+                ai_state_json=self._serialize_ai_state(ai_state),
+                allow_nulls=True,
             )
-            if not image_dialog.exec():
-                return
-            image_results = image_dialog.import_results
-            primary_index = image_dialog.primary_index
-            if ai_state:
-                ai_state = self._remap_ai_state_to_images(ai_state, image_results)
-            ai_taxon = image_dialog.get_ai_selected_taxon() or ai_taxon
-            dialog = ObservationDetailsDialog(
+        progress = None
+        progress_cb = None
+        total_images = len(image_results)
+        if total_images:
+            progress = QProgressDialog(
+                self.tr("Processing images..."),
+                None,
+                0,
+                total_images,
                 self,
-                image_results=image_results,
-                primary_index=primary_index,
-                allow_edit_images=True,
-                suggested_taxon=ai_taxon,
-                ai_state=ai_state,
-                draft_data=draft_observation,
             )
-            if dialog.exec():
-                obs_data = dialog.get_data()
-                image_results = list(dialog.image_results)
-                primary_index = dialog.primary_index
-                ai_state = dialog.get_ai_state()
-                draft_observation = dict(obs_data)
-                profile = SettingsDB.get_profile()
-                author = profile.get("name")
-                if author:
-                    obs_data["author"] = author
+            progress.setWindowTitle(self.tr("Processing Images"))
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setAutoClose(True)
+            progress.setAutoReset(True)
+            progress.setCancelButton(None)
+            progress.setMinimumDuration(300)
 
-                if not self._confirm_duplicate_observation_creation(obs_data, image_results):
-                    continue
-
-                obs_id = ObservationDB.create_observation(**obs_data)
-                if ai_state:
-                    ObservationDB.update_observation(
-                        obs_id,
-                        ai_state_json=self._serialize_ai_state(ai_state),
-                        allow_nulls=True,
+            def progress_cb(index, total, _result):
+                if total <= 0:
+                    return
+                progress.setMaximum(total)
+                progress.setValue(index)
+                progress.setLabelText(
+                    self.tr("Processing image {current}/{total}").format(
+                        current=index,
+                        total=total,
                     )
-                progress = None
-                progress_cb = None
-                total_images = len(image_results)
-                if total_images:
-                    progress = QProgressDialog(
-                        self.tr("Processing images..."),
-                        None,
-                        0,
-                        total_images,
-                        self,
-                    )
-                    progress.setWindowTitle(self.tr("Processing Images"))
-                    progress.setWindowModality(Qt.WindowModal)
-                    progress.setAutoClose(True)
-                    progress.setAutoReset(True)
-                    progress.setCancelButton(None)
-                    progress.setMinimumDuration(300)
+                )
+                QApplication.processEvents()
 
-                    def progress_cb(index, total, _result):
-                        if total <= 0:
-                            return
-                        progress.setMaximum(total)
-                        progress.setValue(index)
-                        progress.setLabelText(
-                            self.tr("Processing image {current}/{total}").format(
-                                current=index,
-                                total=total,
-                            )
-                        )
-                        QApplication.processEvents()
+        try:
+            self._apply_import_results_to_observation(
+                obs_id,
+                image_results,
+                progress_cb=progress_cb,
+            )
+        finally:
+            if progress is not None:
+                progress.setValue(total_images)
+                progress.close()
 
-                try:
-                    self._apply_import_results_to_observation(
-                        obs_id,
-                        image_results,
-                        progress_cb=progress_cb,
-                    )
-                finally:
-                    if progress is not None:
-                        progress.setValue(total_images)
-                        progress.close()
-
-                self.refresh_observations()
-                for row, obs in enumerate(ObservationDB.get_all_observations()):
-                    if obs['id'] == obs_id:
-                        self.table.selectRow(row)
-                        self.selected_observation_id = obs_id
-                        self.on_selection_changed()
-                        break
-                self.set_status_message(self.tr("Observation created."), level="success")
-                return
-
-            if dialog.request_edit_images:
-                draft_observation = dict(dialog.get_data())
-                ai_state = dialog.get_ai_state()
-                image_results = list(dialog.image_results)
-                primary_index = dialog.primary_index
-                continue
-            return
+        self.refresh_observations()
+        row = self._find_table_row_for_observation(obs_id)  # filtered or sorted tables too
+        if row >= 0:
+            self.table.selectRow(row)
+            self.selected_observation_id = obs_id
+            self.on_selection_changed()
+        self.set_status_message(self.tr("Observation created."), level="success")
+        return obs_id
 
     def export_for_ml(self):
         """Export annotations in COCO format for ML training."""
