@@ -59,6 +59,26 @@ def _key_groups() -> tuple[tuple[frozenset, frozenset], ...]:
     return (taxon_core, taxon), (point, position)
 
 
+# Bookkeeping that changes without changing what the form shows (a save's
+# timestamp, sync status): no reason to rebuild the form.
+_BOOKKEEPING_COLUMNS = frozenset({
+    "updated_at", "sync_status", "synced_at", "sync_error_code", "sync_error_message",
+    "sync_blocked_reason", "sync_blocked_at", "mosaic_signature",
+})
+
+
+def _content(state):
+    """A stored state without its bookkeeping columns (None stays None)."""
+    if state is None:
+        return None
+    row, images, language = state
+    return (
+        {key: value for key, value in row.items() if key not in _BOOKKEEPING_COLUMNS},
+        images,
+        language,
+    )
+
+
 class EditObservationPage(QWidget):
     """One in-place editor for the observation shown; changes save as you go."""
 
@@ -640,7 +660,7 @@ class EditObservationPage(QWidget):
         if not self._stale or self._editor is None or self._saving:
             return
         stored = self._read_stored_state()
-        if self._must_reload or stored is None or stored != self._stored_state:
+        if self._must_reload or stored is None or _content(stored) != _content(self._stored_state):
             self.reload()
         else:
             self._stale = False
