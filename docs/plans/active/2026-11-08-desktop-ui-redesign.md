@@ -578,7 +578,10 @@ sorts everything else, read-only, into a table the owner approves:
 
 Counted at `063ad84` with an AST pass over `ui/`, `utils/` and `main.py`
 (not `tests/`): 36 dialog classes, 20 inline `QDialog(...)` builds and 191
-`QMessageBox` calls. “Dead” means no caller in the app; only tests use it.
+`QMessageBox` calls. “Dead” means no path in the running app; only tests and
+the review tooling (render scenarios, the macOS check) use it, so a removal
+updates those too. Checked by Codex: the counts reproduce and no dialog is
+missing.
 Stage 9 already made Rediger observasjon and Legg til bilder in-place pages
 (`ObservationDetailsDialog` and `ImageImportDialog` stay as the widgets
 Rediger and Filer host; neither opens as a window any more).
@@ -588,14 +591,14 @@ Rediger and Filer host; neither opens as a window any more).
 | Level | Dialogs | Why |
 | --- | --- | --- |
 | Done in stage 9 (in place) | `ObservationDetailsDialog` (Rediger), `ImageImportDialog` (Filer og SD-kort) | Never open as windows now |
-| Dialog (stays) | `CalibrationDialog` and `NewObjectiveDialog` (Kalibrer objektiv), `SettingsHubDialog` (Preferanser; it embeds `DatabaseSettingsDialog` and `ArtsobservasjonerSettingsDialog` as pages), `SyncShotDialog` (the time code), `CloudConflictDialog`, `ReferenceLibraryManagerDialog` and its three forms, `SharedReferenceCatalogueDialog`, `MySharedReferencesDialog`, `ReferenceCreateDialog`, `ReferenceAddDialog` (still reached: editing a comparison row, upgrading a legacy reference), `MicroscopeSettingsDialog` (batch correction), `ScaleBarImportDialog`, `SpeciesPlateDialog`, the three export dialogs, `PortableImportDialog`, `DatabaseBundleOptionsDialog` | Rare setup, data entry or a whole task of its own |
+| Dialog (stays) | `CalibrationDialog` and `NewObjectiveDialog` (Kalibrer objektiv), `SettingsHubDialog` (Preferanser; it embeds `DatabaseSettingsDialog` and `ArtsobservasjonerSettingsDialog` as pages), `SyncShotDialog` (the time code), `CloudConflictDialog`, `ReferenceLibraryManagerDialog` and its three forms, `SharedReferenceCatalogueDialog`, `MySharedReferencesDialog`, `ReferenceCreateDialog`, `ReferenceAddDialog` (still reached: editing a comparison row), `MicroscopeSettingsDialog` (batch correction), `ScaleBarImportDialog`, `SpeciesPlateDialog`, the three export dialogs, `PortableImportDialog`, `DatabaseBundleOptionsDialog` | Rare setup, data entry or a whole task of its own |
 | Dialog (stays, inline) | Destructive confirmations (`dialog_helpers.ask_wrapped_yes_no*`, `ask_measurements_exist_delete`, Kalibrer objektiv's in-use and unsaved-changes questions, possible duplicate observation), credential prompts (Mushroom Observer, Sporely Cloud, Artportalen, Artsobservasjoner web login), cloud sync error details | Destructive or credentials |
 | Drawer | Map services (`MapServiceHelper.show_map_service_dialog`): a menu on Rediger's map line, which 9g3a already made one line with ▸ | An occasional task beside its control |
 | Merge | The two `_build_cloud_sync_details_dialog` (Preferanser and the main window build nearly the same dialog, 13 and 18 lines) | One builder |
 | Check | `show_auto_debug_dialog` (auto-measure traces): developer-only; gate it behind a debug setting or remove | Not for users |
-| Remove (dead) | `AddReferenceDialog` and `_on_add_reference_clicked` (its button went in stage 7; keep the shared `EditorScrollArea`, preview pane and candidate helpers), `ReferenceValuesDialog` (`open_reference_values_dialog`), `CloudReferenceDialog` (`_on_reference_panel_cloud_clicked`), `ReferenceLibraryAttachDialog` (`_on_attach_library_reference_clicked`, `_on_manage_reference_library_from_attach`), `_on_reference_panel_add_clicked` and `_on_reference_panel_edit_clicked`, `LanguageSettingsDialog` and `AppearanceDialog` with their openers and `open_database_settings_dialog` (Preferanser has these pages), `open_profile_dialog`, `open_gallery_plot_settings`, `ObservationSelectionDialog`, `LoadingDialog`, `ScaleBarCalibrationDialog`, `RenameObservationDialog`, `CloudSyncDialog` (only tests use it: keep what they cover), `ObservationDetailsDialog._confirm_unfinished_taxon_search` (dialog paths only) | No caller in the app |
+| Remove (dead) | `AddReferenceDialog`'s window and `_on_add_reference_clicked` (its button went in stage 7; the reference drawer still calls its static `_library_group_heading`, `_relevance_badge_text` and `_semantic_badge_text`, which move first, and `EditorScrollArea`, the preview pane and the candidate helpers stay), `_on_reference_panel_plot_clicked` and `_normalize_legacy_reference_for_plot` (no caller), `ReferenceValuesDialog` (`open_reference_values_dialog`), `CloudReferenceDialog` (`_on_reference_panel_cloud_clicked`), `ReferenceLibraryAttachDialog` (`_on_attach_library_reference_clicked`, `_on_manage_reference_library_from_attach`), `_on_reference_panel_add_clicked` and `_on_reference_panel_edit_clicked`, `LanguageSettingsDialog` and `AppearanceDialog` with their openers and `open_database_settings_dialog` (Preferanser has these pages), `open_profile_dialog`, `open_gallery_plot_settings`, `ObservationSelectionDialog`, `LoadingDialog`, `ScaleBarCalibrationDialog`, `RenameObservationDialog`, `CloudSyncDialog` (only tests use it: keep what they cover), `ObservationDetailsDialog._confirm_unfinished_taxon_search` (dialog paths only) | No caller in the app |
 
-**Message boxes by screen and kind** (176 outside dead code; 15 more go with
+**Message boxes by screen and kind** (171 outside dead code; 20 more go with
 the removals). Proposed handling per kind:
 
 - *Validation* (“Please enter…”, “Select … first”, “Missing …”): an inline
@@ -619,17 +622,17 @@ the removals). Proposed handling per kind:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Kalibrer objektiv | 18 | 3 | 1 | 0 | 6 | 2 | 30 |
 | Preferanser and logins | 7 | 1 | 5 | 0 | 32 | 3 | 48 |
-| References and library | 8 | 0 | 1 | 6 | 26 | 8 | 49 |
-| Main window, Vis, Mål, Bilder, Rediger | 5 | 0 | 1 | 4 | 12 | 11 | 33 |
+| References and library | 8 | 0 | 1 | 6 | 23 | 8 | 46 |
+| Main window, Vis, Mål, Bilder, Rediger | 5 | 0 | 1 | 3 | 12 | 10 | 31 |
 | Import, restore, backup | 0 | 3 | 1 | 0 | 9 | 1 | 14 |
 | Cloud sync | 0 | 0 | 0 | 0 | 1 | 1 | 2 |
-| All | 38 | 7 | 9 | 10 | 86 | 26 | 176 |
+| All | 38 | 7 | 9 | 9 | 83 | 25 | 171 |
 
 **Follow-up stages (proposed, each its own commit and report)**
 
 | Stage | What | Gate |
 | --- | --- | --- |
-| 10a | Remove the dead dialogs, handlers and openers above, with their tests or the coverage moved to live code; no behaviour change | Agent-verified |
+| 10a | Remove the dead dialogs, handlers and openers above, with their tests and review scenarios, or the coverage moved to live code; no behaviour change | Agent-verified |
 | 10b | One shared non-blocking notice (in each screen's hint bar or one app-wide place, the owner's choice), with optional Details and Undo, stays-until-dismissed for errors | Layout opinion |
 | 10c | Kalibrer objektiv: validation inline, busy states as disabled actions, success and failures as notices | Layout opinion |
 | 10d | Preferanser and logins: validation inline, login and logout failures as notices with Details; the two cloud-sync detail builders merged | Layout opinion |
