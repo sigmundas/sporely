@@ -821,15 +821,10 @@ class IngestionHubTab(QWidget):
 
     @staticmethod
     def _timestamp_key(value) -> str | None:
-        if isinstance(value, datetime):
-            return value.replace(microsecond=0).isoformat(sep=" ")
-        text = str(value or "").strip()
-        if not text:
-            return None
-        parsed = IngestionHubTab._parse_observation_datetime(text)
-        if parsed is None:
-            return text
-        return parsed.replace(microsecond=0).isoformat(sep=" ")
+        # Shared with Bilder › Files' “From SD card” (stage 9i): one rule for “already imported”.
+        from utils.card_photos import capture_key
+
+        return capture_key(value)
 
     def _on_observation_changed(self, _current, _previous) -> None:
         self._refresh_gallery()

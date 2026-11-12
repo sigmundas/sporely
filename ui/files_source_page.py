@@ -21,12 +21,18 @@ Utkast with the photos' date and GPS and the New observation form's defaults
 screen while the observation it showed stays; choosing another observation
 leaves it, and its photos are kept until saved or discarded (New shows them
 again, quitting asks).
+
+Stage 9i: “From SD card (new photos)” beside “Choose files…” adds the photos
+on the camera's card that are not in Sporely yet and were taken on the
+observation's day (for Ny observasjon: the newest day on the card); see
+``utils.card_photos`` (owner 2026-11-12).
 """
 from __future__ import annotations
 
 from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtWidgets import (
-    QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget,
+    QApplication, QDialog, QFileDialog, QFrame, QHBoxLayout, QInputDialog, QLabel, QMessageBox, QPushButton,
+    QScrollArea, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from database.models import ImageDB, ObservationDB
@@ -98,6 +104,10 @@ class FilesSourcePage(QWidget):
         self.choose_files_btn.setObjectName("outlineButton")
         self.choose_files_btn.clicked.connect(self._choose_files)
         self.choose_files_btn.setEnabled(False)
+        self.sd_card_btn = QPushButton(self.tr("From SD card (new photos)"), self)
+        self.sd_card_btn.setObjectName("outlineButton")
+        self.sd_card_btn.clicked.connect(self._from_sd_card)
+        self.sd_card_btn.setEnabled(False)
         self._empty = QLabel(self.tr("Choose an observation to add files and photos from an SD card to it."), self)
         self._empty.setAlignment(Qt.AlignCenter)
         self._empty.setWordWrap(True)
@@ -435,17 +445,131 @@ class FilesSourcePage(QWidget):
 
     def header_actions(self) -> list[QWidget]:
         """Widgets for the row with Bilder's source switch, shown with this source."""
-        return [self.choose_files_btn]
+        return [self.choose_files_btn, self.sd_card_btn]
 
     def _choose_files(self) -> None:
         editor = self.editor()
         if editor is not None and not self._busy:
             editor.add_files()
 
+    # -- From SD card (stage 9i) ---------------------------------------------------
+
+    def _choose_card_folder(self):
+        """The camera card to read: the one found, the one chosen of several, or a folder chosen instead."""
+        from pathlib import Path
+
+        from database.models import SettingsDB
+        from utils import card_photos
+
+        cards = card_photos.find_camera_cards()
+        if len(cards) == 1:
+            return cards[0]
+        if len(cards) > 1:
+            names = [str(card) for card in cards]
+            name, ok = QInputDialog.getItem(
+                self, self.tr("SD card"), self.tr("Several SD cards are connected. Read which one?"), names, 0, False,
+            )
+            return Path(name) if ok and name in names else None
+        remembered = str(SettingsDB.get_setting(card_photos.SETTING_CARD_FOLDER, "") or "").strip()
+        remembered_path = Path(remembered) if remembered and Path(remembered).is_dir() else None
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Information)
+        box.setWindowTitle(self.tr("SD card"))
+        box.setText(self.tr("No SD card found (a drive with a DCIM folder). Read a folder instead?"))
+        use_btn = None
+        if remembered_path is not None:
+            use_btn = box.addButton(self.tr("Use {name}").format(name=remembered_path.name or str(remembered_path)),
+                                    QMessageBox.AcceptRole)
+        choose_btn = box.addButton(self.tr("Choose folder…"), QMessageBox.ActionRole)
+        box.addButton(QMessageBox.Cancel)
+        box.exec()
+        if use_btn is not None and box.clickedButton() is use_btn:
+            return remembered_path
+        if box.clickedButton() is not choose_btn:
+            return None
+        folder = QFileDialog.getExistingDirectory(
+            self, self.tr("Choose the folder with the photos"), str(remembered_path or Path.home()),
+        )
+        if not folder:
+            return None
+        SettingsDB.set_setting(card_photos.SETTING_CARD_FOLDER, folder)
+        return Path(folder)
+
+    def _status(self, text: str, level: str = "info") -> None:
+        set_status = getattr(self._observations_tab, "set_status_message", None)
+        if callable(set_status):
+            set_status(text, level=level, auto_clear_ms=10000)
+
+    def _from_sd_card(self) -> None:
+        """Add the card's photos not in Sporely yet, taken on the observation's day (owner 2026-11-12)."""
+        editor = self.editor()
+        if editor is None or self._busy:
+            return
+        folder = self._choose_card_folder()
+        if folder is None or editor is not self.editor() or self._busy:
+            return
+        # Reading the card and adding its photos keep the event loop turning:
+        # no second click meanwhile, and the editor stays (as while saving).
+        self._busy = True
+        self._set_row_enabled(False)
+        try:
+            self._add_card_photos(editor, folder)
+        finally:
+            self._busy = False
+            self._set_row_enabled(True)
+            self._update_save_row()
+
+    def _add_card_photos(self, editor: ImageImportDialog, folder) -> None:
+        from utils import card_photos
+
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            rows = card_photos.new_photo_rows(folder)
+        finally:
+            QApplication.restoreOverrideCursor()
+        if editor is not self.editor():
+            return  # the page moved on while the card was read
+        # The day first, from the photos not in Sporely: pressing again keeps
+        # the same day (the editor's own photos are left out after).
+        if self.is_showing_new():
+            day = card_photos.newest_day(rows)
+        else:
+            day = card_photos.observation_day((ObservationDB.get_observation(self._observation_id) or {}).get("date"))
+        # Not twice: photos added to this editor already (and not saved yet).
+        in_editor = {
+            str(path) for result in editor.import_results
+            for path in (getattr(result, "filepath", None), getattr(result, "original_filepath", None),
+                         getattr(result, "preview_path", None))
+            if path
+        } | {str(path) for path in getattr(editor, "image_paths", []) if path}
+        rows = [row for row in rows if not set(card_photos.paths_for_row(row)) & in_editor]
+        chosen = card_photos.rows_on_day(rows, day)
+        if not chosen:
+            if day is None:
+                text = self.tr("No new photos on the SD card.") if not rows else self.tr(
+                    "The observation has no date: no photos were added from the SD card."
+                )
+            else:
+                others = len(rows) - len(chosen)
+                text = self.tr("No new photos from {day} on the SD card ({count} new on other days).").format(
+                    day=day.isoformat(), count=others,
+                )
+            self._status(text)
+            return
+        paths: list[str] = []
+        for row in chosen:
+            paths.extend(path for path in card_photos.paths_for_row(row) if path not in paths)
+        editor.add_images(paths)
+        self._status(
+            self.tr("Added %n new photo(s) from the SD card, taken on {day}.", "", len(chosen)).format(day=day.isoformat()),
+            level="success",
+        )
+
     def _set_row_enabled(self, enabled: bool) -> None:
         self.save_btn.setEnabled(enabled)
         self.discard_btn.setEnabled(enabled)
         self.choose_files_btn.setEnabled(enabled and self.editor() is not None)
+        self.sd_card_btn.setEnabled(enabled and self.editor() is not None)
 
     def _save(self) -> None:
         editor = self.editor()
@@ -493,6 +617,7 @@ class FilesSourcePage(QWidget):
     def _update_save_row(self) -> None:
         editor = self.editor()
         self.choose_files_btn.setEnabled(editor is not None and not self._busy)
+        self.sd_card_btn.setEnabled(editor is not None and not self._busy)
         if editor is not None and self.is_showing_new():
             # A new observation can be saved without photos, as the dialog's could.
             self.save_row.setVisible(True)

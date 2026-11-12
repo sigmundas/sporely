@@ -4088,44 +4088,103 @@ Slektsnavnet må skrives fullt ut: fellesskapssøket treffer nøyaktig, ikke på
 <context>
     <name>FilesSourcePage</name>
     <message>
-        <location filename="../ui/files_source_page.py" line="76"/>
-        <location filename="../ui/files_source_page.py" line="508"/>
+        <location filename="../ui/files_source_page.py" line="82"/>
+        <location filename="../ui/files_source_page.py" line="633"/>
         <source>Discard changes</source>
         <translation>Forkast endringer</translation>
     </message>
     <message>
-        <location filename="../ui/files_source_page.py" line="80"/>
-        <location filename="../ui/files_source_page.py" line="507"/>
+        <location filename="../ui/files_source_page.py" line="86"/>
+        <location filename="../ui/files_source_page.py" line="632"/>
         <source>Save to observation</source>
         <translation>Lagre til observasjon</translation>
     </message>
     <message>
-        <location filename="../ui/files_source_page.py" line="97"/>
+        <location filename="../ui/files_source_page.py" line="103"/>
         <source>Choose files…</source>
         <translation>Velg filer…</translation>
     </message>
     <message>
-        <location filename="../ui/files_source_page.py" line="101"/>
+        <location filename="../ui/files_source_page.py" line="107"/>
+        <source>From SD card (new photos)</source>
+        <translation>Fra SD-kort (nye bilder)</translation>
+    </message>
+    <message>
+        <location filename="../ui/files_source_page.py" line="111"/>
         <source>Choose an observation to add files and photos from an SD card to it.</source>
         <translation>Velg en observasjon for å legge til filer og bilder fra et SD-kort.</translation>
     </message>
     <message>
-        <location filename="../ui/files_source_page.py" line="262"/>
+        <location filename="../ui/files_source_page.py" line="272"/>
         <source>The new observation&apos;s photos are kept. New shows them again.</source>
         <translation>Bildene til den nye observasjonen beholdes. Ny viser dem igjen.</translation>
     </message>
     <message>
-        <location filename="../ui/files_source_page.py" line="499"/>
+        <location filename="../ui/files_source_page.py" line="470"/>
+        <location filename="../ui/files_source_page.py" line="477"/>
+        <source>SD card</source>
+        <translation>SD-kort</translation>
+    </message>
+    <message>
+        <location filename="../ui/files_source_page.py" line="470"/>
+        <source>Several SD cards are connected. Read which one?</source>
+        <translation>Flere SD-kort er koblet til. Hvilket skal leses?</translation>
+    </message>
+    <message>
+        <location filename="../ui/files_source_page.py" line="478"/>
+        <source>No SD card found (a drive with a DCIM folder). Read a folder instead?</source>
+        <translation>Fant ikke noe SD-kort (en stasjon med en DCIM-mappe). Vil du lese en mappe i stedet?</translation>
+    </message>
+    <message>
+        <location filename="../ui/files_source_page.py" line="481"/>
+        <source>Use {name}</source>
+        <translation>Bruk {name}</translation>
+    </message>
+    <message>
+        <location filename="../ui/files_source_page.py" line="483"/>
+        <source>Choose folder…</source>
+        <translation>Velg mappe …</translation>
+    </message>
+    <message>
+        <location filename="../ui/files_source_page.py" line="491"/>
+        <source>Choose the folder with the photos</source>
+        <translation>Velg mappen med bildene</translation>
+    </message>
+    <message>
+        <location filename="../ui/files_source_page.py" line="549"/>
+        <source>No new photos on the SD card.</source>
+        <translation>Ingen nye bilder på SD-kortet.</translation>
+    </message>
+    <message>
+        <location filename="../ui/files_source_page.py" line="550"/>
+        <source>The observation has no date: no photos were added from the SD card.</source>
+        <translation>Observasjonen har ingen dato: ingen bilder ble lagt til fra SD-kortet.</translation>
+    </message>
+    <message>
+        <location filename="../ui/files_source_page.py" line="554"/>
+        <source>No new photos from {day} on the SD card ({count} new on other days).</source>
+        <translation>Ingen nye bilder fra {day} på SD-kortet ({count} nye fra andre dager).</translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../ui/files_source_page.py" line="564"/>
+        <source>Added %n new photo(s) from the SD card, taken on {day}.</source>
+        <translation>
+            <numerusform>La til %n nytt bilde fra SD-kortet, tatt {day}.</numerusform>
+            <numerusform>La til %n nye bilder fra SD-kortet, tatt {day}.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location filename="../ui/files_source_page.py" line="624"/>
         <source>Save new observation</source>
         <translation>Lagre ny observasjon</translation>
     </message>
     <message>
-        <location filename="../ui/files_source_page.py" line="500"/>
+        <location filename="../ui/files_source_page.py" line="625"/>
         <source>Discard</source>
         <translation>Forkast</translation>
     </message>
     <message numerus="yes">
-        <location filename="../ui/files_source_page.py" line="503"/>
+        <location filename="../ui/files_source_page.py" line="628"/>
         <source>New observation, %n not saved</source>
         <translation>
             <numerusform>Ny observasjon, %n ikke lagret</numerusform>
@@ -4133,12 +4192,12 @@ Slektsnavnet må skrives fullt ut: fellesskapssøket treffer nøyaktig, ikke på
         </translation>
     </message>
     <message>
-        <location filename="../ui/files_source_page.py" line="504"/>
+        <location filename="../ui/files_source_page.py" line="629"/>
         <source>New observation, no photos yet</source>
         <translation>Ny observasjon, ingen bilder ennå</translation>
     </message>
     <message numerus="yes">
-        <location filename="../ui/files_source_page.py" line="514"/>
+        <location filename="../ui/files_source_page.py" line="639"/>
         <source>%n not saved</source>
         <translation>
             <numerusform>%n ikke lagret</numerusform>
@@ -4146,12 +4205,12 @@ Slektsnavnet må skrives fullt ut: fellesskapssøket treffer nøyaktig, ikke på
         </translation>
     </message>
     <message>
-        <location filename="../ui/files_source_page.py" line="514"/>
+        <location filename="../ui/files_source_page.py" line="639"/>
         <source>Unsaved changes</source>
         <translation>Endringer ikke lagret</translation>
     </message>
     <message>
-        <location filename="../ui/files_source_page.py" line="528"/>
+        <location filename="../ui/files_source_page.py" line="653"/>
         <source>NEW</source>
         <translation>NY</translation>
     </message>
@@ -5156,7 +5215,7 @@ Mangler skala: {missing}</translation>
     </message>
     <message>
         <location filename="../ui/ingestion_hub_tab.py" line="243"/>
-        <location filename="../ui/ingestion_hub_tab.py" line="1038"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1033"/>
         <source>Matched image</source>
         <translation>Koblet bilde</translation>
     </message>
@@ -5321,244 +5380,244 @@ Mangler skala: {missing}</translation>
         <translation>Skannet {count} bilde(r) fra importmappen og gjenopprettet et sannsynlig klokkeavvik for kameraet.</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="874"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="869"/>
         <source>Imported</source>
         <translation>Importert</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="896"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="891"/>
         <source>No matched images</source>
         <translation>Ingen koblede bilder</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="897"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="892"/>
         <source>Scan a folder and choose an observation with matched field or microscope imports.</source>
         <translation>Skann en mappe og velg en observasjon med koblede felt- eller mikroskopbilder.</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="913"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="908"/>
         <source>Scanned: {scanned} • New matches: {matched} • Field: {field} • Microscope: {microscope} • Already imported: {imported} • Unmatched: {unmatched} • Excluded: {excluded}</source>
         <translation>Skannet: {scanned} • Nye treff: {matched} • Felt: {field} • Mikroskop: {microscope} • Allerede importert: {imported} • Uten treff: {unmatched} • Utelatt: {excluded}</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1039"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1034"/>
         <source>Select a matched image to inspect it here.</source>
         <translation>Velg et koblet bilde for å se det her.</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1055"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1050"/>
         <source>Selected image unavailable</source>
         <translation>Valgt bilde er ikke tilgjengelig</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1056"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1051"/>
         <source>Could not load {name}.</source>
         <translation>Kunne ikke laste {name}.</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1071"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1066"/>
         <source>Matched image: {name}</source>
         <translation>Koblet bilde: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1131"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1126"/>
         <source>Live lab session match</source>
         <translation>Treff på Live-lab-økt</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1190"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1185"/>
         <source>Photograph the time code, then choose that photo with &apos;Choose QR image...&apos; to set the camera time offset.</source>
         <translation>Fotografer tidskoden, og velg så det bildet med «Velg QR-bilde …» for å sette avviket i kameraklokka.</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1298"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1293"/>
         <source>Sporely could not read a time code in that image.</source>
         <translation>Sporely kunne ikke lese en tidskode i det bildet.</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1307"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1302"/>
         <source>More than one time code was found. Choose a clearer image.</source>
         <translation>Fant mer enn én tidskode. Velg et tydeligere bilde.</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1313"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1308"/>
         <source>No time code was found in the chosen image.</source>
         <translation>Fant ingen tidskode i det valgte bildet.</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1355"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1350"/>
         <source>Camera time offset set from {name}, using the code&apos;s time {time} and the {basis}.</source>
         <translation>Avvik i kameraklokka satt fra {name}, med kodens tid {time} og {basis}.</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1377"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1372"/>
         <source>Camera time offset cleared.</source>
         <translation>Avviket i kameraklokka er fjernet.</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1385"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1380"/>
         <source>No time code shown for this batch yet.</source>
         <translation>Ingen tidskode vist for denne bunken ennå.</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1394"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1389"/>
         <source>Time code: {value}</source>
         <translation>Tidskode: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1833"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1828"/>
         <source>Deleted {count} Live lab session event(s).</source>
         <translation>Slettet {count} hendelse(r) fra Live-lab-økter.</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1839"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1834"/>
         <source>No Live lab sessions were found for that row.</source>
         <translation>Fant ingen Live-lab-økter for den raden.</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1133"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1128"/>
         <source>Observation time match</source>
         <translation>Treff på observasjonstid</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1137"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1132"/>
         <source>Capture: {value}</source>
         <translation>Tatt: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1139"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1134"/>
         <source>Matched: {value}</source>
         <translation>Koblet: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1145"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1140"/>
         <source>Observation: {value}</source>
         <translation>Observasjon: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1149"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1144"/>
         <source>Observation span: {start} - {end}</source>
         <translation>Observasjonsperiode: {start} – {end}</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1171"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1166"/>
         <source>{scale:.4g} µm/px</source>
         <translation>{scale:.4g} µm/px</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1174"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1169"/>
         <source>Note: {value}</source>
         <translation>Merknad: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1175"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1170"/>
         <source>Scroll to zoom and drag to pan.</source>
         <translation>Rull for å zoome og dra for å panorere.</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1249"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1244"/>
         <source>Choose QR image</source>
         <translation>Velg QR-bilde</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1251"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1246"/>
         <source>Images (*.png *.jpg *.jpeg *.tif *.tiff *.heic *.heif);;All files (*.*)</source>
         <translation>Bilder (*.png *.jpg *.jpeg *.tif *.tiff *.heic *.heif);;Alle filer (*.*)</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1280"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1275"/>
         <source>The chosen image does not have a capture timestamp in EXIF.</source>
         <translation>Det valgte bildet har ikke opptakstidspunkt i EXIF.</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1290"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1285"/>
         <source>QR decoding dependencies are not installed yet.</source>
         <translation>Avhengighetene for QR-dekoding er ikke installert ennå.</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1328"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1323"/>
         <source>local clock</source>
         <translation>lokal klokke</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1328"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1323"/>
         <source>UTC clock</source>
         <translation>UTC-klokke</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1395"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1390"/>
         <source>Offset: {value:+.1f}s</source>
         <translation>Avvik: {value:+.1f} s</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1399"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1394"/>
         <source>Using: {name}</source>
         <translation>Bruker: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1442"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1437"/>
         <source>Choose an observation before adding matched images.</source>
         <translation>Velg en observasjon før du legger til koblede bilder.</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1449"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1444"/>
         <source>No new matched images are selected to add.</source>
         <translation>Ingen nye koblede bilder er valgt.</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1461"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1456"/>
         <source>Adding matched images...</source>
         <translation>Legger til koblede bilder …</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1466"/>
-        <location filename="../ui/ingestion_hub_tab.py" line="1483"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1461"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1478"/>
         <source>Adding image {current} of {total}...</source>
         <translation>Legger til bilde {current} av {total} …</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1496"/>
-        <location filename="../ui/ingestion_hub_tab.py" line="1512"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1491"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1507"/>
         <source>{count} failed</source>
         <translation>{count} mislyktes</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1498"/>
-        <location filename="../ui/ingestion_hub_tab.py" line="1514"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1493"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1509"/>
         <source>{count} skipped</source>
         <translation>{count} hoppet over</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1501"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1496"/>
         <source>No images were added.{extra}</source>
         <translation>Ingen bilder ble lagt til.{extra}</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1519"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1514"/>
         <source>Added {count} image(s) to the observation.{extra}</source>
         <translation>La til {count} bilde(r) i observasjonen.{extra}</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1570"/>
-        <location filename="../ui/ingestion_hub_tab.py" line="1612"/>
-        <location filename="../ui/ingestion_hub_tab.py" line="1635"/>
-        <location filename="../ui/ingestion_hub_tab.py" line="1674"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1565"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1607"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1630"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1669"/>
         <source>Could not prepare {name}: {error}</source>
         <translation>Kunne ikke klargjøre {name}: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1594"/>
-        <location filename="../ui/ingestion_hub_tab.py" line="1657"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1589"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1652"/>
         <source>RAW image {name} cannot be imported yet: {error}</source>
         <translation>RAW-bildet {name} kan ikke importeres ennå: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1603"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1598"/>
         <source>Skipping {name}: {error}</source>
         <translation>Hopper over {name}: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/ingestion_hub_tab.py" line="1784"/>
+        <location filename="../ui/ingestion_hub_tab.py" line="1779"/>
         <source>Could not add {name}: {error}</source>
         <translation>Kunne ikke legge til {name}: {error}</translation>
     </message>
