@@ -59,7 +59,7 @@ class FilesSourcePage(QWidget):
         # Ny observasjon (stage 9g4b): the observation Bilder showed when it
         # started; re-showing that one keeps the new observation on screen.
         self._new_anchor: int | None = None
-        self._new_data: tuple[dict, dict | None] | None = None
+        self._new_data: tuple[dict, dict | None, str | None] | None = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self._stack = QStackedWidget(self)
@@ -272,7 +272,7 @@ class FilesSourcePage(QWidget):
         created = None
         try:
             if result == QDialog.Accepted and prepared is not None:
-                obs_data, ai_state = prepared
+                obs_data, ai_state, _precision = prepared  # a new observation records none (as its dialog)
                 created = self._observations_tab.create_observation_from_prepared(
                     obs_data, ai_state, list(editor.import_results),
                 )

@@ -24,13 +24,20 @@ too. Opening, scrolling and switching write nothing unless the form
 changes something. Images are not changed here: Edit images opens Bilder ›
 Files and SD card. Writes go through
 ``ObservationsTab.write_observation_edits``, the dialog's own path.
+
+Stage 9g4c (owner 2026-11-12): a cloud-only row shows here as the cloud
+observation with one button, “Import to this computer”. The import writes
+only locally and links to the cloud row, as the Rediger observasjon dialog's
+OK did; then this page edits it in place, and its edits sync like any local
+edit. The dialog is retired.
 """
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QObject, QTimer, Qt, Signal
 from PySide6.QtWidgets import (
-    QAbstractButton, QAbstractItemView, QAbstractSpinBox, QApplication, QComboBox, QDateTimeEdit, QFrame, QLabel,
-    QLineEdit, QPlainTextEdit, QScrollArea, QSplitter, QStackedWidget, QTextEdit, QVBoxLayout, QWidget,
+    QAbstractButton, QAbstractItemView, QAbstractSpinBox, QApplication, QComboBox, QDateTimeEdit, QFrame,
+    QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QScrollArea, QSplitter, QStackedWidget, QTextEdit,
+    QVBoxLayout, QWidget,
 )
 
 from database.models import ObservationDB
@@ -88,6 +95,10 @@ class EditObservationPage(QWidget):
 
     # (observation id, image path or "") — Edit images: open Bilder › Files and SD card
     editImagesRequested = Signal(int, str)
+    # A cloud-only row was imported (stage 9g4c): its new local id.
+    cloudImported = Signal(int)
+    # A cloud-only row came on screen (True) or went (False).
+    cloudShownChanged = Signal(bool)
 
     AUTOSAVE_DELAY_MS = 1000
 
@@ -152,6 +163,10 @@ class EditObservationPage(QWidget):
         self._empty.setAlignment(Qt.AlignCenter)
         self._empty.setWordWrap(True)
         self._stack.addWidget(self._empty)
+        # A cloud-only row (stage 9g4c): the cloud observation and its import button.
+        self._cloud_row: dict | None = None
+        self._cloud_anchor: int | None = None  # the active observation; showing it again keeps the row
+        self._build_cloud_page()
         # The save status sits in the editor's bottom bar, where Save was.
         self.status_label = QLabel(self)
         self.status_label.setObjectName("editStatusLabel")
@@ -189,6 +204,10 @@ class EditObservationPage(QWidget):
             observation_id = int(observation_id or 0) or None
         except (TypeError, ValueError):
             observation_id = None
+        if self._cloud_row is not None:
+            if observation_id == self._cloud_anchor:
+                return  # Rediger showing the active observation again: the cloud row stays
+            self._leave_cloud()
         if observation_id is not None and observation_id == self._observation_id and self._editor is not None:
             self._pending_show = None
             self._has_pending_show = False
@@ -261,6 +280,134 @@ class EditObservationPage(QWidget):
             self._saved_any = False
             self._stack.setCurrentWidget(self._empty)
             self._update_status()
+
+    # -- a cloud-only row (stage 9g4c) ------------------------------------------
+
+    def _build_cloud_page(self) -> None:
+        page = QWidget(self)
+        page.setObjectName("editCloudPage")
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(24, 24, 24, 24)
+        card = QFrame(page)
+        card.setObjectName("editCloudCard")
+        card.setFrameShape(QFrame.StyledPanel)
+        card.setMinimumWidth(360)
+        card.setMaximumWidth(640)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(8)
+        self.cloud_title_label = QLabel(card)
+        self.cloud_title_label.setObjectName("editCloudTitle")
+        self.cloud_title_label.setWordWrap(True)
+        self.cloud_title_label.setStyleSheet("font-size: 17px; font-weight: 600;")
+        self.cloud_details_label = QLabel(card)
+        self.cloud_details_label.setWordWrap(True)
+        self.cloud_notice_label = QLabel(
+            self.tr(
+                "This observation is in Sporely Cloud only. Import it to this computer to edit it here; "
+                "your changes then sync like any other edit."
+            ),
+            card,
+        )
+        self.cloud_notice_label.setWordWrap(True)
+        self.cloud_import_btn = QPushButton(self.tr("Import to this computer"), card)
+        self.cloud_import_btn.setObjectName("primaryButton")
+        self.cloud_import_btn.clicked.connect(self._import_cloud)
+        row = QHBoxLayout()
+        row.addWidget(self.cloud_import_btn)
+        row.addStretch(1)
+        for widget in (self.cloud_title_label, self.cloud_details_label, self.cloud_notice_label):
+            layout.addWidget(widget)
+        layout.addSpacing(6)
+        layout.addLayout(row)
+        # Between stretches, not by alignment: the wrapped notice gets its full height.
+        centred = QHBoxLayout()
+        centred.addStretch(1)
+        centred.addWidget(card, 10)
+        centred.addStretch(1)
+        outer.addLayout(centred)
+        outer.addStretch(1)
+        self._cloud_page = page
+        self._stack.addWidget(page)
+
+    def is_showing_cloud(self) -> bool:
+        return self._cloud_row is not None
+
+    def cloud_title(self) -> str:
+        return self.cloud_title_label.text() if self._cloud_row is not None else ""
+
+    def show_cloud_observation(self, row_data: dict, *, anchor: int | None = None) -> bool:
+        """Show a cloud-only row with its import button; False when the page cannot switch now.
+
+        ``anchor`` is the active observation: it stays active, and Rediger
+        showing it again keeps the cloud row on screen.
+        """
+        if not isinstance(row_data, dict) or self._saving or self._publishing:
+            return False
+        if self._cloud_row is not None:
+            self._leave_cloud()
+        self.show_observation(None)  # the form shown saves and goes, as for any switch
+        if self._observation_id is not None or self._editor is not None:
+            return False
+        try:
+            self._cloud_anchor = int(anchor or 0) or None
+        except (TypeError, ValueError):
+            self._cloud_anchor = None
+        self._cloud_row = dict(row_data)
+        raw = row_data.get("raw") or {}
+        name = str(row_data.get("species_name") or "").strip() or self.tr("Unidentified")
+        self.cloud_title_label.setText(name)
+        details = [
+            str(value).strip()
+            for value in (row_data.get("date"), raw.get("location") or row_data.get("location"))
+            if value and str(value).strip() not in {"", "-"}
+        ]
+        self.cloud_details_label.setText(" · ".join(details))
+        self.cloud_details_label.setVisible(bool(details))
+        self.cloud_import_btn.setEnabled(True)
+        self._stack.setCurrentWidget(self._cloud_page)
+        self._update_status()
+        self._sync_strip()
+        self.cloudShownChanged.emit(True)
+        return True
+
+    def leave_cloud_observation(self) -> None:
+        """An explicit Edit of an observation: the cloud row leaves (even for the active one)."""
+        if self._cloud_row is not None:
+            self._leave_cloud()
+
+    def _leave_cloud(self) -> None:
+        self._cloud_row = None
+        self._cloud_anchor = None
+        self._stack.setCurrentWidget(self._empty)
+        self.cloudShownChanged.emit(False)
+
+    def _import_cloud(self) -> None:
+        row = self._cloud_row
+        if row is None or not self.cloud_import_btn.isEnabled():
+            return
+        self.cloud_import_btn.setEnabled(False)  # the download and the import keep the event loop turning
+        tab = self._observations_tab
+        try:
+            observation_id = tab.import_cloud_observation(row)
+        except Exception:
+            # Part of it may be written: the card goes. Opening the row again
+            # finds a keyed row on this computer by its sync key; a keyless
+            # row is linked only once its images are saved, so a failure
+            # before that is not recognised (as with the dialog before).
+            if self._cloud_row is row:
+                self._leave_cloud()
+            raise
+        if self._cloud_row is not row:
+            return  # left meanwhile
+        if observation_id is None:
+            if tab.cloud_row_on_this_desktop(row):
+                self._leave_cloud()  # on this computer already: nothing to import
+            else:
+                self.cloud_import_btn.setEnabled(True)  # a question was cancelled: nothing written
+            return
+        self._leave_cloud()
+        self.cloudImported.emit(int(observation_id))
 
     # -- the editor -----------------------------------------------------------
 

@@ -6140,6 +6140,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         # Stage 9g2: Rediger in place (appended, so the other pages keep their index).
         self.edit_page = EditObservationPage(self.observations_tab)
         self.edit_page.editImagesRequested.connect(self._on_edit_page_images_requested)
+        self.edit_page.cloudImported.connect(self._on_cloud_observation_imported)
+        self.edit_page.cloudShownChanged.connect(self._refresh_new_observation_header)
         self.edit_page.use_shared_strip(self.observations_tab.gallery_widget)  # stage 9g3c
         self.tab_widget.addTab(self.edit_page, self.tr("Edit"))
 
@@ -14957,6 +14959,12 @@ class MainWindow(GeometryMixin, QMainWindow):
             # Ny observasjon (stage 9g4b): not the observation that stays active.
             self.observation_header_label.setText(self.tr("New observation"))
             return
+        if self._edit_shows_cloud_observation():
+            # A cloud-only row in Rediger (stage 9g4c): not the active observation either.
+            self.observation_header_label.setText(
+                self.tr("{name} · Sporely Cloud").format(name=self.edit_page.cloud_title())
+            )
+            return
         if not observation_id:
             self.observation_header_label.setText("")
             return
@@ -17606,12 +17614,14 @@ class MainWindow(GeometryMixin, QMainWindow):
             return False
         if page is None or observation_id <= 0 or ObservationDB.get_observation(observation_id) is None:
             return False
+        page.leave_cloud_observation()  # an explicit Edit: this observation, not a cloud row shown
         if int(getattr(self, "active_observation_id", 0) or 0) != observation_id:
             selected = self.observations_tab.get_selected_observation()
             name = selected[1] if selected and selected[0] == observation_id else ""
             self.on_observation_selected(observation_id, name, switch_tab=False)
         self.tab_widget.setCurrentWidget(page)
         page.show_observation(observation_id)
+        self._refresh_new_observation_header()
         return True
 
     def _sync_edit_page(self) -> None:
@@ -17716,11 +17726,40 @@ class MainWindow(GeometryMixin, QMainWindow):
             and live.current_source() == live.SOURCE_FILES
         )
 
+    def _edit_shows_cloud_observation(self) -> bool:
+        page = getattr(self, "edit_page", None)
+        tabs = getattr(self, "tab_widget", None)
+        return bool(page is not None and tabs is not None and page.is_showing_cloud() and tabs.currentWidget() is page)
+
     def _refresh_new_observation_header(self, *_args) -> None:
-        """The header names Ny observasjon while Bilder shows it, the active observation otherwise."""
+        """The header names Ny observasjon (Bilder) or a cloud-only row (Rediger) while shown there.
+
+        The active observation otherwise.
+        """
         files = getattr(self, "files_source_page", None)
-        if files is not None and (files.is_showing_new() or _args):
+        page = getattr(self, "edit_page", None)
+        special = (files is not None and files.is_showing_new()) or (page is not None and page.is_showing_cloud())
+        if special or _args:
             self.update_observation_header(getattr(self, "active_observation_id", None))
+
+    def open_cloud_observation(self, row_data: dict) -> bool:
+        """A cloud-only row in Rediger with “Import to this computer” (stage 9g4c).
+
+        The active observation stays active until the import; nothing is
+        written before it.
+        """
+        page = getattr(self, "edit_page", None)
+        if page is None:
+            return False
+        if not page.show_cloud_observation(row_data, anchor=getattr(self, "active_observation_id", None)):
+            return False
+        self.tab_widget.setCurrentWidget(page)
+        self._refresh_new_observation_header()
+        return True
+
+    def _on_cloud_observation_imported(self, observation_id: int) -> None:
+        """The cloud-only row is on this computer now: Rediger edits it in place."""
+        QTimer.singleShot(0, self, lambda: self.open_edit_mode(observation_id))
 
     def _on_new_observation_created(self, observation_id: int) -> None:
         """Ny observasjon was saved: Rediger opens it, once Files has settled."""

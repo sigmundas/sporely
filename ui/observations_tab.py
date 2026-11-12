@@ -12656,7 +12656,12 @@ class ObservationsTab(QWidget):
         return taxonomy_changed
 
     def edit_observation(self):
-        """Edit the selected observation."""
+        """Edit the selected observation: Rediger in place (stage 9g2).
+
+        A cloud-only row shows in Rediger with its import button (stage 9g4c).
+        The Rediger observasjon dialog is retired: without the main window
+        nothing opens.
+        """
         selected_rows = self.table.selectionModel().selectedRows()
         if len(selected_rows) != 1:
             return
@@ -12668,197 +12673,9 @@ class ObservationsTab(QWidget):
             if isinstance(row_data, dict) and str(row_data.get("row_kind") or "") == "cloud":
                 self._open_cloud_observation_editor(row_data)
             return
-        host = self.window()
-        open_edit_mode = getattr(host, "open_edit_mode", None)
-        if callable(open_edit_mode) and open_edit_mode(obs_id):
-            return  # Rediger in place (stage 9g2); cloud-only rows keep the dialog until 9g4
-        prepared = self.prepare_observation_edit(obs_id)
-        if prepared is None:
-            return
-        observation, existing_images, image_results, draft_observation, ai_state = prepared
-
-        obs_dt = _parse_observation_datetime(observation.get("date"))
-        obs_lat = observation.get("gps_latitude")
-        obs_lon = observation.get("gps_longitude")
-
-        ai_taxon = None
-        while True:
-            dialog = ObservationDetailsDialog(
-                self,
-                observation=draft_observation,
-                image_results=image_results,
-                allow_edit_images=True,
-                suggested_taxon=ai_taxon,
-                ai_state=ai_state,
-            )
-            if dialog.exec():
-                image_results = list(dialog.image_results)
-                taxonomy_changed = self.write_observation_edits(obs_id, observation, dialog)
-
-                self._apply_import_results_to_observation(
-                    obs_id,
-                    image_results,
-                    existing_images=existing_images
-                )
-
-                self.refresh_observations()
-                for row, obs in enumerate(ObservationDB.get_all_observations()):
-                    if obs['id'] == obs_id:
-                        self.table.selectRow(row)
-                        self.selected_observation_id = obs_id
-                        self.on_selection_changed()
-                        self._refresh_active_observation_after_edit(
-                            refresh_reference_species_availability=taxonomy_changed
-                        )
-                        break
-                pending_status = self._upload_pending_artsobs_web_images()
-                if pending_status == "none":
-                    self.set_status_message(self.tr("Observation updated."), level="success")
-                return
-
-            if dialog.request_edit_images:
-                data = dialog.get_data()
-                self._observation_edit_draft_cache[obs_id] = dict(data)
-                draft_observation = self._merge_observation_edit_draft(observation, data)
-                draft_dt = _parse_observation_datetime(data.get("date"))
-                if draft_dt and draft_dt.isValid():
-                    obs_dt = draft_dt
-                obs_lat = data.get("gps_latitude")
-                obs_lon = data.get("gps_longitude")
-                ai_state = dialog.get_ai_state()
-                self._ai_suggestions_cache[obs_id] = ai_state
-                _debug_import_flow(
-                    f"edit observation {obs_id}: opening Prepare Images with {len(image_results)} images"
-                )
-                image_dialog = ImageImportDialog(
-                    self,
-                    import_results=image_results,
-                    observation_datetime=obs_dt,
-                    observation_lat=obs_lat,
-                    observation_lon=obs_lon,
-                    continue_to_observation_details=False,
-                )
-                if dialog.request_edit_images_path:
-                    image_dialog.select_image_by_path(dialog.request_edit_images_path)
-                skip_return = bool(getattr(dialog, "request_edit_images_skip_return", False))
-                # Capture host + prior view state BEFORE dialog runs so that
-                # a right-click Edit round-trip preserves the user's zoom /
-                # selection on return to Measure/Analysis.
-                host = self.window()
-                prior_image_id = None
-                if host is not None:
-                    try:
-                        prior_image_id = int(getattr(host, "current_image_id", 0) or 0) or None
-                    except Exception:
-                        prior_image_id = None
-                    save_view = getattr(host, "_save_current_image_measure_session_view", None)
-                    if callable(save_view):
-                        try:
-                            save_view()
-                        except Exception:
-                            pass
-                if image_dialog.exec():
-                    _debug_import_flow(
-                        f"edit observation {obs_id}: Prepare Images accepted with {len(image_dialog.import_results)} images"
-                    )
-                    image_results = image_dialog.import_results
-                    ai_taxon = image_dialog.get_ai_selected_taxon()
-                    ai_state = self._remap_ai_state_to_images(ai_state, image_results)
-                    obs_lat, obs_lon = image_dialog.get_observation_gps()
-                    _debug_import_flow(
-                        f"edit observation {obs_id}: metadata from Prepare Images gps=({obs_lat}, {obs_lon})"
-                    )
-                    coords_changed = self._coords_meaningfully_changed(
-                        (observation or {}).get("gps_latitude"),
-                        (observation or {}).get("gps_longitude"),
-                        obs_lat,
-                        obs_lon,
-                    )
-                    update_kwargs = dict(
-                        gps_latitude=obs_lat,
-                        gps_longitude=obs_lon,
-                        allow_nulls=True,
-                    )
-                    # Prepare Images does not run a reverse geocode, so if the
-                    # user moved the point the previously-stored country/region
-                    # are stale. Clear them locally so a later push does not
-                    # ship a country tied to old coordinates.
-                    if coords_changed:
-                        update_kwargs["country_code"] = None
-                        update_kwargs["region_id"] = None
-                    # An attribution made in the details dialog stays with its
-                    # coordinates while Prepare Images keeps them selected; if
-                    # Prepare Images replaced them, the change is of unknown
-                    # origin and the DB layer invalidates the pair.
-                    pending_pair = _pending_location_pair(data, obs_lat, obs_lon)
-                    if pending_pair is not None:
-                        update_kwargs.update(zip(LOCATION_PROVENANCE_FIELDS, pending_pair))
-                    ObservationDB.update_observation(obs_id, **update_kwargs)
-                    self.schedule_metadata_cloud_sync(obs_id)
-                    stored_pair = provenance_pair(ObservationDB.get_observation(obs_id))
-                    for location_record in (observation, draft_observation, self._observation_edit_draft_cache.get(obs_id)):
-                        if location_record is not None:
-                            location_record.update(zip(LOCATION_PROVENANCE_FIELDS, stored_pair))
-                    if observation is not None:
-                        observation["gps_latitude"] = obs_lat
-                        observation["gps_longitude"] = obs_lon
-                        if coords_changed:
-                            observation["country_code"] = None
-                            observation["region_id"] = None
-                    if draft_observation is not None:
-                        draft_observation["gps_latitude"] = obs_lat
-                        draft_observation["gps_longitude"] = obs_lon
-                        if coords_changed:
-                            draft_observation["country_code"] = None
-                            draft_observation["region_id"] = None
-                    # Direct-edit branch: persist image results + refresh
-                    # Measure/Analysis without re-opening the details dialog.
-                    if skip_return:
-                        _debug_import_flow(
-                            f"edit observation {obs_id}: skip-return branch — applying image results and closing"
-                        )
-                        self._apply_import_results_to_observation(
-                            obs_id, image_results, existing_images=existing_images
-                        )
-                        self.refresh_observations()
-                        for r, obs in enumerate(ObservationDB.get_all_observations()):
-                            if obs["id"] == obs_id:
-                                self.table.selectRow(r)
-                                self.selected_observation_id = obs_id
-                                self.on_selection_changed()
-                                break
-                        self.set_selected_as_active(switch_tab=False)
-                        edited_paths = [
-                            str(getattr(r, "filepath", "") or "").strip()
-                            for r in image_results or []
-                            if getattr(r, "filepath", None)
-                        ]
-                        edited_paths = [p for p in edited_paths if p]
-                        if host is not None and hasattr(host, "refresh_after_image_edit"):
-                            try:
-                                host.refresh_after_image_edit(
-                                    image_paths=edited_paths,
-                                    preserve_image_id=prior_image_id,
-                                )
-                            except Exception:
-                                pass
-                        self._observation_edit_draft_cache.pop(obs_id, None)
-                        self.set_status_message(self.tr("Images updated."), level="success")
-                        return
-                    _debug_import_flow(
-                        f"edit observation {obs_id}: reopening observation dialog with {len(image_results)} images"
-                    )
-                elif skip_return:
-                    # User cancelled Prepare Images in a direct-edit round-
-                    # trip — just exit cleanly, don't reopen the details
-                    # dialog.
-                    self._observation_edit_draft_cache.pop(obs_id, None)
-                    return
-                continue
-            ai_state = dialog.get_ai_state()
-            self._ai_suggestions_cache[obs_id] = ai_state
-            self._observation_edit_draft_cache.pop(obs_id, None)
-            return
+        open_edit_mode = getattr(self.window(), "open_edit_mode", None)
+        if callable(open_edit_mode):
+            open_edit_mode(obs_id)
 
     def open_edit_images_direct(
         self, selected_image_path: str | None = None, *, observation_id: int | None = None,
@@ -13101,151 +12918,57 @@ class ObservationsTab(QWidget):
         finally:
             conn.close()
 
+    def cloud_row_on_this_desktop(self, row_data: dict) -> bool:
+        """A stale inbox row: this desktop holds the cloud row already (by cloud id or sync key)."""
+        raw = (row_data or {}).get("raw") or {}
+        return bool(raw) and not remote_observations_not_on_this_desktop([raw])
+
     def _open_cloud_observation_editor(self, row_data: dict) -> None:
+        """A cloud-only row: Rediger shows it with “Import to this computer” (stage 9g4c)."""
         if not isinstance(row_data, dict):
             return
-        raw = row_data.get("raw") or {}
-        if raw and not remote_observations_not_on_this_desktop([raw]):
-            # A stale inbox row: this desktop already holds the cloud row (by
-            # cloud id or sync key) since the list was loaded. Never a second
-            # local copy.
+        if self.cloud_row_on_this_desktop(row_data):
+            # Never a second local copy.
             self.refresh_observations()
             self.set_status_message(self.tr("Sporely Cloud already up to date."), level="info")
             return
+        opener = getattr(self.window(), "open_cloud_observation", None)
+        if callable(opener):
+            opener(row_data)
+
+    def import_cloud_observation(self, row_data: dict) -> int | None:
+        """Import a cloud-only observation to this computer, as the dialog's OK did unchanged (stage 9g4c).
+
+        The cloud row's images are downloaded, the observation and images are
+        written only locally, with the cloud row's sync key, and linked to the
+        cloud rows they came from; nothing is written to the cloud. The form
+        is built off-screen for the values, as in ``prepare_new_observation``,
+        with the cloud row's sharing state as the publish notice's baseline.
+        The new local id, or None when nothing was written (cancelled, or the
+        row is on this computer already).
+        """
+        if not isinstance(row_data, dict):
+            return None
+        if self.cloud_row_on_this_desktop(row_data):
+            self.refresh_observations()
+            self.set_status_message(self.tr("Sporely Cloud already up to date."), level="info")
+            return None
         image_results = self._cloud_image_import_results(row_data)
-        draft_observation: dict | None = self._cloud_observation_draft_data(row_data)
-        # Publish notice baseline: the cloud row's own sharing state.
-        cloud_publish_baseline = dict(draft_observation)
-        ai_state: dict | None = self._load_cloud_observation_ai_state(row_data, image_results)
-        ai_taxon: dict | None = None
-        primary_index = 0 if image_results else None
-        while True:
-            dialog = ObservationDetailsDialog(
-                self,
-                image_results=image_results,
-                primary_index=primary_index,
-                allow_edit_images=True,
-                suggested_taxon=ai_taxon,
-                ai_state=ai_state,
-                draft_data=draft_observation,
-            )
-            dialog.publish_baseline = cloud_publish_baseline
-            if dialog.exec():
-                obs_data = dialog.get_data()
-                image_results = list(dialog.image_results)
-                primary_index = dialog.primary_index
-                ai_state = dialog.get_ai_state()
-                draft_observation = dict(obs_data)
-                profile = SettingsDB.get_profile()
-                author = profile.get("name")
-                if author:
-                    obs_data["author"] = author
-
-                if not self._confirm_duplicate_observation_creation(obs_data, image_results):
-                    continue
-
-                # The cloud row's key, not a fresh one (NULL stays NULL).
-                obs_data["sync_key"] = remote_sync_key(row_data.get("raw") or {})
-                obs_id = ObservationDB.create_observation(**obs_data)
-                confirmed_precision = getattr(dialog, "confirmed_location_precision", None)
-                if confirmed_precision:
-                    from utils.cloud_sync import record_confirmed_location_precision
-
-                    record_confirmed_location_precision(obs_id, confirmed_precision)
-                if ai_state:
-                    ObservationDB.update_observation(
-                        obs_id,
-                        ai_state_json=self._serialize_ai_state(ai_state),
-                        allow_nulls=True,
-                    )
-                progress = None
-                progress_cb = None
-                total_images = len(image_results)
-                if total_images:
-                    progress = QProgressDialog(
-                        self.tr("Processing images..."),
-                        None,
-                        0,
-                        total_images,
-                        self,
-                    )
-                    progress.setWindowTitle(self.tr("Processing Images"))
-                    progress.setWindowModality(Qt.WindowModal)
-                    progress.setAutoClose(True)
-                    progress.setAutoReset(True)
-                    progress.setCancelButton(None)
-                    progress.setMinimumDuration(300)
-
-                    def progress_cb(index, total, _result):
-                        if total <= 0:
-                            return
-                        progress.setMaximum(total)
-                        progress.setValue(index)
-                        progress.setLabelText(
-                            self.tr("Processing image {current}/{total}").format(
-                                current=index,
-                                total=total,
-                            )
-                        )
-                        QApplication.processEvents()
-
-                try:
-                    self._apply_import_results_to_observation(
-                        obs_id,
-                        image_results,
-                        progress_cb=progress_cb,
-                    )
-                finally:
-                    if progress is not None:
-                        progress.setValue(total_images)
-                        progress.close()
-
-                try:
-                    self._mark_cloud_observation_imported(row_data, obs_id, image_results)
-                except Exception:
-                    pass
-
-                self.refresh_observations()
-                for row, obs in enumerate(ObservationDB.get_all_observations()):
-                    if obs["id"] == obs_id:
-                        self.table.selectRow(row)
-                        self.selected_observation_id = obs_id
-                        self.on_selection_changed()
-                        break
-                self.set_status_message(self.tr("Observation imported from cloud."), level="success")
-                return
-
-            if dialog.request_edit_images:
-                draft_observation = dict(dialog.get_data())
-                ai_state = dialog.get_ai_state()
-                image_results = list(dialog.image_results)
-                primary_index = dialog.primary_index
-                obs_dt = _parse_observation_datetime(draft_observation.get("date"))
-                image_dialog = ImageImportDialog(
-                    self,
-                    import_results=image_results,
-                    observation_datetime=obs_dt,
-                    observation_lat=draft_observation.get("gps_latitude"),
-                    observation_lon=draft_observation.get("gps_longitude"),
-                    continue_to_observation_details=False,
-                )
-                if dialog.request_edit_images_path:
-                    image_dialog.select_image_by_path(dialog.request_edit_images_path)
-                if image_dialog.exec():
-                    image_results = image_dialog.import_results
-                    ai_taxon = image_dialog.get_ai_selected_taxon() or ai_taxon
-                    if ai_state:
-                        ai_state = self._remap_ai_state_to_images(ai_state, image_results)
-                    obs_lat, obs_lon = image_dialog.get_observation_gps()
-                    # Keep the dialog's attribution only for the coordinates
-                    # it described.
-                    if _pending_location_pair(draft_observation, obs_lat, obs_lon) is None:
-                        for field in LOCATION_PROVENANCE_FIELDS:
-                            draft_observation.pop(field, None)
-                    draft_observation["gps_latitude"] = obs_lat
-                    draft_observation["gps_longitude"] = obs_lon
-                continue
-            return
+        draft_observation = self._cloud_observation_draft_data(row_data)
+        ai_state = self._load_cloud_observation_ai_state(row_data, image_results)
+        prepared = self.prepare_new_observation(
+            image_results,
+            primary_index=0 if image_results else None,
+            draft_data=draft_observation,
+            publish_baseline=dict(draft_observation),  # the cloud row's own sharing state
+            ai_state=ai_state,
+        )
+        if prepared is None:
+            return None
+        obs_data, ai_state, confirmed_precision = prepared
+        return self.create_observation_from_prepared(
+            obs_data, ai_state, image_results, cloud_row=row_data, confirmed_precision=confirmed_precision,
+        )
 
     def create_new_observation(self, initial_image_paths: list[str] | None = None):
         """Ny observasjon: Bilder › Files and SD card for a not-yet-saved observation.
@@ -13264,21 +12987,32 @@ class ObservationsTab(QWidget):
         image_results: list[ImageImportResult],
         primary_index: int | None = None,
         suggested_taxon: dict | None = None,
-    ) -> tuple[dict, dict | None] | None:
+        *,
+        draft_data: dict | None = None,
+        publish_baseline: dict | None = None,
+        ai_state: dict | None = None,
+    ) -> tuple[dict, dict | None, str | None] | None:
         """What the New observation form saves when OK is pressed unchanged (stage 9g4b).
 
         The form is built off-screen from the photos, as the dialog opened
         after Prepare Images, so the date, GPS and its attribution, Deling,
         Posisjon and Utkast are its defaults. Its publish notice and the
-        possible-duplicate question are asked as before. ``(data, AI state)``,
-        or None when the user cancelled (nothing is written).
+        possible-duplicate question are asked as before. A cloud-only row's
+        import (stage 9g4c) passes the cloud values as ``draft_data``, its
+        sharing state as ``publish_baseline`` and its AI state. ``(data, AI
+        state, the location precision the notice confirmed)``, or None when
+        the user cancelled (nothing is written).
         """
         form = ObservationDetailsDialog(
             self,
             image_results=image_results,
             primary_index=primary_index,
             suggested_taxon=suggested_taxon,
+            ai_state=ai_state,
+            draft_data=draft_data,
         )
+        if publish_baseline is not None:
+            form.publish_baseline = publish_baseline
         try:
             try:
                 form.finished.disconnect(form._save_geometry)  # never shown: no window geometry to remember
@@ -13288,6 +13022,7 @@ class ObservationsTab(QWidget):
                 return None
             obs_data = form.get_data()
             ai_state = form.get_ai_state()
+            confirmed_precision = getattr(form, "confirmed_location_precision", None)
         finally:
             form._cleanup_dialog_threads()
             # The form queued its layout setup on opening; it runs on a form
@@ -13301,16 +13036,31 @@ class ObservationsTab(QWidget):
             obs_data["author"] = author
         if not self._confirm_duplicate_observation_creation(obs_data, image_results):
             return None
-        return obs_data, ai_state
+        return obs_data, ai_state, confirmed_precision
 
     def create_observation_from_prepared(
         self,
         obs_data: dict,
         ai_state: dict | None,
         image_results: list[ImageImportResult],
+        *,
+        cloud_row: dict | None = None,
+        confirmed_precision: str | None = None,
     ) -> int:
-        """Create the observation and save its photos, as the New observation dialog did."""
+        """Create the observation and save its photos, as the New observation dialog did.
+
+        ``cloud_row``: a cloud-only row being imported (stage 9g4c), as its
+        dialog did: the cloud row's sync key (NULL stays NULL), the precision
+        the notice confirmed, and the link to the cloud rows afterwards.
+        """
+        if cloud_row is not None:
+            obs_data = dict(obs_data)
+            obs_data["sync_key"] = remote_sync_key(cloud_row.get("raw") or {})
         obs_id = ObservationDB.create_observation(**obs_data)
+        if cloud_row is not None and confirmed_precision:
+            from utils.cloud_sync import record_confirmed_location_precision
+
+            record_confirmed_location_precision(obs_id, confirmed_precision)
         if ai_state:
             ObservationDB.update_observation(
                 obs_id,
@@ -13359,13 +13109,22 @@ class ObservationsTab(QWidget):
                 progress.setValue(total_images)
                 progress.close()
 
+        if cloud_row is not None:
+            try:
+                self._mark_cloud_observation_imported(cloud_row, obs_id, image_results)
+            except Exception:
+                pass
+
         self.refresh_observations()
         row = self._find_table_row_for_observation(obs_id)  # filtered or sorted tables too
         if row >= 0:
             self.table.selectRow(row)
             self.selected_observation_id = obs_id
             self.on_selection_changed()
-        self.set_status_message(self.tr("Observation created."), level="success")
+        if cloud_row is not None:
+            self.set_status_message(self.tr("Observation imported from cloud."), level="success")
+        else:
+            self.set_status_message(self.tr("Observation created."), level="success")
         return obs_id
 
     def export_for_ml(self):

@@ -254,6 +254,32 @@ def _edit_mode(context: ReviewContext, *, size: tuple[int, int] = (1500, 950), t
     return host
 
 
+def _edit_cloud(context: ReviewContext, *, size: tuple[int, int] = (1500, 950)) -> QWidget:
+    """A cloud-only row in Rediger with “Import to this computer” (stage 9g4c); nothing downloaded."""
+    from database.models import ImageDB
+    from ui.main_window import MainWindow
+
+    from .live_lab import _fresh_profile
+
+    profile = _fresh_profile(context, "edit-cloud")
+    observation_id = create_observation(profile, "edit-cloud")
+    ImageDB.add_image(observation_id, str(profile.jpeg("field1.JPG", seed=41)), "field")
+    window = MainWindow()
+    host = _DrainingWindow(window)
+    host.resize(*size)
+    host.show()
+    _settle(0.3)
+    window.on_observation_selected(observation_id, "Inocybe geophylla", switch_tab=False)
+    window.open_cloud_observation({
+        "row_kind": "cloud", "cloud_id": "cobs", "species_name": "Amanita muscaria",
+        "date": "2026-09-14 10:30", "location": "Lade, Trondheim",
+        "raw": {"id": "cobs", "date": "2026-09-14 10:30", "genus": "Amanita", "species": "muscaria",
+                "location": "Lade, Trondheim"},
+    })
+    _settle(0.6)
+    return host
+
+
 def _preferences_image_import(context: ReviewContext) -> QWidget:
     """Preferences › Image import with the optimal-sampling resize option (stage 9f2)."""
     from ui.main_window import SettingsHubDialog
@@ -443,6 +469,31 @@ def register_mode_bar_scenarios(registry: ScenarioRegistry) -> None:
                 theme=theme,
             )
         )
+    for theme in ("light", "dark"):
+        suffix = "" if theme == "light" else "-dark"
+        registry.register(
+            ReviewScenario(
+                id=f"edit.cloud{suffix}",
+                group="mode-bar",
+                title=f"Rediger, a cloud-only row (nb{', dark' if theme == 'dark' else ''})",
+                description="A cloud-only row with “Importer til denne maskinen” (stage 9g4c).",
+                build=lambda context: _edit_cloud(context),
+                viewport=(1500, 950),
+                locale="nb_NO",
+                theme=theme,
+            )
+        )
+    registry.register(
+        ReviewScenario(
+            id="edit.cloud-small-de",
+            group="mode-bar",
+            title="Rediger, a cloud-only row, small window (de)",
+            description="German strings in a 1100 × 720 window (stage 9g4c).",
+            build=lambda context: _edit_cloud(context, size=(1100, 720)),
+            viewport=(1100, 720),
+            locale="de_DE",
+        )
+    )
     registry.register(
         ReviewScenario(
             id="edit.rediger-small-de",
