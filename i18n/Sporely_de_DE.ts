@@ -3529,6 +3529,42 @@ Der Gattungsname muss vollständig ausgeschrieben werden: Die Community-Suche tr
     </message>
 </context>
 <context>
+    <name>HintBar</name>
+    <message>
+        <location filename="../ui/hint_status.py" line="174"/>
+        <location filename="../ui/hint_status.py" line="359"/>
+        <source>Details</source>
+        <translation>Details</translation>
+    </message>
+    <message>
+        <location filename="../ui/hint_status.py" line="179"/>
+        <location filename="../ui/hint_status.py" line="335"/>
+        <source>Undo</source>
+        <translation>Rückgängig</translation>
+    </message>
+    <message>
+        <location filename="../ui/hint_status.py" line="184"/>
+        <location filename="../ui/hint_status.py" line="185"/>
+        <location filename="../ui/hint_status.py" line="360"/>
+        <location filename="../ui/hint_status.py" line="361"/>
+        <source>Dismiss</source>
+        <translation>Schließen</translation>
+    </message>
+</context>
+<context>
+    <name>HintStatusController</name>
+    <message>
+        <location filename="../ui/hint_status.py" line="572"/>
+        <source>Undo</source>
+        <translation>Rückgängig</translation>
+    </message>
+    <message>
+        <location filename="../ui/hint_status.py" line="612"/>
+        <source>Could not undo.</source>
+        <translation>Konnte nicht rückgängig gemacht werden.</translation>
+    </message>
+</context>
+<context>
     <name>ImageGalleryWidget</name>
     <message>
         <location filename="../ui/image_gallery_widget.py" line="1504"/>
@@ -9647,34 +9683,34 @@ Die lokalen Dateien bleiben auf diesem Computer. Die Cloud-Kopien werden bei Ihr
         <translation>Name:</translation>
     </message>
     <message>
-        <location filename="../ui/observation_details_dialog.py" line="6197"/>
+        <location filename="../ui/observation_details_dialog.py" line="6101"/>
         <source>Accepted concept: {name}</source>
         <translation>Akzeptiertes Konzept: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/observation_details_dialog.py" line="6200"/>
+        <location filename="../ui/observation_details_dialog.py" line="6104"/>
         <source>Linked concept: {name}</source>
         <translation>Verknüpftes Konzept: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/observation_details_dialog.py" line="6411"/>
+        <location filename="../ui/observation_details_dialog.py" line="6298"/>
         <source>Multiple assessments</source>
         <translation>Mehrere Beurteilungen</translation>
     </message>
     <message>
-        <location filename="../ui/observation_details_dialog.py" line="6609"/>
-        <location filename="../ui/observation_details_dialog.py" line="6638"/>
-        <location filename="../ui/observation_details_dialog.py" line="6822"/>
+        <location filename="../ui/observation_details_dialog.py" line="6496"/>
+        <location filename="../ui/observation_details_dialog.py" line="6525"/>
+        <location filename="../ui/observation_details_dialog.py" line="6709"/>
         <source>Select...</source>
         <translation>Auswählen...</translation>
     </message>
     <message>
-        <location filename="../ui/observation_details_dialog.py" line="6838"/>
+        <location filename="../ui/observation_details_dialog.py" line="6725"/>
         <source>Clear selection</source>
         <translation>Auswahl aufheben</translation>
     </message>
     <message>
-        <location filename="../ui/observation_details_dialog.py" line="6851"/>
+        <location filename="../ui/observation_details_dialog.py" line="6738"/>
         <source>Level {n}:</source>
         <translation>Ebene {n}:</translation>
     </message>
@@ -9740,17 +9776,17 @@ Die lokalen Dateien bleiben auf diesem Computer. Die Cloud-Kopien werden bei Ihr
         <translation>Verknüpfen</translation>
     </message>
     <message>
-        <location filename="../ui/observation_details_dialog.py" line="5907"/>
+        <location filename="../ui/observation_details_dialog.py" line="5811"/>
         <source>{name} is in the species database.</source>
         <translation>{name} ist in der Artendatenbank.</translation>
     </message>
     <message>
-        <location filename="../ui/observation_details_dialog.py" line="5909"/>
+        <location filename="../ui/observation_details_dialog.py" line="5813"/>
         <source>the stored identifier</source>
         <translation>die gespeicherte Kennung</translation>
     </message>
     <message>
-        <location filename="../ui/observation_details_dialog.py" line="5911"/>
+        <location filename="../ui/observation_details_dialog.py" line="5815"/>
         <source>Matched by {identifier}. Link binds the observation to this database taxon; the name you entered is kept.</source>
         <translation>Über {identifier} gefunden. „Verknüpfen“ verbindet die Beobachtung mit diesem Taxon der Datenbank; der eingegebene Name bleibt erhalten.</translation>
     </message>

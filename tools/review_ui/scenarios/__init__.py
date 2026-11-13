@@ -8,6 +8,7 @@ from .references import register_reference_scenarios
 from .measure import register_measure_scenarios
 from .measure_tab import register_measure_tab_scenarios
 from .mode_bar import register_mode_bar_scenarios
+from .notices import register_notice_scenarios
 from .analysis_tab import register_analysis_tab_scenarios
 from .observations import register_observation_scenarios
 from .raw_processing import register_raw_processing_scenarios
@@ -24,6 +25,7 @@ def create_registry() -> ScenarioRegistry:
     register_measure_scenarios(registry)
     register_measure_tab_scenarios(registry)
     register_mode_bar_scenarios(registry)
+    register_notice_scenarios(registry)
     register_analysis_tab_scenarios(registry)
     register_observation_scenarios(registry)
     register_raw_processing_scenarios(registry)

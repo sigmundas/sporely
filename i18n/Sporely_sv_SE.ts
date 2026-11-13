@@ -3531,6 +3531,42 @@ Släktnamnet måste skrivas ut fullständigt: gemenskapssökningen matchar exakt
     </message>
 </context>
 <context>
+    <name>HintBar</name>
+    <message>
+        <location filename="../ui/hint_status.py" line="174"/>
+        <location filename="../ui/hint_status.py" line="359"/>
+        <source>Details</source>
+        <translation>Detaljer</translation>
+    </message>
+    <message>
+        <location filename="../ui/hint_status.py" line="179"/>
+        <location filename="../ui/hint_status.py" line="335"/>
+        <source>Undo</source>
+        <translation>Ångra</translation>
+    </message>
+    <message>
+        <location filename="../ui/hint_status.py" line="184"/>
+        <location filename="../ui/hint_status.py" line="185"/>
+        <location filename="../ui/hint_status.py" line="360"/>
+        <location filename="../ui/hint_status.py" line="361"/>
+        <source>Dismiss</source>
+        <translation>Stäng</translation>
+    </message>
+</context>
+<context>
+    <name>HintStatusController</name>
+    <message>
+        <location filename="../ui/hint_status.py" line="572"/>
+        <source>Undo</source>
+        <translation>Ångra</translation>
+    </message>
+    <message>
+        <location filename="../ui/hint_status.py" line="612"/>
+        <source>Could not undo.</source>
+        <translation>Kunde inte ångra.</translation>
+    </message>
+</context>
+<context>
     <name>ImageGalleryWidget</name>
     <message>
         <location filename="../ui/image_gallery_widget.py" line="1504"/>
@@ -9705,34 +9741,34 @@ De lokala filerna stannar på den här datorn. Molnkopiorna kommer att tas bort 
         <translation>Språk för folknamn: {lang}</translation>
     </message>
     <message>
-        <location filename="../ui/observation_details_dialog.py" line="6197"/>
+        <location filename="../ui/observation_details_dialog.py" line="6101"/>
         <source>Accepted concept: {name}</source>
         <translation>Accepterat koncept: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/observation_details_dialog.py" line="6200"/>
+        <location filename="../ui/observation_details_dialog.py" line="6104"/>
         <source>Linked concept: {name}</source>
         <translation>Länkat koncept: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/observation_details_dialog.py" line="6411"/>
+        <location filename="../ui/observation_details_dialog.py" line="6298"/>
         <source>Multiple assessments</source>
         <translation>Flera bedömningar</translation>
     </message>
     <message>
-        <location filename="../ui/observation_details_dialog.py" line="6609"/>
-        <location filename="../ui/observation_details_dialog.py" line="6638"/>
-        <location filename="../ui/observation_details_dialog.py" line="6822"/>
+        <location filename="../ui/observation_details_dialog.py" line="6496"/>
+        <location filename="../ui/observation_details_dialog.py" line="6525"/>
+        <location filename="../ui/observation_details_dialog.py" line="6709"/>
         <source>Select...</source>
         <translation>Välj...</translation>
     </message>
     <message>
-        <location filename="../ui/observation_details_dialog.py" line="6838"/>
+        <location filename="../ui/observation_details_dialog.py" line="6725"/>
         <source>Clear selection</source>
         <translation>Ta bort valg</translation>
     </message>
     <message>
-        <location filename="../ui/observation_details_dialog.py" line="6851"/>
+        <location filename="../ui/observation_details_dialog.py" line="6738"/>
         <source>Level {n}:</source>
         <translation>Nivå {n}:</translation>
     </message>
@@ -9742,17 +9778,17 @@ De lokala filerna stannar på den här datorn. Molnkopiorna kommer att tas bort 
         <translation>Koppla</translation>
     </message>
     <message>
-        <location filename="../ui/observation_details_dialog.py" line="5907"/>
+        <location filename="../ui/observation_details_dialog.py" line="5811"/>
         <source>{name} is in the species database.</source>
         <translation>{name} finns i artdatabasen.</translation>
     </message>
     <message>
-        <location filename="../ui/observation_details_dialog.py" line="5909"/>
+        <location filename="../ui/observation_details_dialog.py" line="5813"/>
         <source>the stored identifier</source>
         <translation>den sparade identifieraren</translation>
     </message>
     <message>
-        <location filename="../ui/observation_details_dialog.py" line="5911"/>
+        <location filename="../ui/observation_details_dialog.py" line="5815"/>
         <source>Matched by {identifier}. Link binds the observation to this database taxon; the name you entered is kept.</source>
         <translation>Matchat via {identifier}. ”Koppla” kopplar observationen till detta taxon i databasen; namnet du angav behålls.</translation>
     </message>

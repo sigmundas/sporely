@@ -1,6 +1,8 @@
 """Reusable hint/status helpers for dialogs and windows."""
 from __future__ import annotations
 
+import traceback
+from dataclasses import dataclass
 from typing import Callable
 
 from PySide6.QtCore import QEvent, QObject, QTimer, Qt, Signal
@@ -9,6 +11,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QPlainTextEdit,
     QProgressBar,
     QSizePolicy,
     QStackedWidget,
@@ -88,6 +91,10 @@ class HintBar(QFrame):
     ``success`` – soft green background, e.g. "Observation saved"
     ``warning`` – soft red/orange background, e.g. "Could not connect"
 
+    A notice (stage 10b) adds controls at the right: Details (the text opens
+    below the message, in the bar), Undo, and ✕ to dismiss. The bar shows
+    them; :class:`HintStatusController` decides when.
+
     Usage::
 
         bar = HintBar(parent)
@@ -100,6 +107,15 @@ class HintBar(QFrame):
     TIP = "tip"
     SUCCESS = "success"
     WARNING = "warning"
+
+    # The notice's controls.
+    undoRequested = Signal()
+    dismissRequested = Signal()
+    detailsToggled = Signal(bool)
+    # The bar's height changed (a wrapped message, Details opened).
+    heightChanged = Signal(int)
+    # The notice's controls came or went (the height may stay the same).
+    noticeControlsChanged = Signal(bool)
 
     # (background, left accent bar colour) — light mode defaults
     _STATE_COLORS: dict[str, tuple[str, str]] = {
@@ -121,17 +137,26 @@ class HintBar(QFrame):
 
     _BAR_WIDTH = 4
     _HEIGHT = 34
+    _DETAILS_MAX_HEIGHT = 140
+    _DETAILS_GAP = 6
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._wrap_mode = False
+        self._state = "idle"
         self.setFixedHeight(self._HEIGHT)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.setFrameShape(QFrame.NoFrame)
 
-        layout = QHBoxLayout(self)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(self._BAR_WIDTH + 6, 0, 6, 0)
         layout.setSpacing(0)
+
+        self._row = QWidget(self)
+        self._row.setObjectName("hintBarRow")
+        row = QHBoxLayout(self._row)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
 
         self._label = QLabel("")
         self._label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -144,7 +169,35 @@ class HintBar(QFrame):
         font = self._label.font()
         font.setWeight(QFont.Weight.Medium)
         self._label.setFont(font)
-        layout.addWidget(self._label)
+        row.addWidget(self._label, 1)
+
+        self._details_btn = QToolButton(self._row)
+        self._details_btn.setObjectName("hintBarDetails")
+        self._details_btn.setText(self.tr("Details"))
+        self._details_btn.setCheckable(True)
+        self._details_btn.toggled.connect(self._on_details_toggled)
+        self._undo_btn = QToolButton(self._row)
+        self._undo_btn.setObjectName("hintBarUndo")
+        self._undo_btn.setText(self.tr("Undo"))
+        self._undo_btn.clicked.connect(self.undoRequested.emit)
+        self._dismiss_btn = QToolButton(self._row)
+        self._dismiss_btn.setObjectName("hintBarDismiss")
+        self._dismiss_btn.setText("✕")
+        self._dismiss_btn.setToolTip(self.tr("Dismiss"))
+        self._dismiss_btn.setAccessibleName(self.tr("Dismiss"))
+        self._dismiss_btn.clicked.connect(self.dismissRequested.emit)
+        for button in self._notice_buttons():
+            button.setCursor(Qt.PointingHandCursor)
+            button.setVisible(False)
+            row.addWidget(button, 0, Qt.AlignVCenter)
+        layout.addWidget(self._row)
+
+        self._details_view = QPlainTextEdit(self)
+        self._details_view.setObjectName("hintBarDetailsText")
+        self._details_view.setReadOnly(True)
+        self._details_view.setFrameShape(QFrame.NoFrame)
+        self._details_view.setVisible(False)
+        layout.addWidget(self._details_view)
 
         self._apply_style("idle")
         self.set_wrap_mode(True)
@@ -152,12 +205,16 @@ class HintBar(QFrame):
     # ------------------------------------------------------------------
     # Internal
 
+    def _notice_buttons(self) -> tuple[QToolButton, ...]:
+        return (self._details_btn, self._undo_btn, self._dismiss_btn)
+
     def _is_dark(self) -> bool:
         from PySide6.QtWidgets import QApplication
         app = QApplication.instance()
         return app.palette().window().color().lightness() < 128 if app else False
 
     def _apply_style(self, state: str) -> None:
+        self._state = state
         dark = self._is_dark()
         palette = self._STATE_COLORS_DARK if dark else self._STATE_COLORS
         bg, accent = palette.get(state, palette["tip"])
@@ -165,31 +222,76 @@ class HintBar(QFrame):
         self._label.setStyleSheet(
             f"QLabel {{ background: transparent; border: none; color: {text_color}; font-size: {pt(9)}pt; }}"
         )
+        details_bg = "#1e1e20" if dark else "#ffffff"
         self.setStyleSheet(
             f"HintBar {{ background: {bg}; border-left: {self._BAR_WIDTH}px solid {accent}; }}"
+            f"QToolButton#hintBarDetails, QToolButton#hintBarUndo, QToolButton#hintBarDismiss {{"
+            f" background: transparent; color: {text_color}; border: 1px solid {accent};"
+            f" border-radius: 4px; padding: 1px 8px; font-size: {pt(9)}pt; }}"
+            f"QToolButton#hintBarDismiss {{ border-color: transparent; padding: 1px 4px; }}"
+            f"QToolButton#hintBarDetails:hover, QToolButton#hintBarUndo:hover,"
+            f" QToolButton#hintBarDismiss:hover {{ background: {accent}; color: #ffffff; }}"
+            f"QToolButton#hintBarDetails:checked {{ background: {accent}; color: #ffffff; }}"
+            f"QPlainTextEdit#hintBarDetailsText {{ background: {details_bg}; color: {text_color};"
+            f" border: 1px solid {accent}; border-radius: 4px; font-size: {pt(9)}pt; }}"
         )
 
+    def _on_details_toggled(self, open_: bool) -> None:
+        self._details_view.setVisible(bool(open_))
+        self._update_height_for_wrap()
+        self.detailsToggled.emit(bool(open_))
+
+    def _visible_buttons_width(self) -> int:
+        row = self._row.layout()
+        width = 0
+        for button in self._notice_buttons():
+            if not button.isHidden():
+                width += button.sizeHint().width() + row.spacing()
+        return width
+
+    def _details_height(self) -> int:
+        if self._details_view.isHidden():
+            return 0
+        doc = self._details_view.document()
+        lines = max(1, doc.blockCount())
+        line_height = self._details_view.fontMetrics().lineSpacing()
+        wanted = lines * line_height + 2 * int(doc.documentMargin()) + 4
+        return min(self._DETAILS_MAX_HEIGHT, max(2 * line_height, wanted))
+
     def _update_height_for_wrap(self) -> None:
-        if not self._wrap_mode:
-            return
         layout = self.layout()
         if layout is None:
             return
         margins = layout.contentsMargins()
-        available_width = max(
-            80,
-            self.width() - margins.left() - margins.right(),
-        )
-        label_height = self._label.heightForWidth(available_width)
-        if label_height <= 0:
-            label_height = self._label.sizeHint().height()
-        target_height = max(self._HEIGHT, label_height + margins.top() + margins.bottom())
+        row_height = self._HEIGHT
+        if self._wrap_mode:
+            available_width = max(
+                80,
+                self.width() - margins.left() - margins.right() - self._visible_buttons_width(),
+            )
+            label_height = self._label.heightForWidth(available_width)
+            if label_height <= 0:
+                label_height = self._label.sizeHint().height()
+            row_height = max(self._HEIGHT, label_height + margins.top() + margins.bottom())
+        details_height = self._details_height()
+        if details_height:
+            self._row.setFixedHeight(row_height)
+            self._details_view.setFixedHeight(details_height)
+        else:
+            # Unconstrained: the bar's size hint stays the label's, as hosts
+            # that size a stack from it expect.
+            self._row.setMinimumHeight(0)
+            self._row.setMaximumHeight(16777215)
+        target_height = row_height + (details_height + self._DETAILS_GAP if details_height else 0)
+        previous = self.height()
         self.setFixedHeight(target_height)
         # Re-run the bar's own layout now: otherwise the label keeps the
         # taller geometry it got while the bar was narrow (wrapped) and the
         # text sits at the bottom of the bar instead of centred.
         layout.invalidate()
         layout.activate()
+        if target_height != previous:
+            self.heightChanged.emit(target_height)
 
     # ------------------------------------------------------------------
     # Public API
@@ -212,20 +314,76 @@ class HintBar(QFrame):
         """Reset to idle state with no message."""
         self.set_status()
 
+    def set_notice_controls(
+        self,
+        *,
+        details: str | None = None,
+        undo_text: str | None = None,
+        dismissible: bool = False,
+        details_open: bool = False,
+    ) -> None:
+        """Show the notice's controls; with no arguments, hide them all.
+
+        ``details``: Details opens this text below the message;
+        ``details_open`` shows it open. ``undo_text``: the Undo button's
+        label (empty for none).
+        """
+        was_shown = self.notice_controls_visible()
+        details = (details or "").strip()
+        if self._details_view.toPlainText() != details:
+            self._details_view.setPlainText(details)
+        open_ = bool(details) and bool(details_open)
+        self._details_btn.blockSignals(True)
+        self._details_btn.setChecked(open_)
+        self._details_btn.blockSignals(False)
+        self._details_view.setVisible(open_)
+        self._details_btn.setVisible(bool(details))
+        undo_text = (undo_text or "").strip()
+        self._undo_btn.setText(undo_text or self.tr("Undo"))
+        self._undo_btn.setVisible(bool(undo_text))
+        self._dismiss_btn.setVisible(bool(dismissible))
+        self._update_height_for_wrap()
+        shown = self.notice_controls_visible()
+        if shown != was_shown:
+            self.noticeControlsChanged.emit(shown)
+
+    def notice_controls_visible(self) -> bool:
+        return any(not button.isHidden() for button in self._notice_buttons())
+
+    def details_open(self) -> bool:
+        return not self._details_view.isHidden()
+
     def set_wrap_mode(self, enabled: bool) -> None:
         """Enable multiline wrapping and auto-height based on available width."""
         self._wrap_mode = bool(enabled)
         self._label.setWordWrap(self._wrap_mode)
         if self._wrap_mode:
             self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-            self._update_height_for_wrap()
         else:
-            self.setFixedHeight(self._HEIGHT)
             self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._update_height_for_wrap()
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.LanguageChange:
+            self._details_btn.setText(self.tr("Details"))
+            self._dismiss_btn.setToolTip(self.tr("Dismiss"))
+            self._dismiss_btn.setAccessibleName(self.tr("Dismiss"))
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._update_height_for_wrap()
+
+
+@dataclass
+class _Notice:
+    text: str
+    tone: str
+    details: str
+    undo: Callable[[], None] | None
+    undo_text: str
+    timeout_ms: int
+    details_open: bool = False
 
 
 class HintStatusController(QObject):
@@ -233,7 +391,19 @@ class HintStatusController(QObject):
 
     Also accepts a plain ``QLabel`` for legacy call-sites, though a
     ``HintBar`` is strongly preferred.
+
+    Notices (stage 10b, :meth:`show_notice`) are the screen's non-blocking
+    messages in place of a message box: shown at once, with optional Details
+    and Undo, and ✕ to dismiss. Info and success clear themselves after a
+    while; errors stay until dismissed or replaced. A hover hint covers a
+    notice while the pointer is on a control, and the notice comes back when
+    it leaves.
     """
+
+    # How long info and success notices stay, in milliseconds.
+    NOTICE_TIMEOUT_MS = 6000
+    # How long a notice with Undo stays (time to change one's mind).
+    UNDO_NOTICE_TIMEOUT_MS = 10000
 
     def __init__(self, hint_bar: "HintBar | QLabel", parent: QObject | None = None) -> None:
         super().__init__(parent or hint_bar)
@@ -262,10 +432,33 @@ class HintStatusController(QObject):
         self._leave_timer.setSingleShot(True)
         self._leave_timer.setInterval(120)
         self._leave_timer.timeout.connect(lambda: self.set_hint(""))
+        self._notice: _Notice | None = None
+        # The notice shows over a hint the pointer was already on when it
+        # came (the control just clicked); the next hint covers it again.
+        self._notice_on_top = False
+        self._notice_timer = QTimer(self)
+        self._notice_timer.setSingleShot(True)
+        self._notice_timer.timeout.connect(self.dismiss_notice)
+        # The bar can go first (a page deleted with its form): nothing may
+        # write to it afterwards.
+        self._hint_label.destroyed.connect(self._on_bar_destroyed)
+        if self._hint_bar is not None:
+            self._hint_bar.undoRequested.connect(self._on_notice_undo)
+            self._hint_bar.dismissRequested.connect(self.dismiss_notice)
+            self._hint_bar.detailsToggled.connect(self._on_notice_details_toggled)
         self._apply_idle_style()
 
     # ------------------------------------------------------------------
     # Internal helpers
+
+    def _on_bar_destroyed(self, *_args) -> None:
+        self._bar_gone = True
+        self._notice = None
+        for timer in (self._status_timer, self._leave_timer, self._notice_timer):
+            timer.stop()
+
+    def _bar_alive(self) -> bool:
+        return not getattr(self, "_bar_gone", False) and _qt_is_valid(self._hint_label)
 
     @staticmethod
     def _tone_to_state(tone: str) -> str:
@@ -281,7 +474,10 @@ class HintStatusController(QObject):
     def _set_label_text(self, text: str | None) -> None:
         self._hint_label.setText((text or "").strip())
         if self._hint_bar is not None:
-            self._hint_bar._update_height_for_wrap()
+            if self._hint_bar.notice_controls_visible():
+                self._hint_bar.set_notice_controls()  # not the notice: its controls go
+            else:
+                self._hint_bar._update_height_for_wrap()
 
     @staticmethod
     def _palette_is_dark() -> bool:
@@ -325,8 +521,24 @@ class HintStatusController(QObject):
                 f"padding-left: 6px; color: {text}; }}"
             )
 
+    def _show_current_notice(self) -> None:
+        notice = self._notice
+        self._hint_label.setText(notice.text)
+        self._apply_active_style(notice.tone)
+        if self._hint_bar is not None:
+            self._hint_bar.set_notice_controls(
+                details=notice.details,
+                undo_text=notice.undo_text if notice.undo is not None else "",
+                dismissible=True,
+                details_open=notice.details_open,
+            )
+
     def _restore_hint(self) -> None:
-        if self._hint_text:
+        if not self._bar_alive():
+            return
+        if self._notice is not None and (self._notice_on_top or not self._hint_text):
+            self._show_current_notice()
+        elif self._hint_text:
             self._set_label_text(self._hint_text)
             self._apply_active_style(self._hint_tone)
         elif self._baseline_text:
@@ -342,8 +554,93 @@ class HintStatusController(QObject):
         """Set a persistent hint.  Pass empty / None to return to idle."""
         self._hint_text = (text or "").strip()
         self._hint_tone = (tone or "info").strip().lower()
+        if self._hint_text:
+            self._notice_on_top = False
         if not self._status_timer.isActive():
             self._restore_hint()
+
+    def show_notice(
+        self,
+        text: str | None,
+        tone: str = "info",
+        *,
+        details: str | None = None,
+        undo: Callable[[], None] | None = None,
+        undo_text: str | None = None,
+        timeout_ms: int | None = None,
+    ) -> None:
+        """Show a non-blocking notice in this bar, replacing any earlier one.
+
+        ``tone``: ``info``, ``success``, or ``error``/``warning`` (these stay
+        until dismissed). ``details``: longer text behind Details (an error's
+        message, a summary). ``undo``: called by Undo, after which the notice
+        goes. ``timeout_ms``: 0 keeps the notice until dismissed; by default
+        info and success go after :attr:`NOTICE_TIMEOUT_MS` (with Undo,
+        :attr:`UNDO_NOTICE_TIMEOUT_MS`). Opening Details keeps it.
+        """
+        message = (text or "").strip()
+        if not message:
+            self.dismiss_notice()
+            return
+        tone = (tone or "info").strip().lower()
+        if timeout_ms is None:
+            if tone in ("error", "warning"):
+                timeout_ms = 0
+            elif undo is not None:
+                timeout_ms = self.UNDO_NOTICE_TIMEOUT_MS
+            else:
+                timeout_ms = self.NOTICE_TIMEOUT_MS
+        self._notice = _Notice(
+            text=message,
+            tone=tone,
+            details=(details or "").strip(),
+            undo=undo,
+            undo_text=(undo_text or "").strip() or self.tr("Undo"),
+            timeout_ms=max(0, int(timeout_ms)),
+        )
+        self._notice_on_top = True
+        self._status_timer.stop()  # the newest message shows
+        if self._notice.timeout_ms:
+            self._notice_timer.start(self._notice.timeout_ms)
+        else:
+            self._notice_timer.stop()
+        self._restore_hint()
+
+    def dismiss_notice(self) -> None:
+        """Remove the notice (✕, its timeout, or Undo)."""
+        self._notice_timer.stop()
+        if self._notice is None:
+            return
+        self._notice = None
+        self._notice_on_top = False
+        if not self._status_timer.isActive():
+            self._restore_hint()
+
+    def has_notice(self) -> bool:
+        return self._notice is not None
+
+    def notice_text(self) -> str:
+        return self._notice.text if self._notice is not None else ""
+
+    def _on_notice_details_toggled(self, open_: bool) -> None:
+        if self._notice is not None:
+            self._notice.details_open = bool(open_)  # kept when the notice shows again
+        if open_:
+            self._notice_timer.stop()  # being read: it stays until dismissed
+
+    def _on_notice_undo(self) -> None:
+        notice = self._notice
+        if notice is None or notice.undo is None:
+            return
+        self.dismiss_notice()
+        try:
+            notice.undo()
+        except Exception as exc:  # the undo failed: say so, with the error
+            self.show_notice(
+                self.tr("Could not undo."),
+                "error",
+                details=str(exc) or traceback.format_exc(limit=1),
+            )
 
     def set_baseline(self, text: str | None, tone: str = "info") -> None:
         """Resting text shown (in the idle style) when no contextual hint
@@ -588,12 +885,23 @@ class HintProgressStack(QWidget):
             int(self._progress_widget.sizeHint().height() or 0),
             32,
         )
+        self._stable_height = stable_height
         self._stack.setFixedHeight(stable_height)
         self._stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addWidget(self._stack)
+        # A notice may need more room (a long message, Details open); hints
+        # and progress keep the stable height, so hovering never shifts it.
+        self.hint_bar.heightChanged.connect(self._fit_hint_height)
+        self.hint_bar.noticeControlsChanged.connect(self._fit_hint_height)
 
         self._cancel_callback: Callable[[], None] | None = None
         self.cancelRequested.connect(self._on_cancel_clicked)
+
+    def _fit_hint_height(self, *_args) -> None:
+        height = self._stable_height
+        if self._stack.currentWidget() is self.hint_bar and self.hint_bar.notice_controls_visible():
+            height = max(height, self.hint_bar.height())
+        self._stack.setFixedHeight(height)
 
     def _on_cancel_clicked(self) -> None:
         if self._cancel_callback is not None:
@@ -623,6 +931,7 @@ class HintProgressStack(QWidget):
         self._cancel_btn.setVisible(cancel_callback is not None)
         self._cancel_btn.setEnabled(cancel_callback is not None)
         self._stack.setCurrentWidget(self._progress_widget)
+        self._fit_hint_height()
 
     def update_progress(self, text: str | None = None, *, value: int | None = None, maximum: int | None = None) -> None:
         if text is not None:
@@ -638,3 +947,4 @@ class HintProgressStack(QWidget):
         self._cancel_btn.setVisible(False)
         self._cancel_btn.setEnabled(False)
         self._stack.setCurrentWidget(self.hint_bar)
+        self._fit_hint_height()
