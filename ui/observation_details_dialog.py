@@ -144,7 +144,6 @@ from .dialog_helpers import ask_measurements_exist_delete, ask_wrapped_yes_no, m
 from .section_card import create_section_card
 from .segmented_selector import SegmentedSelector
 from .styles import RED_LIST_BADGE_COLORS, pt, get_design_tokens
-from .window_state import GeometryMixin
 from app_identity import SETTINGS_APP, SETTINGS_ORG, app_data_dir
 
 from . import observations_tab as _observations_tab
@@ -203,7 +202,7 @@ def _cached_cloud_usage_summary(client) -> dict:
     return summary
 
 
-class ObservationDetailsDialog(GeometryMixin, QDialog):
+class ObservationDetailsDialog(QDialog):
     # In place (Rediger, stage 9g2): "Edit images" and an image's Edit or
     # double-click ask the page to open Bilder › Files and SD card (path, or "").
     editImagesRequested = Signal(str)
@@ -211,9 +210,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     # service key ("web", "inat", "both", …); the page saves, then publishes.
     publishRequested = Signal(str)
 
-    """Dialog for creating or editing an observation after image import."""
+    """The observation form: Rediger's page, or built off-screen to make a new observation.
 
-    _geometry_key = "ObservationDetailsDialog"
+    Never shown as a window (stage 10a5): there is no Save or Cancel, and it
+    keeps no window geometry. It stays a ``QDialog``; ``reject`` (Esc) keeps
+    the page.
+    """
+
     _gallery_splitter_key = "splitter/ObservationDetailsDialogBottom"
     _taxonomy_splitter_key = "splitter/ObservationDetailsDialogTaxonomy"
     _ROLE_TAXON_CHOICE = Qt.UserRole + 4
@@ -427,12 +430,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.suggested_taxon = suggested_taxon
         self.map_helper = MapServiceHelper(self)
         self._hint_controller: HintStatusController | None = None
-        self.setWindowTitle(
-            self.tr("Edit Observation") if self.edit_mode else self.tr("New Observation")
-        )
-        self.setModal(True)
-        self.setMinimumSize(1100, 900)
-        self.resize(1680, 1000)
         self._observation_datetime = _parse_observation_datetime(
             observation.get("date") if observation else None
         )
@@ -473,12 +470,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         )
         self.vernacular_db = None
         self._taxon_lookup = None
-        self._vernacular_model = None
-        self._vernacular_completer = None
-        self._genus_model = None
-        self._genus_completer = None
-        self._species_model = None
-        self._species_completer = None
         self._suppress_taxon_autofill = False
         self._host_suppress_taxon_autofill = False
         self._last_genus = ""
@@ -596,8 +587,8 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         QTimer.singleShot(0, self._complete_deferred_dialog_setup)
         self._apply_suggested_taxon()
         self._sync_taxon_cache()
-        self._restore_geometry()
-        self.finished.connect(self._save_geometry)
+        QTimer.singleShot(0, self._restore_dialog_gallery_splitter)
+        QTimer.singleShot(0, self._restore_taxonomy_splitter)
 
     def _dialog_gallery_default_height(self) -> int:
         gallery = getattr(self, "image_gallery", None)
@@ -730,16 +721,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
     def _on_taxonomy_splitter_moved(self, _pos: int, _index: int) -> None:
         QTimer.singleShot(0, self._save_taxonomy_splitter)
-
-    def _restore_geometry(self) -> None:
-        super()._restore_geometry()
-        QTimer.singleShot(0, self._restore_dialog_gallery_splitter)
-        QTimer.singleShot(0, self._restore_taxonomy_splitter)
-
-    def _save_geometry(self) -> None:
-        self._save_dialog_gallery_splitter()
-        self._save_taxonomy_splitter()
-        super()._save_geometry()
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
@@ -1127,24 +1108,18 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         # The unified taxon picker is what the user sees. The vernacular,
         # genus, species and scientific inputs stay as hidden backing state:
         # the taxon controller, the save path and the Artsorakel copy read
-        # and write them as before.
+        # and write them as before. Hidden, they never take focus: nothing
+        # hooks their editing or completers (stage 10a5).
         self._taxon_backing = QWidget(identified_tab)
         self._taxon_backing.setVisible(False)
         backing = self._taxon_backing
-        self.vernacular_label = QLabel(self._vernacular_label(), backing)
         self.vernacular_input = QLineEdit(backing)
-        self.vernacular_input.setPlaceholderText(self._vernacular_placeholder())
         self.vernacular_input.textChanged.connect(self._update_taxonomy_tab_indicators)
         self.genus_input = QLineEdit(backing)
-        self.genus_input.setPlaceholderText(self.tr("e.g., Flammulina"))
         self.genus_input.textChanged.connect(self._update_taxonomy_tab_indicators)
         self.species_input = QLineEdit(backing)
-        self.species_input.setPlaceholderText(self.tr("e.g., velutipes"))
         self.species_input.textChanged.connect(self._update_taxonomy_tab_indicators)
         self.scientific_name_input = QLineEdit(backing)
-        self.scientific_name_input.setPlaceholderText(
-            self.tr("Optional: e.g., Hygrocybe conica var. pseudoconica")
-        )
         # The card names a chosen synonym's stored entry itself.
         self.scientific_hint_label = QLabel("", backing)
         self.scientific_hint_label.setVisible(False)
@@ -1476,21 +1451,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.edit_images_btn.setMinimumWidth(120)
             self.edit_images_btn.clicked.connect(self._on_edit_images_clicked)
             bottom_buttons.addWidget(self.edit_images_btn)
-        cancel_btn = QPushButton(self.tr("Cancel"))
-        cancel_btn.setFixedHeight(35)
-        cancel_btn.setStyleSheet("background-color: #e74c3c;")
-        cancel_btn.clicked.connect(self.reject)
-        bottom_buttons.addWidget(cancel_btn)
-        self.cancel_btn = cancel_btn
-        self.submit_observation_btn = QPushButton(
-            self.tr("Save Observation") if self.edit_mode else self.tr("Create Observation")
-        )
-        self.submit_observation_btn.setObjectName("dialogPrimaryButton")
-        self.submit_observation_btn.setFixedHeight(35)
-        self.submit_observation_btn.setAutoDefault(True)
-        self.submit_observation_btn.setDefault(True)
-        self.submit_observation_btn.clicked.connect(self.accept)
-        bottom_buttons.addWidget(self.submit_observation_btn)
         self._bottom_buttons = bottom_buttons
         # The form and its images (the splitter, stretch 1) take any spare
         # height; the bottom row keeps its own. (Stretches left from an older
@@ -1506,33 +1466,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._update_ai_table()
         self._update_datetime_width()
         self._register_dialog_hints()
-        self._init_submit_shortcuts()
+        self._init_edit_images_shortcut()
         self._update_taxonomy_tab_indicators()
         self._update_publish_target_specific_controls()
 
-    def _init_submit_shortcuts(self) -> None:
-        self._submit_shortcut_return = QShortcut(QKeySequence(Qt.Key_Return), self)
-        self._submit_shortcut_return.setContext(Qt.WidgetWithChildrenShortcut)
-        self._submit_shortcut_return.activated.connect(self._submit_dialog_from_enter)
-
-        self._submit_shortcut_enter = QShortcut(QKeySequence(Qt.Key_Enter), self)
-        self._submit_shortcut_enter.setContext(Qt.WidgetWithChildrenShortcut)
-        self._submit_shortcut_enter.activated.connect(self._submit_dialog_from_enter)
-
+    def _init_edit_images_shortcut(self) -> None:
         if getattr(self, "allow_edit_images", False):
             _seq = "Ctrl+E" if sys.platform == "darwin" else "Alt+E"
             self._edit_images_shortcut = QShortcut(QKeySequence(_seq), self)
             self._edit_images_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
             self._edit_images_shortcut.activated.connect(self._edit_images_from_modified_shortcut)
-
-    def _submit_dialog_from_enter(self) -> None:
-        focus = QApplication.focusWidget()
-        if isinstance(focus, QTextEdit):
-            return
-        submit_btn = getattr(self, "submit_observation_btn", None)
-        if submit_btn is None or not submit_btn.isEnabled():
-            return
-        submit_btn.click()
 
     def _edit_images_from_modified_shortcut(self) -> None:
         edit_btn = getattr(self, "edit_images_btn", None)
@@ -1644,10 +1587,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 "",
                 allow_when_disabled=True,
             )
-        self._register_hint_widget(
-            self.submit_observation_btn,
-            self.tr("Save observation (Enter)") if self.edit_mode else self.tr("Create observation (Enter)"),
-        )
         if getattr(self, "edit_images_btn", None):
             _key = getattr(self, "_edit_key_label", "Alt-E")
             _hint = self.tr("Add or remove images for this observation (E)").replace("(E)", f"({_key})")
@@ -3112,10 +3051,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             except Exception:
                 pass
 
-    def done(self, result: int) -> None:  # noqa: N802 - Qt API
-        self._cleanup_dialog_threads()
-        super().done(result)
-
     def _publish_baseline_state(self) -> dict | None:
         """Sharing state before this save: the persisted row when editing,
         the cloud row for a cloud draft, nothing for a new observation."""
@@ -3157,25 +3092,14 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def set_in_place(self) -> None:
         """Show as Rediger's page rather than a window (owner 2026-11-11).
 
-        The page saves as you go, so Save and Cancel go, and Esc keeps the
-        page. Images are changed in Bilder, Vis and Mål: here the strip only
-        chooses which images AI looks at, and Edit images opens Bilder ›
-        Files and SD card.
+        The page saves as you go, and Esc keeps the page. Images are changed
+        in Bilder, Vis and Mål: here the strip only chooses which images AI
+        looks at, and Edit images opens Bilder › Files and SD card.
         """
-        self._in_place = True
         self.setWindowFlags(Qt.Widget)
-        self.setMinimumSize(0, 0)  # the dialog's window minimum; the page's scroll area handles small windows
         if self.layout() is not None:
             self.layout().setContentsMargins(0, 0, 0, 0)  # the page has its own margins; a window's are not needed
             self.layout().setSpacing(6)
-        try:
-            self.finished.disconnect(self._save_geometry)  # a page has no window geometry to remember
-        except (RuntimeError, TypeError):
-            pass
-        for button in (getattr(self, "submit_observation_btn", None), getattr(self, "cancel_btn", None)):
-            if button is not None:
-                button.hide()
-                button.setEnabled(False)  # Enter in a field must not press the hidden Save
         gallery = getattr(self, "image_gallery", None)
         if gallery is not None:
             gallery.set_reorderable(False)
@@ -3450,9 +3374,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._bar_edit_images_shortcut = shortcut
         return bar
 
-    def is_in_place(self) -> bool:
-        return bool(getattr(self, "_in_place", False))
-
     def unfinished_taxon_text(self) -> str:
         """Species search text typed but not picked (never saved in place)."""
         picker = getattr(self, "taxon_picker", None)
@@ -3464,24 +3385,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return ""
 
     def reject(self) -> None:  # noqa: D401 - Qt API
-        if self.is_in_place():
-            return  # Esc keeps the page; what is typed is saved as you go
-        super().reject()
-
-    def accept(self) -> None:  # noqa: D401 - Qt API
-        """Stage 2c publish notice: confirm before a save that makes the
-        observation public and not a draft. Cancel keeps the previous state."""
-        if self.is_in_place():
-            return  # Rediger saves as you go; nothing closes the page
-        if not self.confirm_publish_change():
-            return
-        super().accept()
+        return  # Esc keeps the page; what is typed is saved as you go
 
     def confirm_publish_change(self, changed_keys=None) -> bool:
         """The publish notice and the precision record before a save.
 
-        Extracted from ``accept`` (stage 9g2) so Rediger's autosave asks the
-        same way: False when the user cancels (the draft and visibility
+        Rediger's autosave and the New observation form ask here: False
+        when the user cancels (the draft and visibility
         controls are put back). ``changed_keys``: Rediger writes only these
         columns, so the notice judges the stored row with them applied (a
         value changed elsewhere meanwhile is what will be published).
@@ -5680,10 +5590,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         return lookup
 
     def apply_vernacular_language_change(self) -> None:
-        if hasattr(self, "vernacular_label"):
-            self.vernacular_label.setText(self._vernacular_label())
-        if hasattr(self, "vernacular_input"):
-            self.vernacular_input.setPlaceholderText(self._vernacular_placeholder())
         if hasattr(self, "host_vernacular_label"):
             self.host_vernacular_label.setText(self._vernacular_label())
         if hasattr(self, "host_vernacular_input"):
@@ -5788,22 +5694,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         )
         if hasattr(self, "taxon_picker"):
             self.taxon_picker.set_lookup(self._taxon_lookup)
-        self._genus_model = self._taxon_controller.genus_model
-        self._species_model = self._taxon_controller.species_model
-        self._vernacular_model = self._taxon_controller.vernacular_model
-        self._genus_completer = self._taxon_controller.genus_completer
-        self._species_completer = self._taxon_controller.species_completer
-        self._vernacular_completer = self._taxon_controller.vernacular_completer
-
-        vernacular_popup = self._vernacular_completer.popup() if self._vernacular_completer else None
-        if vernacular_popup:
-            self._style_dropdown_popup_readability(vernacular_popup, self.vernacular_input)
-        genus_popup = self._genus_completer.popup() if self._genus_completer else None
-        if genus_popup:
-            self._style_dropdown_popup_readability(genus_popup, self.genus_input)
-        species_popup = self._species_completer.popup() if self._species_completer else None
-        if species_popup:
-            self._style_dropdown_popup_readability(species_popup, self.species_input)
 
         # Stage 3B.3 red-list invariant: manual taxonomic-identity edits
         # (genus, species, or scientific-name) must clear the red-list
@@ -5827,27 +5717,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 widget.editingFinished.connect(
                     self._on_taxon_manual_editing_finished
                 )
-        # The identity offer follows the entered name: hidden while it is
-        # edited, re-evaluated once editing finishes.
-        for widget in (self.genus_input, self.species_input, getattr(self, "scientific_name_input", None)):
-            if widget is not None:
-                widget.textEdited.connect(lambda _text: self._hide_identity_offer())
-                widget.editingFinished.connect(self._refresh_identity_offer)
-
-        # Vernacular -> genus autofill: when the observer finishes
-        # typing a common name that resolves unambiguously to a single
-        # genus (across all matching taxa), auto-populate the Genus
-        # field. Species stays empty and Red List stays untouched — a
-        # bare vernacular can rarely be pinned to one species-level
-        # concept and MUST NOT clear an already-shown badge (Stage 3B.5
-        # vernacular-only invariant). The controller's own
-        # ``on_vernacular_editing_finished`` handler already covers the
-        # exact species-level unique-match case; this hook fires for
-        # the genus-only case it deliberately skips.
-        if self.vernacular_input is not None:
-            self.vernacular_input.editingFinished.connect(
-                self._on_vernacular_editing_finished_populate_genus
-            )
 
     def _on_taxon_manual_editing_finished(self) -> None:
         """Resolve typed genus/species text for DISPLAY only.
@@ -5931,87 +5800,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             _give_up()
             return
         self._schedule_final_redlist_resolution()
-
-    def _on_vernacular_editing_finished_populate_genus(self) -> None:
-        """Auto-populate Genus when a typed vernacular resolves to a
-        single genus across all matching taxa.
-
-        Vernacular-only edit invariant (Stage 3B.5): this handler MUST
-        NOT clear the Red List badge, MUST NOT overwrite user-typed
-        text in Genus, and MUST NOT bind a taxonomy snapshot. Species
-        stays empty — a Norwegian common name almost always maps to a
-        genus rather than a species, and the exact species-level case
-        is already handled by :class:`TaxonInputController`'s
-        ``on_vernacular_editing_finished`` (which also fires on this
-        signal and executes before this handler due to connection
-        order).
-
-        Skip conditions:
-          - No taxon lookup available.
-          - Vernacular field is empty.
-          - Genus field already has text (do not overwrite manual input).
-          - A taxonomy snapshot is committed (do not override an
-            explicit picker/manual identity).
-          - The controller is suspended (load-time / programmatic write).
-          - The vernacular resolves to zero, or to multiple distinct
-            genera (ambiguity — user must disambiguate).
-        """
-        controller = getattr(self, "_taxon_controller", None)
-        if controller is None or controller._is_suspended():
-            return
-        try:
-            if controller.committed_snapshot() is not None:
-                return
-        except Exception:
-            return
-        vernacular_widget = getattr(self, "vernacular_input", None)
-        genus_widget = getattr(self, "genus_input", None)
-        if vernacular_widget is None or genus_widget is None:
-            return
-        name = str(vernacular_widget.text() or "").strip()
-        if not name:
-            return
-        current_genus = str(genus_widget.text() or "").strip()
-        if current_genus:
-            # Do not overwrite what the observer has already typed.
-            return
-        lookup = self._ensure_taxon_lookup()
-        if lookup is None:
-            return
-        try:
-            matches = lookup.resolve_common_name(name)
-        except Exception:
-            return
-        if not matches:
-            return
-        genera = set()
-        first_genus = ""
-        for choice in matches:
-            genus_text = str(getattr(choice, "genus", "") or "").strip()
-            if not genus_text:
-                continue
-            key = genus_text.casefold()
-            if not first_genus:
-                first_genus = genus_text
-            genera.add(key)
-            if len(genera) > 1:
-                # Ambiguous across genera — do nothing.
-                return
-        if not first_genus or len(genera) != 1:
-            return
-        # Populate genus without triggering the identity-clear handler
-        # (Stage 3B.5 vernacular-only invariant) or the controller's
-        # sync-vernacular-from-taxon logic (which would overwrite the
-        # freshly typed vernacular). ``_taxon_controller._suspended()``
-        # suppresses both.
-        with controller._suspended():
-            genus_widget.setText(first_genus)
-        # Refresh downstream indicators (tab dots, etc.) without going
-        # through the suppressed textChanged path.
-        try:
-            self._update_taxonomy_tab_indicators()
-        except Exception:
-            pass
 
     def _on_taxon_identity_field_edited(self, _text: str) -> None:
         controller = getattr(self, "_taxon_controller", None)

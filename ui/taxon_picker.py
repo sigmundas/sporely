@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import os
 import sys
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from html import escape
 from typing import Callable
 
@@ -84,9 +84,6 @@ class AiSuggestion:
     scientific_name: str
     score: float | None = None
     taxon_id: int | None = None
-    # The host's own record of the candidate (a provider prediction), handed
-    # back to the host's suggestion handler.
-    key: object = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -506,7 +503,6 @@ class TaxonPicker(QWidget):
         self._uncertain = False
         self._editing = False
         self._chip_click_pending = False
-        self._ai_handler: Callable[[AiSuggestion], None] | None = None
         # The name Endre put into the field; unchanged, it is not new input.
         self._edit_seed = ""
 
@@ -626,12 +622,6 @@ class TaxonPicker(QWidget):
             self._ai_layout.insertWidget(1 + i, button)
             self.ai_buttons.append(button)
         self.ai_strip.setVisible(bool(self.ai_buttons))
-
-    def set_ai_suggestion_handler(self, handler: Callable[[AiSuggestion], None] | None) -> None:
-        """Let the host apply a chip whose identifier resolved to a concept
-        (its own provider-identity path). Without a handler the picker
-        commits the resolved concept itself."""
-        self._ai_handler = handler
 
     def set_uncertain(self, uncertain: bool) -> None:
         self._uncertain = bool(uncertain)
@@ -1092,9 +1082,6 @@ class TaxonPicker(QWidget):
         self.cleared.emit()
 
     def _on_ai_chip(self, suggestion: AiSuggestion) -> None:
-        if suggestion.taxon_id is not None and self._ai_handler is not None:
-            self._ai_handler(suggestion)
-            return
         if suggestion.taxon_id is not None:
             lookup = self._lookup
             searcher = getattr(lookup, "search_taxa", None) if lookup is not None else None

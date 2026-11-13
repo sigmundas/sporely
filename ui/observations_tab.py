@@ -12776,10 +12776,6 @@ class ObservationsTab(QWidget):
         if publish_baseline is not None:
             form.publish_baseline = publish_baseline
         try:
-            try:
-                form.finished.disconnect(form._save_geometry)  # never shown: no window geometry to remember
-            except (RuntimeError, TypeError):
-                pass
             if not form.confirm_publish_change():
                 return None
             obs_data = form.get_data()

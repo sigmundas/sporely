@@ -209,8 +209,8 @@ def test_focus_opens_vernacular_chooser_with_empty_prefix(tmp_path, monkeypatch,
 
     complete_calls: list[str] = []
     monkeypatch.setattr(
-        d._vernacular_completer, "complete",
-        lambda: complete_calls.append(d._vernacular_completer.completionPrefix()),
+        d._taxon_controller.vernacular_completer, "complete",
+        lambda: complete_calls.append(d._taxon_controller.vernacular_completer.completionPrefix()),
     )
     event = QFocusEvent(QEvent.FocusIn, Qt.MouseFocusReason)
     d._taxon_controller.eventFilter(d.vernacular_input, event)
@@ -227,7 +227,7 @@ def test_mouseclick_reopens_chooser_when_already_focused(tmp_path, monkeypatch, 
     d._taxon_controller.sync_vernacular_after_taxon_change()
     calls: list[int] = []
     monkeypatch.setattr(
-        d._vernacular_completer, "complete", lambda: calls.append(1))
+        d._taxon_controller.vernacular_completer, "complete", lambda: calls.append(1))
     press = QMouseEvent(
         QEvent.MouseButtonPress, QPoint(0, 0), Qt.LeftButton,
         Qt.LeftButton, Qt.NoModifier,
@@ -262,7 +262,7 @@ def test_selecting_alternative_preserves_taxon(tmp_path, monkeypatch, qapp) -> N
     )
     # Locate the row in the vernacular model that corresponds to the choice
     # so we can pass a real QModelIndex.
-    model = d._vernacular_model
+    model = d._taxon_controller.vernacular_model
     idx = None
     for row in range(model.rowCount()):
         item = model.item(row, 0)

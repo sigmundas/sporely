@@ -46,7 +46,6 @@ def test_edit_opens_rediger_in_place(qtbot, window, rediger):
     assert window.mode_bar.edit_button.isChecked()
     assert not editor.isWindow() and editor.isVisible()
     assert rediger.observation_id() == window.ids_for_test["first"]
-    assert not editor.submit_observation_btn.isVisible() and not editor.cancel_btn.isVisible()
     assert window.observation_rail.isVisible()  # the list is a rail here, as in Bilder
 
 
@@ -162,19 +161,6 @@ def test_edit_images_opens_files_in_images(qtbot, window, rediger, profile):
     assert window.files_source_page.editor().import_results[0].filepath == path
 
 
-def test_the_dialog_keeps_save_and_cancel(qtbot, profile):
-    """The dialog itself (Ny observasjon and cloud-only rows until 9g4) keeps Save and Cancel."""
-    from ui.observations_tab import ObservationDetailsDialog
-
-    dialog = ObservationDetailsDialog(None, observation=None, image_results=[])
-    qtbot.addWidget(dialog)
-    dialog.show()
-    assert dialog.submit_observation_btn.isVisible() and dialog.cancel_btn.isVisible()
-    assert not dialog.is_in_place()
-    dialog.reject()
-    assert not dialog.isVisible()
-
-
 def test_picking_a_name_saves_it(qtbot, window, monkeypatch, tmp_path_factory):
     from tests.test_observation_details_taxon_picker import _pick
     from ui import observation_details_dialog, observations_tab
@@ -253,6 +239,20 @@ def test_enter_in_a_field_keeps_the_page(qtbot, window, rediger):
     editor = rediger.editor()
     _type_into(qtbot, editor.location_input, "Lade")
     qtbot.keyClick(editor.location_input, Qt.Key_Return)
+    assert editor.isVisible() and rediger.editor() is editor
+    # No hidden Save takes Enter (stage 10a5): in Grows on it finishes the
+    # field, as Tab does, and the page stays.
+    tabs = editor.taxonomy_tabs
+    tabs.setCurrentIndex(tabs.count() - 1)  # Grows on
+    field = editor.host_genus_input
+    qtbot.waitUntil(field.isVisible, timeout=2000)
+    finished = []
+    field.editingFinished.connect(lambda: finished.append(field.text()))
+    field.setFocus(Qt.OtherFocusReason)
+    qtbot.waitUntil(field.hasFocus, timeout=2000)
+    qtbot.keyClicks(field, "Zz")  # no completion offered
+    qtbot.keyClick(field, Qt.Key_Return)
+    assert finished == ["Zz"]
     assert editor.isVisible() and rediger.editor() is editor
 
 

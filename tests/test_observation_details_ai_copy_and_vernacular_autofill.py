@@ -1,4 +1,4 @@
-"""Regression tests for two observation-detail dialog bugs seen on
+"""Regression tests for observation-detail dialog bugs seen on
 2026-07-30:
 
 Bug A — the Artsorakel Copy button rejected genus-only rows (e.g.
@@ -9,16 +9,12 @@ identification level and should populate Name + Genus while leaving
 Species and Red List empty. Applies equally to iNaturalist genus-only
 suggestions.
 
-Bug B — typing a Norwegian vernacular into the Name (vernacular) field
-did not auto-populate the Genus field even when the common name
-resolved unambiguously to a single genus across all matching taxa.
-Stage 3B.5 invariant: a vernacular-only edit MUST NOT clear an existing
-Red List badge and MUST NOT overwrite user-typed Genus.
+Bug B's genus autofill from a typed common name went in stage 10a5: it
+hooked the hidden common-name field, which the taxon picker replaced.
 
-Both suites drive the real ``ObservationDetailsDialog`` so the actual
-signal wiring is covered — the controller's ``_suspended`` context, the
-identity-clear handler, and the new vernacular-editing-finished hook
-all run in production shape.
+The tests drive the real ``ObservationDetailsDialog`` so the actual
+signal wiring is covered — the controller's ``_suspended`` context and
+the identity-clear handler run in production shape.
 """
 from __future__ import annotations
 
@@ -506,196 +502,17 @@ def test_extract_genus_species_handles_genus_only_taxon(
 
 
 # ---------------------------------------------------------------------------
-# Bug B — manual vernacular typing populates Genus when unambiguous.
+# The common-name field: the controller's own species-level match.
+# (Bug B's genus autofill hooked the hidden field's editingFinished, which the
+# taxon picker never lets fire; it went in stage 10a5.)
 # ---------------------------------------------------------------------------
-
-
-def test_manual_vernacular_typing_populates_genus_when_unique(
-    monkeypatch, qapp, tmp_path: Path,
-) -> None:
-    """``alvetrevlesopp`` resolves to two ``Inocybe`` species (unique
-    genus across matches). Typing it and tabbing out should populate
-    Genus to ``Inocybe``. Species stays empty; Red List stays empty
-    (no bound identity, no derived category)."""
-    tax_db = tmp_path / "taxonomy_v2.sqlite3"
-    _seed_vernacular_v2_db(tax_db)
-    dialog = _build_dialog(
-        monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=tax_db,
-    )
-    try:
-        assert dialog.vernacular_db is not None
-        dialog.vernacular_input.setText("alvetrevlesopp")
-        qapp.processEvents()
-        dialog.vernacular_input.editingFinished.emit()
-        qapp.processEvents()
-
-        assert dialog.genus_input.text() == "Inocybe"
-        assert dialog.species_input.text() == ""
-        assert dialog._red_list_category == ""
-        # Vernacular text preserved verbatim.
-        assert dialog.vernacular_input.text() == "alvetrevlesopp"
-    finally:
-        dialog._cleanup_dialog_threads()
-        dialog.deleteLater()
-
-
-def test_manual_vernacular_typing_does_not_overwrite_user_typed_genus(
-    monkeypatch, qapp, tmp_path: Path,
-) -> None:
-    """A pre-existing Genus (typed by the user) must never be
-    overwritten by the vernacular autofill. The observer is authoritative."""
-    tax_db = tmp_path / "taxonomy_v2.sqlite3"
-    _seed_vernacular_v2_db(tax_db)
-    dialog = _build_dialog(
-        monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=tax_db,
-    )
-    try:
-        with dialog._taxon_controller._suspended():
-            dialog.genus_input.setText("Amanita")
-        dialog.vernacular_input.setText("alvetrevlesopp")
-        qapp.processEvents()
-        dialog.vernacular_input.editingFinished.emit()
-        qapp.processEvents()
-
-        assert dialog.genus_input.text() == "Amanita"
-    finally:
-        dialog._cleanup_dialog_threads()
-        dialog.deleteLater()
-
-
-def test_manual_vernacular_typing_ambiguous_leaves_genus_empty(
-    monkeypatch, qapp, tmp_path: Path,
-) -> None:
-    """``trevlesopper`` resolves to matches spanning multiple genera
-    (Inocybe, Inosperma). Ambiguous → auto-populate MUST NOT fire; the
-    observer disambiguates via the picker or manual genus entry."""
-    tax_db = tmp_path / "taxonomy_v2.sqlite3"
-    _seed_vernacular_v2_db(tax_db)
-    dialog = _build_dialog(
-        monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=tax_db,
-    )
-    try:
-        dialog.vernacular_input.setText("trevlesopper")
-        qapp.processEvents()
-        dialog.vernacular_input.editingFinished.emit()
-        qapp.processEvents()
-
-        assert dialog.genus_input.text() == ""
-        assert dialog.species_input.text() == ""
-    finally:
-        dialog._cleanup_dialog_threads()
-        dialog.deleteLater()
-
-
-def test_manual_vernacular_typing_unknown_leaves_genus_empty(
-    monkeypatch, qapp, tmp_path: Path,
-) -> None:
-    """Vernacular not present in the DB → no autofill (zero matches
-    behaves the same as ambiguous: leave everything untouched)."""
-    tax_db = tmp_path / "taxonomy_v2.sqlite3"
-    _seed_vernacular_v2_db(tax_db)
-    dialog = _build_dialog(
-        monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=tax_db,
-    )
-    try:
-        dialog.vernacular_input.setText("hokuspokusnavn")
-        qapp.processEvents()
-        dialog.vernacular_input.editingFinished.emit()
-        qapp.processEvents()
-
-        assert dialog.genus_input.text() == ""
-        assert dialog.species_input.text() == ""
-    finally:
-        dialog._cleanup_dialog_threads()
-        dialog.deleteLater()
-
-
-def test_manual_vernacular_typing_does_not_clear_prior_red_list_badge(
-    monkeypatch, qapp, tmp_path: Path,
-) -> None:
-    """Stage 3B.5 vernacular-only invariant: typing a common name (and
-    even having the genus autofill fire) MUST NOT clear an existing Red
-    List badge. Only structured-identity edits (genus/species/scientific
-    name) clear derived state."""
-    tax_db = tmp_path / "taxonomy_v2.sqlite3"
-    _seed_vernacular_v2_db(tax_db)
-    dialog = _build_dialog(
-        monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=tax_db,
-    )
-    try:
-        # Prior state: a species-level VU badge (from an Artsorakel
-        # source snapshot in a previous session).
-        dialog._set_red_list_category("VU", {"no": "VU"})
-        qapp.processEvents()
-        assert dialog._red_list_category == "VU"
-
-        dialog.vernacular_input.setText("alvetrevlesopp")
-        qapp.processEvents()
-        dialog.vernacular_input.editingFinished.emit()
-        qapp.processEvents()
-
-        # Genus autofill fired (unique genus) — the vernacular-only edit
-        # invariant means the badge remains untouched.
-        assert dialog.genus_input.text() == "Inocybe"
-        assert dialog._red_list_category == "VU"
-    finally:
-        dialog._cleanup_dialog_threads()
-        dialog.deleteLater()
-
-
-def test_manual_vernacular_typing_skipped_when_snapshot_committed(
-    monkeypatch, qapp, tmp_path: Path,
-) -> None:
-    """When the taxonomy controller already holds a committed snapshot
-    (explicit picker or manual-resolver choice), a vernacular typing
-    event MUST NOT overwrite the bound genus. This guards against
-    a race where the user typed a vernacular after picking a taxon —
-    identity wins."""
-    tax_db = tmp_path / "taxonomy_v2.sqlite3"
-    _seed_vernacular_v2_db(tax_db)
-    dialog = _build_dialog(
-        monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=tax_db,
-    )
-    try:
-        with dialog._taxon_controller._suspended():
-            dialog.genus_input.setText("Amanita")
-            dialog.species_input.setText("muscaria")
-        dialog._taxon_controller._committed_snapshot = {
-            "genus": "Amanita",
-            "species": "muscaria",
-            "scientific_name": "Amanita muscaria",
-            "taxon_rank_snapshot": "species",
-            "sporely_taxon_id": 999999,
-            "link_kind": "canonical",
-            "canonical_scientific_name": "Amanita muscaria",
-            "canonical_rank": "species",
-        }
-        # Clear the genus programmatically to force the autofill trigger
-        # into a path where it *could* set text — proving the snapshot
-        # guard is what blocks it.
-        with dialog._taxon_controller._suspended():
-            dialog.genus_input.setText("")
-        dialog.vernacular_input.setText("alvetrevlesopp")
-        qapp.processEvents()
-        dialog.vernacular_input.editingFinished.emit()
-        qapp.processEvents()
-
-        # Snapshot present → autofill skipped. Genus remains empty as
-        # left by the test.
-        assert dialog.genus_input.text() == ""
-    finally:
-        dialog._cleanup_dialog_threads()
-        dialog.deleteLater()
 
 
 def test_manual_vernacular_unique_species_match_still_binds_via_controller(
     monkeypatch, qapp, tmp_path: Path,
 ) -> None:
-    """Sanity check: a vernacular that maps to exactly one species-level
-    match is handled by ``TaxonInputController.on_vernacular_editing_finished``
-    (which fires first on the same signal). Our genus-autofill hook
-    runs afterwards and must be a no-op in that case (genus is already
-    set)."""
+    """A vernacular that maps to exactly one species-level match is
+    handled by ``TaxonInputController.on_vernacular_editing_finished``."""
     tax_db = tmp_path / "taxonomy_v2.sqlite3"
     _seed_vernacular_v2_db(tax_db)
     dialog = _build_dialog(

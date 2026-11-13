@@ -212,21 +212,6 @@ def test_source_hint_follows_the_keyboard_mode(qtbot, setup):
     assert picker.source_hint() == "←/→ switch source"
 
 
-def test_ai_handler_receives_resolved_chips(qtbot, setup):
-    picker, _other, picked, _free, _cleared = setup
-    handled = []
-    picker.set_ai_suggestion_handler(handled.append)
-    key = {"prediction": 1}
-    picker.set_ai_suggestions([
-        AiSuggestion("vintersopp", "Flammulina velutipes", 0.8, 625621, key=key),
-        AiSuggestion("Gymnopus", "Gymnopus", 0.1, None),
-    ])
-    picker.ai_buttons[0].click()
-    assert [s.key for s in handled] == [key] and picked == []
-    picker.ai_buttons[1].click()
-    assert len(handled) == 1 and picker.is_popup_visible()
-
-
 def test_programmatic_text_never_searches(qtbot, setup):
     picker, _other, picked, _free, _cleared = setup
     picker.search_input.setText("Flammulina")
