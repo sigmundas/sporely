@@ -23,7 +23,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication
 
 from ui import observations_tab
 from utils import taxonomy_v2
@@ -87,6 +87,19 @@ def _type(dialog, text: str) -> None:
     QTest.keyClicks(picker.search_input, text)
     QTest.qWait(250)  # the picker's debounce
     assert picker.is_popup_visible()
+
+
+def _keep_as_name(dialog) -> None:
+    """Keep the typed text as a name without a taxon: arrow down to that row
+    (the list's last), then Return."""
+    picker = dialog.taxon_picker
+    for _ in range(len(picker.results())):
+        entry = picker.current_entry()
+        if entry is not None and entry.kind == "free":
+            break
+        QTest.keyClick(picker.search_input, Qt.Key_Down)
+    assert picker.current_entry().kind == "free"
+    QTest.keyClick(picker.search_input, Qt.Key_Return)
 
 
 def _move_to(dialog, name: str, kind: str = "taxon") -> None:
@@ -280,46 +293,6 @@ def test_a_kept_name_is_stored_whole_without_a_taxon(editor):
     assert _taxon(reopened.get_data()) == _taxon(kept)
 
 
-# --- unfinished search text on Save ------------------------------------------
-
-
-def _answer(monkeypatch, label: str) -> None:
-    def exec_(box):
-        button = next(b for b in box.buttons() if b.text() == label)
-        button.click()
-        return 0
-    monkeypatch.setattr(QMessageBox, "exec", exec_)
-
-
-@pytest.mark.parametrize("answer", ["Discard search text", "Keep as name without taxon", "Choose an entry"])
-def test_save_with_unfinished_search_text_asks(editor, monkeypatch, answer):
-    data = _bound(editor)
-    dialog = editor(**data)
-    _type(dialog, "Gymnopus dryo")
-    _answer(monkeypatch, answer)
-    proceeds = dialog._confirm_unfinished_taxon_search()
-    after = dialog.get_data()
-    if answer == "Discard search text":
-        assert proceeds and _taxon(after) == _taxon(data)
-        assert _shown(dialog) == ("Mycena pearsoniana", NORTAXA)
-    elif answer == "Keep as name without taxon":
-        assert proceeds and (after["genus"], after["species"]) == (None, "Gymnopus dryo")
-        assert after["sporely_taxon_id"] is None
-    else:
-        assert not proceeds and _taxon(after) == _taxon(data)
-        assert dialog.taxon_picker.unfinished_text() == "Gymnopus dryo"
-
-
-def test_save_stops_while_the_user_goes_back_to_choose(editor, monkeypatch):
-    dialog = editor()
-    accepted = []
-    dialog.accepted.connect(lambda: accepted.append(True))
-    _type(dialog, "Gymnopus dryo")
-    _answer(monkeypatch, "Choose an entry")
-    dialog.accept()
-    assert accepted == [] and dialog.isVisible()
-
-
 # --- Artsorakel ----------------------------------------------------------------
 
 
@@ -426,31 +399,31 @@ def test_a_kept_name_survives_the_database(editor, tmp_path, monkeypatch):
     dialog.taxon_picker.search_input.clear()
     name = "gul kremle-aktig"
     _type(dialog, name)
-    assert dialog.taxon_picker.keep_unfinished_as_name()
+    _keep_as_name(dialog)
     _save(db, obs_id, dialog)
     assert _identity_row(path, obs_id)[:4] == (None, name, None, None)
     reopened = _reopen(editor, db, obs_id)
     assert _shown(reopened) == (name, "free")
 
 
-def test_endre_then_save_without_typing_keeps_the_identification(editor, monkeypatch):
+def test_unidentified_drops_unfinished_search_text(editor):
+    dialog = editor()
+    _type(dialog, "Gymnopus dryo")
+    assert dialog.unfinished_taxon_text() == "Gymnopus dryo"
+    dialog.unidentified_checkbox.click()
+    assert dialog.unfinished_taxon_text() == ""
+    assert dialog.taxon_picker.search_input.text() == ""
+    data = dialog.get_data()
+    assert (data["genus"], data["species"], data["sporely_taxon_id"]) == (None, None, None)
+
+
+def test_endre_without_typing_keeps_the_identification(editor):
+    """Rediger saves while the search is open: Endre alone is not an edit."""
     data = _bound(editor)
     dialog = editor(**data)
     dialog.taxon_picker.begin_edit()
-    asked = []
-    monkeypatch.setattr(QMessageBox, "exec", lambda box: asked.append(box.text()) or 0)
-    assert dialog._confirm_unfinished_taxon_search()
-    assert asked == []
+    assert dialog.unfinished_taxon_text() == ""
     assert _taxon(dialog.get_data()) == _taxon(data)
-    assert _shown(dialog) == ("Mycena pearsoniana", NORTAXA)
-
-
-def test_edit_images_with_unfinished_text_asks_first(editor, monkeypatch):
-    dialog = editor()
-    _type(dialog, "Gymnopus dryo")
-    _answer(monkeypatch, "Choose an entry")
-    dialog._on_edit_images_clicked()
-    assert not getattr(dialog, "request_edit_images", False) and dialog.isVisible()
 
 
 # --- review fixes: publishing taxon ID, AI selection, current concept -------
@@ -505,7 +478,7 @@ def test_leaving_the_concept_drops_the_publishing_taxon_id(editor, tmp_path, mon
     if change == "free name":
         dialog.taxon_picker.begin_edit()
         _type(dialog, "Cortinarius sp. 14")
-        assert dialog.taxon_picker.keep_unfinished_as_name()
+        _keep_as_name(dialog)
     elif change == "clear":
         dialog.taxon_picker.card.clear_button.click()
     else:
@@ -555,22 +528,6 @@ def test_endre_enter_after_a_source_switch_keeps_the_switched_concept(editor, tm
     _save(db, obs_id, dialog)
     reopened = _reopen(editor, db, obs_id)
     assert _shown(reopened) == ("Mycena pearsoniana", COL)
-
-
-@pytest.mark.parametrize("answer", ["Choose an entry", "Discard search text"])
-def test_edit_photo_on_a_thumbnail_asks_about_unfinished_text(editor, monkeypatch, answer):
-    dialog = editor()
-    _type(dialog, "Gymnopus dryo")
-    _answer(monkeypatch, answer)
-    rejected = []
-    dialog.rejected.connect(lambda: rejected.append(True))
-    dialog._on_gallery_edit_requested(1, "/tmp/photo.jpg")
-    if answer == "Choose an entry":
-        assert rejected == [] and not dialog.request_edit_images
-        assert dialog.taxon_picker.unfinished_text() == "Gymnopus dryo"
-    else:
-        assert rejected == [True] and dialog.request_edit_images
-        assert dialog.get_data()["species"] is None
 
 
 def test_the_main_gallery_edit_photo_opens_prepare_images():

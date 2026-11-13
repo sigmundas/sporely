@@ -194,8 +194,13 @@ def test_unfinished_text_can_be_discarded_or_kept(qtbot, setup):
     picker.discard_unfinished()
     assert picker.unfinished_text() == "" and picker.selection() == (row, concept)
     picker.begin_edit()
-    qtbot.keyClicks(picker.search_input, "Russula sp. A")
-    assert picker.keep_unfinished_as_name()
+    type_query(qtbot, picker, "Russula sp. A")
+    for _ in range(len(picker.results())):  # down to the last row: keep the text as a name
+        if picker.current_entry() is not None and picker.current_entry().kind == "free":
+            break
+        qtbot.keyClick(picker.search_input, Qt.Key_Down)
+    assert picker.current_entry().kind == "free"
+    qtbot.keyClick(picker.search_input, Qt.Key_Return)
     assert free == ["Russula sp. A"] and picker.selection() is None
 
 

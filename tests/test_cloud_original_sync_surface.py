@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 import os
-from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtWidgets import QApplication, QCheckBox
 
-import ui.cloud_sync_dialog as cloud_sync_dialog
 import ui.main_window as main_window
-from ui.cloud_sync_dialog import CloudSyncDialog
 from ui.main_window import ArtsobservasjonerSettingsDialog
 from utils import cloud_sync
 
@@ -21,13 +18,6 @@ def qapp():
     if app is None:
         app = QApplication([])
     return app
-
-
-def _build_cloud_dialog(monkeypatch) -> CloudSyncDialog:
-    fake_client = SimpleNamespace(user_id="user-123")
-    monkeypatch.setattr(cloud_sync_dialog.SporelyCloudClient, "from_stored_credentials", lambda: fake_client)
-    monkeypatch.setattr(cloud_sync_dialog, "get_app_settings", lambda: {})
-    return CloudSyncDialog()
 
 
 def _build_preferences_dialog(monkeypatch, tmp_path) -> ArtsobservasjonerSettingsDialog:
@@ -94,67 +84,4 @@ def test_preferences_dialog_does_not_expose_original_sync_toggle(monkeypatch, qa
     assert "Sync full-resolution originals" not in checkbox_texts
     assert "Uploads eligible field and microscope originals for recovery and reproducibility." not in " ".join(
         checkbox_texts
-    )
-
-
-def test_cloud_sync_dialog_appends_original_upload_summary(monkeypatch, qapp):
-    dialog = _build_cloud_dialog(monkeypatch)
-
-    dialog._on_sync_done(
-        {
-            "pushed": 1,
-            "pulled": 0,
-            "calibrations_pushed": 0,
-            "calibrations_pulled": 0,
-            "errors": [],
-            "deleted_remote": [],
-            "original_sync": {
-                "enabled": True,
-                "uploaded": 2,
-                "skipped_disabled": 0,
-                "skipped_ineligible": 1,
-                "skipped_too_large": 0,
-                "failed_uploads": 1,
-            },
-        }
-    )
-
-    status_text = dialog._status_label.text()
-    assert "1 observation pushed." in status_text
-    assert "Original uploads: 2 uploaded, 1 skipped, 1 failed." in status_text
-
-
-def test_cloud_sync_dialog_stays_quiet_when_original_sync_disabled(monkeypatch, qapp):
-    dialog = _build_cloud_dialog(monkeypatch)
-
-    dialog._on_sync_done(
-        {
-            "pushed": 1,
-            "pulled": 0,
-            "calibrations_pushed": 0,
-            "calibrations_pulled": 0,
-            "errors": [],
-            "deleted_remote": [],
-            "original_sync": {
-                "enabled": False,
-                "uploaded": 0,
-                "skipped_disabled": 3,
-                "skipped_ineligible": 0,
-                "skipped_too_large": 0,
-                "failed_uploads": 0,
-            },
-        }
-    )
-
-    assert "Original uploads:" not in dialog._status_label.text()
-
-
-def test_cloud_sync_dialog_treats_jwt_expired_as_sign_in_failure(monkeypatch, qapp):
-    dialog = _build_cloud_dialog(monkeypatch)
-
-    assert (
-        dialog._summarize_sync_error(
-            'GET observation_images?...: {"code":"PGRST303","message":"JWT expired"}'
-        )
-        == "Cloud sync sign-in failed. Please sign in again."
     )

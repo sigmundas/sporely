@@ -164,6 +164,30 @@ def test_common_name_selection_inserts_only_the_common_name() -> None:
     assert species_input.text() == "bisporus"
 
 
+def test_common_name_choice_without_a_species_leaves_the_taxon_fields() -> None:
+    """A name known only at genus level sets the name, never half a taxon."""
+    from PySide6.QtGui import QStandardItem, QStandardItemModel
+
+    _make_app()
+    genus_input = QLineEdit()
+    species_input = QLineEdit()
+    vernacular_input = QLineEdit()
+    controller = TaxonInputController(_FakeLookup(), genus_input, species_input, vernacular_input)
+    with controller._suspended():
+        genus_input.setText("")
+        species_input.setText("preserve me")
+
+    model = QStandardItemModel()
+    item = QStandardItem("Button mushroom")
+    item.setData(TaxonChoice(genus="Agaricus", species=None, common_name="Button mushroom"), ROLE_TAXON_CHOICE)
+    model.appendRow(item)
+    controller.on_vernacular_selected(model.index(0, 0))
+
+    assert vernacular_input.text() == "Button mushroom"
+    assert genus_input.text() == ""
+    assert species_input.text() == "preserve me"
+
+
 def test_common_name_selection_overwrites_stale_scientific_fields() -> None:
     _make_app()
     lookup = _VernacularFallbackLookup()
@@ -205,6 +229,25 @@ def test_stale_vernacular_clears_when_species_no_longer_matches() -> None:
 
     species_input.setText("muscaria")
     controller.sync_vernacular_after_taxon_change()
+
+    assert vernacular_input.text() == ""
+    assert controller.vernacular_model.rowCount() == 0
+
+
+def test_stale_vernacular_clears_when_the_species_is_removed() -> None:
+    _make_app()
+    genus_input = QLineEdit()
+    species_input = QLineEdit()
+    vernacular_input = QLineEdit()
+    controller = TaxonInputController(_FakeLookup(), genus_input, species_input, vernacular_input)
+
+    genus_input.setText("Agaricus")
+    species_input.setText("bisporus")
+    vernacular_input.setText("Button mushroom")
+    controller.sync_vernacular_after_taxon_change()
+    assert vernacular_input.text() == "Button mushroom"
+
+    species_input.setText("")  # the field's own signal syncs the name
 
     assert vernacular_input.text() == ""
     assert controller.vernacular_model.rowCount() == 0

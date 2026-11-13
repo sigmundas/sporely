@@ -696,14 +696,6 @@ class TaxonPicker(QWidget):
         else:
             self.search_input.clear()
 
-    def keep_unfinished_as_name(self) -> bool:
-        """Keep the typed search text as a name without a taxon."""
-        text = self.unfinished_text()
-        if not text:
-            return False
-        self._commit_free_text(text)
-        return True
-
     def begin_edit(self) -> None:
         """Endre: back to the search field, with the current name selected."""
         self._editing = True

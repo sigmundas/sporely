@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtWidgets import QApplication, QWidget, QCheckBox, QLineEdit
 from PySide6.QtWidgets import QPlainTextEdit
-from PySide6.QtCore import QPoint, Signal
+from PySide6.QtCore import QObject, QPoint, Signal
 
 import ui.main_window as main_window
 import utils.cloud_sync as cloud_sync
@@ -275,6 +275,97 @@ def test_profile_cloud_sign_in_buttons_follow_cached_login_state(monkeypatch, qa
     assert cloud_card.cloud_status_label.text() == "Signed in as: sigmund.as@gmail.com"
     assert cloud_card.cloud_login_button.isEnabled() is False
     assert cloud_card.cloud_logout_button.isEnabled() is True
+
+    dialog.deleteLater()
+    parent.deleteLater()
+
+
+def _sign_out_settings_hub(monkeypatch, parent, dialog) -> None:
+    monkeypatch.setattr(cloud_sync.SporelyCloudClient, "from_stored_credentials", lambda: None)
+    parent._cloud_client = None
+    dialog._cloud_client = None
+    dialog._artsobs_dialog._cloud_client = None
+
+
+def test_profile_cloud_signed_out_offers_browser_sign_in_only(monkeypatch, qapp):
+    parent, dialog = _build_settings_hub_dialog(monkeypatch, qapp, patch_controls=False)
+    cloud_card = dialog._artsobs_dialog
+    _sign_out_settings_hub(monkeypatch, parent, dialog)
+
+    cloud_card._update_cloud_controls()
+
+    assert cloud_card.cloud_status_label.text() == "Not logged in"
+    assert cloud_card.cloud_login_button.text() == "Log in"
+    assert cloud_card.cloud_login_button.isEnabled() is True
+    assert cloud_card.cloud_logout_button.isEnabled() is False
+    # Sign-in happens in the browser: the cloud section asks for no password.
+    password_fields = [
+        field
+        for field in cloud_card._cloud_section.findChildren(QLineEdit)
+        if field.echoMode() != QLineEdit.EchoMode.Normal
+    ]
+    assert password_fields == []
+
+    dialog.deleteLater()
+    parent.deleteLater()
+
+
+def test_profile_cloud_log_in_starts_browser_sign_in_and_closing_the_wait_cancels_it(monkeypatch, qapp):
+    parent, dialog = _build_settings_hub_dialog(monkeypatch, qapp, patch_controls=False)
+    cloud_card = dialog._artsobs_dialog
+    _sign_out_settings_hub(monkeypatch, parent, dialog)
+    cloud_card._update_cloud_controls()
+
+    workers: list = []
+
+    class _FakeLoginWorker(QObject):
+        ok = Signal(object)
+        fail = Signal(str)
+        finished = Signal()
+
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.started = False
+            self.cancelled = False
+            workers.append(self)
+
+        def start(self):
+            self.started = True
+
+        def cancel(self):
+            self.cancelled = True
+
+    seen_while_waiting: dict[str, object] = {}
+
+    def _close_waiting_dialog(waiting_dialog):
+        # The user closes the "Waiting for browser sign-in" dialog.
+        seen_while_waiting["button_text"] = cloud_card.cloud_login_button.text()
+        seen_while_waiting["button_enabled"] = cloud_card.cloud_login_button.isEnabled()
+        seen_while_waiting["worker_started"] = bool(workers and workers[0].started)
+        waiting_dialog.reject()
+        return 0
+
+    monkeypatch.setattr(main_window, "_CloudOAuthLoginWorker", _FakeLoginWorker)
+    monkeypatch.setattr(main_window.QDialog, "exec", _close_waiting_dialog)
+
+    cloud_card.cloud_login_button.click()
+
+    assert len(workers) == 1
+    assert seen_while_waiting == {
+        "button_text": "Signing in...",
+        "button_enabled": False,
+        "worker_started": True,
+    }
+    assert workers[0].cancelled is True
+
+    # A second click while that worker is still winding down starts nothing new.
+    cloud_card._open_cloud_login()
+    assert len(workers) == 1
+
+    workers[0].finished.emit()
+    assert cloud_card._cloud_login_worker is None
+    assert cloud_card.cloud_login_button.text() == "Log in"
+    assert cloud_card.cloud_login_button.isEnabled() is True
 
     dialog.deleteLater()
     parent.deleteLater()

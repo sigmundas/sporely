@@ -852,30 +852,6 @@ class TaxonInputController(QObject):
                 self._set_text(self.vernacular_input, new_value)
         self._notify_taxon_changed()
 
-    def _clear_scientific_taxon_for_vernacular_search(self) -> None:
-        genus = self._current_genus()
-        species = self._current_species()
-        if not genus and not species:
-            return
-        with self._suspended():
-            if genus:
-                self._set_text(self.genus_input, "")
-            if species:
-                self._set_text(self.species_input, "")
-        self._genus_model.setStringList([])
-        self._species_model.clear()
-        self._vernacular_model.clear()
-        self._last_genus_query = None
-        self._last_species_query = None
-        if self._genus_completer.popup():
-            self._genus_completer.popup().hide()
-        if self._species_completer.popup():
-            self._species_completer.popup().hide()
-        if self._vernacular_completer and self._vernacular_completer.popup():
-            self._vernacular_completer.popup().hide()
-        self._last_vernacular_query = None
-        self._notify_taxon_changed()
-
     def sync_vernacular_after_taxon_change(self) -> None:
         self._sync_vernacular_after_taxon_change()
 

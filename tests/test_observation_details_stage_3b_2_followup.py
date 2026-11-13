@@ -177,9 +177,8 @@ def test_typing_custom_vernacular_does_not_clear_taxon(tmp_path, monkeypatch, qa
     d = _dialog(tmp_path, monkeypatch)
     d.genus_input.setText("Candolleomyces")
     d.species_input.setText("candolleanus")
-    d.vernacular_input.setText("")
-    # Simulate user typing free-text that has no matches for this taxon.
-    ObservationDetailsDialog._on_vernacular_text_changed(d, "custom-nickname-xyz")
+    # Free text that has no matches for this taxon.
+    d.vernacular_input.setText("custom-nickname-xyz")
     # Genus and species must remain intact — the previous
     # `_clear_scientific_taxon_for_vernacular_search` side effect is gone.
     assert d.genus_input.text() == "Candolleomyces"
@@ -192,9 +191,7 @@ def test_clearing_vernacular_does_not_clear_taxon(tmp_path, monkeypatch, qapp) -
     d.genus_input.setText("Candolleomyces")
     d.species_input.setText("candolleanus")
     d.vernacular_input.setText("hvit sprøsopp")
-    # Actually clear the vernacular field and fire the changed handler.
     d.vernacular_input.setText("")
-    ObservationDetailsDialog._on_vernacular_text_changed(d, "")
     assert d.genus_input.text() == "Candolleomyces"
     assert d.species_input.text() == "candolleanus"
     assert d.vernacular_input.text() == ""

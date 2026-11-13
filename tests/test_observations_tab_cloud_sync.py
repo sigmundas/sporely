@@ -822,6 +822,77 @@ def test_cloud_sync_finished_success_uses_neutral_completion_text():
     assert status_kwargs["level"] == "success"
 
 
+@pytest.mark.parametrize(
+    ("original_sync", "expected_line"),
+    [
+        (
+            {
+                "enabled": True,
+                "uploaded": 2,
+                "skipped_disabled": 0,
+                "skipped_ineligible": 1,
+                "skipped_too_large": 0,
+                "failed_uploads": 1,
+            },
+            "Original uploads: 2 uploaded, 1 skipped, 1 failed.",
+        ),
+        (
+            {
+                "enabled": False,
+                "uploaded": 0,
+                "skipped_disabled": 3,
+                "skipped_ineligible": 0,
+                "skipped_too_large": 0,
+                "failed_uploads": 0,
+            },
+            None,
+        ),
+    ],
+)
+def test_cloud_sync_finished_reports_original_uploads_only_when_enabled(original_sync, expected_line):
+    calls: dict[str, object] = {}
+    fake_tab = SimpleNamespace(
+        tr=lambda text: text,
+        refresh_observations=lambda show_status=False: None,
+        _cloud_sync_run_refresh_flow=False,
+        _cloud_sync_show_status=True,
+        _set_status_progress_visible=lambda visible: None,
+        _set_status_progress_cancel_visible=lambda visible: None,
+        _reset_status_progress=lambda: None,
+        _set_status_progress=lambda *args, **kwargs: None,
+        _finish_manual_refresh_flow=lambda: None,
+        _record_cloud_sync_status=lambda *args, **kwargs: calls.setdefault("record", (args, kwargs)),
+        _refresh_cloud_sync_idle_hint=lambda: None,
+        _show_cloud_conflict_dialog=lambda *args, **kwargs: None,
+        _prompt_for_deleted_cloud_observations=lambda *args, **kwargs: None,
+        set_status_message=lambda *args, **kwargs: calls.setdefault("status_message", (args, kwargs)),
+    )
+    summary = cloud_sync._new_sync_summary()
+    summary["observations_patched"] = 1
+
+    observations_tab.ObservationsTab._on_cloud_sync_finished(
+        fake_tab,
+        {
+            "pushed": 1,
+            "pulled": 0,
+            "errors": [],
+            "deleted_remote": [],
+            "sync_summary": summary,
+            "original_sync": original_sync,
+        },
+    )
+
+    shown = calls["status_message"][0][0]
+    recorded = calls["record"][0][0]
+    assert shown.splitlines()[0] == "Cloud sync complete."
+    if expected_line is None:
+        assert "Original uploads:" not in shown
+        assert "Original uploads:" not in recorded
+    else:
+        assert expected_line in shown.splitlines()
+        assert expected_line in recorded.splitlines()
+
+
 def test_cloud_sync_finished_proven_noop_skips_observation_refresh():
     calls: dict[str, object] = {}
     fake_tab = SimpleNamespace(

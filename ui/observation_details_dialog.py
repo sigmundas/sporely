@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QPushButton,
-    QMessageBox,
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
@@ -19,11 +18,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QTextEdit,
     QDateTimeEdit,
-    QFileDialog,
     QLabel,
     QSplitter,
-    QRadioButton,
-    QButtonGroup,
     QComboBox,
     QCheckBox,
     QDoubleSpinBox,
@@ -47,7 +43,6 @@ from PySide6.QtCore import (
     QEvent,
     QTimer,
     QThread,
-    QStandardPaths,
     QSettings,
     QModelIndex,
 )
@@ -85,7 +80,7 @@ from database.models import (
     CLOUD_IMAGE_STATE_UPLOADED,
 )
 from database.vernacular_db import VernacularDB
-from database.taxon_lookup import TAXON_COMPLETER_LIMIT, TaxonChoice, TaxonLookupService, determine_redlist_area
+from database.taxon_lookup import TaxonLookupService, determine_redlist_area
 from database.taxon_suggestions import (
     KIND_NAME_CONFIRMED,
     ORIGIN_OBSERVATION,
@@ -102,7 +97,6 @@ from database.schema import (
     get_app_settings,
     load_objectives,
     objective_display_name,
-    objective_sort_value,
     resolve_objective_key,
     update_app_settings,
 )
@@ -238,26 +232,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             body_margins=body_margins,
             body_spacing=body_spacing,
         )
-
-    def _build_stacked_selector_field(
-        self,
-        label_text: str,
-        widget: QWidget,
-        *,
-        parent: QWidget | None = None,
-    ) -> QWidget:
-        """Build a compact stacked label + selector field for cloud settings."""
-        field = QWidget(parent or self)
-        field.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        field_layout = QVBoxLayout(field)
-        field_layout.setContentsMargins(0, 0, 0, 0)
-        field_layout.setSpacing(4)
-
-        label = QLabel(str(label_text), field)
-        label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-        field_layout.addWidget(label, 0, Qt.AlignLeft)
-        field_layout.addWidget(widget, 0, Qt.AlignLeft)
-        return field
 
     def _window_cloud_client(self) -> SporelyCloudClient | None:
         try:
@@ -450,12 +424,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.image_results = image_results or []
         self.primary_index = primary_index
         self.allow_edit_images = allow_edit_images
-        self.request_edit_images = False
-        self.request_edit_images_path: str | None = None
-        # When True, the caller should skip re-opening this details dialog
-        # after Prepare Images closes — set by the thumbnail right-click
-        # "Edit photo" action so it behaves like a direct edit command.
-        self.request_edit_images_skip_return = False
         self.suggested_taxon = suggested_taxon
         self.map_helper = MapServiceHelper(self)
         self._hint_controller: HintStatusController | None = None
@@ -1557,23 +1525,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._edit_images_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
             self._edit_images_shortcut.activated.connect(self._edit_images_from_modified_shortcut)
 
-    def _dialog_shortcut_blocked_by_text_input(self) -> bool:
-        focus = QApplication.focusWidget()
-        if focus is None:
-            return False
-        if isinstance(focus, (QLineEdit, QTextEdit)):
-            return True
-        if isinstance(focus, QComboBox) and focus.isEditable():
-            return True
-        parent = focus.parentWidget()
-        while parent is not None:
-            if isinstance(parent, (QLineEdit, QTextEdit)):
-                return True
-            if isinstance(parent, QComboBox) and parent.isEditable():
-                return True
-            parent = parent.parentWidget()
-        return False
-
     def _submit_dialog_from_enter(self) -> None:
         focus = QApplication.focusWidget()
         if isinstance(focus, QTextEdit):
@@ -1582,14 +1533,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if submit_btn is None or not submit_btn.isEnabled():
             return
         submit_btn.click()
-
-    def _edit_images_from_shortcut(self) -> None:
-        if self._dialog_shortcut_blocked_by_text_input():
-            return
-        edit_btn = getattr(self, "edit_images_btn", None)
-        if edit_btn is None or not edit_btn.isEnabled():
-            return
-        edit_btn.click()
 
     def _edit_images_from_modified_shortcut(self) -> None:
         edit_btn = getattr(self, "edit_images_btn", None)
@@ -3056,7 +2999,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._on_ai_thread_finished()
             self._on_inat_ai_thread_finished()
 
-
     def _on_ai_thread_finished(self) -> None:
         self._ai_thread = None
         if hasattr(self, "ai_guess_buttons") and "arts" in self.ai_guess_buttons:
@@ -3531,8 +3473,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         observation public and not a draft. Cancel keeps the previous state."""
         if self.is_in_place():
             return  # Rediger saves as you go; nothing closes the page
-        if not self._confirm_unfinished_taxon_search():
-            return
         if not self.confirm_publish_change():
             return
         super().accept()
@@ -3674,46 +3614,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._update_ai_controls_state()
 
     def _on_edit_images_clicked(self):
-        if self.is_in_place():
-            self.editImagesRequested.emit("")
-            return
-        # Leaving for Prepare Images keeps the identification; unfinished
-        # species search text needs the same decision as on Save.
-        if not self._confirm_unfinished_taxon_search():
-            return
-        self.request_edit_images = True
-        self.reject()
+        self.editImagesRequested.emit("")
 
     def _on_image_double_clicked(self, _img_id, path: str) -> None:
-        if self.is_in_place():
-            self.editImagesRequested.emit(path or "")
-            return
-        # Leaving for Prepare Images keeps the identification; unfinished
-        # species search text needs the same decision as on Save.
-        if not self._confirm_unfinished_taxon_search():
-            return
-        self.request_edit_images = True
-        self.request_edit_images_path = path or None
-        self.reject()
+        self.editImagesRequested.emit(path or "")
 
     def _on_gallery_edit_requested(self, _image_id, filepath: str) -> None:
-        if self.is_in_place():
-            self.editImagesRequested.emit((filepath or "").strip())
-            return
-        # Right-click "Edit photo" routes through the same reject+
-        # request_edit_images flag as the "Edit images" button and the
-        # double-click handler — the parent tab picks it up and opens
-        # Prepare Images for the requested path. The extra
-        # request_edit_images_skip_return flag tells the caller not to
-        # re-open the details dialog after Prepare Images closes; a
-        # thumbnail right-click is a direct "just edit this photo" action.
-        # Unfinished species search text needs the same decision as on Save.
-        if not self._confirm_unfinished_taxon_search():
-            return
-        self.request_edit_images = True
-        self.request_edit_images_path = (filepath or "").strip() or None
-        self.request_edit_images_skip_return = True
-        self.reject()
+        self.editImagesRequested.emit((filepath or "").strip())
 
     def _apply_primary_metadata(self):
         if not self.image_results:
@@ -3831,256 +3738,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 return item
         return self.image_results[0] if self.image_results else None
 
-    def select_images(self):
-        """Select images and extract EXIF metadata."""
-        from utils.exif_reader import get_image_metadata
-
-        settings = get_app_settings()
-        last_import_dir = settings.get("last_import_dir")
-        if not last_import_dir or not Path(last_import_dir).exists():
-            docs = QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
-            last_import_dir = docs if docs else str(Path.home())
-
-        files, _ = QFileDialog.getOpenFileNames(
-            self, "Select Photos", last_import_dir,
-            "Images (*.png *.jpg *.jpeg *.tif *.tiff *.heic *.heif);;All Files (*)"
-        )
-        if not files:
-            return
-        update_app_settings({"last_import_dir": str(Path(files[0]).parent)})
-
-        # Add to existing files
-        for filepath in files:
-            if filepath not in self.image_files:
-                self.image_files.append(filepath)
-                metadata = get_image_metadata(filepath)
-                metadata["filepath"] = filepath
-                metadata["image_id"] = None
-                self.image_metadata.append(metadata)
-                # Default settings: field image, default objective
-                self.image_settings.append({
-                    'image_type': 'field',
-                    'objective': self.default_objective,
-                    'contrast': self._field_tag_value('contrast'),
-                    'mount_medium': self._field_tag_value('mount'),
-                    'stain': self._field_tag_value('stain'),
-                    'sample_type': self._field_tag_value('sample')
-                })
-
-        self._update_image_table()
-
-        # If this is the first batch of images, auto-populate date/GPS from last image
-        if len(self.image_metadata) > 0:
-            self._apply_metadata_from_index(len(self.image_metadata) - 1)
-
-    def _update_image_table(self):
-        """Update the image table with current images."""
-        self.image_table.setRowCount(len(self.image_metadata))
-
-        for row, meta in enumerate(self.image_metadata):
-            filename = meta['filename']
-            dt = meta.get('datetime')
-            if dt:
-                date_str = dt.strftime("%Y-%m-%d %H:%M")
-                display = f"{filename}\n{date_str}"
-            else:
-                display = filename
-
-            # Column 0: Filename/Date
-            name_item = QTableWidgetItem(display)
-            name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
-            self.image_table.setItem(row, 0, name_item)
-
-            # Column 1: Field radio button
-            field_radio = QRadioButton()
-            field_radio.setChecked(self.image_settings[row]['image_type'] == 'field')
-            field_radio.toggled.connect(lambda checked, r=row: self._on_image_type_changed(r, 'field', checked))
-            field_container = QWidget()
-            field_layout = QHBoxLayout(field_container)
-            field_layout.addWidget(field_radio)
-            field_layout.setAlignment(Qt.AlignCenter)
-            field_layout.setContentsMargins(0, 0, 0, 0)
-            self.image_table.setCellWidget(row, 1, field_container)
-
-            # Column 2: Micro radio button
-            micro_radio = QRadioButton()
-            micro_radio.setChecked(self.image_settings[row]['image_type'] == 'microscope')
-            micro_radio.toggled.connect(lambda checked, r=row: self._on_image_type_changed(r, 'microscope', checked))
-            micro_container = QWidget()
-            micro_layout = QHBoxLayout(micro_container)
-            micro_layout.addWidget(micro_radio)
-            micro_layout.setAlignment(Qt.AlignCenter)
-            micro_layout.setContentsMargins(0, 0, 0, 0)
-            self.image_table.setCellWidget(row, 2, micro_container)
-
-            # Link the radio buttons
-            btn_group = QButtonGroup(self.image_table)
-            btn_group.addButton(field_radio, 0)
-            btn_group.addButton(micro_radio, 1)
-
-            # Column 3: Objective dropdown
-            obj_combo = QComboBox()
-            obj_combo.setEnabled(self.image_settings[row]['image_type'] == 'microscope')
-            obj_combo.setStyleSheet("""
-                QComboBox { padding: 2px 4px; min-height: 24px; }
-                QComboBox QAbstractItemView { min-height: 24px; }
-            """)
-            for key, obj in sorted(self.objectives.items(), key=lambda item: objective_sort_value(item[1], item[0])):
-                label = objective_display_name(obj, key) or key
-                obj_combo.addItem(label, key)
-            # Set current objective
-            current_obj = self.image_settings[row].get('objective', self.default_objective)
-            idx = obj_combo.findData(current_obj)
-            if idx >= 0:
-                obj_combo.setCurrentIndex(idx)
-            obj_combo.currentIndexChanged.connect(lambda idx, r=row, c=obj_combo: self._on_objective_changed(r, c))
-            self.image_table.setCellWidget(row, 3, obj_combo)
-
-            # Column 4: Contrast dropdown
-            contrast_combo = QComboBox()
-            contrast_combo.setEnabled(self.image_settings[row]['image_type'] == 'microscope')
-            self._populate_tag_combo(contrast_combo, "contrast", self.contrast_options)
-            current_contrast = DatabaseTerms.canonicalize(
-                "contrast",
-                self.image_settings[row].get('contrast', self.contrast_default),
-            )
-            idx = contrast_combo.findData(current_contrast)
-            if idx >= 0:
-                contrast_combo.setCurrentIndex(idx)
-            self._set_tag_combo_neutral_display(
-                contrast_combo,
-                "contrast",
-                self.image_settings[row]['image_type'] != 'microscope',
-            )
-            contrast_combo.currentIndexChanged.connect(lambda idx, r=row, c=contrast_combo: self._on_contrast_changed(r, c))
-            self.image_table.setCellWidget(row, 4, contrast_combo)
-
-            # Column 5: Mount medium dropdown
-            mount_combo = QComboBox()
-            mount_combo.setEnabled(self.image_settings[row]['image_type'] == 'microscope')
-            self._populate_tag_combo(mount_combo, "mount", self.mount_options)
-            current_mount = DatabaseTerms.canonicalize(
-                "mount",
-                self.image_settings[row].get('mount_medium', self.mount_default),
-            )
-            idx = mount_combo.findData(current_mount)
-            if idx >= 0:
-                mount_combo.setCurrentIndex(idx)
-            self._set_tag_combo_neutral_display(
-                mount_combo,
-                "mount",
-                self.image_settings[row]['image_type'] != 'microscope',
-            )
-            mount_combo.currentIndexChanged.connect(lambda idx, r=row, c=mount_combo: self._on_mount_changed(r, c))
-            self.image_table.setCellWidget(row, 5, mount_combo)
-
-            # Column 6: Stain dropdown
-            stain_combo = QComboBox()
-            stain_combo.setEnabled(self.image_settings[row]['image_type'] == 'microscope')
-            self._populate_tag_combo(stain_combo, "stain", self.stain_options)
-            current_stain = DatabaseTerms.canonicalize(
-                "stain",
-                self.image_settings[row].get('stain', self.stain_default),
-            )
-            idx = stain_combo.findData(current_stain)
-            if idx >= 0:
-                stain_combo.setCurrentIndex(idx)
-            self._set_tag_combo_neutral_display(
-                stain_combo,
-                "stain",
-                self.image_settings[row]['image_type'] != 'microscope',
-            )
-            stain_combo.currentIndexChanged.connect(lambda idx, r=row, c=stain_combo: self._on_stain_changed(r, c))
-            self.image_table.setCellWidget(row, 6, stain_combo)
-
-            # Column 7: Sample type dropdown
-            sample_combo = QComboBox()
-            sample_combo.setEnabled(self.image_settings[row]['image_type'] == 'microscope')
-            self._populate_tag_combo(sample_combo, "sample", self.sample_options)
-            current_sample = DatabaseTerms.canonicalize(
-                "sample",
-                self.image_settings[row].get('sample_type', self.sample_default),
-            )
-            idx = sample_combo.findData(current_sample)
-            if idx >= 0:
-                sample_combo.setCurrentIndex(idx)
-            self._set_tag_combo_neutral_display(
-                sample_combo,
-                "sample",
-                self.image_settings[row]['image_type'] != 'microscope',
-            )
-            sample_combo.currentIndexChanged.connect(lambda idx, r=row, c=sample_combo: self._on_sample_changed(r, c))
-            self.image_table.setCellWidget(row, 7, sample_combo)
-
-        # Select the last row
-        if self.image_table.rowCount() > 0:
-            self.image_table.selectRow(self.image_table.rowCount() - 1)
-
-    def _on_image_type_changed(self, row, image_type, checked):
-        """Handle image type radio button change."""
-        if checked:
-            self.image_settings[row]['image_type'] = image_type
-            # Enable/disable objective dropdown
-            obj_combo = self.image_table.cellWidget(row, 3)
-            if obj_combo:
-                obj_combo.setEnabled(image_type == 'microscope')
-            contrast_combo = self.image_table.cellWidget(row, 4)
-            if contrast_combo:
-                contrast_combo.setEnabled(image_type == 'microscope')
-                self._set_tag_combo_neutral_display(contrast_combo, 'contrast', image_type != 'microscope')
-            mount_combo = self.image_table.cellWidget(row, 5)
-            if mount_combo:
-                mount_combo.setEnabled(image_type == 'microscope')
-                self._set_tag_combo_neutral_display(mount_combo, 'mount', image_type != 'microscope')
-            stain_combo = self.image_table.cellWidget(row, 6)
-            if stain_combo:
-                stain_combo.setEnabled(image_type == 'microscope')
-                self._set_tag_combo_neutral_display(stain_combo, 'stain', image_type != 'microscope')
-            sample_combo = self.image_table.cellWidget(row, 7)
-            if sample_combo:
-                sample_combo.setEnabled(image_type == 'microscope')
-                self._set_tag_combo_neutral_display(sample_combo, 'sample', image_type != 'microscope')
-            if image_type != 'microscope':
-                self.image_settings[row]['contrast'] = self._field_tag_value('contrast')
-                self.image_settings[row]['mount_medium'] = self._field_tag_value('mount')
-                self.image_settings[row]['stain'] = self._field_tag_value('stain')
-                self.image_settings[row]['sample_type'] = self._field_tag_value('sample')
-                if contrast_combo:
-                    idx = contrast_combo.findData(self.image_settings[row]['contrast'])
-                    if idx >= 0:
-                        contrast_combo.setCurrentIndex(idx)
-                if mount_combo:
-                    idx = mount_combo.findData(self.image_settings[row]['mount_medium'])
-                    if idx >= 0:
-                        mount_combo.setCurrentIndex(idx)
-                if stain_combo:
-                    idx = stain_combo.findData(self.image_settings[row]['stain'])
-                    if idx >= 0:
-                        stain_combo.setCurrentIndex(idx)
-                if sample_combo:
-                    idx = sample_combo.findData(self.image_settings[row]['sample_type'])
-                    if idx >= 0:
-                        sample_combo.setCurrentIndex(idx)
-
     def _on_objective_changed(self, row, combo):
         """Handle objective dropdown change."""
         self.image_settings[row]['objective'] = combo.currentData()
-
-    def _on_mount_changed(self, row, combo):
-        """Handle mount medium change."""
-        self.image_settings[row]['mount_medium'] = combo.currentData()
-
-    def _on_stain_changed(self, row, combo):
-        """Handle stain change."""
-        self.image_settings[row]['stain'] = combo.currentData()
-
-    def _on_contrast_changed(self, row, combo):
-        """Handle contrast change."""
-        self.image_settings[row]['contrast'] = combo.currentData()
-
-    def _on_sample_changed(self, row, combo):
-        """Handle sample type change."""
-        self.image_settings[row]['sample_type'] = combo.currentData()
 
     def on_image_selected(self):
         """Handle image selection in the table."""
@@ -4146,51 +3806,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         # Apply metadata from selected image
         self._apply_metadata_from_index(selected)
-
-    def delete_selected_image(self):
-        """Remove the selected image from the dialog."""
-        selected_rows = self.image_table.selectionModel().selectedRows()
-        if not selected_rows or selected_rows[0].row() >= len(self.image_metadata):
-            return
-
-        row = selected_rows[0].row()
-        meta = self.image_metadata[row]
-        image_id = meta.get("image_id")
-
-        if image_id:
-            measurements = MeasurementDB.get_measurements_for_image(image_id)
-            if measurements:
-                confirmed = ask_measurements_exist_delete(self, count=1)
-            else:
-                confirmed = self._question_yes_no(
-                    self.tr("Confirm Delete"),
-                    self.tr("Delete image?"),
-                    default_yes=False
-                )
-        else:
-            confirmed = self._question_yes_no(
-                self.tr("Confirm Delete"),
-                self.tr("Remove image from this observation?"),
-                default_yes=False
-            )
-        if not confirmed:
-            return
-
-        if image_id:
-            self.deleted_image_ids.add(image_id)
-
-        # Remove from dialog state
-        self.image_metadata.pop(row)
-        self.image_settings.pop(row)
-        if row < len(self.image_files):
-            self.image_files.pop(row)
-
-        self.selected_image_index = -1
-        self._update_image_table()
-        if self.image_table.rowCount() == 0:
-            self.thumbnail_label.setText(self.tr("No image selected"))
-            if hasattr(self, "delete_image_btn"):
-                self.delete_image_btn.setEnabled(False)
 
     def _question_yes_no(self, title, text, default_yes=False):
         """Show a localized Yes/No confirmation dialog."""
@@ -6762,42 +6377,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return
         picker.show_unlinked_name(name, legacy=not free)
 
-    def _confirm_unfinished_taxon_search(self) -> bool:
-        """Typed species search text that was never picked needs a decision
-        before saving: keep it as a name, drop it, or go back. Returns
-        whether saving may go on."""
-        picker = getattr(self, "taxon_picker", None)
-        text = picker.unfinished_text() if picker is not None and picker.isEnabled() else ""
-        if not text:
-            if picker is not None:
-                # Endre without typing: the card comes back as it was.
-                picker.discard_unfinished()
-            return True
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Question)
-        box.setWindowTitle(self.tr("Unfinished species search"))
-        box.setText(self.tr("“{text}” is typed in the species search, but no entry is chosen.").format(text=text))
-        box.setInformativeText(self.tr(
-            "Choose an entry from the results, keep the text as a name without a taxon, "
-            "or discard it and keep the identification as it was."
-        ))
-        keep = box.addButton(self.tr("Keep as name without taxon"), QMessageBox.AcceptRole)
-        discard = box.addButton(self.tr("Discard search text"), QMessageBox.DestructiveRole)
-        back = box.addButton(self.tr("Choose an entry"), QMessageBox.RejectRole)
-        box.setDefaultButton(back)
-        box.setEscapeButton(back)
-        box.exec()
-        clicked = box.clickedButton()
-        if clicked is keep:
-            return picker.keep_unfinished_as_name()
-        if clicked is discard:
-            picker.discard_unfinished()
-            return True
-        if hasattr(self, "taxonomy_tabs"):
-            self.taxonomy_tabs.setCurrentIndex(self.taxonomy_tabs.indexOf(self.species_tab))
-        picker.search_input.setFocus(Qt.OtherFocusReason)
-        return False
-
     def _on_scientific_snapshot_committed(self, snapshot: dict) -> None:
         self._schedule_taxon_picker_sync()
         self._hide_identity_offer()
@@ -7077,196 +6656,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if vern_popup:
             self._style_dropdown_popup_readability(vern_popup, self.host_vernacular_input)
 
-    def _on_host_genus_text_changed(self, text: str) -> None:
-        lookup = getattr(self, "_taxon_lookup", None)
-        if not lookup or self._host_suppress_taxon_autofill:
-            return
-        value = (text or "").strip()
-        suggestions = lookup.suggest_genera(value, limit=TAXON_COMPLETER_LIMIT)
-        if len(suggestions) == 1 and suggestions[0].casefold() == value.casefold():
-            self._host_genus_model.setStringList([])
-            if self._host_genus_completer:
-                self._host_genus_completer.popup().hide()
-        else:
-            self._host_genus_model.setStringList(suggestions[:TAXON_COMPLETER_LIMIT])
-        if not value:
-            self._host_suppress_taxon_autofill = True
-            try:
-                self.host_species_input.clear()
-                self.host_vernacular_input.clear()
-            finally:
-                self._host_suppress_taxon_autofill = False
-            self._host_species_model.setStringList([])
-            if self._host_species_completer:
-                self._host_species_completer.setCompletionPrefix("")
-                self._host_species_completer.popup().hide()
-            self._set_host_species_placeholder_from_suggestions([])
-            self._set_vernacular_entries(self._host_vernacular_model, [], host=True)
-            if self._host_vernacular_completer:
-                self._host_vernacular_completer.setCompletionPrefix("")
-                self._host_vernacular_completer.popup().hide()
-            self._set_host_vernacular_placeholder_from_suggestions([])
-            return
-        if self._host_species_completer and not self.host_species_input.hasFocus():
-            self._host_species_completer.setCompletionPrefix("")
-        if not self.host_species_input.text().strip():
-            species_suggestions = lookup.suggest_species(value, "", limit=TAXON_COMPLETER_LIMIT)
-            self._set_host_species_placeholder_from_suggestions(
-                [choice.species for choice in species_suggestions if choice.species]
-            )
-        if not self.host_vernacular_input.text().strip():
-            self._update_host_vernacular_suggestions_for_taxon()
-
-    def _on_host_genus_selected(self, genus: str) -> None:
-        if self._host_genus_completer:
-            self._host_genus_completer.popup().hide()
-        lookup = getattr(self, "_taxon_lookup", None)
-        if not lookup:
-            return
-        if self.host_species_input.text().strip():
-            return
-        suggestions = lookup.suggest_species(str(genus).strip(), "", limit=TAXON_COMPLETER_LIMIT)
-        self._host_species_model.setStringList([choice.species for choice in suggestions if choice.species][:TAXON_COMPLETER_LIMIT])
-        self._set_host_species_placeholder_from_suggestions(
-            [choice.species for choice in suggestions if choice.species]
-        )
-        if not self.host_vernacular_input.text().strip():
-            self._update_host_vernacular_suggestions_for_taxon()
-
-    def _on_host_genus_editing_finished(self) -> None:
-        if self._host_genus_completer and self._host_genus_completer.popup().isVisible():
-            return
-        if self._host_suppress_taxon_autofill:
-            return
-        self._resolve_current_taxon_to_accepted(host=True)
-        self._refresh_host_vernacular_for_current_taxon()
-
-    def _on_host_species_text_changed(self, text: str) -> None:
-        if self._host_suppress_taxon_autofill:
-            return
-        lookup = getattr(self, "_taxon_lookup", None)
-        if not lookup:
-            return
-        genus = self.host_genus_input.text().strip()
-        if not genus:
-            self._host_species_model.setStringList([])
-            self._set_vernacular_entries(self._host_vernacular_model, [], host=True)
-            if self._host_vernacular_completer:
-                self._host_vernacular_completer.popup().hide()
-            self._set_host_vernacular_placeholder_from_suggestions([])
-            return
-        prefix = (text or "").strip()
-        suggestions = lookup.suggest_species(genus, prefix, limit=TAXON_COMPLETER_LIMIT)
-        species_values = [choice.species for choice in suggestions if choice.species]
-        if prefix and any(s.lower() == prefix.lower() for s in species_values):
-            self._host_species_model.setStringList([])
-            if self._host_species_completer:
-                self._host_species_completer.popup().hide()
-        else:
-            self._host_species_model.setStringList(species_values[:TAXON_COMPLETER_LIMIT])
-            if self._host_species_model.stringList() and self._host_species_completer:
-                self._host_species_completer.setCompletionPrefix(prefix)
-                self._host_species_completer.complete()
-        self._update_host_vernacular_suggestions_for_taxon()
-        if prefix:
-            self._maybe_set_host_vernacular_from_taxon()
-
-    def _on_host_species_selected(self, species: str) -> None:
-        if self._host_species_completer:
-            self._host_species_completer.popup().hide()
-        _ = species
-        self._resolve_current_taxon_to_accepted(host=True)
-        self._refresh_host_vernacular_for_current_taxon()
-
-    def _on_host_species_editing_finished(self) -> None:
-        if self._host_species_completer and self._host_species_completer.popup().isVisible():
-            return
-        if self._host_suppress_taxon_autofill:
-            return
-        self._resolve_current_taxon_to_accepted(host=True)
-        self._refresh_host_vernacular_for_current_taxon()
-
-    def _on_host_vernacular_text_changed(self, text: str) -> None:
-        lookup = getattr(self, "_taxon_lookup", None)
-        if not lookup or not lookup.vernacular_db or not hasattr(self, "_host_vernacular_model"):
-            return
-        if self._host_suppress_taxon_autofill:
-            return
-        value = (text or "").strip()
-        if not value:
-            self._update_host_vernacular_suggestions_for_taxon()
-            return
-        genus = self.host_genus_input.text().strip() or None
-        species = self.host_species_input.text().strip() or None
-        entries = lookup.suggest_common_names(prefix=value, genus=genus, species=species, limit=TAXON_COMPLETER_LIMIT)
-        text_label = self._format_vernacular_suggestion_label(
-            {"vernacular_name": value, "genus": genus, "species": species}
-        )
-        if any(self._format_vernacular_suggestion_label(entry).casefold() == text_label.casefold() for entry in entries):
-            self._set_vernacular_entries(self._host_vernacular_model, [], host=True)
-            if self._host_vernacular_completer:
-                self._host_vernacular_completer.popup().hide()
-        else:
-            self._set_vernacular_entries(self._host_vernacular_model, entries, host=True, limit=TAXON_COMPLETER_LIMIT)
-
-    def _on_host_vernacular_selected(self, text: str) -> None:
-        self._set_host_taxon_from_vernacular(text)
-
-    def _on_host_vernacular_editing_finished(self) -> None:
-        self._set_host_taxon_from_vernacular(self.host_vernacular_input.text())
-
-    def _set_host_taxon_from_vernacular(self, name: str) -> None:
-        controller = getattr(self, "_host_taxon_controller", None)
-        if controller is None or not hasattr(self, "host_vernacular_input"):
-            return
-        value = (name or "").strip()
-        if value and value != self.host_vernacular_input.text().strip():
-            self.host_vernacular_input.setText(value)
-        controller.on_vernacular_editing_finished()
-
     def _maybe_set_host_vernacular_from_taxon(self) -> None:
         controller = getattr(self, "_host_taxon_controller", None)
         if controller is None:
             return
         controller.sync_vernacular_after_taxon_change()
-
-    def _update_host_vernacular_suggestions_for_taxon(self) -> None:
-        controller = getattr(self, "_host_taxon_controller", None)
-        if controller is None:
-            return
-        controller.refresh_vernacular_suggestions()
-
-    def _set_host_vernacular_placeholder_from_suggestions(self, suggestions: list[TaxonChoice | dict | str]) -> None:
-        if not hasattr(self, "host_vernacular_input"):
-            return
-        preview_items: list[str] = []
-        for suggestion in suggestions:
-            if isinstance(suggestion, TaxonChoice):
-                label = str(suggestion.common_name or "").strip()
-                if not label:
-                    label = self._format_vernacular_suggestion_label(suggestion)
-            elif isinstance(suggestion, dict):
-                label = str(suggestion.get("vernacular_name") or suggestion.get("common_name") or "").strip()
-                if not label:
-                    label = self._format_vernacular_suggestion_label(suggestion)
-            else:
-                label = str(suggestion or "").strip()
-            if label:
-                preview_items.append(label)
-        if not preview_items:
-            self.host_vernacular_input.setPlaceholderText(self._vernacular_placeholder())
-            return
-        preview = "; ".join(preview_items[:4])
-        self.host_vernacular_input.setPlaceholderText(f"{self.tr('e.g.,')} {preview}")
-
-    def _set_host_species_placeholder_from_suggestions(self, suggestions: list[str]) -> None:
-        if not hasattr(self, "host_species_input"):
-            return
-        if not suggestions:
-            self.host_species_input.setPlaceholderText(self.tr("e.g., pendula"))
-            return
-        preview = "; ".join(suggestions[:4])
-        self.host_species_input.setPlaceholderText(f"{self.tr('e.g.,')} {preview}")
 
     def _style_dropdown_popup_readability(self, popup, font_source=None):
         """Make popup rows slightly looser while matching the input font."""
@@ -7287,421 +6681,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             "QAbstractItemView::item { padding: 2px 6px; }"
         )
 
-    @staticmethod
-    def _vernacular_entry_to_choice(entry: TaxonChoice | dict | None) -> TaxonChoice | None:
-        if isinstance(entry, TaxonChoice):
-            return entry
-        if not isinstance(entry, dict):
-            return None
-        genus = str(entry.get("genus") or "").strip()
-        if not genus:
-            return None
-        species = str(entry.get("species") or "").strip() or None
-        common_name = str(entry.get("vernacular_name") or entry.get("common_name") or "").strip() or None
-        family = str(entry.get("family") or "").strip() or None
-        return TaxonChoice(
-            genus=genus,
-            species=species,
-            common_name=common_name,
-            family=family,
-        )
-
-    @staticmethod
-    def _format_vernacular_suggestion_label(entry: TaxonChoice | dict) -> str:
-        if isinstance(entry, TaxonChoice):
-            vernacular_name = str(entry.common_name or "").strip()
-        else:
-            vernacular_name = str(entry.get("vernacular_name") or entry.get("common_name") or "").strip()
-        return vernacular_name
-
-    def _set_vernacular_entries(
-        self,
-        model: QStringListModel | None,
-        entries: list[TaxonChoice | dict],
-        *,
-        host: bool = False,
-        limit: int = TAXON_COMPLETER_LIMIT,
-    ) -> None:
-        if model is None:
-            return
-        labels: list[str] = []
-        entry_map: dict[str, dict] = {}
-        row_entries: list[TaxonChoice | dict] = []
-        for entry in entries[:limit]:
-            label = self._format_vernacular_suggestion_label(entry)
-            if not label:
-                continue
-            labels.append(label)
-            entry_map[label.casefold()] = entry
-            row_entries.append(entry)
-        model.setStringList(labels)
-        if hasattr(model, "item"):
-            for row, entry in enumerate(row_entries):
-                item = model.item(row, 0)
-                if item is None:
-                    continue
-                choice = self._vernacular_entry_to_choice(entry)
-                item.setData(labels[row], Qt.UserRole)
-                item.setData(choice or entry, self._ROLE_TAXON_CHOICE)
-                if isinstance(entry, TaxonChoice):
-                    item.setData(str(entry.genus or "").strip(), Qt.UserRole + 1)
-                    item.setData(str(entry.species or "").strip(), Qt.UserRole + 2)
-                elif isinstance(entry, dict):
-                    item.setData(str(entry.get("genus") or "").strip(), Qt.UserRole + 1)
-                    item.setData(str(entry.get("species") or "").strip(), Qt.UserRole + 2)
-        if host:
-            self._host_vernacular_entry_map = entry_map
-        else:
-            self._vernacular_entry_map = entry_map
-
-    def _lookup_vernacular_entry(self, text: str, *, host: bool = False) -> dict | None:
-        mapping = getattr(self, "_host_vernacular_entry_map", {}) if host else getattr(self, "_vernacular_entry_map", {})
-        return mapping.get(str(text or "").strip().casefold())
-
-    def _resolve_current_taxon_to_accepted(self, *, host: bool = False) -> bool:
-        if host:
-            lookup = getattr(self, "_taxon_lookup", None)
-            if not lookup:
-                return False
-            genus_widget = getattr(self, "host_genus_input", None)
-            species_widget = getattr(self, "host_species_input", None)
-            suppress_attr = "_host_suppress_taxon_autofill"
-        else:
-            lookup = getattr(self, "_taxon_lookup", None)
-            if not lookup:
-                return False
-            genus_widget = getattr(self, "genus_input", None)
-            species_widget = getattr(self, "species_input", None)
-            suppress_attr = "_suppress_taxon_autofill"
-        if genus_widget is None or species_widget is None:
-            return False
-        genus = genus_widget.text().strip()
-        species = species_widget.text().strip()
-        if not genus or not species:
-            return False
-        if host:
-            resolved_choice = lookup.resolve_scientific(genus, species) if lookup else None
-            if not resolved_choice:
-                return False
-            accepted_genus = resolved_choice.genus
-            accepted_species = resolved_choice.species or species
-        else:
-            resolved_choice = lookup.resolve_scientific(genus, species) if lookup else None
-            if not resolved_choice:
-                return False
-            accepted_genus = resolved_choice.genus
-            accepted_species = resolved_choice.species or species
-        if not accepted_genus or not accepted_species:
-            return False
-        if accepted_genus.casefold() == genus.casefold() and accepted_species.casefold() == species.casefold():
-            return False
-        setattr(self, suppress_attr, True)
-        try:
-            genus_widget.setText(accepted_genus)
-            species_widget.setText(accepted_species)
-        finally:
-            setattr(self, suppress_attr, False)
-        return True
-
-    def _on_vernacular_text_changed(self, text):
-        lookup = getattr(self, "_taxon_lookup", None)
-        if not lookup:
-            return
-        if self._suppress_taxon_autofill:
-            return
-        if not text.strip():
-            self._update_vernacular_suggestions_for_taxon()
-            return
-        genus = self.genus_input.text().strip() or None
-        species = self.species_input.text().strip() or None
-        entries = lookup.suggest_common_names(prefix=text, genus=genus, species=species, limit=TAXON_COMPLETER_LIMIT)
-        text_label = self._format_vernacular_suggestion_label(
-            TaxonChoice(genus=genus or "", species=species, common_name=text.strip())
-        )
-        if any(self._format_vernacular_suggestion_label(entry).casefold() == text_label.casefold() for entry in entries):
-            self._set_vernacular_entries(self._vernacular_model, [], host=False)
-            if self._vernacular_completer:
-                self._vernacular_completer.popup().hide()
-        else:
-            self._set_vernacular_entries(self._vernacular_model, entries, host=False, limit=TAXON_COMPLETER_LIMIT)
-
     def _update_vernacular_suggestions_for_taxon(self):
         controller = getattr(self, "_taxon_controller", None)
         if controller is None:
             return
         controller.refresh_vernacular_suggestions()
-
-    def _set_vernacular_placeholder_from_suggestions(self, suggestions: list[TaxonChoice | dict | str]) -> None:
-        if not hasattr(self, "vernacular_input"):
-            return
-        preview_items: list[str] = []
-        for suggestion in suggestions:
-            if isinstance(suggestion, TaxonChoice):
-                label = str(suggestion.common_name or "").strip()
-                if not label:
-                    label = self._format_vernacular_suggestion_label(suggestion)
-            elif isinstance(suggestion, dict):
-                label = str(suggestion.get("vernacular_name") or suggestion.get("common_name") or "").strip()
-                if not label:
-                    label = self._format_vernacular_suggestion_label(suggestion)
-            else:
-                label = str(suggestion or "").strip()
-            if label:
-                preview_items.append(label)
-        if not preview_items:
-            self.vernacular_input.setPlaceholderText(self._vernacular_placeholder())
-            return
-        preview = "; ".join(preview_items[:4])
-        self.vernacular_input.setPlaceholderText(f"{self.tr('e.g.,')} {preview}")
-
-    def _set_species_placeholder_from_suggestions(self, suggestions: list[str]) -> None:
-        if not hasattr(self, "species_input"):
-            return
-        if not suggestions:
-            self.species_input.setPlaceholderText(self.tr("e.g., velutipes"))
-            return
-        preview = "; ".join(suggestions[:4])
-        self.species_input.setPlaceholderText(f"{self.tr('e.g.,')} {preview}")
-
-    def _on_vernacular_selected(self, name):
-        # Hide the popup after selection
-        if self._vernacular_completer:
-            self._vernacular_completer.popup().hide()
-        lookup = getattr(self, "_taxon_lookup", None)
-        if not lookup:
-            return
-        index = name if isinstance(name, QModelIndex) else None
-        raw_name = ""
-        if index is not None and index.isValid():
-            raw_name = str(index.data(Qt.UserRole) or index.data(Qt.DisplayRole) or "").strip()
-            choice = index.data(self._ROLE_TAXON_CHOICE)
-            if isinstance(choice, TaxonChoice):
-                entry = choice
-            else:
-                entry = self._lookup_vernacular_entry(raw_name, host=False)
-        else:
-            raw_name = str(name or "").strip()
-            entry = self._lookup_vernacular_entry(name, host=False)
-        choice = self._vernacular_entry_to_choice(entry)
-        if choice is None and index is not None and index.isValid():
-            payload = index.data(self._ROLE_TAXON_CHOICE)
-            if isinstance(payload, TaxonChoice):
-                choice = payload
-        if choice is None and raw_name:
-            matches = lookup.resolve_common_name(raw_name)
-            choice = matches[0] if matches else None
-        if choice is None:
-            return
-        current_genus = self.genus_input.text().strip()
-        current_species = self.species_input.text().strip()
-        self._suppress_taxon_autofill = True
-        try:
-            vernacular_text = str(choice.common_name or name or "").strip()
-            if vernacular_text:
-                self.vernacular_input.setText(vernacular_text)
-            if choice.genus and not current_genus:
-                self.genus_input.setText(choice.genus)
-            if choice.species and not current_species:
-                self.species_input.setText(choice.species)
-        finally:
-            self._suppress_taxon_autofill = False
-        if choice.species:
-            self._handle_taxon_change()
-        else:
-            self._sync_taxon_cache()
-        self._update_vernacular_suggestions_for_taxon()
-
-    def _on_vernacular_editing_finished(self):
-        lookup = getattr(self, "_taxon_lookup", None)
-        if not lookup:
-            return
-        name = self.vernacular_input.text().strip()
-        if not name:
-            return
-        entry = self._lookup_vernacular_entry(name, host=False)
-        choice = self._vernacular_entry_to_choice(entry)
-        if choice is None:
-            current_genus = self.genus_input.text().strip() or None
-            current_species = self.species_input.text().strip() or None
-            matches = lookup.resolve_common_name(name, genus=current_genus, species=current_species)
-            if len(matches) != 1:
-                return
-            choice = matches[0]
-        if choice is None:
-            return
-        current_genus = self.genus_input.text().strip()
-        current_species = self.species_input.text().strip()
-        self._suppress_taxon_autofill = True
-        try:
-            vernacular_text = str(choice.common_name or name or "").strip()
-            if vernacular_text:
-                self.vernacular_input.setText(vernacular_text)
-            if choice.genus and not current_genus:
-                self.genus_input.setText(choice.genus)
-            if choice.species and not current_species:
-                self.species_input.setText(choice.species)
-        finally:
-            self._suppress_taxon_autofill = False
-        if choice.species:
-            self._handle_taxon_change()
-        else:
-            self._sync_taxon_cache()
-        self._update_vernacular_suggestions_for_taxon()
-
-    def _on_genus_text_changed(self, text):
-        lookup = getattr(self, "_taxon_lookup", None)
-        if not lookup:
-            return
-        if self._suppress_taxon_autofill:
-            return
-        text = text.strip()
-        suggestions = lookup.suggest_genera(text, limit=TAXON_COMPLETER_LIMIT)
-
-        # If text exactly matches a single suggestion, clear the model to prevent popup
-        if len(suggestions) == 1 and suggestions[0].lower() == text.lower():
-            self._genus_model.setStringList([])
-            if self._genus_completer:
-                self._genus_completer.popup().hide()
-        else:
-            self._genus_model.setStringList(suggestions)
-        
-        if not text:
-            self._suppress_taxon_autofill = True
-            self.species_input.clear()
-            if hasattr(self, "vernacular_input"):
-                self.vernacular_input.clear()
-            self._suppress_taxon_autofill = False
-            self._species_model.setStringList([])
-            self._set_vernacular_entries(self._vernacular_model, [], host=False)
-            self._set_vernacular_placeholder_from_suggestions([])
-            # Reset species completer filtering
-            if self._species_completer:
-                self._species_completer.setCompletionPrefix("")
-            self._set_species_placeholder_from_suggestions([])
-            return
-
-        # Reset species completer filtering when genus changes
-        if self._species_completer and not self.species_input.hasFocus():
-            self._species_completer.setCompletionPrefix("")
-
-        if not self.species_input.text().strip():
-            species_suggestions = lookup.suggest_species(text, "", limit=TAXON_COMPLETER_LIMIT)
-            self._set_species_placeholder_from_suggestions(
-                [choice.species for choice in species_suggestions if choice.species]
-            )
-        if hasattr(self, "vernacular_input") and not self.vernacular_input.text().strip():
-            self._update_vernacular_suggestions_for_taxon()
-
-    def _on_genus_editing_finished(self):
-        if self._genus_completer and self._genus_completer.popup().isVisible():
-            return
-        lookup = getattr(self, "_taxon_lookup", None)
-        if not lookup or self._suppress_taxon_autofill:
-            return
-        self._resolve_current_taxon_to_accepted()
-        self._handle_taxon_change()
-        self._maybe_set_vernacular_from_taxon()
-        genus = self.genus_input.text().strip()
-        if genus and not self.species_input.text().strip():
-            species_suggestions = lookup.suggest_species(genus, "", limit=TAXON_COMPLETER_LIMIT)
-            self._set_species_placeholder_from_suggestions(
-                [choice.species for choice in species_suggestions if choice.species]
-            )
-
-    def _on_genus_selected(self, genus):
-        # Hide the popup after selection
-        if self._genus_completer:
-            self._genus_completer.popup().hide()
-
-        lookup = getattr(self, "_taxon_lookup", None)
-        if not lookup:
-            return
-        if self.species_input.text().strip():
-            return
-        species_suggestions = lookup.suggest_species(str(genus).strip(), "", limit=TAXON_COMPLETER_LIMIT)
-        self._set_species_placeholder_from_suggestions(
-            [choice.species for choice in species_suggestions if choice.species]
-        )
-
-    def _on_species_selected(self, species):
-        """Handle species selection from completer."""
-        # Hide the popup after selection
-        if self._species_completer:
-            self._species_completer.popup().hide()
-
-        lookup = getattr(self, "_taxon_lookup", None)
-        if lookup:
-            self._resolve_current_taxon_to_accepted()
-            self._handle_taxon_change()
-            self._maybe_set_vernacular_from_taxon()
-            self._update_vernacular_suggestions_for_taxon()
-
-    def _on_species_editing_finished(self):
-        if self._species_completer and self._species_completer.popup().isVisible():
-            return
-        lookup = getattr(self, "_taxon_lookup", None)
-        if not lookup or self._suppress_taxon_autofill:
-            return
-        self._resolve_current_taxon_to_accepted()
-        self._handle_taxon_change()
-        self._maybe_set_vernacular_from_taxon()
-        self._update_vernacular_suggestions_for_taxon()
-
-    def _on_species_text_changed(self, text):
-        if self._suppress_taxon_autofill:
-            return
-        lookup = getattr(self, "_taxon_lookup", None)
-        if not lookup:
-            return
-        genus = self.genus_input.text().strip()
-        if not genus:
-            self._species_model.setStringList([])
-            self._set_vernacular_entries(self._vernacular_model, [], host=False)
-            self._set_vernacular_placeholder_from_suggestions([])
-            return
-        text_stripped = (text or "").strip()
-        suggestions = lookup.suggest_species(genus, text_stripped, limit=TAXON_COMPLETER_LIMIT)
-        species_values = [choice.species for choice in suggestions if choice.species]
-
-        # Hide popup when text exactly matches any suggestion (covers multi-result cases)
-        if text_stripped and any(s.lower() == text_stripped.lower() for s in species_values):
-            self._species_model.setStringList([])
-            if self._species_completer:
-                self._species_completer.popup().hide()
-        else:
-            self._species_model.setStringList(species_values)
-            if self._species_model.stringList() and self._species_completer:
-                self._species_completer.setCompletionPrefix(text_stripped)
-                self._species_completer.complete()
-
-        if not text_stripped:
-            self._set_species_placeholder_from_suggestions(species_values)
-        self._update_vernacular_suggestions_for_taxon()
-        if text_stripped:
-            self._maybe_set_vernacular_from_taxon()
-
-    def _handle_taxon_change(self):
-        if not hasattr(self, "_last_genus"):
-            self._sync_taxon_cache()
-            return
-        genus = self.genus_input.text().strip()
-        species = self.species_input.text().strip()
-        if genus != self._last_genus or species != self._last_species:
-            current_common = self.vernacular_input.text().strip()
-            lookup = getattr(self, "_taxon_lookup", None)
-            if current_common and lookup and lookup.vernacular_db and genus and species:
-                matches = lookup.resolve_common_name(current_common, genus=genus, species=species)
-                if not matches:
-                    self._suppress_taxon_autofill = True
-                    self.vernacular_input.clear()
-                    self._suppress_taxon_autofill = False
-                    # Reset vernacular completer filtering after clearing
-                    if self._vernacular_completer:
-                        self._vernacular_completer.setCompletionPrefix("")
-                    self._set_vernacular_entries(self._vernacular_model, [], host=False)
-                    self._set_vernacular_placeholder_from_suggestions([])
-        self._last_genus = genus
-        self._last_species = species
 
     def _sync_taxon_cache(self):
         self._last_genus = self.genus_input.text().strip()
@@ -7736,44 +6720,6 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if controller is None:
             return
         controller.sync_vernacular_after_taxon_change()
-
-    def get_files(self):
-        """Return selected image files."""
-        return [item.filepath for item in self.image_results]
-
-    def get_image_settings(self):
-        """Return image settings (type and objective for each image)."""
-        settings = []
-        for item in self.image_results:
-            settings.append({
-                "image_type": item.image_type,
-                "objective": item.objective,
-                "contrast": item.contrast,
-                "mount_medium": item.mount_medium,
-                "stain": item.stain,
-                "sample_type": item.sample_type,
-                "sample_source": getattr(item, "sample_source", None),
-                "notes": item.notes,
-            })
-        return settings
-
-    def get_image_entries(self):
-        """Return images with settings for saving."""
-        entries = []
-        for item in self.image_results:
-            entries.append({
-                "image_id": item.image_id,
-                "filepath": item.filepath,
-                "image_type": item.image_type or "field",
-                "objective": item.objective,
-                "contrast": item.contrast,
-                "mount_medium": item.mount_medium,
-                "stain": item.stain,
-                "sample_type": item.sample_type,
-                "sample_source": getattr(item, "sample_source", None),
-                "notes": item.notes,
-            })
-        return entries
 
     def _load_habitat_tree(self, filename: str) -> list[dict]:
         base_dir = Path(__file__).resolve().parents[1]

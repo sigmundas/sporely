@@ -705,6 +705,26 @@ def test_edit_images_shortcut_works_from_the_bottom_bar(qtbot, window, rediger):
     assert len(opened) == 1
 
 
+def test_every_edit_images_entry_asks_the_page_with_its_photo(qtbot, window, rediger):
+    """Edit images, a thumbnail's double-click and its Edit photo all ask the
+    page to open Bilder (the form is never a window that closes for it)."""
+    editor = rediger.editor()
+    opened = []
+    editor.editImagesRequested.disconnect()
+    editor.editImagesRequested.connect(opened.append)
+    # Unfinished species search text asks nothing first: in place it is never saved.
+    editor.taxon_picker.begin_edit()
+    qtbot.keyClicks(editor.taxon_picker.search_input, "Gymnopus dryo")
+    assert editor.unfinished_taxon_text() == "Gymnopus dryo"
+
+    qtbot.mouseClick(editor.edit_images_btn, Qt.LeftButton)
+    editor.image_gallery.imageDoubleClicked.emit(1, "/photos/a.jpg")
+    editor.image_gallery.editRequested.emit(2, " /photos/b.jpg ")
+
+    assert opened == ["", "/photos/a.jpg", "/photos/b.jpg"]
+    assert editor.isVisible()
+
+
 def test_coming_back_after_ai_results_keeps_the_form(qtbot, window, rediger):
     """The form stores AI results itself when they arrive; that is no reason to rebuild it."""
     first = window.ids_for_test["first"]
