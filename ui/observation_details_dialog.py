@@ -5705,102 +5705,6 @@ class ObservationDetailsDialog(QDialog):
             if widget is not None:
                 widget.textChanged.connect(self._on_taxon_identity_field_edited)
 
-        # Stage 3B.5 follow-up: manual genus/species entry that
-        # unambiguously resolves to a single canonical concept should
-        # commit the taxonomy snapshot immediately (so the Red List
-        # badge refreshes without waiting for Save + Reopen). The
-        # controller's editingFinished handlers do their own
-        # "resolve-to-accepted" pass; wire an extra hook AFTER them so
-        # the manual resolution runs on the already-normalised pair.
-        for widget in (self.genus_input, self.species_input):
-            if widget is not None:
-                widget.editingFinished.connect(
-                    self._on_taxon_manual_editing_finished
-                )
-
-    def _on_taxon_manual_editing_finished(self) -> None:
-        """Resolve typed genus/species text for DISPLAY only.
-
-        Taxonomy-v2 closeout Stage 2 changed what this handler is allowed to
-        do. It previously called ``commit_manual_resolution``, which asserted
-        a ``sporely_taxon_id`` — so typed text created identity implicitly,
-        and because an edit invalidates the committed snapshot first, the very
-        next ``editingFinished`` re-bound identity from name text. Both are
-        forbidden: identity binding must stay explicit, identity must not be
-        inferred from genus/species equality alone, and a committed selection
-        must not be rebound from text after the observer edits it.
-
-        What survives is the *reason* the hook exists: refreshing the Red List
-        badge without making the observer open the completer. The resolved id
-        is recorded through
-        :meth:`TaxonInputController.set_display_only_name_match`, which the
-        save path never reads, so it can no longer reach
-        ``observations.sporely_taxon_id`` or
-        ``set_observation_selected_taxon_v2``.
-
-        Only an unambiguous single-candidate resolution is used, and only when
-        no real selection is held — a prior explicit picker choice (e.g. a
-        ``synonym_of_accepted`` selection) is never shadowed.
-        """
-        controller = getattr(self, "_taxon_controller", None)
-        if controller is None or controller._is_suspended():
-            return
-        if controller.committed_snapshot() is not None:
-            return
-
-        # Every path out of this handler that does NOT establish a fresh match
-        # must clear the previous one. A display-only match is derived from the
-        # text, so once the text no longer resolves — empty, unknown or
-        # ambiguous — the old taxon's evidence is stale and must not remain
-        # available to the deferred Red List resolve.
-        # The badge itself is already cleared by
-        # ``_on_taxon_identity_field_edited`` on the text change that got us
-        # here; what must also go is the resolved id behind it, so the
-        # deferred resolve cannot re-apply the previous taxon's assessment.
-        def _give_up() -> None:
-            controller.clear_display_only_name_match()
-
-        genus_widget = getattr(self, "genus_input", None)
-        species_widget = getattr(self, "species_input", None)
-        if genus_widget is None or species_widget is None:
-            _give_up()
-            return
-        genus = str(genus_widget.text() or "").strip()
-        species = str(species_widget.text() or "").strip()
-        if not genus or not species:
-            _give_up()
-            return
-        lookup = self._ensure_taxon_lookup()
-        if lookup is None:
-            _give_up()
-            return
-        resolver = getattr(lookup, "resolve_manual_scientific", None)
-        if not callable(resolver):
-            _give_up()
-            return
-        try:
-            resolution = resolver(genus, species)
-        except Exception:
-            _give_up()
-            return
-        if resolution is None:
-            # Unknown or ambiguous pair — see the note above.
-            _give_up()
-            return
-        # Guard against a stale queued resolve: the widgets must still hold
-        # the pair that was resolved. ``commit_manual_resolution`` used to do
-        # this check itself.
-        if str(genus_widget.text() or "").strip().casefold() != genus.casefold() \
-                or str(species_widget.text() or "").strip().casefold() != species.casefold():
-            _give_up()
-            return
-        # DISPLAY ONLY — deliberately not ``commit_manual_resolution``. See the
-        # docstring: typed text may refresh the badge, never bind identity.
-        if not controller.set_display_only_name_match(resolution.sporely_taxon_id):
-            _give_up()
-            return
-        self._schedule_final_redlist_resolution()
-
     def _on_taxon_identity_field_edited(self, _text: str) -> None:
         controller = getattr(self, "_taxon_controller", None)
         if controller is not None and controller._is_suspended():
@@ -6257,19 +6161,11 @@ class ObservationDetailsDialog(QDialog):
             sporely_int = int(sporely_id) if sporely_id else 0
         except (TypeError, ValueError):
             sporely_int = 0
-        # Taxonomy-v2 closeout Stage 2: the display-only name match also drives
-        # the badge, so it is an identity *signal* for staleness purposes even
-        # though it is never persisted identity.
-        try:
-            display_match = int(controller.display_only_name_match() or 0) if controller else 0
-        except Exception:
-            display_match = 0
         return (
             id(self),
             sporely_int,
             (snap or {}).get("scientific_name") if snap else None,
             self._location_country_code,
-            display_match,
         )
 
     def _schedule_final_redlist_resolution(self) -> None:
@@ -6350,15 +6246,6 @@ class ObservationDetailsDialog(QDialog):
         # let a numeric collision resolve somebody else's assessment. The name
         # still displays; only the identity-bearing lookup is gated.
         sporely_id = proven_sporely_taxon_id(snap) if snap else None
-        if not sporely_id and controller is not None:
-            # Taxonomy-v2 closeout Stage 2: fall back to the display-only name
-            # match. Typed genus/species text can still refresh the badge, but
-            # that resolution is not identity and is never persisted — see
-            # ``_on_taxon_manual_editing_finished``.
-            try:
-                sporely_id = controller.display_only_name_match()
-            except Exception:
-                sporely_id = None
         if not sporely_id:
             return
         area = determine_redlist_area(self._location_country_code)

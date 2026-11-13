@@ -232,9 +232,6 @@ class TaxonInputController(QObject):
         # are all cleared. Retyping the identical string does NOT restore
         # identity — only another explicit suggestion selection can.
         self._committed_snapshot: dict | None = None
-        # Taxonomy-v2 closeout Stage 2: a taxon id resolved from typed text
-        # for DISPLAY only (Red List badge). Never identity, never persisted.
-        self._display_only_name_match: int | None = None
         # Suspend depth handles reentry AND load-time programmatic writes.
         self._suspend_depth = 0
         self._last_genus_signature: tuple[str, ...] = ()
@@ -1078,49 +1075,6 @@ class TaxonInputController(QObject):
         """
         return TaxonIdentity.from_row(self._committed_snapshot)
 
-    # ------------------------------------------------------------------
-    # Display-only name resolution (taxonomy-v2 closeout Stage 2)
-    # ------------------------------------------------------------------
-    #
-    # Resolving typed genus/species text against the taxonomy artifact is
-    # useful for *showing* things — the Red List badge refreshes without the
-    # observer having to open the completer. It is NOT identity: the observer
-    # typed a name, they did not choose a concept, and Stage 2 forbids
-    # inferring identity from genus/species equality alone or rebinding from
-    # name text after a committed selection was edited.
-    #
-    # This channel is therefore deliberately separate from
-    # ``_committed_snapshot``. It is never read by the dialog's save path, so
-    # it cannot reach ``observations.sporely_taxon_id`` or the cloud RPC.
-
-    def set_display_only_name_match(self, sporely_taxon_id: object) -> bool:
-        """Record a name-resolved taxon id for display purposes only.
-
-        Refused while a real selection is committed: that selection is the
-        better information and must not be shadowed.
-        """
-        if self._committed_snapshot is not None:
-            return False
-        try:
-            candidate = int(sporely_taxon_id)
-        except (TypeError, ValueError):
-            return False
-        if candidate <= 0:
-            return False
-        self._display_only_name_match = candidate
-        return True
-
-    def display_only_name_match(self) -> int | None:
-        """The name-resolved taxon id for display, or ``None``.
-
-        Callers MUST NOT persist this value or forward it to the cloud. Use
-        :meth:`committed_identity` for anything identity-bearing.
-        """
-        return self._display_only_name_match
-
-    def clear_display_only_name_match(self) -> None:
-        self._display_only_name_match = None
-
     def load_committed_snapshot(self, snapshot: dict | None) -> None:
         """Programmatically restore a snapshot when loading an observation.
 
@@ -1129,7 +1083,6 @@ class TaxonInputController(QObject):
         does not fire invalidation. This method itself does not touch the
         widgets — the dialog owns their state.
         """
-        self._display_only_name_match = None
         if not snapshot:
             self._committed_snapshot = None
             return
@@ -1169,8 +1122,8 @@ class TaxonInputController(QObject):
         carries no ``sporely_taxon_id`` — an unresolved identifier has no
         Sporely identity no matter what its digits equal.
 
-        Refuses a proven-Sporely identity: that must go through the picker or
-        the manual-resolve path so the artifact proof is recorded at source.
+        Refuses a proven-Sporely identity: that must go through an explicit
+        selection so the artifact proof is recorded at source.
         """
         if not isinstance(identity, TaxonIdentity) or identity.is_proven_sporely:
             return False
@@ -1267,9 +1220,6 @@ class TaxonInputController(QObject):
         if self._committed_snapshot is None:
             return
         self._committed_snapshot = None
-        # A display-only name match belongs to the identity that just went
-        # away; leaving it would keep a stale Red List badge alive.
-        self._display_only_name_match = None
         # Clear the scientific-name field only when the invalidation came
         # from a genus/species divergence — the scientific-name field
         # itself already reflects what the user is typing. Leaving it as
@@ -1287,13 +1237,6 @@ class TaxonInputController(QObject):
     def _on_structured_text_changed(self, _text: str) -> None:
         if self._is_suspended():
             return
-        # Taxonomy-v2 closeout Stage 2: a display-only name match was derived
-        # from the text as it was, so ANY edit makes it stale. It must be
-        # cleared here, not only via `_invalidate_snapshot` — a display-only
-        # match lives precisely in the state where no snapshot exists, so the
-        # early return below would otherwise leave the previous taxon's
-        # evidence available to the deferred Red List resolve.
-        self._display_only_name_match = None
         if self._committed_snapshot is None:
             return
         current_genus = self._current_genus()
@@ -1313,8 +1256,6 @@ class TaxonInputController(QObject):
         if self._committed_snapshot is not None \
                 and cleaned == self._committed_snapshot["scientific_name"]:
             return
-        # Same staleness rule as `_on_structured_text_changed`.
-        self._display_only_name_match = None
         # Every character divergence from the committed snapshot triggers
         # invalidation (rule 4 — no text-based rebinding). We do NOT try
         # to match against arbitrary DB rows here; only an explicit
@@ -1373,8 +1314,7 @@ class TaxonInputController(QObject):
     # The only path that may bind identity is an explicit selection:
     # `on_scientific_name_selected` for the picker, or
     # `load_committed_snapshot` with an already-typed proven identity when
-    # restoring a saved row. Typed text may only reach
-    # `set_display_only_name_match`, which nothing persistent reads.
+    # restoring a saved row. Typed text never binds identity.
 
     def on_scientific_name_selected(self, index: QModelIndex) -> None:
         if self._is_suspended() or not index.isValid():
@@ -1474,7 +1414,6 @@ class TaxonInputController(QObject):
             self._set_text(self.species_input, species)
             self._set_text(self.scientific_name_input, "")
             self._set_text(self.vernacular_input, "")
-        self._display_only_name_match = None
         self._committed_snapshot = None
         # The host drops what belonged to the previous identification (the
         # Red List), whether or not a snapshot had been committed.
