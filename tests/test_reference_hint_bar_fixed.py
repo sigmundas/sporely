@@ -26,10 +26,8 @@ def libs(tmp_path, monkeypatch):
     monkeypatch.setattr(_schema, "get_reference_database_path", lambda: tmp_path / "r.db")
     monkeypatch.setattr(_schema, "get_bundled_reference_database_path", lambda: tmp_path / "none.db")
     from PySide6.QtCore import QSettings
-    import ui.add_reference_dialog as picker
     import ui.window_state as geometry
     settings = lambda *_a: QSettings(str(tmp_path / "s.ini"), QSettings.IniFormat)
-    monkeypatch.setattr(picker, "QSettings", settings)
     monkeypatch.setattr(geometry, "QSettings", settings)
     _schema.init_database()
 
@@ -92,66 +90,6 @@ def test_edit_reference_footer_row(libs):
         _no_nested_scrollbars(dialog.editor_scroll)
         dialog.editor._set_hint("Parser says hi", tone="warning")
         assert "Parser says hi" in dialog.hint_row.findChild(HintBar)._label.text()
-    finally:
-        dialog.close()
-
-
-def test_add_reference_footer_row_is_dialog_level(libs):
-    from ui.add_reference_dialog import AddReferenceDialog
-
-    dialog = AddReferenceDialog(None, taxon_label="Cortinarius limonius", taxon_id=7,
-                                genus="Cortinarius", species="limonius", candidates=[],
-                                community_results=[], my_observations=[])
-    try:
-        dialog.resize(1000, 460)
-        dialog.tabs.setCurrentIndex(dialog._manual_tab_index)
-        dialog.show()
-        QApplication.processEvents()
-        # No hint widget inside any tab or pane: only the footer's own bar.
-        assert dialog.findChildren(HintBar) == [dialog.hint_bar]
-        assert dialog.tabs.findChildren(HintBar) == []
-        assert dialog._body_splitter.findChildren(HintBar) == []
-        buttons = [dialog.cancel_btn, dialog.add_to_plot_btn]
-        _assert_footer_row(dialog, dialog.hint_bar, buttons)
-        assert dialog._manual_scroll.verticalScrollBar().maximum() > 0
-        right = [s for s in dialog.preview_pane.findChildren(QScrollArea)]
-        _scroll_all([dialog._manual_scroll, *right], dialog, dialog.hint_bar, buttons)
-        _no_nested_scrollbars(dialog._manual_scroll)
-
-        # The editor's contextual hints reach the dialog footer.
-        dialog.manual_editor._set_hint("Validation hint", tone="warning")
-        assert dialog.hint_bar._label.text() == "Validation hint"
-        # Switching tabs: no stale hint from the manual tab.
-        dialog.tabs.setCurrentWidget(dialog._library_tab)
-        QApplication.processEvents()
-        assert "Validation hint" not in dialog.hint_bar._label.text()
-        # Any tab or pane can publish through the dialog-level API.
-        dialog.set_hint("From the summary tab")
-        assert dialog.hint_bar._label.text() == "From the summary tab"
-        dialog.set_hint("")
-        assert dialog.hint_bar._label.text() != "From the summary tab"
-    finally:
-        dialog.close()
-
-
-def test_hint_text_is_vertically_centred_when_set_before_show(libs):
-    from ui.add_reference_dialog import AddReferenceDialog
-
-    dialog = AddReferenceDialog(None, taxon_label="C l", taxon_id=7, genus="C", species="l",
-                                candidates=[], community_results=[], my_observations=[])
-    try:
-        dialog.tabs.setCurrentIndex(dialog._manual_tab_index)
-        dialog.set_hint("Parsed — review and edit before saving.")
-        dialog.resize(1460, 920)
-        dialog.show()
-        QApplication.processEvents()
-        bar, label = dialog.hint_bar, dialog.hint_bar._label
-        assert label.geometry().top() == 0 and label.height() == bar.height()
-        image = bar.grab().toImage()
-        rows = [y for y in range(image.height())
-                if any(image.pixelColor(x, y).lightness() < 100 for x in range(10, 300))]
-        assert rows
-        assert abs((rows[0] + rows[-1]) / 2 - bar.height() / 2) <= 3
     finally:
         dialog.close()
 

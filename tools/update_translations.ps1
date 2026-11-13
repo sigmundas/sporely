@@ -28,7 +28,6 @@ $files = @(
     "ui\\species_plate_dialog.py",
     "ui\\zoomable_image_widget.py",
     "ui\\spore_preview_widget.py",
-    "ui\\reference_library_attach_dialog.py",
     "ui\\reference_library_manager_dialog.py"
 )
 

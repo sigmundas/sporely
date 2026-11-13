@@ -1,9 +1,10 @@
 """MainWindow-driven end-to-end regression for the reference panel Add flow.
 
-This test intentionally drives the real ``MainWindow._on_reference_panel_add_clicked``
-coordinator (not the underlying repository primitives directly) so the
-dialog wiring, legacy dual-write, normalized MeasurementSet creation,
-observation attachment, and panel refresh all execute together — the
+This test intentionally drives the real ``MainWindow._submit_reference_editor_result``
+coordinator -- what Analyse's create dialog runs on "Add to plot" (the retired
+panel's Add button ran it too, stage 10a2) -- not the underlying repository
+primitives directly, so the legacy dual-write, normalized MeasurementSet
+creation, observation attachment and refresh all execute together — the
 coverage gap the reviewer highlighted (F-12 / F-007 in the cumulative
 ledger).
 
@@ -178,10 +179,25 @@ def _seed_work(short_label: str = "MWE 2020") -> ReferenceWork:
     )
 
 
+
+def _add_through_live_path(window, dialog):
+    """What “Add to plot” in Analyse's create dialog does (stage 10a2).
+
+    ``_on_reference_picker_new_reference``'s ``add_callback`` hands the
+    accepted editor to ``_submit_reference_editor_result`` without syncing
+    the retired reference panel. These tests drove the removed panel's Add
+    button, which ran the same submission.
+    """
+    from PySide6.QtWidgets import QDialog
+
+    if dialog.exec() != QDialog.Accepted:
+        return False
+    return window._submit_reference_editor_result(dialog, sync_panel=False)
+
 def test_mainwindow_add_range_writes_legacy_and_normalized_and_persists(
     monkeypatch, qapp, libs
 ):
-    """Drive _on_reference_panel_add_clicked with a range payload; the
+    """Submit a range payload through the live Add path; the
     legacy reference_values row, the normalized MeasurementSet, and the
     ObservationReferenceUse must all exist after the call. Reopening the
     observation (via ObservationReferenceUseRepository.list_for_observation)
@@ -215,12 +231,8 @@ def test_mainwindow_add_range_writes_legacy_and_normalized_and_persists(
             "width_max": 5.0,
         },
     }
-    monkeypatch.setattr(
-        main_window,
-        "ReferenceAddDialog",
-        lambda *a, **kw: _StubReferenceAddDialog(payload, *a, **kw),
-    )
-    window._on_reference_panel_add_clicked()
+    _dialog_factory = lambda *a, **kw: _StubReferenceAddDialog(payload, *a, **kw)
+    _add_through_live_path(window, _dialog_factory())
 
     # Legacy row exists.
     from database.models import ReferenceDB
@@ -285,11 +297,7 @@ def test_mainwindow_add_dedups_legacy_envelope_when_normalized_attach_succeeds(
             "width_max": 5.0,
         },
     }
-    monkeypatch.setattr(
-        main_window,
-        "ReferenceAddDialog",
-        lambda *a, **kw: _StubReferenceAddDialog(payload, *a, **kw),
-    )
+    _dialog_factory = lambda *a, **kw: _StubReferenceAddDialog(payload, *a, **kw)
     # Count reference-series pushes and simulate the real attach path
     # that adds a translated normalized series row.
     push_count = {"n": 0}
@@ -312,7 +320,7 @@ def test_mainwindow_add_dedups_legacy_envelope_when_normalized_attach_succeeds(
         })
 
     window._attach_normalized_reference_to_active_observation = _fake_attach
-    window._on_reference_panel_add_clicked()
+    _add_through_live_path(window, _dialog_factory())
 
     # Exactly one series row: the translated normalized attachment.
     # No second row for the legacy envelope.
@@ -351,12 +359,8 @@ def test_mainwindow_add_parmasto_only_writes_legacy_but_no_normalized_set(
         "width_min": 4.2,
         "width_max": 4.2,
     }
-    monkeypatch.setattr(
-        main_window,
-        "ReferenceAddDialog",
-        lambda *a, **kw: _StubReferenceAddDialog(parmasto_payload, *a, **kw),
-    )
-    window._on_reference_panel_add_clicked()
+    _dialog_factory = lambda *a, **kw: _StubReferenceAddDialog(parmasto_payload, *a, **kw)
+    _add_through_live_path(window, _dialog_factory())
 
     from database.models import ReferenceDB
 

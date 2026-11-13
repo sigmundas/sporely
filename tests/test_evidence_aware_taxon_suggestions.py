@@ -354,7 +354,6 @@ def test_reference_ai_entries_carry_the_provider_identifier():
 def picker_settings(tmp_path, monkeypatch):
     from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication
-    import ui.add_reference_dialog as picker
     import ui.window_state as geometry
 
     QApplication.instance() or QApplication([])
@@ -362,77 +361,7 @@ def picker_settings(tmp_path, monkeypatch):
     def settings(*_args):
         return QSettings(str(tmp_path / "picker.ini"), QSettings.IniFormat)
 
-    monkeypatch.setattr(picker.MeasurementSetRepository, "get", lambda _id: None)
-    monkeypatch.setattr(picker, "QSettings", settings)
     monkeypatch.setattr(geometry, "QSettings", settings)
-
-
-def _picker(lookup, **kwargs):
-    from ui.add_reference_dialog import AddReferenceDialog
-
-    attached = []
-    defaults = dict(
-        taxon_label="Flammulina velutipes", taxon_id=None, genus="Flammulina", species="velutipes",
-        candidates=[], community_results=[], my_observations=[], taxon_lookup=lookup,
-        ai_candidates=[_ai_entry()], exclude_observation_id=685,
-        attach_callback=lambda *args: attached.append(args),
-    )
-    defaults.update(kwargs)
-    return AddReferenceDialog(None, **defaults), attached
-
-
-def test_picker_opens_on_the_observation_taxon_and_offers_the_link(picker_settings, lookup):
-    dialog, attached = _picker(lookup)
-    try:
-        combo = dialog.taxon_target_combo
-        assert combo.currentIndex() == 0
-        assert combo.itemText(0) == "Flammulina velutipes"
-        assert dialog._taxon_id is None
-        assert not dialog.taxon_link_button.isHidden()
-
-        dialog.taxon_link_button.click()
-        # The reference taxon only: the observation is untouched.
-        assert dialog._taxon_id == str(PROVEN_CONCEPT)
-        assert (dialog._genus, dialog._species) == ("Flammulina", "velutipes")
-        assert dialog._own_taxon_id is None
-        assert dialog._exclude_observation_id == 685
-        assert attached == []
-        assert dialog.taxon_link_button.isHidden()
-        assert "%" not in combo.currentText()
-    finally:
-        dialog.reject()
-
-
-def test_picker_offers_no_link_without_an_identifier(picker_settings, lookup):
-    dialog, _attached = _picker(lookup, ai_candidates=[])
-    try:
-        assert dialog.taxon_link_button.isHidden()
-        assert dialog.taxon_target_combo.count() == 1
-        dialog._on_taxon_target_text_entered()
-        assert dialog._taxon_id is None
-    finally:
-        dialog.reject()
-
-
-def test_unrelated_ai_suggestions_sit_in_their_own_section(picker_settings, lookup):
-    dialog, _attached = _picker(lookup, ai_candidates=[_ai_entry(), _ai_entry(
-        external_id="1234567", name="Flammulina elastica", source="inat")])
-    try:
-        rows = dialog._taxon_default_suggestion_rows()
-        labels = [label for label, _data in rows]
-        assert labels[0] == "Flammulina velutipes"
-        assert rows[1] == ("AI suggestions", None)
-        assert rows[2][0].startswith("Flammulina elastica") and rows[2][0].endswith("(name only)")
-        # Typed search is a database search: the AI row is not in it.
-        typed = dialog.taxon_search_rows("Flammulina elastica")
-        assert all(data["taxon_id"] is not None for _label, data in typed)
-    finally:
-        dialog.reject()
-
-
-def _mycena_picker(lookup, **kwargs):
-    return _picker(lookup, taxon_label="Mycena pearsoniana", genus="Mycena", species="pearsoniana",
-                   **kwargs)
 
 
 def test_common_names_filtered_to_a_member_keep_the_members_name(lookup):
@@ -442,43 +371,6 @@ def test_common_names_filtered_to_a_member_keep_the_members_name(lookup):
     rows = {(c.taxon_id, c.genus, c.species) for c in
             lookup.suggest_common_names(genus="Uredo", species="empetri")}
     assert rows == {(621034, "Uredo", "empetri")}
-
-
-def test_picker_search_shows_one_match_when_an_identifier_settles_it(picker_settings, lookup):
-    dialog, _attached = _mycena_picker(lookup, ai_candidates=[_ai_entry("NBIC:53838", "Mycena pearsoniana")])
-    try:
-        rows = dialog.taxon_search_rows("Mycena pearsoniana")
-        ids = [data["taxon_id"] for _label, data in rows if data.get("label") == "Mycena pearsoniana"]
-        assert ids == [PAIR_NORTAXA]
-    finally:
-        dialog.reject()
-
-
-def test_picker_search_lists_both_sources_when_genuinely_ambiguous(picker_settings, lookup):
-    dialog, _attached = _mycena_picker(lookup, ai_candidates=[])
-    try:
-        rows = dialog.taxon_search_rows("Mycena pearsoniana")
-        by_id = {data["taxon_id"]: label for label, data in rows
-                 if data.get("label") == "Mycena pearsoniana"}
-        assert {PAIR_COL, PAIR_NORTAXA} <= set(by_id)
-        assert "NorTaxa 53838" in by_id[PAIR_NORTAXA]
-        assert "COL" in by_id[PAIR_COL]
-    finally:
-        dialog.reject()
-
-
-def test_picker_search_offers_an_associated_pair_once_as_its_primary(picker_settings, lookup):
-    dialog, _attached = _picker(lookup, ai_candidates=[])
-    try:
-        rows = dialog.taxon_search_rows("Flammulina velutipes")
-        assert [(label, data["taxon_id"]) for label, data in rows
-                if data.get("label") == "Flammulina velutipes"] == [
-            ("Flammulina velutipes (vintersopp)", COL_CONCEPT)]
-        common = {data["taxon_id"] for label, data in dialog.taxon_search_rows("vintersopp")
-                  if label.endswith("(Flammulina velutipes)")}
-        assert common == {COL_CONCEPT}
-    finally:
-        dialog.reject()
 
 
 def test_identifiers_are_not_called_unresolved_without_a_taxonomy():

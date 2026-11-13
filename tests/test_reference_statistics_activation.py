@@ -19,7 +19,7 @@ from database.reference_sync_state import load_library_payload
 from references.reference_comparison import source_series, MetricDomain
 from references.reference_display import display_from_row
 from references.reference_plotting import translate_observation_reference_use
-from ui.add_reference_dialog import AddReferenceDialog, filter_library_candidates
+from ui.add_reference_dialog import filter_library_candidates
 from ui.reference_entry_editor import ReferenceEntryEditor
 from ui.reference_preview_pane import ReferencePreviewPane
 from utils.reference_cloud_sync import sync_reference_library
@@ -64,9 +64,6 @@ def test_enter_save_reopen_reuse_plot_and_sync(qapp, libs, monkeypatch, tmp_path
     candidates = MeasurementSetRepository.list_attachment_candidates()
     assert [c.measurement_set_id for c in filter_library_candidates(candidates,
         taxon_id="625621", taxon_text="Flammulina velutipes", only_this_taxon=True)] == [stored.id]
-    picker = AddReferenceDialog(parent, genus="Flammulina", species="velutipes",
-                               taxon_id=625621, candidates=candidates, my_observations=[], community_results=[], ai_candidates=[])
-    assert [c.measurement_set_id for c in picker._filtered_candidates()] == [stored.id]
     for use in uses:
         snapshot = json.loads(use.snapshot_json)
         assert snapshot["schema_version"] == 2
@@ -92,7 +89,6 @@ def test_enter_save_reopen_reuse_plot_and_sync(qapp, libs, monkeypatch, tmp_path
     result = pull_reference_library(puller)
     assert not result.errors and not result.conflicts
     assert load_library_payload("measurement_set", stored.id) == pushed
-    picker.close()
     editor.close()
     parent.close()
 

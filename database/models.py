@@ -4954,46 +4954,6 @@ class ReferenceDB:
         conn.close()
         return [row[0] for row in rows if row and row[0]]
 
-    @staticmethod
-    def list_mount_mediums(genus: str, species: str, source: str, prefix: str = "") -> List[str]:
-        conn = get_reference_connection()
-        cursor = conn.cursor()
-        if prefix:
-            cursor.execute('''
-                SELECT DISTINCT mount_medium FROM reference_values
-                WHERE genus = ? AND species = ? AND source = ? AND mount_medium LIKE ?
-                ORDER BY mount_medium
-            ''', (genus, species, source, f"{prefix}%"))
-        else:
-            cursor.execute('''
-                SELECT DISTINCT mount_medium FROM reference_values
-                WHERE genus = ? AND species = ? AND source = ?
-                ORDER BY mount_medium
-            ''', (genus, species, source))
-        rows = cursor.fetchall()
-        conn.close()
-        return [row[0] for row in rows if row and row[0]]
-
-    @staticmethod
-    def list_stains(genus: str, species: str, source: str, prefix: str = "") -> List[str]:
-        conn = get_reference_connection()
-        cursor = conn.cursor()
-        if prefix:
-            cursor.execute('''
-                SELECT DISTINCT stain FROM reference_values
-                WHERE genus = ? AND species = ? AND source = ? AND stain LIKE ?
-                ORDER BY stain
-            ''', (genus, species, source, f"{prefix}%"))
-        else:
-            cursor.execute('''
-                SELECT DISTINCT stain FROM reference_values
-                WHERE genus = ? AND species = ? AND source = ?
-                ORDER BY stain
-            ''', (genus, species, source))
-        rows = cursor.fetchall()
-        conn.close()
-        return [row[0] for row in rows if row and row[0]]
-
 
 class SpeciesDataAvailability:
     """Cache and query data availability for species."""

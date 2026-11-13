@@ -353,12 +353,6 @@ class LibrarySourceRow(QWidget):
     def is_selected(self) -> bool:
         return self._selected
 
-    def set_selected(self, selected: bool) -> None:
-        if self._selected == bool(selected):
-            return
-        self._selected = bool(selected)
-        self.update()
-
     def _on_toggled(self, checked: bool) -> None:
         self._show_role(bool(checked))
         self.check_toggled.emit(self._measurement_set_id, bool(checked))

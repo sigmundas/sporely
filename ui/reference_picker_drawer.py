@@ -41,10 +41,12 @@ from database.reference_library import MeasurementSetCandidate, MeasurementSetRe
 from references.reference_display import format_measurement_expression
 
 from .add_reference_dialog import (
-    AddReferenceDialog,
     PersonalObservationCandidate,
     filter_library_candidates,
     group_library_candidates,
+    library_group_heading,
+    relevance_badge_text,
+    semantic_badge_text,
 )
 from .library_source_row import DEFAULT_REFERENCE_USE_ROLE, LibraryResultsList, LibrarySourceRow
 from .segmented_selector import SegmentedSelector
@@ -225,7 +227,7 @@ class ReferencePickerPage(QWidget):
         self.results_list.clear()
         groups = self._visible_groups()
         for group, members in groups:
-            heading = QListWidgetItem(AddReferenceDialog._library_group_heading(group, len(members)))
+            heading = QListWidgetItem(library_group_heading(group, len(members)))
             heading.setFlags(Qt.NoItemFlags)
             font = QFont(self.results_list.font())
             font.setBold(True)
@@ -262,8 +264,8 @@ class ReferencePickerPage(QWidget):
             taxon=taxon,
             citation=citation,
             measurement=format_measurement_expression(candidate.source_display()),
-            relevance_badge=AddReferenceDialog._relevance_badge_text(group),
-            semantic_badge=AddReferenceDialog._semantic_badge_text(candidate),
+            relevance_badge=relevance_badge_text(group),
+            semantic_badge=semantic_badge_text(candidate),
             summary_lines=tuple(summary),
             parent=self.results_list,
         )

@@ -338,10 +338,6 @@ class MeasurementSetCandidate:
             return self.display
         return SourceDisplay(source_kind="library", stored_data_kind=self.data_kind or None)
 
-    def axis_extents(self) -> Mapping[str, tuple[float, float]]:
-        """This candidate's measured spans, empty rather than missing."""
-        return self.raw_point_extents or {}
-
 
 @dataclass(frozen=True)
 class MeasurementSetPreference:

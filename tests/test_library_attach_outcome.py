@@ -86,3 +86,37 @@ def test_untranslatable_new_row_is_rolled_back_and_reported_failed(repo, monkeyp
     assert status == "failed" and reason
     assert repo["detached"] == ["use-ms-a"]
     assert added == []
+
+
+def test_a_failed_rollback_is_reported_critical_not_swallowed(repo, monkeypatch):
+    """The new row could not be plotted and undoing it failed too: say so loudly.
+
+    (Moved here from the retired attach dialog's handler tests, stage 10a2.)
+    """
+    stub, added = _stub()
+    monkeypatch.setattr(mw, "translate_observation_reference_use", lambda use: None)
+
+    def failing_detach(use_id):
+        raise ReferenceLibraryError("locked")
+
+    monkeypatch.setattr(mw.ObservationReferenceUseRepository, "detach", staticmethod(failing_detach))
+    status, reason, severity = stub._attach_normalized_reference_outcome(5, "ms-a", "compared")
+    assert status == "failed" and severity == "critical"
+    assert "locked" in reason
+    assert added == []
+
+
+def test_an_already_attached_untranslatable_row_is_never_detached(repo, monkeypatch):
+    """A row that existed before this attach is never rolled back, even if it cannot be shown.
+
+    It is plotted as a warning row instead (a race with another attach
+    created it first). (Moved here from the retired attach dialog's handler
+    tests, stage 10a2.)
+    """
+    stub, added = _stub()
+    repo["existing"].add("ms-a")
+    monkeypatch.setattr(mw, "translate_observation_reference_use", lambda use: None)
+    status, reason, severity = stub._attach_normalized_reference_outcome(5, "ms-a", "compared")
+    assert status == "already_attached" and severity == "warning" and reason
+    assert repo["detached"] == []
+    assert added == [{"warning": "use-ms-a"}]

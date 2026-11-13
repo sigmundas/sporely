@@ -231,6 +231,21 @@ def _range_payload(work_id: str, taxon_id: int, panel_genus: str, panel_species:
     }
 
 
+
+def _add_through_live_path(window, dialog):
+    """What “Add to plot” in Analyse's create dialog does (stage 10a2).
+
+    ``_on_reference_picker_new_reference``'s ``add_callback`` hands the
+    accepted editor to ``_submit_reference_editor_result`` without syncing
+    the retired reference panel. These tests drove the removed panel's Add
+    button, which ran the same submission.
+    """
+    from PySide6.QtWidgets import QDialog
+
+    if dialog.exec() != QDialog.Accepted:
+        return False
+    return window._submit_reference_editor_result(dialog, sync_panel=False)
+
 def test_quick_add_service_path_attaches_snapshot_and_refreshes_plot(
     monkeypatch, qapp, libs
 ):
@@ -499,11 +514,7 @@ def test_invalid_quick_add_leaves_no_legacy_or_normalized_records(
     )
     payload = _range_payload(work.id, 7, "Agaricus", "bisporus")
     payload["observation_id"] = observation_id
-    monkeypatch.setattr(
-        main_window,
-        "ReferenceAddDialog",
-        lambda *args, **kwargs: _InvalidQuickAddStubDialog(payload),
-    )
+    _dialog_factory = lambda *args, **kwargs: _InvalidQuickAddStubDialog(payload)
     monkeypatch.setattr(main_window.QMessageBox, "warning", lambda *args: None)
     window = _build_window(monkeypatch, qapp)
     window.active_observation_id = observation_id
@@ -511,7 +522,7 @@ def test_invalid_quick_add_leaves_no_legacy_or_normalized_records(
     window.ref_species_input.setText("bisporus")
     window._active_sporely_taxon_id = lambda: 7
 
-    window._on_reference_panel_add_clicked()
+    _add_through_live_path(window, _dialog_factory())
 
     assert ReferenceDB.get_reference(
         "Agaricus", "bisporus", payload["source"], None, None
@@ -531,18 +542,14 @@ def test_selected_work_legacy_only_submission_keeps_legacy_fallback(
     )
     payload = _range_payload(work.id, 7, "Agaricus", "bisporus")
     payload["observation_id"] = observation_id
-    monkeypatch.setattr(
-        main_window,
-        "ReferenceAddDialog",
-        lambda *args, **kwargs: _QuickLegacyOnlyStubDialog(payload),
-    )
+    _dialog_factory = lambda *args, **kwargs: _QuickLegacyOnlyStubDialog(payload)
     window = _build_window(monkeypatch, qapp)
     window.active_observation_id = observation_id
     window.ref_genus_input.setText("Agaricus")
     window.ref_species_input.setText("bisporus")
     window._active_sporely_taxon_id = lambda: 7
 
-    window._on_reference_panel_add_clicked()
+    _add_through_live_path(window, _dialog_factory())
 
     assert ReferenceDB.get_reference(
         "Agaricus", "bisporus", payload["source"], None, None
@@ -571,16 +578,12 @@ def test_taxon_drift_confirmation_declined_skips_normalized_write(
     window._active_sporely_taxon_id = lambda: 7
 
     payload = _range_payload(work.id, 7, "Amanita", "muscaria")
-    monkeypatch.setattr(
-        main_window,
-        "ReferenceAddDialog",
-        lambda *a, **kw: _StubDialog(payload, *a, **kw),
-    )
+    _dialog_factory = lambda *a, **kw: _StubDialog(payload, *a, **kw)
     # User clicks "No".
     monkeypatch.setattr(
         main_window.QMessageBox, "question", lambda *a, **kw: QMessageBox.No
     )
-    window._on_reference_panel_add_clicked()
+    _add_through_live_path(window, _dialog_factory())
 
     # Legacy row was still written (upstream of the guard).
     from database.models import ReferenceDB
@@ -614,15 +617,11 @@ def test_taxon_drift_confirmation_accepted_records_as_published_synonym(
     window._active_sporely_taxon_id = lambda: 7
 
     payload = _range_payload(work.id, 7, "Prunulus", "filopes")
-    monkeypatch.setattr(
-        main_window,
-        "ReferenceAddDialog",
-        lambda *a, **kw: _StubDialog(payload, *a, **kw),
-    )
+    _dialog_factory = lambda *a, **kw: _StubDialog(payload, *a, **kw)
     monkeypatch.setattr(
         main_window.QMessageBox, "question", lambda *a, **kw: QMessageBox.Yes
     )
-    window._on_reference_panel_add_clicked()
+    _add_through_live_path(window, _dialog_factory())
 
     listed = ObservationReferenceUseRepository.list_for_observation(obs_id)
     assert len(listed) == 1
@@ -653,11 +652,7 @@ def test_taxon_matches_observation_no_confirmation_prompt(monkeypatch, qapp, lib
     window._active_sporely_taxon_id = lambda: 7
 
     payload = _range_payload(work.id, 7, "agaricus", "Bisporus")
-    monkeypatch.setattr(
-        main_window,
-        "ReferenceAddDialog",
-        lambda *a, **kw: _StubDialog(payload, *a, **kw),
-    )
+    _dialog_factory = lambda *a, **kw: _StubDialog(payload, *a, **kw)
     prompted: list[bool] = []
 
     def _q(*a, **kw):
@@ -665,7 +660,7 @@ def test_taxon_matches_observation_no_confirmation_prompt(monkeypatch, qapp, lib
         return QMessageBox.No
 
     monkeypatch.setattr(main_window.QMessageBox, "question", _q)
-    window._on_reference_panel_add_clicked()
+    _add_through_live_path(window, _dialog_factory())
 
     assert prompted == [], "no confirmation prompt should be shown when identities match"
     listed = ObservationReferenceUseRepository.list_for_observation(obs_id)
@@ -696,11 +691,7 @@ def test_retry_after_attachment_failure_no_stranded_set(
     window._active_sporely_taxon_id = lambda: 7
 
     payload = _range_payload(work.id, 7, "Agaricus", "bisporus")
-    monkeypatch.setattr(
-        main_window,
-        "ReferenceAddDialog",
-        lambda *a, **kw: _StubDialog(payload, *a, **kw),
-    )
+    _dialog_factory = lambda *a, **kw: _StubDialog(payload, *a, **kw)
     # Silence the modal QMessageBox that _on_reference_panel_add_clicked
     # shows when _persist_normalized_reference_from_dialog raises — the
     # simulated attachment failure below is a deliberate control-flow
@@ -720,7 +711,7 @@ def test_retry_after_attachment_failure_no_stranded_set(
     # First attempt: attachment fails after the MeasurementSet is
     # created; compensating cleanup deletes the set + fresh treatment.
     window._attach_normalized_reference_to_active_observation = _failing_attach
-    window._on_reference_panel_add_clicked()
+    _add_through_live_path(window, _dialog_factory())
 
     treatments_after_fail = TaxonTreatmentRepository.list_for_work(work.id)
     assert treatments_after_fail == [], (
@@ -738,7 +729,7 @@ def test_retry_after_attachment_failure_no_stranded_set(
 
     # Second attempt (retry) with a working attach.
     window._attach_normalized_reference_to_active_observation = _direct_attach
-    window._on_reference_panel_add_clicked()
+    _add_through_live_path(window, _dialog_factory())
 
     treatments_second = TaxonTreatmentRepository.list_for_work(work.id)
     assert len(treatments_second) == 1
@@ -793,11 +784,7 @@ def test_observation_drift_between_dialog_open_and_save_blocks_normalized_write(
             window.active_observation_id = obs_id_b
             return QDialog.Accepted
 
-    monkeypatch.setattr(
-        main_window,
-        "ReferenceAddDialog",
-        lambda *a, **kw: _DriftingDialog(payload, *a, **kw),
-    )
+    _dialog_factory = lambda *a, **kw: _DriftingDialog(payload, *a, **kw)
 
     def _direct_attach(set_id, role):
         # Use the CURRENT active_observation_id, mirroring the real
@@ -808,7 +795,7 @@ def test_observation_drift_between_dialog_open_and_save_blocks_normalized_write(
         )
 
     window._attach_normalized_reference_to_active_observation = _direct_attach
-    window._on_reference_panel_add_clicked()
+    _add_through_live_path(window, _dialog_factory())
 
     # Legacy row was still written under the panel's genus/species.
     from database.models import ReferenceDB
@@ -866,20 +853,12 @@ def test_two_same_shape_submissions_on_same_observation_are_not_conflated(
     window._attach_normalized_reference_to_active_observation = _direct_attach
 
     # First submission.
-    monkeypatch.setattr(
-        main_window,
-        "ReferenceAddDialog",
-        lambda *a, **kw: _StubDialog(payload_a, *a, **kw),
-    )
-    window._on_reference_panel_add_clicked()
+    _dialog_factory = lambda *a, **kw: _StubDialog(payload_a, *a, **kw)
+    _add_through_live_path(window, _dialog_factory())
     # Second submission with same treatment+character+data_kind but
     # different values — must not overwrite the first.
-    monkeypatch.setattr(
-        main_window,
-        "ReferenceAddDialog",
-        lambda *a, **kw: _StubDialog(payload_b, *a, **kw),
-    )
-    window._on_reference_panel_add_clicked()
+    _dialog_factory = lambda *a, **kw: _StubDialog(payload_b, *a, **kw)
+    _add_through_live_path(window, _dialog_factory())
 
     treatments = TaxonTreatmentRepository.list_for_work(work.id)
     assert len(treatments) == 1
@@ -916,17 +895,13 @@ def test_silent_attach_failure_still_triggers_compensating_cleanup(
     )
 
     payload = _range_payload(work.id, 7, "Agaricus", "bisporus")
-    monkeypatch.setattr(
-        main_window,
-        "ReferenceAddDialog",
-        lambda *a, **kw: _StubDialog(payload, *a, **kw),
-    )
+    _dialog_factory = lambda *a, **kw: _StubDialog(payload, *a, **kw)
     # Simulate the shared attach helper's silent-failure return:
     # returns None without raising and without inserting a use row.
     window._attach_normalized_reference_to_active_observation = (
         lambda set_id, role: None
     )
-    window._on_reference_panel_add_clicked()
+    _add_through_live_path(window, _dialog_factory())
 
     treatments = TaxonTreatmentRepository.list_for_work(work.id)
     assert treatments == [], (
@@ -987,29 +962,21 @@ def test_two_distinct_datasets_on_same_treatment_are_not_conflated(
 
     # Submission A on observation A.
     window.active_observation_id = obs_id_a
-    monkeypatch.setattr(
-        main_window,
-        "ReferenceAddDialog",
-        lambda *a, **kw: _StubDialog(payload_a, *a, **kw),
-    )
+    _dialog_factory = lambda *a, **kw: _StubDialog(payload_a, *a, **kw)
     window._attach_normalized_reference_to_active_observation = _direct_attach_factory(
         obs_id_a
     )
-    window._on_reference_panel_add_clicked()
+    _add_through_live_path(window, _dialog_factory())
 
     # Submission B on observation B — reuses the treatment (same
     # work+taxon) but must produce a SECOND MeasurementSet without
     # cleaning up A's set.
     window.active_observation_id = obs_id_b
-    monkeypatch.setattr(
-        main_window,
-        "ReferenceAddDialog",
-        lambda *a, **kw: _StubDialog(payload_b, *a, **kw),
-    )
+    _dialog_factory = lambda *a, **kw: _StubDialog(payload_b, *a, **kw)
     window._attach_normalized_reference_to_active_observation = _direct_attach_factory(
         obs_id_b
     )
-    window._on_reference_panel_add_clicked()
+    _add_through_live_path(window, _dialog_factory())
 
     treatments = TaxonTreatmentRepository.list_for_work(work.id)
     assert len(treatments) == 1
@@ -1046,11 +1013,7 @@ def test_retry_after_measurement_set_failure_creates_no_duplicate_treatment(
     window._active_sporely_taxon_id = lambda: 7
 
     payload = _range_payload(work.id, 7, "Agaricus", "bisporus")
-    monkeypatch.setattr(
-        main_window,
-        "ReferenceAddDialog",
-        lambda *a, **kw: _StubDialog(payload, *a, **kw),
-    )
+    _dialog_factory = lambda *a, **kw: _StubDialog(payload, *a, **kw)
     monkeypatch.setattr(
         main_window.QMessageBox, "warning", lambda *a, **kw: QMessageBox.Ok
     )
@@ -1079,7 +1042,7 @@ def test_retry_after_measurement_set_failure_creates_no_duplicate_treatment(
     monkeypatch.setattr(
         main_window.QMessageBox, "warning", lambda *a, **kw: QMessageBox.Ok
     )
-    window._on_reference_panel_add_clicked()
+    _add_through_live_path(window, _dialog_factory())
 
     # The set-create failure triggers compensating cleanup that also
     # removes the freshly-created treatment (only artifacts created by
@@ -1089,7 +1052,7 @@ def test_retry_after_measurement_set_failure_creates_no_duplicate_treatment(
 
     # Retry: the failer permits the second call through. A fresh
     # treatment is created, then a MeasurementSet, then attachment.
-    window._on_reference_panel_add_clicked()
+    _add_through_live_path(window, _dialog_factory())
     treatments_after = TaxonTreatmentRepository.list_for_work(work.id)
     assert len(treatments_after) == 1
     sets_after = MeasurementSetRepository.list_for_treatment(treatments_after[0].id)

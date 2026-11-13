@@ -185,18 +185,6 @@ class ReferencePreviewPane(QWidget):
     # Public API
     # ------------------------------------------------------------------
 
-    def set_observation_baseline(self, view: ComparisonView | None) -> None:
-        """Install the no-selection model and show it immediately.
-
-        Injected by the host rather than queried here: the pane has no idea
-        which observation is open, and giving it one would mean a second,
-        divergent read of the same measurements.
-        """
-        self._baseline_view = view
-        current = self.comparison_view.view()
-        if self._summary_mode == "comparison" and (current is None or not current.has_source):
-            self.comparison_view.set_view(view)
-
     def set_header(self, title: str, meta: str, note: str) -> None:
         """Set the Summary tab's title / metadata / note lines.
 

@@ -287,22 +287,71 @@ def test_callbacks_after_close_cannot_restore_selection(monkeypatch):
     assert pane.current_mode_payload() is None
 
 
-def test_picker_reject_closes_outstanding_pane_workers(monkeypatch, tmp_path):
-    from PySide6.QtCore import QSettings
-    import ui.add_reference_dialog as picker
-    import ui.window_state as geometry
 
+
+# ---------------------------------------------------------------------
+# The active observation's own community dataset is never offered to
+# compare with itself (moved from the retired Add-reference dialog's tests,
+# stage 10a2; the drawer builds the pane this way).
+# ---------------------------------------------------------------------
+
+
+def _own_and_published_rows() -> list[dict]:
+    return [
+        {
+            "_kind": "observation",
+            "observation_id": 4242,
+            "genus": "Cortinarius",
+            "species": "limonius",
+            "contributor_label": "sporely_community_user_7",
+            "measurement_count": 3,
+        },
+        {
+            "_kind": "reference",
+            "genus": "Cortinarius",
+            "species": "limonius",
+            "source": "mycena.no",
+            "contributor_label": "mycena.no",
+        },
+    ]
+
+
+def _drawer_pane(rows, exclude_observation_cloud_id=None):
     _app()
-    searches, details = _patch_workers(monkeypatch)
-    settings = lambda *_args: QSettings(str(tmp_path / "picker.ini"), QSettings.IniFormat)
-    monkeypatch.setattr(picker, "QSettings", settings)
-    monkeypatch.setattr(geometry, "QSettings", settings)
-    dialog = picker.AddReferenceDialog(
-        genus="Amanita", species="fulva", candidates=[], my_observations=[]
+    preview = ReferencePreviewPane()
+    preview.hide()
+    return mod.CommunityResultsPane(
+        genus="Cortinarius",
+        species="limonius",
+        preview_pane=preview,
+        results=rows,
+        exclude_observation_cloud_id=exclude_observation_cloud_id,
+        preview_is_active=lambda: False,
+        checkable=True,
     )
-    searches[0].search_done.emit([{"observation_id": 1}], {})
-    _select_row(dialog._community_pane, 0)
-    dialog._community_pane.set_taxon("Cortinarius", "rubellus")
-    dialog.reject()
-    assert all(worker.waited for worker in searches + details)
-    assert not dialog._community_pane.has_selection()
+
+
+def test_the_active_observations_own_dataset_is_excluded_by_cloud_id():
+    pane = _drawer_pane(_own_and_published_rows(), exclude_observation_cloud_id="4242")
+    assert pane.results_list.count() == 1
+    assert [row["_kind"] for row in pane._results] == ["reference"]
+
+
+def test_another_observation_of_the_same_taxon_is_kept():
+    pane = _drawer_pane(_own_and_published_rows(), exclude_observation_cloud_id="9999")
+    assert pane.results_list.count() == 2
+    assert [row["_kind"] for row in pane._results] == ["observation", "reference"]
+
+
+def test_rows_of_other_taxa_pass_the_exclusion_untouched():
+    rows = _own_and_published_rows() + [
+        {"_kind": "observation", "observation_id": 7777, "genus": "Amanita", "species": "muscaria",
+         "contributor_label": "sporely_community_user_9", "measurement_count": 5},
+    ]
+    pane = _drawer_pane(rows, exclude_observation_cloud_id="4242")
+    assert [row.get("observation_id") for row in pane._results if row["_kind"] == "observation"] == [7777]
+
+
+def test_without_an_exclusion_id_every_row_stays():
+    pane = _drawer_pane(_own_and_published_rows())
+    assert pane.results_list.count() == 2

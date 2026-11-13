@@ -569,35 +569,6 @@ def test_reference_panel_focus_populates_blank_prefix_species_and_common_name_mo
     assert window.ref_vernacular_input.text() == "Button mushroom"
 
 
-def test_reference_panel_ambiguous_common_name_does_not_autofill(
-    monkeypatch,
-    qapp,
-) -> None:
-    window = _build_minimal_window(monkeypatch, qapp)
-    window.ref_vernacular_db = _FailingVernacularDB()
-
-    lookup = _ReferenceLookupStub(
-        genera=[],
-        species=[],
-        common_names=[],
-        resolve_results=[
-            TaxonChoice(genus="Agaricus", species="bisporus", common_name="Shared name"),
-            TaxonChoice(genus="Amanita", species="muscaria", common_name="Shared name"),
-        ],
-    )
-    window._ensure_reference_taxon_lookup = lambda: lookup
-
-    window.ref_vernacular_input.setText("Shared name")
-    window.ref_genus_input.clear()
-    window.ref_species_input.clear()
-
-    window._on_ref_vernacular_editing_finished()
-
-    assert window.ref_vernacular_input.text() == "Shared name"
-    assert window.ref_genus_input.text() == ""
-    assert window.ref_species_input.text() == ""
-
-
 def test_reference_panel_still_uses_reference_db_for_loading(
     tmp_path: Path,
     monkeypatch,

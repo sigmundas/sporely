@@ -256,15 +256,6 @@ class _PublicationSearchProxyModel(QSortFilterProxyModel):
         return super().data(index, role)
 
 
-def _qt_alive(widget) -> bool:
-    try:
-        from shiboken6 import isValid
-
-        return bool(widget is not None and isValid(widget))
-    except Exception:
-        return widget is not None
-
-
 class ReferenceEntryEditor(QWidget):
     """Paste/parse measurement editor + publication picker + Data section.
 
@@ -1154,24 +1145,6 @@ class ReferenceEntryEditor(QWidget):
     # Hints
     # ------------------------------------------------------------------
 
-    def attach_hint_controller(self, controller: HintStatusController) -> None:
-        """Publish this editor's hints to a host-owned (dialog-level) hint
-        bar instead of its own: every registered field, parser and
-        validation hint goes to ``controller``, and the editor's own hint
-        row is removed so no hint widget stays inside the scrolled form."""
-        if self._hint_controller is not None:
-            for widget, _hint, _tone in self._hint_registrations:
-                if _qt_alive(widget):
-                    widget.removeEventFilter(self._hint_controller)
-        self._hint_controller = controller
-        for widget, hint, tone in self._hint_registrations:
-            if _qt_alive(widget):
-                controller.register_widget(widget, hint, tone=tone)
-        row = self.take_hint_row()
-        row.hide()
-        row.deleteLater()
-        self.hint_bar = None
-
     def take_hint_row(self) -> QWidget:
         """Remove the hint/status row from this editor's layout and return
         it, for a host to place outside its scroll area. The hint
@@ -1892,45 +1865,6 @@ class ReferenceEntryEditor(QWidget):
         letting the user press it and get silence.
         """
         return bool(self._build_raw_points_json()) or self._has_grid_values()
-
-    def library_entry_fingerprint(self) -> tuple | None:
-        """A comparable snapshot of everything a library entry is built from.
-
-        Two equal fingerprints mean a measurement set saved earlier still
-        describes what this form holds, so a host can attach that set
-        rather than storing the same data a second time. ``None`` means
-        "cannot tell" — no storable content, or a payload this version
-        refuses to project — and a caller must treat it as changed rather
-        than as a match.
-
-        Derived from the real payload builders, not from a parallel reading
-        of the widgets, so it cannot drift away from what a save writes.
-
-        The Data mode is part of the identity. Switching to "Use an
-        existing measurement set" only disables the manual fields, it does
-        not clear them (see :meth:`_on_data_choice_toggled`), so the typed
-        values — and therefore the payload built from them — are unchanged
-        by the switch. Without the mode and the chosen set in here, an
-        entry saved manually would still look current while the form now
-        points at a different, already-stored set.
-        """
-        try:
-            payload = self.normalized_measurement_set_payload()
-        except Exception:
-            return None
-        if payload is None:
-            return None
-        pending = self.pending_reference_work()
-        treatment = self.quick_add_treatment_payload()
-        return (
-            bool(self.is_use_existing_set()),
-            str(self.selected_measurement_set_id() or ""),
-            str(self.selected_reference_work_id() or ""),
-            repr(sorted(asdict(pending).items())) if pending is not None else "",
-            str(treatment.get("name_as_published") or ""),
-            str(treatment.get("locator_text") or ""),
-            repr(sorted(asdict(payload).items())),
-        )
 
     def _blocked_projection_losses(self) -> list[tuple[str, str]]:
         """Scientific claims this entry cannot be saved without losing.
