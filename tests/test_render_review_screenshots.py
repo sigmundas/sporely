@@ -145,6 +145,10 @@ NOTICE_IDS = {
     "notice.error", "notice.error-dark", "notice.error-details", "notice.error-details-dark",
     "notice.undo", "notice.error-details-small-de", "notice.analysis-details",
 }
+CALIBRATION_IDS = {
+    "calibration.no-image", "calibration.no-image-dark", "calibration.export-failed",
+    "calibration.export-failed-de", "calibration.new-objective-missing",
+}
 ALL_IDS = (
     REFERENCE_IDS
     | CONFLICT_IDS
@@ -157,6 +161,7 @@ ALL_IDS = (
     | ANALYSIS_TAB_IDS
     | MODE_BAR_IDS
     | NOTICE_IDS
+    | CALIBRATION_IDS
 )
 
 
@@ -179,7 +184,7 @@ def test_registry_has_unique_semantic_ids_and_expected_groups() -> None:
     ids = [scenario.id for scenario in registry.all()]
     assert len(ids) == len(set(ids))
     assert set(registry.groups()) == {
-        "analysis", "conflict", "live-lab", "measure", "mode-bar", "notices", "observations",
+        "analysis", "calibration", "conflict", "live-lab", "measure", "mode-bar", "notices", "observations",
         "portable-import", "quick-fixes", "raw-processing", "reference-library", "style-tokens",
         "taxon-picker",
     }

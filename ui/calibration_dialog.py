@@ -481,6 +481,22 @@ class NewObjectiveDialog(QDialog):
 
         layout.addLayout(form)
 
+        # What is missing, said under the form instead of a message box
+        # (stage 10c); it goes as soon as a field is changed.
+        self.validation_label = QLabel("")
+        self.validation_label.setObjectName("objectiveValidationMessage")
+        self.validation_label.setWordWrap(True)
+        self.validation_label.setStyleSheet("color: #c0392b;")
+        self.validation_label.setVisible(False)
+        layout.addWidget(self.validation_label)
+        layout.addStretch(1)  # a taller window keeps the message by the fields
+        for field in (
+            self.magnification_input, self.na_input, self.sensor_width_input,
+            self.image_width_input, self.objective_name_input,
+        ):
+            field.textEdited.connect(self._clear_invalid)
+        self.profile_type_combo.currentIndexChanged.connect(self._clear_invalid)
+
         # Buttons
         button_row = QHBoxLayout()
         button_row.addStretch()
@@ -518,6 +534,17 @@ class NewObjectiveDialog(QDialog):
         self.notes_input.setText(str(data.get("notes") or ""))
         self._update_macro_scale_label()
 
+    def _show_invalid(self, field: QWidget | None, message: str) -> None:
+        """Say what is missing under the form and put the cursor in that field."""
+        self.validation_label.setText(message)
+        self.validation_label.setVisible(True)
+        if field is not None and field.isVisible():
+            field.setFocus(Qt.OtherFocusReason)
+
+    def _clear_invalid(self, *_args) -> None:
+        self.validation_label.clear()
+        self.validation_label.setVisible(False)
+
     def _on_create(self):
         objective_name = self.objective_name_input.text().strip()
         mag_text = self.magnification_input.text().strip()
@@ -537,7 +564,7 @@ class NewObjectiveDialog(QDialog):
         image_width_px = self._effective_image_width_px()
 
         if not objective_name:
-            QMessageBox.warning(self, self.tr("Missing Name"), self.tr("Please enter an objective name."))
+            self._show_invalid(self.objective_name_input, self.tr("Please enter an objective name."))
             return
 
         if magnification <= 0:
@@ -545,42 +572,30 @@ class NewObjectiveDialog(QDialog):
                 msg = self.tr("Please enter a magnification divisor (for 1:X).")
             else:
                 msg = self.tr("Please enter a magnification.")
-            QMessageBox.warning(self, self.tr("Missing Magnification"), msg)
+            self._show_invalid(self.magnification_input, msg)
             return
 
         if optics_type != "macro" and na_value <= 0:
-            QMessageBox.warning(self, self.tr("Missing NA"), self.tr("Please enter a numerical aperture (NA)."))
+            self._show_invalid(self.na_input, self.tr("Please enter a numerical aperture (NA)."))
             return
 
         if optics_type == "macro":
             na_value = 0.0
         if optics_type == "macro" and not sensor_width_mm:
-            QMessageBox.warning(
-                self,
-                self.tr("Missing Sensor Data"),
-                self.tr("Please enter sensor width in mm."),
-            )
+            self._show_invalid(self.sensor_width_input, self.tr("Please enter sensor width in mm."))
             return
         if optics_type == "macro" and not image_width_px:
-            QMessageBox.warning(
-                self,
-                self.tr("Missing Image Width"),
-                self.tr("Please enter image width in pixels."),
-            )
+            self._show_invalid(self.image_width_input, self.tr("Please enter image width in pixels."))
             return
 
         display_name = format_objective_display(magnification, na_value, objective_name, optics_type=optics_type)
         if not display_name:
-            QMessageBox.warning(self, self.tr("Invalid Name"), self.tr("Please enter valid objective details."))
+            self._show_invalid(self.objective_name_input, self.tr("Please enter valid objective details."))
             return
 
         key = self._make_key(display_name, optics_type)
         if key in self.existing_keys or display_name in self.existing_keys:
-            QMessageBox.warning(
-                self,
-                self.tr("Duplicate"),
-                self.tr("An objective with this name already exists."),
-            )
+            self._show_invalid(self.objective_name_input, self.tr("An objective with this name already exists."))
             return
 
         self.accept()
@@ -1000,6 +1015,10 @@ class CalibrationDialog(GeometryMixin, QDialog):
         self._init_ui()
         self._load_objectives_combo()
         self._update_history_table()
+        # The image actions wait for an image (stage 10c); loading one enables them.
+        if not self._has_current_image():
+            self._set_add_measurement_enabled(False)
+        self._update_image_actions()
         self._restore_geometry()
         self.finished.connect(self._save_geometry)
 
@@ -1105,6 +1124,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         close_btn.clicked.connect(self.accept)
         button_row.addWidget(close_btn, 0, Qt.AlignVCenter)
         self._register_hint_widget(close_btn, close_btn.text())
+        self.close_btn = close_btn
 
         main_layout.addLayout(button_row)
         self._register_existing_tooltips()
@@ -1964,15 +1984,27 @@ class CalibrationDialog(GeometryMixin, QDialog):
         if self._hint_controller is not None:
             self._hint_controller.set_status(text, timeout_ms=timeout_ms, tone=tone)
 
+    def _show_notice(self, text: str, tone: str = "error", *, details: str | None = None) -> None:
+        """A non-blocking notice in the bottom bar (stage 10c), instead of a message box."""
+        if self._hint_controller is not None:
+            self._hint_controller.show_notice(text, tone, details=details)
+
     def _set_hint_progress_visible(self, visible: bool) -> None:
         if hasattr(self, "hint_bar"):
             self.hint_bar.setVisible(not visible)
         if hasattr(self, "hint_progress_widget"):
             self.hint_progress_widget.setVisible(bool(visible))
+        if not visible:
+            self._busy_close_note = ""
 
     def _set_hint_progress(self, status_text: str | None, value: int | None = None) -> None:
         if hasattr(self, "hint_progress_status"):
-            self.hint_progress_status.setText((status_text or "").strip())
+            self._hint_progress_text = (status_text or "").strip()
+            note = getattr(self, "_busy_close_note", "")
+            # Closing was asked for during the run: say why it waits, under the step.
+            self.hint_progress_status.setText(
+                "\n".join(part for part in (self._hint_progress_text, note) if part)
+            )
         if value is not None and hasattr(self, "hint_progress_bar"):
             self.hint_progress_bar.setValue(int(max(0, min(100, value))))
 
@@ -2019,7 +2051,8 @@ class CalibrationDialog(GeometryMixin, QDialog):
         self.measurement_points = []
         if hasattr(self, "add_measurement_btn"):
             self.add_measurement_btn.setText(self.tr("Add Measurement"))
-            self.add_measurement_btn.setEnabled(False)
+            self._set_add_measurement_enabled(False)
+        self._update_image_actions()
         if hasattr(self, "image_gallery"):
             try:
                 self.image_gallery.select_paths([])
@@ -2098,7 +2131,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
                 self.image_viewer.set_crop_box(None)
                 self.image_viewer.setCursor(Qt.ArrowCursor)
                 if hasattr(self, "add_measurement_btn"):
-                    self.add_measurement_btn.setEnabled(False)
+                    self._set_add_measurement_enabled(False)
 
     def _on_download_cloud_reference_image(self) -> None:
         calibration = dict(self._viewing_calibration_record or {})
@@ -2809,29 +2842,19 @@ class CalibrationDialog(GeometryMixin, QDialog):
         if self._auto_calibration_running:
             return
         if not self.calibration_images or self.current_image_index < 0:
-            QMessageBox.information(
-                self,
-                self.tr("No Image"),
-                self.tr("Please load a calibration image first."),
-            )
+            self._show_notice(self.tr("Please load a calibration image first."), "warning")
             return
 
         spacing_mm = float(self.auto_division_input.currentData())
         if spacing_mm <= 0:
-            QMessageBox.warning(
-                self,
-                self.tr("Invalid Distance"),
-                self.tr("Please enter a valid division distance."),
-            )
+            self._show_notice(self.tr("Please enter a valid division distance."), "warning")
             return
 
         img_data = self.calibration_images[self.current_image_index]
         image_path = img_data.get("working_path") or img_data.get("path")
         if not image_path or not Path(image_path).exists():
-            QMessageBox.warning(
-                self,
-                self.tr("Missing Image"),
-                self.tr("The selected image could not be found on disk."),
+            self._show_notice(
+                self.tr("The selected image could not be found on disk."), "error", details=str(image_path or ""),
             )
             return
 
@@ -2848,6 +2871,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
                 normalized_crop_box = None
         self._set_auto_controls_enabled(False)
         self._auto_calibration_running = True
+        self._update_image_actions()  # the hints now name the run
 
         thread = QThread(self)
         thread.setObjectName("Auto calibration")
@@ -2905,6 +2929,48 @@ class CalibrationDialog(GeometryMixin, QDialog):
         self._set_auto_controls_enabled(True)
         self._set_hint_progress_visible(False)
 
+    def _has_current_image(self) -> bool:
+        images = getattr(self, "calibration_images", None) or []
+        return 0 <= int(getattr(self, "current_image_index", -1)) < len(images)
+
+    def _update_image_actions(self, *, busy: bool | None = None) -> None:
+        """Calibrate and Export need an image; during a run they wait (stage 10c).
+
+        Their hover hint says why when they are disabled. ``busy``: a run is
+        starting or ending (its flag is set after the controls change);
+        otherwise the running flags decide.
+        """
+        if busy is None:
+            busy = bool(getattr(self, "_auto_calibration_running", False) or getattr(self, "_export_running", False))
+        has_image = self._has_current_image()
+        if busy:
+            reason = (
+                self.tr("Export is still running. Please wait until it finishes.")
+                if getattr(self, "_export_running", False)
+                else self.tr("Auto calibration is still running. Please wait until it finishes.")
+            )
+        else:
+            reason = self.tr("Please load a calibration image first.")
+        for name in ("auto_run_btn", "export_btn"):
+            button = getattr(self, name, None)
+            if button is not None:
+                button.setEnabled(has_image and not busy)
+                button.setProperty("_hint_disabled_text", reason)
+        close_btn = getattr(self, "close_btn", None)
+        if close_btn is not None:
+            close_btn.setEnabled(not busy)
+            close_btn.setProperty("_hint_disabled_text", reason if busy else "")
+
+    def _set_add_measurement_enabled(self, enabled: bool, *, measuring: bool = False) -> None:
+        button = getattr(self, "add_measurement_btn", None)
+        if button is None:
+            return
+        button.setEnabled(bool(enabled))
+        # Disabled while two points are picked on the image (its text says so), else for want of an image.
+        button.setProperty(
+            "_hint_disabled_text", "" if measuring else self.tr("Please load a calibration image first.")
+        )
+
     def _set_auto_controls_enabled(self, enabled: bool) -> None:
         if hasattr(self, "auto_run_btn"):
             self.auto_run_btn.setEnabled(enabled)
@@ -2920,6 +2986,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
             self.objective_combo.setEnabled(enabled)
         if hasattr(self, "export_btn"):
             self.export_btn.setEnabled(enabled)
+        self._update_image_actions(busy=not enabled)
 
     def _build_history_section(self) -> QWidget:
         """Build the calibration history table section."""
@@ -2977,6 +3044,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         )
         # Click row to view calibration
         self.history_table.cellClicked.connect(self._on_history_row_clicked)
+        self.history_table.currentCellChanged.connect(lambda *_args: self._update_history_actions())
 
         layout.addWidget(self.history_table)
 
@@ -3063,42 +3131,6 @@ class CalibrationDialog(GeometryMixin, QDialog):
         if dialog.exec() != QDialog.Accepted:
             return QMessageBox.Cancel
         return choice["value"]
-
-    def _show_wrapped_info_dialog(
-        self,
-        title: str,
-        text: str,
-        min_width: int = 560,
-        max_width: int = 700,
-        min_height: int = 240,
-    ) -> None:
-        """Show an information dialog with reliable wrapping/sizing on Linux."""
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Information)
-        box.setWindowTitle(title)
-        box.setText(text)
-        ok_btn = box.addButton(QMessageBox.Ok)
-        if ok_btn is not None:
-            ok_btn.setMinimumHeight(35)
-        box.setDefaultButton(ok_btn)
-        box.setEscapeButton(ok_btn)
-        box.setStyleSheet(
-            "QLabel#qt_msgboxex_icon_label { min-width: 0px; max-width: 56px; }"
-            "QLabel#qt_msgbox_label { min-width: 380px; max-width: 520px; }"
-            "QLabel#qt_msgbox_informativelabel { min-width: 380px; max-width: 520px; }"
-        )
-        text_label = box.findChild(QLabel, "qt_msgbox_label")
-        if text_label is not None:
-            text_label.setWordWrap(True)
-            text_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        info_label = box.findChild(QLabel, "qt_msgbox_informativelabel")
-        if info_label is not None:
-            info_label.setWordWrap(True)
-            info_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        box.setMinimumWidth(min_width)
-        box.setMaximumWidth(max_width)
-        box.setMinimumHeight(min_height)
-        box.exec()
 
     def _apply_danger_button_style(self, button: QPushButton | None) -> None:
         """Apply a red destructive-button style with hover/pressed states."""
@@ -3698,11 +3730,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
             title = self.tr("No calibration images could be loaded")
             message = self.tr("The selected calibration images failed to load:")
 
-        QMessageBox.warning(
-            self,
-            title,
-            message + "\n\n" + preview,
-        )
+        self._show_notice(title, "warning" if loaded_count > 0 else "error", details=message + "\n\n" + preview)
 
     def _calibration_image_serialization_payload(
         self,
@@ -3988,27 +4016,19 @@ class CalibrationDialog(GeometryMixin, QDialog):
         if self._export_running:
             return
         if self._auto_calibration_running:
-            QMessageBox.information(
-                self,
-                self.tr("Auto calibration"),
-                self.tr("Auto calibration is still running. Please wait until it finishes."),
+            self._show_notice(
+                self.tr("Auto calibration is still running. Please wait until it finishes."), "warning",
             )
             return
         if self.current_image_index < 0 or self.current_image_index >= len(self.calibration_images):
-            QMessageBox.information(
-                self,
-                self.tr("No Image"),
-                self.tr("Please load a calibration image first."),
-            )
+            self._show_notice(self.tr("Please load a calibration image first."), "warning")
             return
 
         img_data = self.calibration_images[self.current_image_index]
         image_path = img_data.get("working_path") or img_data.get("path")
         if not image_path or not Path(image_path).exists():
-            QMessageBox.warning(
-                self,
-                self.tr("Missing Image"),
-                self.tr("The selected image could not be found on disk."),
+            self._show_notice(
+                self.tr("The selected image could not be found on disk."), "error", details=str(image_path or ""),
             )
             return
 
@@ -4092,6 +4112,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
 
         self._set_export_controls_enabled(False)
         self._export_running = True
+        self._update_image_actions()  # the hints now name the run
         self._set_hint_progress_visible(True)
         self._set_hint_progress(self.tr("Export Image"), 0)
 
@@ -4140,11 +4161,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
     @Slot(str)
     def _on_export_failed(self, error_text: str) -> None:
         self._set_hint_progress(self.tr("Export Image"), 0)
-        QMessageBox.warning(
-            self,
-            self.tr("Export Image"),
-            error_text,
-        )
+        self._show_notice(self.tr("Could not export the image."), "error", details=error_text)
 
     @Slot()
     def _on_export_worker_thread_finished(self) -> None:
@@ -4463,7 +4480,8 @@ class CalibrationDialog(GeometryMixin, QDialog):
                     self._preserve_image_zoom = False
                     if hasattr(self, "add_measurement_btn"):
                         self.add_measurement_btn.setText(self.tr("Add Measurement"))
-                        self.add_measurement_btn.setEnabled(False)
+                        self._set_add_measurement_enabled(False)
+                    self._update_image_actions()
                     self._update_resize_info()
                     return
             self.image_viewer.set_image(None)
@@ -4471,13 +4489,15 @@ class CalibrationDialog(GeometryMixin, QDialog):
             self.image_viewer.set_debug_lines([])
             self._preserve_image_zoom = False
             if hasattr(self, "add_measurement_btn"):
-                self.add_measurement_btn.setEnabled(False)
+                self._set_add_measurement_enabled(False)
+            self._update_image_actions()
             self._update_resize_info()
             return
 
         img_data = self.calibration_images[self.current_image_index]
         if hasattr(self, "add_measurement_btn") and not self.is_measuring:
-            self.add_measurement_btn.setEnabled(True)
+            self._set_add_measurement_enabled(True)
+        self._update_image_actions()
         self._sync_auto_division_input_for_current_image()
         self.image_viewer.set_image(img_data["pixmap"], preserve_view=self._preserve_image_zoom)
         if not self._preserve_image_zoom:
@@ -4507,17 +4527,13 @@ class CalibrationDialog(GeometryMixin, QDialog):
     def _start_measurement(self):
         """Start a new measurement."""
         if not self.calibration_images or self.current_image_index < 0:
-            QMessageBox.information(
-                self,
-                self.tr("No Image"),
-                self.tr("Please load a calibration image first."),
-            )
+            self._show_notice(self.tr("Please load a calibration image first."), "warning")
             return
 
         self.is_measuring = True
         self.measurement_points = []
         self.add_measurement_btn.setText(self.tr("Click start point..."))
-        self.add_measurement_btn.setEnabled(False)
+        self._set_add_measurement_enabled(False, measuring=True)
         self.image_viewer.set_preview_line(None)
         self.image_viewer.setCursor(Qt.CrossCursor)
 
@@ -4544,18 +4560,18 @@ class CalibrationDialog(GeometryMixin, QDialog):
             self.is_measuring = False
             self.measurement_points = []
             self.add_measurement_btn.setText(self.tr("Add Measurement"))
-            self.add_measurement_btn.setEnabled(True)
+            self._set_add_measurement_enabled(True)
             self.image_viewer.clear_preview_line()
             self.image_viewer.setCursor(Qt.ArrowCursor)
 
             if distance_px > 0 and self.current_image_index >= 0:
                 if self._collect_auto_values(self._auto_use_edges()) and not self._auto_manual_notice_shown:
-                    self._show_wrapped_info_dialog(
-                        self.tr("Auto Calibration Available"),
+                    self._show_notice(
                         self.tr(
                             "Auto calibration results are available. Manual measurements are still recorded, "
                             "but auto results will be used unless they are cleared."
                         ),
+                        "info",
                     )
                     self._auto_manual_notice_shown = True
                 known_um = self.known_distance_input.value() * 1000.0
@@ -4673,12 +4689,11 @@ class CalibrationDialog(GeometryMixin, QDialog):
             if usage.get("image_count", 0) > 0 or usage.get("measurement_count", 0) > 0:
                 in_use.append(calibration_id)
         if in_use:
-            QMessageBox.warning(
-                self,
-                self.tr("Delete Calibration"),
+            self._show_notice(
                 self.tr(
                     "Some selected calibrations are in use. Delete them individually to review usage details."
                 ),
+                "warning",
             )
             return
 
@@ -4978,14 +4993,19 @@ class CalibrationDialog(GeometryMixin, QDialog):
         extra = ""
         if len(names) > 5:
             extra = self.tr("\n...and {count} more.").format(count=len(names) - 5)
-        QMessageBox.warning(
-            self,
-            self.tr("Delete Failed"),
-            self.tr("Some files or folders could not be deleted.")
-            + "\n\n"
-            + preview
-            + extra,
+        self._show_notice(
+            self.tr("Some files or folders could not be deleted."), "error", details=preview + extra,
         )
+
+    def _update_history_actions(self) -> None:
+        """Set as Active needs a calibration chosen in the history (stage 10c)."""
+        button = getattr(self, "set_active_btn", None)
+        table = getattr(self, "history_table", None)
+        if button is None or table is None:
+            return
+        ids = getattr(self, "_history_calibration_ids", None) or []
+        button.setEnabled(0 <= table.currentRow() < len(ids))  # what Set as Active acts on
+        button.setProperty("_hint_disabled_text", self.tr("Select a calibration in the history table first."))
 
     def _on_set_active_calibration(self):
         """Set the selected calibration as active for this objective."""
@@ -4993,11 +5013,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
             return
         row = self.history_table.currentRow()
         if row < 0 or row >= len(self._history_calibration_ids):
-            QMessageBox.information(
-                self,
-                self.tr("No Selection"),
-                self.tr("Select a calibration in the history table first."),
-            )
+            self._show_notice(self.tr("Select a calibration in the history table first."), "warning")
             return
         calibration_id = self._history_calibration_ids[row]
         cal = CalibrationDB.get_calibration(calibration_id)
@@ -5087,7 +5103,8 @@ class CalibrationDialog(GeometryMixin, QDialog):
             self.cloud_reference_download_btn.setVisible(False)
             self.cloud_reference_download_btn.setEnabled(False)
         self.add_measurement_btn.setText(self.tr("Add Measurement"))
-        self.add_measurement_btn.setEnabled(True)
+        self._set_add_measurement_enabled(False)  # no image now
+        self._update_image_actions()
         self.image_viewer.clear_preview_line()
         self.image_viewer.set_measurement_lines([])
         self.image_viewer.set_image(None)
@@ -5281,6 +5298,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         """Update the calibration history table."""
         self.history_table.setRowCount(0)
         self._history_calibration_ids = []  # Store calibration IDs for row lookup
+        self._update_history_actions()
 
         if not self.current_objective_key:
             return
@@ -5491,19 +5509,15 @@ class CalibrationDialog(GeometryMixin, QDialog):
 
     def _confirm_close_if_needed(self) -> bool:
         """Return True if dialog can close now, prompting for unsaved changes if needed."""
-        if self._export_running:
-            QMessageBox.information(
-                self,
-                self.tr("Export Image"),
-                self.tr("Export is still running. Please wait until it finishes."),
+        if self._export_running or self._auto_calibration_running:
+            # Close is disabled meanwhile; Esc and the window's close button
+            # say why under the progress (stage 10c), and the dialog stays.
+            self._busy_close_note = (
+                self.tr("Export is still running. Please wait until it finishes.")
+                if self._export_running
+                else self.tr("Auto calibration is still running. Please wait until it finishes.")
             )
-            return False
-        if self._auto_calibration_running:
-            QMessageBox.information(
-                self,
-                self.tr("Auto calibration"),
-                self.tr("Auto calibration is still running. Please wait until it finishes."),
-            )
+            self._set_hint_progress(getattr(self, "_hint_progress_text", ""))
             return False
         if not self._has_unsaved_changes():
             return True
@@ -5732,11 +5746,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
     def _on_save_calibration(self):
         """Save the current calibration."""
         if not self.current_objective_key:
-            QMessageBox.warning(
-                self,
-                self.tr("No Objective"),
-                self.tr("Please select an objective first."),
-            )
+            self._show_notice(self.tr("Please select an objective first."), "warning")
             return
 
         auto_values = self._collect_auto_values(self._auto_use_edges())
@@ -5745,11 +5755,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         if using_auto:
             mean_nm = float(np.mean(auto_values))
             if mean_nm <= 0:
-                QMessageBox.warning(
-                    self,
-                    self.tr("Invalid Result"),
-                    self.tr("Auto calibration result is invalid."),
-                )
+                self._show_notice(self.tr("Auto calibration result is invalid."), "error")
                 return
             std_nm = float(np.std(auto_values, ddof=1)) if len(auto_values) > 1 else None
             scale_um = nm_to_um(mean_nm)
@@ -5904,11 +5910,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
                 self._on_objective_changed()
                 return
 
-            QMessageBox.warning(
-                self,
-                self.tr("No Measurements"),
-                self.tr("Please add at least one measurement."),
-            )
+            self._show_notice(self.tr("Please add at least one measurement."), "warning")
             return
 
         # Calculate statistics
@@ -5916,11 +5918,7 @@ class CalibrationDialog(GeometryMixin, QDialog):
         mean, std, ci_low, ci_high = calculate_calibration_stats(measurement_tuples)
 
         if mean is None:
-            QMessageBox.warning(
-                self,
-                self.tr("Error"),
-                self.tr("Could not calculate scale from measurements."),
-            )
+            self._show_notice(self.tr("Could not calculate scale from measurements."), "error")
             return
 
         # Get previous active calibration for comparison
@@ -5996,28 +5994,18 @@ class CalibrationDialog(GeometryMixin, QDialog):
     def _on_save_manual_calibration(self):
         """Save a manual calibration entry."""
         if not self.current_objective_key:
-            QMessageBox.warning(
-                self,
-                self.tr("No Objective"),
-                self.tr("Please select an objective first."),
-            )
+            self._show_notice(self.tr("Please select an objective first."), "warning")
             return
 
         if self._collect_auto_values(self._auto_use_edges()):
-            self._show_wrapped_info_dialog(
-                self.tr("Auto Calibration Available"),
-                self.tr("Auto calibration results are available. Use Save Calibration in the image tab."),
-                min_height=220,
+            self._show_notice(
+                self.tr("Auto calibration results are available. Use Save Calibration in the image tab."), "info",
             )
             return
 
         scale_nm = self.manual_scale_input.value()
         if scale_nm <= 0:
-            QMessageBox.warning(
-                self,
-                self.tr("Invalid Scale"),
-                self.tr("Please enter a valid scale value."),
-            )
+            self._show_notice(self.tr("Please enter a valid scale value."), "warning")
             return
 
         # Convert nm to um for storage
@@ -6122,10 +6110,9 @@ class CalibrationDialog(GeometryMixin, QDialog):
             updated = CalibrationDB.recalculate_measurements_for_calibration(
                 old_calibration_id, new_calibration_id, new_scale
             )
-            QMessageBox.information(
-                self,
-                self.tr("Measurements Updated"),
+            self._show_notice(
                 self.tr("Updated {count} spore measurements to use the new calibration.").format(count=updated),
+                "success",
             )
 
     def _save_calibration_image(self, source_path: str) -> Optional[str]:

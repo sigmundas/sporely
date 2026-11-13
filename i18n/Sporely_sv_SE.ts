@@ -844,349 +844,347 @@ Befintliga sessionskakor och åtkomsttoken behålls.</translation>
 <context>
     <name>CalibrationDialog</name>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="961"/>
+        <location filename="../ui/calibration_dialog.py" line="975"/>
         <source>Calibrate Objective</source>
         <translation>Kalibrera objektiv</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1020"/>
+        <location filename="../ui/calibration_dialog.py" line="1034"/>
         <source>Calibrate from Image</source>
         <translation>Kalibrera från bild</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1024"/>
+        <location filename="../ui/calibration_dialog.py" line="1038"/>
         <source>Manual Entry</source>
         <translation>Manuell inmatning</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1084"/>
+        <location filename="../ui/calibration_dialog.py" line="1098"/>
         <source>Set as Active</source>
         <translation>Ange som aktiv</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1090"/>
-        <location filename="../ui/calibration_dialog.py" line="4778"/>
+        <location filename="../ui/calibration_dialog.py" line="1104"/>
+        <location filename="../ui/calibration_dialog.py" line="4782"/>
         <source>Delete calibration</source>
         <translation>Ta bort kalibrering</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1097"/>
+        <location filename="../ui/calibration_dialog.py" line="1111"/>
         <source>Save Calibration</source>
         <translation>Spara kalibrering</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1103"/>
-        <location filename="../ui/calibration_dialog.py" line="4780"/>
-        <location filename="../ui/calibration_dialog.py" line="4914"/>
+        <location filename="../ui/calibration_dialog.py" line="1117"/>
+        <location filename="../ui/calibration_dialog.py" line="4784"/>
+        <location filename="../ui/calibration_dialog.py" line="4918"/>
         <source>Close</source>
         <translation>Stäng</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1124"/>
+        <location filename="../ui/calibration_dialog.py" line="1139"/>
         <source>Objective:</source>
         <translation>Objektiv:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1128"/>
+        <location filename="../ui/calibration_dialog.py" line="1143"/>
         <source>Choose a profile type: Micro for microscope objectives, Macro for macro-lens setups.</source>
         <translation>Välj en profiltyp: Mikro för mikroskopobjektiv, Makro för makrouppsättningar.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1137"/>
+        <location filename="../ui/calibration_dialog.py" line="1152"/>
         <source>Select the optical profile used for this calibration image.</source>
         <translation>Välj den optiska profil som används för den här kalibreringsbilden.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1140"/>
+        <location filename="../ui/calibration_dialog.py" line="1155"/>
         <source>New Objective...</source>
         <translation>Nytt objektiv...</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1145"/>
+        <location filename="../ui/calibration_dialog.py" line="1160"/>
         <source>Create a new optical profile (microscope objective or macro lens).</source>
         <translation>Skapa en ny optisk profil (mikroskopobjektiv eller makroobjektiv).</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1148"/>
+        <location filename="../ui/calibration_dialog.py" line="1163"/>
         <source>Edit Objective...</source>
         <translation>Redigera objektiv...</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1153"/>
+        <location filename="../ui/calibration_dialog.py" line="1168"/>
         <source>Edit magnification, NA, type, and notes for the selected profile.</source>
         <translation>Redigera förstoring, NA, typ och anteckningar för vald profil.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1157"/>
+        <location filename="../ui/calibration_dialog.py" line="1172"/>
         <source>Load image(s)...</source>
         <translation>Ladda in bild(r)...</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1160"/>
+        <location filename="../ui/calibration_dialog.py" line="1175"/>
         <source>Load one or more images of calibration slides.</source>
         <translation>Ladda in en eller flera bilder av kalibreringsobjektglas.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1162"/>
-        <location filename="../ui/calibration_dialog.py" line="4912"/>
+        <location filename="../ui/calibration_dialog.py" line="1177"/>
+        <location filename="../ui/calibration_dialog.py" line="4916"/>
         <source>Delete objective</source>
         <translation>Ta bort objektiv</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1168"/>
+        <location filename="../ui/calibration_dialog.py" line="1183"/>
         <source>Delete the selected profile and unlink it from images.</source>
         <translation>Ta bort vald profil och koppla loss den från bilder.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1172"/>
-        <location filename="../ui/calibration_dialog.py" line="4057"/>
-        <location filename="../ui/calibration_dialog.py" line="4096"/>
-        <location filename="../ui/calibration_dialog.py" line="4134"/>
-        <location filename="../ui/calibration_dialog.py" line="4138"/>
-        <location filename="../ui/calibration_dialog.py" line="4142"/>
-        <location filename="../ui/calibration_dialog.py" line="4145"/>
-        <location filename="../ui/calibration_dialog.py" line="5497"/>
+        <location filename="../ui/calibration_dialog.py" line="1187"/>
+        <location filename="../ui/calibration_dialog.py" line="4067"/>
+        <location filename="../ui/calibration_dialog.py" line="4106"/>
+        <location filename="../ui/calibration_dialog.py" line="4144"/>
+        <location filename="../ui/calibration_dialog.py" line="4148"/>
+        <location filename="../ui/calibration_dialog.py" line="4152"/>
         <source>Export Image</source>
         <translation>Exportera bild</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1175"/>
+        <location filename="../ui/calibration_dialog.py" line="1190"/>
         <source>Export the current view, with calibration stats.</source>
         <translation>Exportera den aktuella vyn med kalibreringsstatistik.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1204"/>
+        <location filename="../ui/calibration_dialog.py" line="1219"/>
         <source>Macro lens</source>
         <translation>Makroobjektiv</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1204"/>
+        <location filename="../ui/calibration_dialog.py" line="1219"/>
         <source>Microscope objective</source>
         <translation>Mikroskopobjektiv</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1206"/>
+        <location filename="../ui/calibration_dialog.py" line="1221"/>
         <source>Current profile type: {ptype}. Use New/Edit Objective to switch type or update details.</source>
         <translation>Aktuell profiltyp: {ptype}. Använd Nytt/Redigera objektiv för att byta typ eller uppdatera detaljer.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1213"/>
+        <location filename="../ui/calibration_dialog.py" line="1228"/>
         <source>Nyquist-based target sampling applies to microscope objectives only.</source>
         <translation>Nyquist-baserad målsampling gäller endast mikroskopobjektiv.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1218"/>
+        <location filename="../ui/calibration_dialog.py" line="1233"/>
         <source>Set target sampling relative to Nyquist for this microscope objective.</source>
         <translation>Ange målsampling relativt till Nyquist för detta mikroskopobjektiv.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1228"/>
-        <location filename="../ui/calibration_dialog.py" line="2232"/>
+        <location filename="../ui/calibration_dialog.py" line="1243"/>
+        <location filename="../ui/calibration_dialog.py" line="2259"/>
         <source>Macro profile</source>
         <translation>Makroprofil</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1231"/>
-        <location filename="../ui/calibration_dialog.py" line="2235"/>
+        <location filename="../ui/calibration_dialog.py" line="1246"/>
+        <location filename="../ui/calibration_dialog.py" line="2262"/>
         <source>Sampling quality versus NA is not used for macro profiles.</source>
         <translation>Samplingskvalitet mot NA används inte för makroprofiler.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1234"/>
-        <location filename="../ui/calibration_dialog.py" line="2377"/>
+        <location filename="../ui/calibration_dialog.py" line="1249"/>
+        <location filename="../ui/calibration_dialog.py" line="2404"/>
         <source>--</source>
         <translation>--</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1237"/>
+        <location filename="../ui/calibration_dialog.py" line="1252"/>
         <source>Ideal resolution from Nyquist is only calculated for microscope objectives.</source>
         <translation>Ideal upplösning från Nyquist beräknas endast för mikroskopobjektiv.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1242"/>
+        <location filename="../ui/calibration_dialog.py" line="1257"/>
         <source>Ideal output resolution from objective scale, NA, and target sampling.</source>
         <translation>Ideal utdataupplösning från objektivskala, NA och målsampling.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1269"/>
+        <location filename="../ui/calibration_dialog.py" line="1284"/>
         <source>[ 1:1 ]</source>
         <translation>[ 1:1 ]</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1286"/>
+        <location filename="../ui/calibration_dialog.py" line="1301"/>
         <source>Download cloud reference image</source>
         <translation>Ladda ner molnreferensbilden</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1292"/>
+        <location filename="../ui/calibration_dialog.py" line="1307"/>
         <source>Download the cloud-side calibration reference into the local cache without changing the canonical calibration path.</source>
         <translation>Ladda ner kalibreringsreferensen från molnet till lokal cache utan att ändra den kanoniska kalibreringssökvägen.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1306"/>
+        <location filename="../ui/calibration_dialog.py" line="1321"/>
         <source>Loaded Images</source>
         <translation>Inlästa bilder</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1340"/>
+        <location filename="../ui/calibration_dialog.py" line="1355"/>
         <source>Automatic</source>
         <translation>Automatisk</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1348"/>
+        <location filename="../ui/calibration_dialog.py" line="1363"/>
         <source>Calibration Measurements</source>
         <translation>Kalibreringsmätningar</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1352"/>
+        <location filename="../ui/calibration_dialog.py" line="1367"/>
         <source>Known distance:</source>
         <translation>Känt avstånd:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1369"/>
+        <location filename="../ui/calibration_dialog.py" line="1384"/>
         <source>Press Del to remove selected measurement</source>
         <translation>Tryck Del för att ta bort vald mätning</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1376"/>
-        <location filename="../ui/calibration_dialog.py" line="2021"/>
-        <location filename="../ui/calibration_dialog.py" line="4465"/>
-        <location filename="../ui/calibration_dialog.py" line="4546"/>
-        <location filename="../ui/calibration_dialog.py" line="5089"/>
+        <location filename="../ui/calibration_dialog.py" line="1391"/>
+        <location filename="../ui/calibration_dialog.py" line="2048"/>
+        <location filename="../ui/calibration_dialog.py" line="4471"/>
+        <location filename="../ui/calibration_dialog.py" line="4551"/>
+        <location filename="../ui/calibration_dialog.py" line="5094"/>
         <source>Add Measurement</source>
         <translation>Lägg till mätning</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1381"/>
+        <location filename="../ui/calibration_dialog.py" line="1396"/>
         <source>Decide on a distance to measure, then select a start point and end point. Pick 3 or more distances.</source>
         <translation>Välj ett avstånd som ska mätas och markera sedan start- och slutpunkt. Välj tre eller fler avstånd.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1393"/>
-        <location filename="../ui/calibration_dialog.py" line="1494"/>
+        <location filename="../ui/calibration_dialog.py" line="1408"/>
+        <location filename="../ui/calibration_dialog.py" line="1509"/>
         <source>Results</source>
         <translation>Resultat</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1399"/>
-        <location filename="../ui/calibration_dialog.py" line="3840"/>
+        <location filename="../ui/calibration_dialog.py" line="1414"/>
+        <location filename="../ui/calibration_dialog.py" line="3858"/>
         <source>Average:</source>
         <translation>Medelvärde:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1402"/>
-        <location filename="../ui/calibration_dialog.py" line="3841"/>
+        <location filename="../ui/calibration_dialog.py" line="1417"/>
+        <location filename="../ui/calibration_dialog.py" line="3859"/>
         <source>Std Dev:</source>
         <translation>Std.avvikelse:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1405"/>
-        <location filename="../ui/calibration_dialog.py" line="3842"/>
+        <location filename="../ui/calibration_dialog.py" line="1420"/>
+        <location filename="../ui/calibration_dialog.py" line="3860"/>
         <source>95% CI:</source>
         <translation>95 % KI:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1412"/>
+        <location filename="../ui/calibration_dialog.py" line="1427"/>
         <source>Compared to auto:</source>
         <translation>Jämfört med auto:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1420"/>
+        <location filename="../ui/calibration_dialog.py" line="1435"/>
         <source>Manual</source>
         <translation>Manuell</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1428"/>
-        <location filename="../ui/calibration_dialog.py" line="2944"/>
+        <location filename="../ui/calibration_dialog.py" line="1443"/>
+        <location filename="../ui/calibration_dialog.py" line="3001"/>
         <source>Notes</source>
         <translation>Anteckningar</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1430"/>
+        <location filename="../ui/calibration_dialog.py" line="1445"/>
         <source>Optional notes about this calibration...</source>
         <translation>Valfria anteckningar om den här kalibreringen...</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1446"/>
+        <location filename="../ui/calibration_dialog.py" line="1461"/>
         <source>Automatic Calibration</source>
         <translation>Automatisk kalibrering</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1449"/>
+        <location filename="../ui/calibration_dialog.py" line="1464"/>
         <source>0.01 mm (10 µm)</source>
         <translation>0,01 mm (10 µm)</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1450"/>
+        <location filename="../ui/calibration_dialog.py" line="1465"/>
         <source>0.1 mm (100 µm)</source>
         <translation>0,1 mm (100 µm)</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1451"/>
+        <location filename="../ui/calibration_dialog.py" line="1466"/>
         <source>1 mm (1000 µm)</source>
         <translation>1 mm (1000 µm)</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1454"/>
+        <location filename="../ui/calibration_dialog.py" line="1469"/>
         <source>Division distance:</source>
         <translation>Delningsavstånd:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1457"/>
+        <location filename="../ui/calibration_dialog.py" line="1472"/>
         <source>The line distance for your calibration slide.</source>
         <translation>Linjeavståndet för ditt kalibreringsobjektglas.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1461"/>
-        <location filename="../ui/calibration_dialog.py" line="2457"/>
-        <location filename="../ui/calibration_dialog.py" line="2737"/>
+        <location filename="../ui/calibration_dialog.py" line="1476"/>
+        <location filename="../ui/calibration_dialog.py" line="2484"/>
+        <location filename="../ui/calibration_dialog.py" line="2764"/>
         <source>Ready.</source>
         <translation>Klar.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1470"/>
+        <location filename="../ui/calibration_dialog.py" line="1485"/>
         <source>Crop</source>
         <translation>Beskär</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1474"/>
+        <location filename="../ui/calibration_dialog.py" line="1489"/>
         <source>If auto detect fails, select an area with horizontal or vertical lines.</source>
         <translation>Om automatisk detektering misslyckas, välj ett område med horisontella eller vertikala linjer.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1476"/>
+        <location filename="../ui/calibration_dialog.py" line="1491"/>
         <source>Clear</source>
         <translation>Rensa</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1480"/>
+        <location filename="../ui/calibration_dialog.py" line="1495"/>
         <source>Remove this. Calibration will run a new calibration.</source>
         <translation>Ta bort detta. Kalibrering kommer att köra en ny kalibrering.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1483"/>
+        <location filename="../ui/calibration_dialog.py" line="1498"/>
         <source>Calibrate</source>
         <translation>Kalibrera</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1485"/>
+        <location filename="../ui/calibration_dialog.py" line="1500"/>
         <source>Automatic calibration.</source>
         <translation>Automatisk kalibrering.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1498"/>
-        <location filename="../ui/calibration_dialog.py" line="1503"/>
-        <location filename="../ui/calibration_dialog.py" line="1836"/>
-        <location filename="../ui/calibration_dialog.py" line="1850"/>
-        <location filename="../ui/calibration_dialog.py" line="1875"/>
-        <location filename="../ui/calibration_dialog.py" line="2445"/>
-        <location filename="../ui/calibration_dialog.py" line="2580"/>
-        <location filename="../ui/calibration_dialog.py" line="2725"/>
+        <location filename="../ui/calibration_dialog.py" line="1513"/>
+        <location filename="../ui/calibration_dialog.py" line="1518"/>
+        <location filename="../ui/calibration_dialog.py" line="1851"/>
+        <location filename="../ui/calibration_dialog.py" line="1865"/>
+        <location filename="../ui/calibration_dialog.py" line="1890"/>
+        <location filename="../ui/calibration_dialog.py" line="2472"/>
+        <location filename="../ui/calibration_dialog.py" line="2607"/>
+        <location filename="../ui/calibration_dialog.py" line="2752"/>
         <source>Scale (this image):</source>
         <translation>Skala (den här bilden):</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1510"/>
+        <location filename="../ui/calibration_dialog.py" line="1525"/>
         <source>Median of deviations - how consistent is the spacing between lines?
 &lt;1%: Manufacturing quality is excellent
 1-2%: Good, typical for real slides
@@ -1199,12 +1197,12 @@ Befintliga sessionskakor och åtkomsttoken behålls.</translation>
 &gt;5%: Varning - detekteringsfel eller dålig preparatkvalitet</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1517"/>
+        <location filename="../ui/calibration_dialog.py" line="1532"/>
         <source>Scatter MAD:</source>
         <translation>Spridning MAD:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1532"/>
+        <location filename="../ui/calibration_dialog.py" line="1547"/>
         <source>IQR is more sensitive to outliers than MAD.
 &lt;1%: Manufacturing quality is excellent
 1-2%: Good, typical for real slides
@@ -1217,24 +1215,24 @@ Befintliga sessionskakor och åtkomsttoken behålls.</translation>
 &gt;5%: Varning - detekteringsfel eller dålig preparatkvalitet</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1539"/>
+        <location filename="../ui/calibration_dialog.py" line="1554"/>
         <source>Scatter IQR:</source>
         <translation>Spridning IQR:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1554"/>
+        <location filename="../ui/calibration_dialog.py" line="1569"/>
         <source>Residual tilt after rotation (close to 0 is best).
 &gt;0.5 deg suggests rotation mismatch or artifacts.</source>
         <translation>Restlutning efter rotation (nära 0 är bäst).
 &gt;0,5 grader tyder på rotationsfel eller artefakter.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1558"/>
+        <location filename="../ui/calibration_dialog.py" line="1573"/>
         <source>Residual tilt:</source>
         <translation>Restlutning:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1573"/>
+        <location filename="../ui/calibration_dialog.py" line="1588"/>
         <source>Does spacing gradually increase/decrease across the image?
 Slope near 0: constant spacing (good)
 Positive slope: lines getting farther apart
@@ -1247,400 +1245,384 @@ Negativ lutning: linjerna kommer närmare varandra
 Enhet: px/px (relativ förändring i avstånd per pixel över bilden)</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1580"/>
+        <location filename="../ui/calibration_dialog.py" line="1595"/>
         <source>Drift slope:</source>
         <translation>Driftlutning:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1595"/>
-        <location filename="../ui/calibration_dialog.py" line="3836"/>
+        <location filename="../ui/calibration_dialog.py" line="1610"/>
+        <location filename="../ui/calibration_dialog.py" line="3854"/>
         <source>Angle:</source>
         <translation>Vinkel:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1597"/>
+        <location filename="../ui/calibration_dialog.py" line="1612"/>
         <source>Max deviation:</source>
         <translation>Maxavvikelse:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1601"/>
+        <location filename="../ui/calibration_dialog.py" line="1616"/>
         <source>Image spread:</source>
         <translation>Bildespredning:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1613"/>
+        <location filename="../ui/calibration_dialog.py" line="1628"/>
         <source>Image resize</source>
         <translation>Bildstorlek</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1618"/>
+        <location filename="../ui/calibration_dialog.py" line="1633"/>
         <source>Resolution:</source>
         <translation>Upplösning:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1643"/>
+        <location filename="../ui/calibration_dialog.py" line="1658"/>
         <source>Ideal sampling (% Nyquist):</source>
         <translation>Ideell upplösning (% Nyquist):</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1647"/>
+        <location filename="../ui/calibration_dialog.py" line="1662"/>
         <source>Current resolution:</source>
         <translation>Aktuell upplösning:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1648"/>
+        <location filename="../ui/calibration_dialog.py" line="1663"/>
         <source>Ideal resolution:</source>
         <translation>Ideal upplösning:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1671"/>
+        <location filename="../ui/calibration_dialog.py" line="1686"/>
         <source>Enter the scale value directly if you know the exact nm/pixel value for this objective. This will be saved as a calibration record.</source>
         <translation>Ange skalvärdet direkt om du känner till det exakta nm/pixel-värdet för det här objektivet. Det sparas som en kalibreringspost.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1680"/>
+        <location filename="../ui/calibration_dialog.py" line="1695"/>
         <source>Scale Value</source>
         <translation>Skalaverdi</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1687"/>
+        <location filename="../ui/calibration_dialog.py" line="1702"/>
         <source>Scale:</source>
         <translation>Skala:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1690"/>
+        <location filename="../ui/calibration_dialog.py" line="1705"/>
         <source>Optional notes...</source>
         <translation>Valgfrie anteckningar...</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1691"/>
+        <location filename="../ui/calibration_dialog.py" line="1706"/>
         <source>Notes:</source>
         <translation>Anteckningar:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1697"/>
+        <location filename="../ui/calibration_dialog.py" line="1712"/>
         <source>Save Manual Calibration</source>
         <translation>Spara manuell kalibrering</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="1864"/>
-        <location filename="../ui/calibration_dialog.py" line="2578"/>
+        <location filename="../ui/calibration_dialog.py" line="1879"/>
+        <location filename="../ui/calibration_dialog.py" line="2605"/>
         <source>Scale (average):</source>
         <translation>Skala (medelvärde):</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2033"/>
-        <location filename="../ui/calibration_dialog.py" line="2177"/>
-        <location filename="../ui/calibration_dialog.py" line="4461"/>
+        <location filename="../ui/calibration_dialog.py" line="2060"/>
+        <location filename="../ui/calibration_dialog.py" line="2204"/>
+        <location filename="../ui/calibration_dialog.py" line="4467"/>
         <source>Cloud-derived reference only</source>
         <translation>Endast molnbaserad referens</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2110"/>
-        <location filename="../ui/calibration_dialog.py" line="2131"/>
-        <location filename="../ui/calibration_dialog.py" line="2143"/>
+        <location filename="../ui/calibration_dialog.py" line="2137"/>
+        <location filename="../ui/calibration_dialog.py" line="2158"/>
+        <location filename="../ui/calibration_dialog.py" line="2170"/>
         <source>Calibration usable; photo missing</source>
         <translation>Kalibreringen kan användas; foto saknas</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2114"/>
+        <location filename="../ui/calibration_dialog.py" line="2141"/>
         <source>Cloud reference download skipped: calibration UUID is missing.</source>
         <translation>Nedladdning av molnreferensbilden hoppades över: kalibrerings-UUID saknas.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2135"/>
+        <location filename="../ui/calibration_dialog.py" line="2162"/>
         <source>Cloud reference download skipped: image_storage_path is missing.</source>
         <translation>Nedladdning av molnreferensbilden hoppades över: image_storage_path saknas.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2147"/>
+        <location filename="../ui/calibration_dialog.py" line="2174"/>
         <source>Sign in to Sporely Cloud to download the calibration reference image.</source>
         <translation>Logga in på Sporely Cloud för att ladda ner molnreferensbilden.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2179"/>
+        <location filename="../ui/calibration_dialog.py" line="2206"/>
         <source>Downloaded cloud reference image to local cache.</source>
         <translation>Molnreferensbilden har laddats ner till lokal cache.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2184"/>
+        <location filename="../ui/calibration_dialog.py" line="2211"/>
         <source>Cloud reference download failed.</source>
         <translation>Nedladdning av molnreferensbilden misslyckades.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2214"/>
+        <location filename="../ui/calibration_dialog.py" line="2241"/>
         <source>Division distance updated.</source>
         <translation>Delingsavstand uppdatert.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2243"/>
-        <location filename="../ui/calibration_dialog.py" line="5197"/>
-        <location filename="../ui/calibration_dialog.py" line="5259"/>
+        <location filename="../ui/calibration_dialog.py" line="2270"/>
+        <location filename="../ui/calibration_dialog.py" line="5203"/>
+        <location filename="../ui/calibration_dialog.py" line="5265"/>
         <source>NA not set</source>
         <translation>NA inte satt</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2257"/>
+        <location filename="../ui/calibration_dialog.py" line="2284"/>
         <source>Undersampled</source>
         <translation>Undersamplet</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2258"/>
+        <location filename="../ui/calibration_dialog.py" line="2285"/>
         <source>Camera resolution is too low to resolve all details from this objective.</source>
         <translation>Kameraupplösningen är för låg för att återge alla detaljer från det här objektivet.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2260"/>
+        <location filename="../ui/calibration_dialog.py" line="2287"/>
         <source>Good</source>
         <translation>God</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2261"/>
+        <location filename="../ui/calibration_dialog.py" line="2288"/>
         <source>Sampling is close to ideal for this objective.</source>
         <translation>Samplingen är nära idealisk för det här objektivet.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2263"/>
-        <location filename="../ui/calibration_dialog.py" line="2270"/>
+        <location filename="../ui/calibration_dialog.py" line="2290"/>
+        <location filename="../ui/calibration_dialog.py" line="2297"/>
         <source>Oversampled</source>
         <translation>Oversamplet</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2266"/>
+        <location filename="../ui/calibration_dialog.py" line="2293"/>
         <source>Image contains more pixels than optical detail.
 Can likely be scaled to {pct:.0f}% without losing information.</source>
         <translation>Bilden innehåller fler pixlar än optiska detaljer.
 Kan sannolikt skalas till {pct:.0f}% utan att förlora information.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2273"/>
+        <location filename="../ui/calibration_dialog.py" line="2300"/>
         <source>Image contains more pixels than optical detail.
 Image can likely be scaled to {pct:.0f}% without losing optical detail.</source>
         <translation>Bilden innehåller fler pixlar än optiska detaljer.
 Bilden kan sannolikt skalas till {pct:.0f}% utan att förlora optiska detaljer.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2277"/>
+        <location filename="../ui/calibration_dialog.py" line="2304"/>
         <source>Heavily oversampled</source>
         <translation>Sterkt oversamplet</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2280"/>
+        <location filename="../ui/calibration_dialog.py" line="2307"/>
         <source>Image can be reduced to {pct:.0f}% of current size without losing information.</source>
         <translation>Bildet kan reduseres til {pct:.0f}% av nåværende størrelse uten å miste informasjon.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2284"/>
+        <location filename="../ui/calibration_dialog.py" line="2311"/>
         <source>Sampling: {status} ({score})</source>
         <translation>Sampling: {status} ({score})</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2384"/>
+        <location filename="../ui/calibration_dialog.py" line="2411"/>
         <source>Same as current</source>
         <translation>Samme som aktuell</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2399"/>
-        <location filename="../ui/calibration_dialog.py" line="3261"/>
+        <location filename="../ui/calibration_dialog.py" line="2426"/>
+        <location filename="../ui/calibration_dialog.py" line="3283"/>
         <source>{pct:.0f}% of Nyquist</source>
         <translation>{pct:.0f}% av Nyquist</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2638"/>
+        <location filename="../ui/calibration_dialog.py" line="2665"/>
         <source>Stored automatic calibration</source>
         <translation>Sparad automatisk kalibrering</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2640"/>
+        <location filename="../ui/calibration_dialog.py" line="2667"/>
         <source>Stored automatic calibration. Photo unavailable.</source>
         <translation>Sparad automatisk kalibrering. Foto inte tillgängligt.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2784"/>
-        <location filename="../ui/calibration_dialog.py" line="2884"/>
+        <location filename="../ui/calibration_dialog.py" line="2811"/>
+        <location filename="../ui/calibration_dialog.py" line="2901"/>
         <source>Calibration complete.</source>
         <translation>Kalibrering fullført.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2803"/>
+        <location filename="../ui/calibration_dialog.py" line="2830"/>
         <source>Auto calibration cleared.</source>
         <translation>Autokalibrering rensad.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2814"/>
-        <location filename="../ui/calibration_dialog.py" line="4000"/>
-        <location filename="../ui/calibration_dialog.py" line="4512"/>
-        <source>No Image</source>
-        <translation>Inga bild</translation>
-    </message>
-    <message>
-        <location filename="../ui/calibration_dialog.py" line="2815"/>
-        <location filename="../ui/calibration_dialog.py" line="4001"/>
-        <location filename="../ui/calibration_dialog.py" line="4513"/>
+        <location filename="../ui/calibration_dialog.py" line="2839"/>
+        <location filename="../ui/calibration_dialog.py" line="2943"/>
+        <location filename="../ui/calibration_dialog.py" line="2961"/>
+        <location filename="../ui/calibration_dialog.py" line="4014"/>
+        <location filename="../ui/calibration_dialog.py" line="4519"/>
         <source>Please load a calibration image first.</source>
         <translation>Vennligst ladda in et kalibreringsbilde først.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2823"/>
-        <source>Invalid Distance</source>
-        <translation>Ugyldig avstand</translation>
-    </message>
-    <message>
-        <location filename="../ui/calibration_dialog.py" line="2824"/>
+        <location filename="../ui/calibration_dialog.py" line="2844"/>
         <source>Please enter a valid division distance.</source>
         <translation>Vennligst angi en gyldig delingsavstand.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2833"/>
-        <location filename="../ui/calibration_dialog.py" line="4010"/>
-        <source>Missing Image</source>
-        <translation>Manglende bild</translation>
-    </message>
-    <message>
-        <location filename="../ui/calibration_dialog.py" line="2834"/>
-        <location filename="../ui/calibration_dialog.py" line="4011"/>
+        <location filename="../ui/calibration_dialog.py" line="2851"/>
+        <location filename="../ui/calibration_dialog.py" line="4021"/>
         <source>The selected image could not be found on disk.</source>
         <translation>Det valda bildet ble inte funnet på disk.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2838"/>
-        <location filename="../ui/calibration_dialog.py" line="2840"/>
+        <location filename="../ui/calibration_dialog.py" line="2855"/>
+        <location filename="../ui/calibration_dialog.py" line="2857"/>
         <source>Running...</source>
         <translation>Kjører...</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2892"/>
-        <location filename="../ui/calibration_dialog.py" line="2896"/>
+        <location filename="../ui/calibration_dialog.py" line="2909"/>
+        <location filename="../ui/calibration_dialog.py" line="2913"/>
         <source>Auto calibration failed: {err}</source>
         <translation>Auto-kalibrering mislyktes: {err}</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2926"/>
+        <location filename="../ui/calibration_dialog.py" line="2983"/>
         <source>Calibration History</source>
         <translation>Kalibreringshistorikk</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2931"/>
+        <location filename="../ui/calibration_dialog.py" line="2988"/>
         <source>Cloud</source>
         <translation>Moln</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2932"/>
-        <location filename="../ui/calibration_dialog.py" line="4730"/>
-        <location filename="../ui/calibration_dialog.py" line="4879"/>
+        <location filename="../ui/calibration_dialog.py" line="2989"/>
+        <location filename="../ui/calibration_dialog.py" line="4734"/>
+        <location filename="../ui/calibration_dialog.py" line="4883"/>
         <source>Date</source>
         <translation>Datum</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2933"/>
+        <location filename="../ui/calibration_dialog.py" line="2990"/>
         <source>Image date</source>
         <translation>Bildedato</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2934"/>
+        <location filename="../ui/calibration_dialog.py" line="2991"/>
         <source>nm/px</source>
         <translation>nm/px</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2935"/>
+        <location filename="../ui/calibration_dialog.py" line="2992"/>
         <source>MP</source>
         <translation>MP</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2936"/>
+        <location filename="../ui/calibration_dialog.py" line="2993"/>
         <source>n</source>
         <translation>n</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2937"/>
+        <location filename="../ui/calibration_dialog.py" line="2994"/>
         <source>Diff%</source>
         <translation>Diff%</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2938"/>
+        <location filename="../ui/calibration_dialog.py" line="2995"/>
         <source>MAD%</source>
         <translation>MAD%</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2939"/>
+        <location filename="../ui/calibration_dialog.py" line="2996"/>
         <source>IQR%</source>
         <translation>IQR%</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2940"/>
+        <location filename="../ui/calibration_dialog.py" line="2997"/>
         <source>Residual tilt</source>
         <translation>Resttilt</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2941"/>
+        <location filename="../ui/calibration_dialog.py" line="2998"/>
         <source>Observations</source>
         <translation>Observationer</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2942"/>
+        <location filename="../ui/calibration_dialog.py" line="2999"/>
         <source>Camera</source>
         <translation>Kamera</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2943"/>
+        <location filename="../ui/calibration_dialog.py" line="3000"/>
         <source>Active</source>
         <translation>Aktiv</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="2998"/>
+        <location filename="../ui/calibration_dialog.py" line="3056"/>
         <source>Unsaved Changes</source>
         <translation>Ulagrede endringer</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="3027"/>
+        <location filename="../ui/calibration_dialog.py" line="3085"/>
         <source>You have unsaved calibration measurements. What would you like to do?</source>
         <translation>Du har ulagrede kalibreringsmålinger. Hva vil du gjøre?</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="3039"/>
+        <location filename="../ui/calibration_dialog.py" line="3097"/>
         <source>Discard</source>
         <translation>Forkast</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="3040"/>
-        <location filename="../ui/calibration_dialog.py" line="3173"/>
+        <location filename="../ui/calibration_dialog.py" line="3098"/>
+        <location filename="../ui/calibration_dialog.py" line="3195"/>
         <source>Cancel</source>
         <translation>Avbryt</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="3041"/>
+        <location filename="../ui/calibration_dialog.py" line="3099"/>
         <source>Save</source>
         <translation>Spara</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="3175"/>
-        <location filename="../ui/calibration_dialog.py" line="3361"/>
-        <location filename="../ui/calibration_dialog.py" line="4660"/>
-        <location filename="../ui/calibration_dialog.py" line="4692"/>
-        <location filename="../ui/calibration_dialog.py" line="4821"/>
-        <location filename="../ui/calibration_dialog.py" line="4956"/>
+        <location filename="../ui/calibration_dialog.py" line="3197"/>
+        <location filename="../ui/calibration_dialog.py" line="3383"/>
+        <location filename="../ui/calibration_dialog.py" line="4665"/>
+        <location filename="../ui/calibration_dialog.py" line="4696"/>
+        <location filename="../ui/calibration_dialog.py" line="4825"/>
+        <location filename="../ui/calibration_dialog.py" line="4960"/>
         <source>Yes</source>
         <translation>Ja</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="3232"/>
-        <location filename="../ui/calibration_dialog.py" line="5016"/>
+        <location filename="../ui/calibration_dialog.py" line="3254"/>
+        <location filename="../ui/calibration_dialog.py" line="5021"/>
         <source>Active: {scale:.2f} nm/px ({date})</source>
         <translation>Aktiv: {scale:.2f} nm/px ({date})</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="3242"/>
+        <location filename="../ui/calibration_dialog.py" line="3264"/>
         <source>From config: {scale:.2f} nm/px</source>
         <translation>Från konfig: {scale:.2f} nm/px</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="3358"/>
-        <location filename="../ui/calibration_dialog.py" line="4948"/>
+        <location filename="../ui/calibration_dialog.py" line="3380"/>
+        <location filename="../ui/calibration_dialog.py" line="4952"/>
         <source>Delete Objective</source>
         <translation>Ta bort objektiv</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="3359"/>
+        <location filename="../ui/calibration_dialog.py" line="3381"/>
         <source>Objective will be deleted.
 
 This action cannot be undone.</source>
@@ -1649,125 +1631,113 @@ This action cannot be undone.</source>
 Den här åtgärden kan inte ångras.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="3446"/>
-        <location filename="../ui/calibration_dialog.py" line="3453"/>
+        <location filename="../ui/calibration_dialog.py" line="3468"/>
+        <location filename="../ui/calibration_dialog.py" line="3475"/>
         <source>image preparation failed</source>
         <translation>Bildförberedelsen misslyckades</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="3457"/>
-        <location filename="../ui/calibration_dialog.py" line="3463"/>
+        <location filename="../ui/calibration_dialog.py" line="3479"/>
+        <location filename="../ui/calibration_dialog.py" line="3485"/>
         <source>missing working path</source>
         <translation>saknar arbetsfilsökväg</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="3474"/>
+        <location filename="../ui/calibration_dialog.py" line="3496"/>
         <source>Could not load calibration image</source>
         <translation>Det gick inte att ladda kalibreringsbilden</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="3695"/>
+        <location filename="../ui/calibration_dialog.py" line="3717"/>
         <source>Some calibration images could not be loaded</source>
         <translation>Vissa kalibreringsbilder kunde inte laddas</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="3696"/>
+        <location filename="../ui/calibration_dialog.py" line="3718"/>
         <source>Loaded {count} calibration image(s), but some files failed:</source>
         <translation>Laddade {count} kalibreringsbild(er), men vissa filer misslyckades:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="3698"/>
+        <location filename="../ui/calibration_dialog.py" line="3720"/>
         <source>No calibration images could be loaded</source>
         <translation>Inga kalibreringsbilder kunde laddas</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="3699"/>
+        <location filename="../ui/calibration_dialog.py" line="3721"/>
         <source>The selected calibration images failed to load:</source>
         <translation>De valda kalibreringsbilderna kunde inte laddas:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="3771"/>
+        <location filename="../ui/calibration_dialog.py" line="3789"/>
         <source>Select Calibration Images</source>
         <translation>Välj kalibreringsbilder</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="3993"/>
-        <location filename="../ui/calibration_dialog.py" line="5504"/>
-        <source>Auto calibration</source>
-        <translation>Auto-kalibrering</translation>
-    </message>
-    <message>
-        <location filename="../ui/calibration_dialog.py" line="3994"/>
-        <location filename="../ui/calibration_dialog.py" line="5505"/>
+        <location filename="../ui/calibration_dialog.py" line="2940"/>
+        <location filename="../ui/calibration_dialog.py" line="4010"/>
+        <location filename="../ui/calibration_dialog.py" line="5507"/>
         <source>Auto calibration is still running. Please wait until it finishes.</source>
         <translation>Auto-kalibreringen kjører fortsatt. Vent til den er ferdig.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4059"/>
+        <location filename="../ui/calibration_dialog.py" line="4069"/>
         <source>PNG Image (*.png);;JPEG Image (*.jpg *.jpeg);;SVG Files (*.svg)</source>
         <translation>PNG-bild (*.png);;JPEG-bild (*.jpg *.jpeg);;SVG-filer (*.svg)</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4065"/>
+        <location filename="../ui/calibration_dialog.py" line="4075"/>
         <source>PNG Image (*.png)</source>
         <translation>PNG-bild (*.png)</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4066"/>
+        <location filename="../ui/calibration_dialog.py" line="4076"/>
         <source>JPEG Image (*.jpg *.jpeg)</source>
         <translation>JPEG-bild (*.jpg *.jpeg)</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4067"/>
+        <location filename="../ui/calibration_dialog.py" line="4077"/>
         <source>SVG Files (*.svg)</source>
         <translation>SVG-filer (*.svg)</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4266"/>
+        <location filename="../ui/calibration_dialog.py" line="4153"/>
+        <source>Could not export the image.</source>
+        <translation>Kunde inte exportera bilden.</translation>
+    </message>
+    <message>
+        <location filename="../ui/calibration_dialog.py" line="4272"/>
         <source>From raw</source>
         <translation>Från raw</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="5921"/>
-        <source>Error</source>
-        <translation>Feil</translation>
-    </message>
-    <message>
-        <location filename="../ui/calibration_dialog.py" line="6170"/>
+        <location filename="../ui/calibration_dialog.py" line="6146"/>
         <source>— Select objective —</source>
         <translation>— Välj objektiv —</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4519"/>
+        <location filename="../ui/calibration_dialog.py" line="4524"/>
         <source>Click start point...</source>
         <translation>Klicka startpunkt...</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4534"/>
+        <location filename="../ui/calibration_dialog.py" line="4539"/>
         <source>Click end point...</source>
         <translation>Klicka endepunkt...</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4554"/>
-        <location filename="../ui/calibration_dialog.py" line="6008"/>
-        <source>Auto Calibration Available</source>
-        <translation>Auto-kalibrering tillgänglig</translation>
-    </message>
-    <message>
-        <location filename="../ui/calibration_dialog.py" line="4556"/>
+        <location filename="../ui/calibration_dialog.py" line="4560"/>
         <source>Auto calibration results are available. Manual measurements are still recorded, but auto results will be used unless they are cleared.</source>
         <translation>Auto-kalibreringsresultater er tilgjengelige. Manuelle mätningar blir fortsatt registrert, men auto-resultater används med mindre de fjernes.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4653"/>
-        <location filename="../ui/calibration_dialog.py" line="4678"/>
-        <location filename="../ui/calibration_dialog.py" line="4686"/>
-        <location filename="../ui/calibration_dialog.py" line="4814"/>
+        <location filename="../ui/calibration_dialog.py" line="4658"/>
+        <location filename="../ui/calibration_dialog.py" line="4690"/>
+        <location filename="../ui/calibration_dialog.py" line="4818"/>
         <source>Delete Calibration</source>
         <translation>Ta bort kalibrering</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4655"/>
+        <location filename="../ui/calibration_dialog.py" line="4660"/>
         <source>Delete calibration from {date}?
 
 Scale: {scale:.2f} nm/px
@@ -1780,12 +1750,12 @@ Skala: {scale:.2f} nm/px
 Den här åtgärden kan inte ångras.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4680"/>
+        <location filename="../ui/calibration_dialog.py" line="4683"/>
         <source>Some selected calibrations are in use. Delete them individually to review usage details.</source>
         <translation>Vissa valda kalibreringar används. Ta bort dem en och en för att granska användningsdetaljer.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4688"/>
+        <location filename="../ui/calibration_dialog.py" line="4692"/>
         <source>Delete {count} calibrations?
 
 This action cannot be undone.</source>
@@ -1794,47 +1764,47 @@ This action cannot be undone.</source>
 Den här åtgärden kan inte ångras.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4709"/>
+        <location filename="../ui/calibration_dialog.py" line="4713"/>
         <source>Warning - calibration in use</source>
         <translation>Advarsel - kalibrering i använd</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4717"/>
+        <location filename="../ui/calibration_dialog.py" line="4721"/>
         <source>This calibration is used by {images} images and {measurements} measurements.</source>
         <translation>Den här kalibreringen används av {images} bilder och {measurements} mätningar.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4726"/>
-        <location filename="../ui/calibration_dialog.py" line="4875"/>
+        <location filename="../ui/calibration_dialog.py" line="4730"/>
+        <location filename="../ui/calibration_dialog.py" line="4879"/>
         <source>ID</source>
         <translation>ID</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4727"/>
-        <location filename="../ui/calibration_dialog.py" line="4876"/>
+        <location filename="../ui/calibration_dialog.py" line="4731"/>
+        <location filename="../ui/calibration_dialog.py" line="4880"/>
         <source>Genus</source>
         <translation>Släkte</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4728"/>
-        <location filename="../ui/calibration_dialog.py" line="4877"/>
+        <location filename="../ui/calibration_dialog.py" line="4732"/>
+        <location filename="../ui/calibration_dialog.py" line="4881"/>
         <source>Species</source>
         <translation>Art</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4729"/>
-        <location filename="../ui/calibration_dialog.py" line="4878"/>
+        <location filename="../ui/calibration_dialog.py" line="4733"/>
+        <location filename="../ui/calibration_dialog.py" line="4882"/>
         <source>Vernacular name</source>
         <translation>Vanlig navn</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4777"/>
-        <location filename="../ui/calibration_dialog.py" line="4911"/>
+        <location filename="../ui/calibration_dialog.py" line="4781"/>
+        <location filename="../ui/calibration_dialog.py" line="4915"/>
         <source>Go to observation</source>
         <translation>Gå til observation</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4816"/>
+        <location filename="../ui/calibration_dialog.py" line="4820"/>
         <source>Delete this calibration and remove scale data from all observations that use it?
 
 This action cannot be undone.</source>
@@ -1843,17 +1813,17 @@ This action cannot be undone.</source>
 Den här åtgärden kan inte ångras.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4842"/>
+        <location filename="../ui/calibration_dialog.py" line="4846"/>
         <source>Warning - objective in use</source>
         <translation>Advarsel - objektiv i använd</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4866"/>
+        <location filename="../ui/calibration_dialog.py" line="4870"/>
         <source>This objective is used by {images} images across {observations} observations.</source>
         <translation>Det här objektivet används av {images} bilder i {observations} observationer.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4950"/>
+        <location filename="../ui/calibration_dialog.py" line="4954"/>
         <source>Delete this objective and remove scale data from all observations that use it?
 
 This will also delete all calibrations for this objective.
@@ -1866,157 +1836,128 @@ Detta kommer också att ta bort alla kalibreringar för det här objektivet.
 Den här åtgärden kan inte ångras.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="3692"/>
-        <location filename="../ui/calibration_dialog.py" line="4980"/>
+        <location filename="../ui/calibration_dialog.py" line="3714"/>
+        <location filename="../ui/calibration_dialog.py" line="4984"/>
         <source>
 ...and {count} more.</source>
         <translation>
 ...och {count} flere.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="3773"/>
+        <location filename="../ui/calibration_dialog.py" line="3791"/>
         <source>{LOCAL_IMPORT_IMAGE_FILTER};;All Files (*)</source>
         <translation>{LOCAL_IMPORT_IMAGE_FILTER};;Alla filer (*)</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4262"/>
+        <location filename="../ui/calibration_dialog.py" line="4268"/>
         <source>Fallback JPEG</source>
         <translation>Reserv JPEG</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4268"/>
+        <location filename="../ui/calibration_dialog.py" line="4274"/>
         <source>HEIC-converted</source>
         <translation>HEIC-konverterad</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4270"/>
+        <location filename="../ui/calibration_dialog.py" line="4276"/>
         <source>Camera JPEG</source>
         <translation>Kamera JPEG</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4983"/>
-        <source>Delete Failed</source>
-        <translation>Sletting mislyktes</translation>
-    </message>
-    <message>
-        <location filename="../ui/calibration_dialog.py" line="4984"/>
+        <location filename="../ui/calibration_dialog.py" line="4986"/>
         <source>Some files or folders could not be deleted.</source>
         <translation>Noen filer eller mappr kunde inte slettes.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="4998"/>
-        <source>No Selection</source>
-        <translation>Inga vald</translation>
-    </message>
-    <message>
-        <location filename="../ui/calibration_dialog.py" line="4999"/>
+        <location filename="../ui/calibration_dialog.py" line="4997"/>
+        <location filename="../ui/calibration_dialog.py" line="5005"/>
         <source>Select a calibration in the history table first.</source>
         <translation>Välj en kalibrering i historikktabellen først.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="5073"/>
+        <location filename="../ui/calibration_dialog.py" line="5078"/>
         <source>Crop updated. Run auto calibration.</source>
         <translation>Beskärningen uppdaterades. Kör automatisk kalibrering.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="5207"/>
+        <location filename="../ui/calibration_dialog.py" line="5213"/>
         <source>{value:.2f} nm/px (provisional)</source>
         <translation>{value:.2f} nm/px (foreløpig)</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="5220"/>
+        <location filename="../ui/calibration_dialog.py" line="5226"/>
         <source>Using objective provisional scale</source>
         <translation>Användar foreløpig objektivskala</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="5274"/>
+        <location filename="../ui/calibration_dialog.py" line="5280"/>
         <source>Automatic calibration is used</source>
         <translation>Automatisk kalibrering er i använd</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="5306"/>
+        <location filename="../ui/calibration_dialog.py" line="5313"/>
         <source>Synced to cloud</source>
         <translation>Synkroniserad till molnet</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="5498"/>
+        <location filename="../ui/calibration_dialog.py" line="2938"/>
+        <location filename="../ui/calibration_dialog.py" line="5505"/>
         <source>Export is still running. Please wait until it finishes.</source>
         <translation>Export kjører fortsatt. Vent til den er ferdig.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="5737"/>
-        <location filename="../ui/calibration_dialog.py" line="6001"/>
-        <source>No Objective</source>
-        <translation>Inga objektiv</translation>
-    </message>
-    <message>
         <location filename="../ui/calibration_dialog.py" line="5738"/>
-        <location filename="../ui/calibration_dialog.py" line="6002"/>
+        <location filename="../ui/calibration_dialog.py" line="5986"/>
         <source>Please select an objective first.</source>
         <translation>Vennligst välj et objektiv først.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="5750"/>
-        <source>Invalid Result</source>
-        <translation>Ugyldig resultat</translation>
-    </message>
-    <message>
-        <location filename="../ui/calibration_dialog.py" line="5751"/>
+        <location filename="../ui/calibration_dialog.py" line="5747"/>
         <source>Auto calibration result is invalid.</source>
         <translation>Auto-kalibreringsresultatet er ugyldig.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="5814"/>
+        <location filename="../ui/calibration_dialog.py" line="5809"/>
         <source>Automatic image calibration</source>
         <translation>Automatisk bildekalibrering</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="5868"/>
+        <location filename="../ui/calibration_dialog.py" line="5863"/>
         <source>Provisional macro calibration</source>
         <translation>Foreløpig makrokalibrering</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="5909"/>
-        <source>No Measurements</source>
-        <translation>Inga mätningar</translation>
-    </message>
-    <message>
-        <location filename="../ui/calibration_dialog.py" line="5910"/>
+        <location filename="../ui/calibration_dialog.py" line="5902"/>
         <source>Please add at least one measurement.</source>
         <translation>Legg til minst én mätning.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="5922"/>
+        <location filename="../ui/calibration_dialog.py" line="5910"/>
         <source>Could not calculate scale from measurements.</source>
         <translation>Kunde inte beregne skala från målingene.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="5955"/>
+        <location filename="../ui/calibration_dialog.py" line="5942"/>
         <source>Manual image calibration</source>
         <translation>Manuell bildekalibrering</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="6009"/>
+        <location filename="../ui/calibration_dialog.py" line="5991"/>
         <source>Auto calibration results are available. Use Save Calibration in the image tab.</source>
         <translation>Auto-kalibreringsresultater er tilgjengelige. Använd Spara kalibrering i bildefanen.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="6018"/>
-        <source>Invalid Scale</source>
-        <translation>Ugyldig skala</translation>
-    </message>
-    <message>
-        <location filename="../ui/calibration_dialog.py" line="6019"/>
+        <location filename="../ui/calibration_dialog.py" line="5997"/>
         <source>Please enter a valid scale value.</source>
         <translation>Vennligst angi en gyldig skalaverdi.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="6033"/>
+        <location filename="../ui/calibration_dialog.py" line="6010"/>
         <source>Manually entered scale</source>
         <translation>Manuelt angitt skala</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="6102"/>
+        <location filename="../ui/calibration_dialog.py" line="6079"/>
         <source>The calibration scale has changed from {old:.2f} to {new:.2f} nm/px ({sign}{diff:.2f}%).
 
 There are {images} images with {measurements} spore measurements using the old calibration.
@@ -2029,17 +1970,12 @@ Det finnes {images} bilder med {measurements} sporemålinger som användar den g
 Vil du uppdatera disse bildene til å bruke den nye kalibreringen och beregne målingene på nytt?</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="6116"/>
+        <location filename="../ui/calibration_dialog.py" line="6093"/>
         <source>Update Measurements?</source>
         <translation>Uppdatera mätningar?</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="6127"/>
-        <source>Measurements Updated</source>
-        <translation>Mätningar uppdatert</translation>
-    </message>
-    <message>
-        <location filename="../ui/calibration_dialog.py" line="6128"/>
+        <location filename="../ui/calibration_dialog.py" line="6103"/>
         <source>Updated {count} spore measurements to use the new calibration.</source>
         <translation>Oppdaterte {count} sporemålinger til å bruke den nye kalibreringen.</translation>
     </message>
@@ -3533,22 +3469,22 @@ Släktnamnet måste skrivas ut fullständigt: gemenskapssökningen matchar exakt
 <context>
     <name>HintBar</name>
     <message>
-        <location filename="../ui/hint_status.py" line="174"/>
-        <location filename="../ui/hint_status.py" line="359"/>
+        <location filename="../ui/hint_status.py" line="176"/>
+        <location filename="../ui/hint_status.py" line="369"/>
         <source>Details</source>
         <translation>Detaljer</translation>
     </message>
     <message>
-        <location filename="../ui/hint_status.py" line="179"/>
-        <location filename="../ui/hint_status.py" line="335"/>
+        <location filename="../ui/hint_status.py" line="181"/>
+        <location filename="../ui/hint_status.py" line="342"/>
         <source>Undo</source>
         <translation>Ångra</translation>
     </message>
     <message>
-        <location filename="../ui/hint_status.py" line="184"/>
-        <location filename="../ui/hint_status.py" line="185"/>
-        <location filename="../ui/hint_status.py" line="360"/>
-        <location filename="../ui/hint_status.py" line="361"/>
+        <location filename="../ui/hint_status.py" line="186"/>
+        <location filename="../ui/hint_status.py" line="187"/>
+        <location filename="../ui/hint_status.py" line="370"/>
+        <location filename="../ui/hint_status.py" line="371"/>
         <source>Dismiss</source>
         <translation>Stäng</translation>
     </message>
@@ -3556,12 +3492,12 @@ Släktnamnet måste skrivas ut fullständigt: gemenskapssökningen matchar exakt
 <context>
     <name>HintStatusController</name>
     <message>
-        <location filename="../ui/hint_status.py" line="572"/>
+        <location filename="../ui/hint_status.py" line="598"/>
         <source>Undo</source>
         <translation>Ångra</translation>
     </message>
     <message>
-        <location filename="../ui/hint_status.py" line="612"/>
+        <location filename="../ui/hint_status.py" line="640"/>
         <source>Could not undo.</source>
         <translation>Kunde inte ångra.</translation>
     </message>
@@ -8756,92 +8692,57 @@ Säkerhetskopia: {path}</translation>
         <translation>Anteckningar:</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="488"/>
+        <location filename="../ui/calibration_dialog.py" line="503"/>
         <source>Cancel</source>
         <translation>Avbryt</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="492"/>
+        <location filename="../ui/calibration_dialog.py" line="507"/>
         <source>Save</source>
         <translation>Spara</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="492"/>
+        <location filename="../ui/calibration_dialog.py" line="507"/>
         <source>Create</source>
         <translation>Skapa</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="540"/>
-        <source>Missing Name</source>
-        <translation>Saknas navn</translation>
-    </message>
-    <message>
-        <location filename="../ui/calibration_dialog.py" line="540"/>
+        <location filename="../ui/calibration_dialog.py" line="566"/>
         <source>Please enter an objective name.</source>
         <translation>Vennligst angi et objektivnavn.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="545"/>
+        <location filename="../ui/calibration_dialog.py" line="571"/>
         <source>Please enter a magnification divisor (for 1:X).</source>
         <translation>Ange en förstoringsdivisor (för 1:X).</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="547"/>
+        <location filename="../ui/calibration_dialog.py" line="573"/>
         <source>Please enter a magnification.</source>
         <translation>Vennligst angi en förstoring.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="548"/>
-        <source>Missing Magnification</source>
-        <translation>Saknas förstoring</translation>
-    </message>
-    <message>
-        <location filename="../ui/calibration_dialog.py" line="552"/>
-        <source>Missing NA</source>
-        <translation>Manglende NA</translation>
-    </message>
-    <message>
-        <location filename="../ui/calibration_dialog.py" line="552"/>
+        <location filename="../ui/calibration_dialog.py" line="578"/>
         <source>Please enter a numerical aperture (NA).</source>
         <translation>Vennligst angi numerisk apertur (NA).</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="560"/>
-        <source>Missing Sensor Data</source>
-        <translation>Manglende sensordata</translation>
-    </message>
-    <message>
-        <location filename="../ui/calibration_dialog.py" line="561"/>
+        <location filename="../ui/calibration_dialog.py" line="584"/>
         <source>Please enter sensor width in mm.</source>
         <translation>Angi sensorbredde i mm.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="567"/>
-        <source>Missing Image Width</source>
-        <translation>Manglende bildebredde</translation>
-    </message>
-    <message>
-        <location filename="../ui/calibration_dialog.py" line="568"/>
+        <location filename="../ui/calibration_dialog.py" line="587"/>
         <source>Please enter image width in pixels.</source>
         <translation>Angi bildebredde i piksler.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="574"/>
-        <source>Invalid Name</source>
-        <translation>Ugyldig navn</translation>
-    </message>
-    <message>
-        <location filename="../ui/calibration_dialog.py" line="574"/>
+        <location filename="../ui/calibration_dialog.py" line="592"/>
         <source>Please enter valid objective details.</source>
         <translation>Vennligst angi gyldige objektivdetaljer.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="581"/>
-        <source>Duplicate</source>
-        <translation>Duplikat</translation>
-    </message>
-    <message>
-        <location filename="../ui/calibration_dialog.py" line="582"/>
+        <location filename="../ui/calibration_dialog.py" line="597"/>
         <source>An objective with this name already exists.</source>
         <translation>Ett objektiv med det här namnet finns redan.</translation>
     </message>
@@ -14416,12 +14317,12 @@ Att sluta dela kan inte återkalla kopior som andra användare redan har gjort, 
 <context>
     <name>_AutoCalibrationWorker</name>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="644"/>
+        <location filename="../ui/calibration_dialog.py" line="658"/>
         <source>Calibration worker requires a raster working path.</source>
         <translation>Kalibreringsarbetare kräver en rasterarbetsbana.</translation>
     </message>
     <message>
-        <location filename="../ui/calibration_dialog.py" line="669"/>
+        <location filename="../ui/calibration_dialog.py" line="683"/>
         <source>Could not prepare a raster crop for calibration.</source>
         <translation>Det gick inte att förbereda en rasterskörd för kalibrering.</translation>
     </message>

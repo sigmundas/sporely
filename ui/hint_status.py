@@ -443,6 +443,7 @@ class HintStatusController(QObject):
         # write to it afterwards.
         self._hint_label.destroyed.connect(self._on_bar_destroyed)
         if self._hint_bar is not None:
+            self._hint_bar.installEventFilter(self)
             self._hint_bar.undoRequested.connect(self._on_notice_undo)
             self._hint_bar.dismissRequested.connect(self.dismiss_notice)
             self._hint_bar.detailsToggled.connect(self._on_notice_details_toggled)
@@ -600,11 +601,19 @@ class HintStatusController(QObject):
         )
         self._notice_on_top = True
         self._status_timer.stop()  # the newest message shows
-        if self._notice.timeout_ms:
-            self._notice_timer.start(self._notice.timeout_ms)
-        else:
-            self._notice_timer.stop()
+        self._notice_timer.stop()
+        self._start_notice_countdown()
         self._restore_hint()
+
+    def _start_notice_countdown(self) -> None:
+        """Start a notice's timeout, unless its bar is hidden (a host shows a
+        progress panel in its place): then it starts when the bar shows."""
+        notice = self._notice
+        if notice is None or not notice.timeout_ms or notice.details_open:
+            return
+        if self._hint_bar is not None and self._hint_bar.isHidden():
+            return
+        self._notice_timer.start(notice.timeout_ms)
 
     def dismiss_notice(self) -> None:
         """Remove the notice (✕, its timeout, or Undo)."""
@@ -698,6 +707,12 @@ class HintStatusController(QObject):
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if watched is None or not _qt_is_valid(watched):
+            return False
+        if watched is self._hint_bar and self._hint_bar is not None:
+            if event.type() == QEvent.HideToParent:
+                self._notice_timer.stop()  # unseen: the countdown waits
+            elif event.type() == QEvent.ShowToParent:
+                self._start_notice_countdown()
             return False
         hint_text = watched.property("_hint_text") if hasattr(watched, "property") else None
         hint_tone = watched.property("_hint_tone") if hasattr(watched, "property") else None

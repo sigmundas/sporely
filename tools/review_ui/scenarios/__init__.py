@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from ..registry import ScenarioRegistry
+from .calibration import register_calibration_scenarios
 from .conflicts import register_conflict_scenarios
 from .live_lab import register_live_lab_scenarios
 from .references import register_reference_scenarios
@@ -20,6 +21,7 @@ from .taxon_picker import register_taxon_picker_scenarios
 
 def create_registry() -> ScenarioRegistry:
     registry = ScenarioRegistry()
+    register_calibration_scenarios(registry)
     register_conflict_scenarios(registry)
     register_reference_scenarios(registry)
     register_measure_scenarios(registry)

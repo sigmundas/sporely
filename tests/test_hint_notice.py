@@ -239,3 +239,20 @@ def test_a_notice_timing_out_after_its_bar_is_gone_does_nothing(qtbot):
     qtbot.waitUntil(lambda: not controller._notice_timer.isActive(), timeout=2000)
     qtbot.wait(100)  # the timers would have fired by now
     assert not controller.has_notice()
+
+
+def test_a_hidden_bar_keeps_its_notice_until_it_shows(qtbot, bar_and_controller):
+    """Review finding (10c): a host may hide the bar for a progress panel;
+    a self-clearing notice must not time out unseen meanwhile."""
+    _host, bar, controller, _button = bar_and_controller
+    bar.hide()
+    controller.show_notice("Saved.", "success", timeout_ms=50)
+    qtbot.wait(200)
+    assert controller.has_notice()
+    bar.show()
+    qtbot.waitUntil(lambda: not controller.has_notice(), timeout=2000)
+    # Hidden while counting down: it waits again.
+    controller.show_notice("Saved again.", "success", timeout_ms=120)
+    bar.hide()
+    qtbot.wait(300)
+    assert controller.has_notice()
