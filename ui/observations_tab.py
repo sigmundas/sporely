@@ -7076,10 +7076,6 @@ class ObservationsTab(QWidget):
         except Exception:
             return {taxon: None for taxon in taxa}
 
-    def get_ai_suggestions_for_observation(self, obs_id: int) -> dict | None:
-        """Return cached AI suggestion state for the given observation id."""
-        return self._ai_suggestions_cache.get(obs_id)
-
     def _merge_observation_edit_draft(
         self,
         observation: dict | None,
@@ -8833,21 +8829,8 @@ class ObservationsTab(QWidget):
         # Emit signal to set as active observation
         self.observation_selected.emit(obs_id, display_name, switch_tab)
 
-    def _refresh_active_observation_after_edit(
-        self,
-        refresh_reference_species_availability: bool = False,
-    ) -> None:
+    def _refresh_active_observation_after_edit(self) -> None:
         """Refresh the active observation state after a successful edit save."""
-        host = self.window()
-        if host is None:
-            host = self.parent()
-        if refresh_reference_species_availability and host is not None and hasattr(
-            host, "_refresh_reference_species_availability"
-        ):
-            try:
-                host._refresh_reference_species_availability(force_refresh=True)
-            except Exception:
-                pass
         self.set_selected_as_active(switch_tab=False)
 
     def get_selected_observation(self):

@@ -179,150 +179,27 @@ def test_target_change_tolerates_non_numeric_taxon_id():
     assert editor._sporely_taxon_id is None
 
 
-def _source_view(pane):
-    """The comparison model the pane is currently rendering."""
-    return pane.comparison_view.view()
-
-
-def test_preview_shows_the_entered_range_and_falls_back_when_emptied():
-    """Replaces the old summary-table assertion for the same guarantee.
-
-    The manual tab now feeds the same comparison model as every other source
-    tab, so "the preview reflects what I typed" is a statement about the
-    model's source series, not about four cells of text.
-    """
-    from ui.reference_preview_pane import ReferencePreviewPane
-
-    _app()
-    pane = ReferencePreviewPane(None)
-    editor = _make_editor(preview_pane=pane)
-    before = _source_view(pane)
-    assert before is None or before.has_source is False
-
-    _set_range(editor)
-
-    view = _source_view(pane)
-    assert view.has_source is True
-    length = view.metric("length").source
-    assert (length.outer.low, length.outer.high) == pytest.approx((8.0, 11.0))
-    assert pane.summary_title_label.text() != ""
-
-    for col in (0, 4):
-        editor.set_measurement_cell_text(0, col, "")
-        editor.set_measurement_cell_text(1, col, "")
-
-    after = _source_view(pane)
-    assert after is None or after.has_source is False
-
-
-def test_a_typical_only_range_stays_a_core_band_with_no_invented_centre():
-    """Replaces ``test_summary_cell_derived_from_typical_range_marks_distinctly``.
-
-    The summary table had one Min column and one Max column, so a bare
-    typical range had to be printed there and flagged with a footnote as
-    "derived". The comparison model has somewhere honest to put it: a *core*
-    band, with no outer band claiming reported extremes and no centre mark
-    for a midpoint nobody published (contract N15/N20).
-    """
-    from ui.reference_preview_pane import ReferencePreviewPane
-
-    _app()
-    pane = ReferencePreviewPane(None)
-    editor = _make_editor(preview_pane=pane)
-    editor.set_measurement_cell_text(0, 1, "8.50")
-    editor.set_measurement_cell_text(0, 3, "10.80")
-    # Width: directly reported extremes, so the outer band is the real one.
-    editor.set_measurement_cell_text(1, 0, "6.00")
-    editor.set_measurement_cell_text(1, 4, "8.00")
-
-    view = _source_view(pane)
-    length = view.metric("length").source
-    assert length.outer is None
-    assert (length.core.low, length.core.high) == pytest.approx((8.5, 10.8))
-    assert length.centres == ()
-
-    width = view.metric("width").source
-    assert (width.outer.low, width.outer.high) == pytest.approx((6.0, 8.0))
-    assert width.core is None
-    assert width.centres == ()
-
-
-def test_a_typical_range_is_never_shown_as_a_percentile_interval():
-    """Contract N12/N25: typical min/max is not a 5-95% interval.
-
-    Only an explicitly stated percentile interval may be drawn as one, so a
-    hand-typed typical range must reach the pane with no percentile bounds
-    attached.
-    """
-    from ui.reference_preview_pane import ReferencePreviewPane
-
-    _app()
-    pane = ReferencePreviewPane(None)
-    editor = _make_editor(preview_pane=pane)
-    editor.set_measurement_cell_text(0, 1, "8.50")
-    editor.set_measurement_cell_text(0, 3, "10.80")
-
-    core = _source_view(pane).metric("length").source.core
-    assert core.meaning != "percentile_interval"
-    assert core.percentile_bounds is None
-
-
-def test_a_reported_species_mean_becomes_the_sources_centre():
-    """Replaces ``test_reported_species_mean_is_not_marked_derived``.
-
-    A Parmasto species mean is a figure the user transcribed from a source,
-    not a midpoint this editor invented, so it is shown as the metric's
-    stated centre rather than being dropped or flagged as derived.
-    """
-    from ui.reference_preview_pane import ReferencePreviewPane
-
-    _app()
-    pane = ReferencePreviewPane(None)
-    editor = _make_editor(preview_pane=pane)
-    editor.set_measurement_cell_text(0, 0, "8.00")
-    editor.set_measurement_cell_text(0, 4, "11.00")
-    editor.parmasto_inputs["parmasto_length_mean"].setText("9.50")
-
-    length = _source_view(pane).metric("length").source
-    assert length.centre("mean").value == pytest.approx(9.5)
-    # Width had no mean stated anywhere, so none is manufactured for it.
-    assert _source_view(pane).metric("width").source is None
-
-
-def test_sync_preview_repopulates_after_tab_revisit():
-    from ui.reference_preview_pane import ReferencePreviewPane
-
-    _app()
-    pane = ReferencePreviewPane(None)
-    editor = _make_editor(preview_pane=pane)
-    _set_range(editor)
-    pane.clear()
-    cleared = _source_view(pane)
-    assert cleared is None or cleared.has_source is False
-
-    editor.sync_preview()
-
-    assert _source_view(pane).has_source is True
-
-
-def test_typing_updates_the_comparison_without_leaving_the_field():
-    """The preview follows the grid live, not only on commit.
+def test_typing_updates_the_entry_without_leaving_the_field():
+    """The editor follows the grid live, not only on commit.
 
     ``editingFinished`` never fires while a field still has focus, so a
-    preview wired to it alone would describe the previous entry for as long
-    as the user kept typing.
+    footer wired to it alone would judge the previous entry for as long as
+    the user kept typing. The create dialog's buttons follow ``data_changed``.
     """
-    from ui.reference_preview_pane import ReferencePreviewPane
-
-    _app()
-    pane = ReferencePreviewPane(None)
-    editor = _make_editor(preview_pane=pane)
+    editor = _make_editor()
+    assert editor.is_ready_to_submit() is False
+    changes = []
+    editor.data_changed.connect(lambda: changes.append(editor.is_ready_to_submit()))
 
     editor.measurement_inputs[0][0].setText("8.0")
     editor.measurement_inputs[0][4].setText("11.0")
+    editor.measurement_inputs[1][0].setText("6.0")
+    editor.measurement_inputs[1][4].setText("8.0")
 
-    length = _source_view(pane).metric("length").source
-    assert (length.outer.low, length.outer.high) == pytest.approx((8.0, 11.0))
+    assert len(changes) >= 4
+    assert changes[-1] is True
+    content = editor._current_measurement_content()
+    assert (content.length_min, content.length_max) == pytest.approx((8.0, 11.0))
 
 
 def test_the_measurement_grid_tabs_left_to_right_across_each_row():

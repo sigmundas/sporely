@@ -24,8 +24,6 @@ files=(
   "ui/curated_reference_catalogue_dialog.py"
   "ui/comparison_panel.py"
   "ui/cloud_reference_dialog.py"
-  "ui/reference_preview_pane.py"
-  "ui/reference_comparison_view.py"
   "ui/measurement_content_view.py"
   "ui/reference_sharing_dialogs.py"
   "ui/publish_notice.py"

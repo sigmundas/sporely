@@ -118,7 +118,6 @@ class EditObservationPage(QWidget):
         self._saving = False
         self._publishing = False  # Publish runs (it keeps the event loop turning)
         self._saved_any = False
-        self._taxonomy_changed = False
         self._save_error: str | None = None
         self._stale = False
         self._pending_show: int | None = None  # a switch asked for while the publish notice was open
@@ -473,7 +472,6 @@ class EditObservationPage(QWidget):
         self._saved_observation = dict(observation)
         self._saved_updates = None
         self._saved_any = False
-        self._taxonomy_changed = False
         self._save_error = None
         self._stale = False
         self._must_reload = False
@@ -886,7 +884,6 @@ class EditObservationPage(QWidget):
                 self._save_error = str(exc) or exc.__class__.__name__
                 return False
             if taxonomy_changed:
-                self._taxonomy_changed = True
                 # A new name can move the observation's folder: the images follow.
                 reload_images = getattr(editor, "_reload_observation_images_after_cloud_media_materialization", None)
                 if callable(reload_images):
@@ -928,12 +925,10 @@ class EditObservationPage(QWidget):
         saved = self.save_now(leaving=True)
         if self._saved_any:
             observation_id = self._observation_id
-            taxonomy_changed = self._taxonomy_changed
             self._saved_any = False
-            self._taxonomy_changed = False
             refresh = getattr(self.window(), "refresh_after_observation_edits", None)
             if callable(refresh):
-                refresh(observation_id, taxonomy_changed=taxonomy_changed)
+                refresh(observation_id)
         return saved
 
     # -- Status and publishing (stage 9g3b) -----------------------------------

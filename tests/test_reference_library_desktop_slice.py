@@ -785,14 +785,10 @@ def test_apply_gallery_settings_preserves_normalized_entries():
     stub._restore_reference_data_from_settings = MethodType(
         _restore_reference_data_from_settings, stub
     )
-    stub._apply_reference_panel_values = lambda *a, **kw: None
-    stub._update_reference_add_state = lambda *a, **kw: None
     stub._normalize_reference_series_entry = lambda entry: entry
     stub._refresh_reference_series_table = lambda *a, **kw: None
     stub.update_graph_plots_only = lambda *a, **kw: None
-    stub._collect_reference_panel_state = lambda: {}
     stub._save_gallery_settings = lambda *a, **kw: None
-    stub._populate_reference_panel_sources = lambda *a, **kw: None
     stub._apply_normalized_reference_override = MethodType(
         MainWindow._apply_normalized_reference_override, stub
     )
@@ -1514,7 +1510,6 @@ def test_collect_and_apply_gallery_settings_round_trips_use_overrides():
     stub.gallery_plot_settings = {}
     # Deliberately do NOT set gallery_filter_combo/orient_checkbox/etc so
     # the code's ``hasattr(...)`` guards short-circuit to None/False.
-    stub._collect_reference_panel_state = lambda: {}
     stub._serialize_reference_data_for_settings = lambda data: None
     stub._gallery_plot_style = lambda settings: "ellipse"
     collect = MethodType(MainWindow._collect_gallery_settings, stub)
@@ -1550,14 +1545,10 @@ def test_collect_and_apply_gallery_settings_round_trips_use_overrides():
     stub2._restore_reference_data_from_settings = lambda value: (
         value if isinstance(value, dict) else {}
     )
-    stub2._apply_reference_panel_values = lambda *a, **kw: None
-    stub2._update_reference_add_state = lambda *a, **kw: None
     stub2._normalize_reference_series_entry = lambda entry: entry
     stub2._refresh_reference_series_table = lambda *a, **kw: None
     stub2.update_graph_plots_only = lambda *a, **kw: None
-    stub2._collect_reference_panel_state = lambda: {}
     stub2._save_gallery_settings = lambda *a, **kw: None
-    stub2._populate_reference_panel_sources = lambda *a, **kw: None
     stub2._apply_normalized_reference_override = MethodType(
         MainWindow._apply_normalized_reference_override, stub2
     )

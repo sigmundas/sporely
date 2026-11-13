@@ -32,9 +32,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtWidgets import (
     QApplication,
-    QComboBox,
-    QLabel,
-    QLineEdit,
     QMessageBox,
     QTableWidget,
     QWidget,
@@ -156,22 +153,9 @@ def _build_window(monkeypatch, qapp):
     monkeypatch.setattr(main_window.MainWindow, "load_default_objective", lambda self: None)
     monkeypatch.setattr(main_window.MainWindow, "_restore_geometry", lambda self: None)
     window = main_window.MainWindow()
-    window.ref_vernacular_input = QLineEdit()
-    window.ref_vernacular_label = QLabel()
-    window.ref_genus_input = QLineEdit()
-    window.ref_species_input = QLineEdit()
-    window.ref_source_input = QComboBox()
-    window.ref_source_input.setEditable(True)
-    window.ref_source_input.addItem("")
     window.table = QTableWidget(3, 5)
-    window.ref_table = window.table
     window.reference_values = {}
     window.reference_series = []
-    window.species_availability = _EmptySpeciesAvailability()
-    window._refresh_reference_species_availability = lambda: None
-    window._populate_reference_panel_sources = lambda auto_select_single=True: None
-    window._apply_reference_panel_values = lambda data: None
-    window._update_reference_add_state = lambda: None
     window._clean_ref_genus_text = lambda t: (t or "").strip()
     window._clean_ref_species_text = lambda t: (t or "").strip()
     return window
@@ -244,7 +228,7 @@ def _add_through_live_path(window, dialog):
 
     if dialog.exec() != QDialog.Accepted:
         return False
-    return window._submit_reference_editor_result(dialog, sync_panel=False)
+    return window._submit_reference_editor_result(dialog)
 
 def test_quick_add_service_path_attaches_snapshot_and_refreshes_plot(
     monkeypatch, qapp, libs
@@ -357,7 +341,7 @@ def test_submission_reports_failure_when_the_quick_add_is_refused(
         main_window.QMessageBox, "question", lambda *a, **kw: QMessageBox.No
     )
 
-    assert window._submit_reference_editor_result(dialog, sync_panel=False) is False
+    assert window._submit_reference_editor_result(dialog) is False
     assert ObservationReferenceUseRepository.list_for_observation(observation_id) == []
 
 
@@ -379,7 +363,7 @@ def test_submission_reports_success_when_the_quick_add_lands(
     window._restore_reference_uses_for_observation = lambda _obs_id: None
     window.update_graph_plots_only = lambda: None
 
-    assert window._submit_reference_editor_result(dialog, sync_panel=False) is True
+    assert window._submit_reference_editor_result(dialog) is True
     assert len(ObservationReferenceUseRepository.list_for_observation(observation_id)) == 1
 
 
@@ -518,8 +502,6 @@ def test_invalid_quick_add_leaves_no_legacy_or_normalized_records(
     monkeypatch.setattr(main_window.QMessageBox, "warning", lambda *args: None)
     window = _build_window(monkeypatch, qapp)
     window.active_observation_id = observation_id
-    window.ref_genus_input.setText("Agaricus")
-    window.ref_species_input.setText("bisporus")
     window._active_sporely_taxon_id = lambda: 7
 
     _add_through_live_path(window, _dialog_factory())
@@ -545,8 +527,6 @@ def test_selected_work_legacy_only_submission_keeps_legacy_fallback(
     _dialog_factory = lambda *args, **kwargs: _QuickLegacyOnlyStubDialog(payload)
     window = _build_window(monkeypatch, qapp)
     window.active_observation_id = observation_id
-    window.ref_genus_input.setText("Agaricus")
-    window.ref_species_input.setText("bisporus")
     window._active_sporely_taxon_id = lambda: 7
 
     _add_through_live_path(window, _dialog_factory())
@@ -573,8 +553,6 @@ def test_taxon_drift_confirmation_declined_skips_normalized_write(
     window = _build_window(monkeypatch, qapp)
     window.active_observation_id = obs_id
     # Panel edited to a completely different species.
-    window.ref_genus_input.setText("Amanita")
-    window.ref_species_input.setText("muscaria")
     window._active_sporely_taxon_id = lambda: 7
 
     payload = _range_payload(work.id, 7, "Amanita", "muscaria")
@@ -612,8 +590,6 @@ def test_taxon_drift_confirmation_accepted_records_as_published_synonym(
     work = _seed_work("TXWK-A 2022")
     window = _build_window(monkeypatch, qapp)
     window.active_observation_id = obs_id
-    window.ref_genus_input.setText("Prunulus")  # historical synonym
-    window.ref_species_input.setText("filopes")
     window._active_sporely_taxon_id = lambda: 7
 
     payload = _range_payload(work.id, 7, "Prunulus", "filopes")
@@ -647,8 +623,6 @@ def test_taxon_matches_observation_no_confirmation_prompt(monkeypatch, qapp, lib
     work = _seed_work("TXWK-B 2023")
     window = _build_window(monkeypatch, qapp)
     window.active_observation_id = obs_id
-    window.ref_genus_input.setText("agaricus")  # differs only in case
-    window.ref_species_input.setText("Bisporus")
     window._active_sporely_taxon_id = lambda: 7
 
     payload = _range_payload(work.id, 7, "agaricus", "Bisporus")
@@ -686,8 +660,6 @@ def test_retry_after_attachment_failure_no_stranded_set(
     work = _seed_work("TXWK-C 2024")
     window = _build_window(monkeypatch, qapp)
     window.active_observation_id = obs_id
-    window.ref_genus_input.setText("Agaricus")
-    window.ref_species_input.setText("bisporus")
     window._active_sporely_taxon_id = lambda: 7
 
     payload = _range_payload(work.id, 7, "Agaricus", "bisporus")
@@ -763,8 +735,6 @@ def test_observation_drift_between_dialog_open_and_save_blocks_normalized_write(
     window = _build_window(monkeypatch, qapp)
     # Dialog opens on observation A.
     window.active_observation_id = obs_id_a
-    window.ref_genus_input.setText("Agaricus")
-    window.ref_species_input.setText("bisporus")
     window._active_sporely_taxon_id = lambda: 7
     monkeypatch.setattr(
         main_window.QMessageBox, "warning", lambda *a, **kw: QMessageBox.Ok
@@ -827,8 +797,6 @@ def test_two_same_shape_submissions_on_same_observation_are_not_conflated(
     work = _seed_work("NO-CONFLATE 2024")
     window = _build_window(monkeypatch, qapp)
     window.active_observation_id = obs_id
-    window.ref_genus_input.setText("Agaricus")
-    window.ref_species_input.setText("bisporus")
     window._active_sporely_taxon_id = lambda: 7
     monkeypatch.setattr(
         main_window.QMessageBox, "warning", lambda *a, **kw: QMessageBox.Ok
@@ -887,8 +855,6 @@ def test_silent_attach_failure_still_triggers_compensating_cleanup(
     work = _seed_work("SILENT-FAIL 2024")
     window = _build_window(monkeypatch, qapp)
     window.active_observation_id = obs_id
-    window.ref_genus_input.setText("Agaricus")
-    window.ref_species_input.setText("bisporus")
     window._active_sporely_taxon_id = lambda: 7
     monkeypatch.setattr(
         main_window.QMessageBox, "warning", lambda *a, **kw: QMessageBox.Ok
@@ -932,8 +898,6 @@ def test_two_distinct_datasets_on_same_treatment_are_not_conflated(
     )
     work = _seed_work("TWO-SETS 2024")
     window = _build_window(monkeypatch, qapp)
-    window.ref_genus_input.setText("Agaricus")
-    window.ref_species_input.setText("bisporus")
     window._active_sporely_taxon_id = lambda: 7
     monkeypatch.setattr(
         main_window.QMessageBox, "warning", lambda *a, **kw: QMessageBox.Ok
@@ -1008,8 +972,6 @@ def test_retry_after_measurement_set_failure_creates_no_duplicate_treatment(
     work = _seed_work("TXWK-D 2025")
     window = _build_window(monkeypatch, qapp)
     window.active_observation_id = obs_id
-    window.ref_genus_input.setText("Agaricus")
-    window.ref_species_input.setText("bisporus")
     window._active_sporely_taxon_id = lambda: 7
 
     payload = _range_payload(work.id, 7, "Agaricus", "bisporus")

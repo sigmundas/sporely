@@ -333,20 +333,14 @@ class ReferencePickerPage(QWidget):
         context = self._context or {}
         if self.community_pane is None:
             from .cloud_reference_dialog import CommunityResultsPane
-            from .reference_preview_pane import ReferencePreviewPane
 
-            # The plot is the preview here; the pane still wants one to own.
-            self._hidden_preview = ReferencePreviewPane(self.community_page)
-            self._hidden_preview.hide()
             injected = getattr(self._host, "reference_picker_community_results", None)
             self.community_pane = CommunityResultsPane(
                 self.community_page,
                 genus=context.get("genus") or "",
                 species=context.get("species") or "",
-                preview_pane=self._hidden_preview,
                 results=injected() if callable(injected) else None,
                 exclude_observation_cloud_id=context.get("cloud_id"),
-                preview_is_active=lambda: False,
                 checkable=True,
             )
             self.community_pane.results_list.setSelectionMode(QListWidget.SingleSelection)

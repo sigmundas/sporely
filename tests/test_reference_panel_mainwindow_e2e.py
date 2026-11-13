@@ -26,9 +26,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtWidgets import (
     QApplication,
-    QComboBox,
-    QLabel,
-    QLineEdit,
     QTableWidget,
     QTableWidgetItem,
     QWidget,
@@ -131,23 +128,10 @@ def _build_window(monkeypatch, qapp):
     monkeypatch.setattr(main_window.MainWindow, "load_default_objective", lambda self: None)
     monkeypatch.setattr(main_window.MainWindow, "_restore_geometry", lambda self: None)
     window = main_window.MainWindow()
-    window.ref_vernacular_input = QLineEdit()
-    window.ref_vernacular_label = QLabel()
-    window.ref_genus_input = QLineEdit()
-    window.ref_species_input = QLineEdit()
-    window.ref_source_input = QComboBox()
-    window.ref_source_input.setEditable(True)
-    window.ref_source_input.addItem("")
     window.table = QTableWidget(3, 5)
-    window.ref_table = window.table
     window.reference_values = {}
     window.reference_series = []
-    window.species_availability = _EmptySpeciesAvailability()
     # UI helpers reduced to no-ops for the coordinator's dependencies.
-    window._refresh_reference_species_availability = lambda: None
-    window._populate_reference_panel_sources = lambda auto_select_single=True: None
-    window._apply_reference_panel_values = lambda data: None
-    window._update_reference_add_state = lambda: None
     window._clean_ref_genus_text = lambda t: (t or "").strip()
     window._clean_ref_species_text = lambda t: (t or "").strip()
     window._active_sporely_taxon_id = lambda: 7
@@ -192,7 +176,7 @@ def _add_through_live_path(window, dialog):
 
     if dialog.exec() != QDialog.Accepted:
         return False
-    return window._submit_reference_editor_result(dialog, sync_panel=False)
+    return window._submit_reference_editor_result(dialog)
 
 def test_mainwindow_add_range_writes_legacy_and_normalized_and_persists(
     monkeypatch, qapp, libs
@@ -209,8 +193,6 @@ def test_mainwindow_add_range_writes_legacy_and_normalized_and_persists(
 
     window = _build_window(monkeypatch, qapp)
     window.active_observation_id = obs_id
-    window.ref_genus_input.setText("Agaricus")
-    window.ref_species_input.setText("bisporus")
 
     payload = {
         "genus": "Agaricus",
@@ -274,8 +256,6 @@ def test_mainwindow_add_dedups_legacy_envelope_when_normalized_attach_succeeds(
 
     window = _build_window(monkeypatch, qapp)
     window.active_observation_id = obs_id
-    window.ref_genus_input.setText("Agaricus")
-    window.ref_species_input.setText("bisporus")
 
     payload = {
         "genus": "Agaricus",
@@ -341,8 +321,6 @@ def test_mainwindow_add_parmasto_only_writes_legacy_but_no_normalized_set(
 
     window = _build_window(monkeypatch, qapp)
     window.active_observation_id = obs_id
-    window.ref_genus_input.setText("Agaricus")
-    window.ref_species_input.setText("bisporus")
 
     parmasto_payload = {
         "genus": "Agaricus",
@@ -403,24 +381,14 @@ def test_load_reference_values_does_not_touch_removed_legacy_widgets(
     monkeypatch.setattr(main_window.MainWindow, "load_default_objective", lambda self: None)
     monkeypatch.setattr(main_window.MainWindow, "_restore_geometry", lambda self: None)
     window = main_window.MainWindow()
-    window.species_availability = _EmptySpeciesAvailability()
     assert not hasattr(window, "ref_genus_input")
     assert not hasattr(window, "ref_species_input")
     assert not hasattr(window, "ref_vernacular_input")
     assert not hasattr(window, "ref_source_input")
 
-    class _TruthyLookup:
-        vernacular_db = object()
-
-        def best_common_name_for_taxon(self, genus, species):
-            return None
-
-        def suggest_common_names(self, **kwargs):
-            return []
-
-    window._ensure_reference_taxon_lookup = lambda: _TruthyLookup()
-
     window.active_observation_id = obs_id
     window.load_reference_values()
 
-    assert window.reference_values == {} or isinstance(window.reference_values, dict)
+    # No legacy ReferenceDB row for this taxon in the test library.
+    assert window.reference_values == {}
+    assert window.reference_series == []

@@ -24,7 +24,6 @@ from PySide6.QtGui import (
     QShortcut,
     QDesktopServices,
     QStandardItemModel,
-    QStandardItem,
     QFontDatabase,
     QPolygonF,
     QCursor,
@@ -46,7 +45,6 @@ from PySide6.QtCore import (
     QStringListModel,
     QUrl,
     QStandardPaths,
-    QModelIndex,
     QT_TRANSLATE_NOOP,
     QCoreApplication,
     QSysInfo,
@@ -179,8 +177,6 @@ from database.reference_library import (
     TaxonTreatment,
     TaxonTreatmentRepository,
 )
-from database.taxon_lookup import TAXON_COMPLETER_LIMIT, TaxonChoice, TaxonLookupService
-from database.taxon_suggestions import ai_prediction_external_id
 from database.vernacular_db import VernacularDB
 from database.database_tags import DatabaseTerms
 from database.schema import (
@@ -212,12 +208,10 @@ from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
 from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
 from utils.cloud_sync import is_cloud_auth_error, is_cloud_reauth_required_error
 from utils.publish_media import prepare_ordered_mosaic_inputs
-from .delegates import AISuggestionItemDelegate
 from utils.vernacular_utils import (
     normalize_vernacular_language,
     resolve_available_vernacular_language,
     vernacular_language_label,
-    common_name_display_label,
     resolve_vernacular_db_path,
     list_available_vernacular_languages,
 )
@@ -4723,14 +4717,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._publish_excluded_image_ids_by_observation: dict[int, set[int]] = {}
         self.loading_dialog = None
         self.reference_values = {}
-        self._reference_panel_loaded_observation_id: int | None = None
-        self._reference_panel_loaded_taxon: tuple[str, str] | None = None
-        self.species_availability = SpeciesDataAvailability()
-        self._ref_completer_suppress = False
-        self._ref_taxon_fill_from_vernacular = False
-        self._reference_taxon_lookup = None
-        self._ref_genus_summary_cache_key = None
-        self._ref_genus_summary_cache = {}
         self.reference_series = []
         self.suppress_scale_prompt = False
         self._measure_category_sync = False
@@ -4892,16 +4878,6 @@ class MainWindow(GeometryMixin, QMainWindow):
                     effect.setOpacity(1.0)
                 elif event.type() == QEvent.Leave:
                     effect.setOpacity(float(obj.property("gallery_idle_opacity") or 0.28))
-        controller = getattr(self, "_reference_taxon_controller", None)
-        if controller is not None and controller.eventFilter(obj, event):
-            return True
-        if event.type() == QEvent.MouseButtonPress:
-            if obj == getattr(self, "ref_source_input", None):
-                if self.ref_source_input.count() > 1:
-                    self.ref_source_input.showPopup()
-            if hasattr(self, "ref_source_input") and obj == self.ref_source_input.lineEdit():
-                if self.ref_source_input.count() > 1:
-                    self.ref_source_input.showPopup()
         return super().eventFilter(obj, event)
 
     def init_ui(self):
@@ -7787,237 +7763,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             "QAbstractItemView::item { padding: 2px 6px; }"
         )
 
-    def _reference_vernacular_label(self) -> str:
-        stored = SettingsDB.get_setting("vernacular_language", "no")
-        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
-        base = self.tr("Common name")
-        return f"{common_name_display_label(lang, base)}:"
-
-    def _reference_vernacular_placeholder(self) -> str:
-        stored = SettingsDB.get_setting("vernacular_language", "no")
-        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
-        examples = {
-            "no": "Kantarell",
-            "de": "Pfifferling",
-            "fr": "Girolle",
-            "es": "Rebozuelo",
-            "da": "Kantarel",
-            "sv": "Kantarell",
-            "fi": "Kantarelli",
-            "pl": "Kurka",
-            "pt": "Cantarelo",
-            "it": "Gallinaccio",
-        }
-        return f"e.g., {examples.get(lang, 'Chanterelle')}"
-
-    def _ensure_reference_taxon_lookup(self) -> TaxonLookupService:
-        stored = SettingsDB.get_setting("vernacular_language", "no")
-        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
-        vernacular_db = getattr(self, "ref_vernacular_db", None)
-        lookup = getattr(self, "_reference_taxon_lookup", None)
-        if lookup is not None and getattr(lookup, "vernacular_db", None) is vernacular_db:
-            try:
-                lookup.language_code = lang
-            except Exception:
-                pass
-            if vernacular_db is not None:
-                try:
-                    vernacular_db.language_code = lang
-                except Exception:
-                    pass
-            return lookup
-        lookup = TaxonLookupService(
-            vernacular_db=vernacular_db,
-            language_code=lang,
-            include_reference_data=True,
-        )
-        self._reference_taxon_lookup = lookup
-        return lookup
-
-    def _set_ref_vernacular_placeholder_from_suggestions(self, suggestions: list[TaxonChoice | str]) -> None:
-        if not hasattr(self, "ref_vernacular_input"):
-            return
-        cleaned: list[str] = []
-        for suggestion in suggestions or []:
-            if isinstance(suggestion, TaxonChoice):
-                label = str(suggestion.common_name or "").strip()
-                if not label:
-                    label = f"{suggestion.genus} {suggestion.species}".strip()
-            else:
-                label = str(suggestion or "").strip()
-            if label:
-                cleaned.append(label)
-        if not cleaned:
-            self.ref_vernacular_input.setPlaceholderText(self._reference_vernacular_placeholder())
-            return
-        preview = "; ".join(cleaned[:4])
-        self.ref_vernacular_input.setPlaceholderText(f"e.g., {preview}")
-
-    def _set_ref_species_placeholder_from_suggestions(self, suggestions: list[str]) -> None:
-        if not hasattr(self, "ref_species_input"):
-            return
-        cleaned = [str(name).strip() for name in (suggestions or []) if str(name).strip()]
-        if not cleaned:
-            self.ref_species_input.setPlaceholderText(self.tr("e.g., velutipes"))
-            return
-        preview = "; ".join(cleaned[:4])
-        self.ref_species_input.setPlaceholderText(f"e.g., {preview}")
-
-    def _ref_vernacular_choice_from_index(self, index: QModelIndex) -> TaxonChoice | None:
-        if not isinstance(index, QModelIndex) or not index.isValid():
-            return None
-        choice = index.data(self._ROLE_TAXON_CHOICE)
-        if isinstance(choice, TaxonChoice):
-            return choice
-        common_name = str(index.data(Qt.UserRole) or index.data(Qt.DisplayRole) or "").strip()
-        genus = str(index.data(Qt.UserRole + 1) or "").strip()
-        species = str(index.data(Qt.UserRole + 2) or "").strip() or None
-        if not common_name and not genus and not species:
-            return None
-        return TaxonChoice(genus=genus, species=species, common_name=common_name or None)
-
-    def _populate_ref_vernacular_model(self, suggestions: list[TaxonChoice | str]) -> None:
-        self._ref_vernacular_model.clear()
-        lookup = self._ensure_reference_taxon_lookup()
-        exclude_id = self.active_observation_id if hasattr(self, "active_observation_id") else None
-        for suggestion in suggestions or []:
-            if isinstance(suggestion, TaxonChoice):
-                choice = suggestion
-            else:
-                name = str(suggestion or "").strip()
-                if not name:
-                    continue
-                matches = lookup.resolve_common_name(name)
-                choice = matches[0] if len(matches) == 1 else TaxonChoice(genus="", common_name=name)
-            name = str(choice.common_name or "").strip()
-            if not name:
-                continue
-            display = name
-            emojis = []
-            if self.species_availability and choice.genus and choice.species:
-                info = self._reference_species_info_case_insensitive(
-                    choice.genus,
-                    choice.species,
-                    exclude_observation_id=exclude_id,
-                )
-                emojis.extend(self._reference_availability_emojis(info))
-            if emojis:
-                display = f"{name} {' '.join(emojis)}"
-            item = QStandardItem(display)
-            item.setData(name, Qt.UserRole)
-            item.setData(str(choice.genus or "").strip(), Qt.UserRole + 1)
-            item.setData(str(choice.species or "").strip(), Qt.UserRole + 2)
-            item.setData(choice, self._ROLE_TAXON_CHOICE)
-            self._ref_vernacular_model.appendRow(item)
-
-    def _update_ref_vernacular_suggestions_for_taxon(self) -> None:
-        lookup = self._ensure_reference_taxon_lookup()
-        if not lookup or not lookup.vernacular_db:
-            self._ref_vernacular_model.clear()
-            self._set_ref_vernacular_placeholder_from_suggestions([])
-            return
-        genus = self._clean_ref_genus_text(self.ref_genus_input.text()) or None
-        species = self._clean_ref_species_text(self.ref_species_input.text()) or None
-        if not genus and not species:
-            self._ref_vernacular_model.clear()
-            self._set_ref_vernacular_placeholder_from_suggestions([])
-            return
-        suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species, limit=TAXON_COMPLETER_LIMIT)
-        self._populate_ref_vernacular_model(suggestions)
-        self._set_ref_vernacular_placeholder_from_suggestions(suggestions)
-
-    def _update_reference_add_state(self):
-        if not hasattr(self, "ref_add_btn"):
-            return
-        genus = self._clean_ref_genus_text(self.ref_genus_input.text()) if hasattr(self, "ref_genus_input") else ""
-        species = self._clean_ref_species_text(self.ref_species_input.text()) if hasattr(self, "ref_species_input") else ""
-        has_species = bool(genus and species)
-        self.ref_add_btn.setEnabled(has_species)
-        add_hint = self.tr("Add reference data for the selected species")
-        if not has_species:
-            add_hint = self.tr("Enter a species first to add spore data")
-        self._register_gallery_hint_widget(
-            self.ref_add_btn,
-            add_hint,
-            allow_when_disabled=True,
-        )
-        if hasattr(self, "ref_edit_btn"):
-            has_source = bool(self.ref_source_input.currentText().strip()) if hasattr(self, "ref_source_input") else False
-            self.ref_edit_btn.setEnabled(has_species and has_source)
-            edit_hint = self.tr("Edit reference data")
-            if not has_species:
-                edit_hint = self.tr("Enter a species first to edit reference data")
-            elif not has_source:
-                edit_hint = self.tr("Select a source to edit reference data")
-            self._register_gallery_hint_widget(
-                self.ref_edit_btn,
-                edit_hint,
-                allow_when_disabled=True,
-            )
-        if hasattr(self, "ref_cloud_btn"):
-            self.ref_cloud_btn.setEnabled(has_species)
-            cloud_hint = self.tr("Search community spore data")
-            if not has_species:
-                cloud_hint = self.tr("Enter a species first to search community spore data")
-            self._register_gallery_hint_widget(
-                self.ref_cloud_btn,
-                cloud_hint,
-                allow_when_disabled=True,
-            )
-        if hasattr(self, "ref_plot_btn"):
-            source_text = self.ref_source_input.currentText().strip() if hasattr(self, "ref_source_input") else ""
-            has_plot_data = self._reference_has_selected_source_data()
-            self.ref_plot_btn.setEnabled(has_plot_data)
-            plot_hint = self.tr("Plot this data")
-            if not has_species:
-                plot_hint = self.tr("Select species and source to plot.")
-            elif not source_text or not has_plot_data:
-                plot_hint = self.tr("Select a source for this species or Add a new source.")
-            self._register_gallery_hint_widget(
-                self.ref_plot_btn,
-                plot_hint,
-                allow_when_disabled=True,
-            )
-        if hasattr(self, "ref_clear_btn"):
-            has_plot_data = bool(getattr(self, "reference_series", []))
-            has_taxon_input = bool(genus or species)
-            self.ref_clear_btn.setEnabled(has_plot_data or has_taxon_input)
-
-    def _reference_has_selected_source_data(self) -> bool:
-        if not hasattr(self, "ref_source_input"):
-            return False
-        genus = self._clean_ref_genus_text(self.ref_genus_input.text()) if hasattr(self, "ref_genus_input") else ""
-        species = self._clean_ref_species_text(self.ref_species_input.text()) if hasattr(self, "ref_species_input") else ""
-        if not genus or not species:
-            return False
-        source_text = self.ref_source_input.currentText().strip()
-        if not source_text:
-            return False
-        source_data = self.ref_source_input.currentData()
-        if isinstance(source_data, dict):
-            kind = source_data.get("kind")
-            if kind == "observation":
-                return bool(source_data.get("observation_id"))
-            if kind == "points":
-                return True
-            if kind == "reference":
-                source = source_data.get("source") or source_text
-                return bool(ReferenceDB.get_reference(genus, species, source))
-        idx = self.ref_source_input.findText(source_text)
-        if idx <= 0:
-            return False
-        item_data = self.ref_source_input.itemData(idx)
-        if isinstance(item_data, dict):
-            kind = item_data.get("kind")
-            if kind == "observation":
-                return bool(item_data.get("observation_id"))
-            if kind == "points":
-                return True
-            if kind == "reference":
-                source = item_data.get("source") or source_text
-                return bool(ReferenceDB.get_reference(genus, species, source))
-        return False
-
     def _reference_allow_points(self) -> bool:
         if not hasattr(self, "gallery_filter_combo"):
             return True
@@ -8456,7 +8201,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             if normalized:
                 self.reference_series.append(normalized)
         self._refresh_reference_series_table()
-        self._update_reference_add_state()
         self.update_graph_plots_only()
 
     def _add_reference_series_entry(self, data: dict) -> bool:
@@ -8474,7 +8218,6 @@ class MainWindow(GeometryMixin, QMainWindow):
                 return True
         self.reference_series.append(normalized)
         self._refresh_reference_series_table()
-        self._update_reference_add_state()
         self.update_graph_plots_only()
         self._save_gallery_settings()
         return True
@@ -8519,7 +8262,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         if not self.reference_series:
             self.reference_values = {}
         self._refresh_reference_series_table()
-        self._update_reference_add_state()
         self.update_graph_plots_only()
         self._save_gallery_settings()
 
@@ -8586,7 +8328,6 @@ class MainWindow(GeometryMixin, QMainWindow):
                 data.get("mount_medium"),
                 data.get("stain"),
             )
-            self._refresh_reference_species_availability()
             self._remove_reference_series_key(key)
             return
         updated = dialog.result_data()
@@ -8607,7 +8348,6 @@ class MainWindow(GeometryMixin, QMainWindow):
                     data.get("mount_medium"),
                     data.get("stain"),
                 )
-            self._refresh_reference_species_availability()
         if updated.get("source_kind") == "existing_measurement_set":
             try:
                 self._persist_normalized_reference_from_dialog(
@@ -9277,7 +9017,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         def _add(editor) -> bool:
             if not _still_active():
                 return False
-            return bool(self._submit_reference_editor_result(editor, sync_panel=False))
+            return bool(self._submit_reference_editor_result(editor))
 
         observation = ObservationDB.get_observation(captured_observation_id) or {}
         dialog = ReferenceCreateDialog(
@@ -9546,9 +9286,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         cleaned = str(text).strip()
         if not cleaned:
             return ""
+        # The old reference panel marked species with these; a name typed or
+        # pasted with one still reads as the bare name.
         availability_tokens = {
-            str(getattr(self.species_availability, "DATA_POINT_EMOJI", "") or "").strip(),
-            str(getattr(self.species_availability, "MINMAX_EMOJI", "") or "").strip(),
+            str(getattr(SpeciesDataAvailability, "DATA_POINT_EMOJI", "") or "").strip(),
+            str(getattr(SpeciesDataAvailability, "MINMAX_EMOJI", "") or "").strip(),
         }
         tokens = [token for token in cleaned.split() if token.strip() and token.strip() not in availability_tokens]
         return " ".join(tokens).strip()
@@ -9558,112 +9300,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             return ""
         token = str(text).strip().split()
         return token[0].strip() if token else ""
-
-    def _reference_availability_emojis(self, info: dict | None) -> list[str]:
-        if not isinstance(info, dict):
-            return []
-        emojis = []
-        if (
-            info.get("has_personal_points")
-            or info.get("has_shared_points")
-            or info.get("has_published_points")
-        ):
-            emojis.append(self.species_availability.DATA_POINT_EMOJI)
-        if info.get("has_reference_minmax"):
-            emojis.append(self.species_availability.MINMAX_EMOJI)
-        return emojis
-
-    def _reference_species_info_case_insensitive(
-        self,
-        genus: str,
-        species: str,
-        exclude_observation_id: int | None = None,
-    ) -> dict:
-        genus = (genus or "").strip()
-        species = (species or "").strip()
-        if not genus or not species or not hasattr(self, "species_availability"):
-            return {}
-        info = self.species_availability.get_detailed_info(
-            genus,
-            species,
-            exclude_observation_id=exclude_observation_id,
-        )
-        if info:
-            return info
-        genus_l = genus.lower()
-        species_l = species.lower()
-        cache = self.species_availability.get_cache()
-        for (g, s), _ in cache.items():
-            if str(g).strip().lower() == genus_l and str(s).strip().lower() == species_l:
-                return self.species_availability.get_detailed_info(
-                    g,
-                    s,
-                    exclude_observation_id=exclude_observation_id,
-                )
-        return {}
-
-    def _reference_genus_availability_summary(
-        self,
-        exclude_observation_id: int | None = None,
-    ) -> dict[str, dict]:
-        if not hasattr(self, "species_availability"):
-            return {}
-        cache = self.species_availability.get_cache()
-        cache_key = (id(cache), exclude_observation_id)
-        if self._ref_genus_summary_cache_key == cache_key and isinstance(self._ref_genus_summary_cache, dict):
-            return self._ref_genus_summary_cache
-
-        summary: dict[str, dict] = {}
-        for (g, s), _ in cache.items():
-            genus_key = str(g).strip().lower()
-            if not genus_key:
-                continue
-            info = self.species_availability.get_detailed_info(
-                g,
-                s,
-                exclude_observation_id=exclude_observation_id,
-            )
-            combined = summary.setdefault(
-                genus_key,
-                {
-                    "has_personal_points": False,
-                    "has_shared_points": False,
-                    "has_published_points": False,
-                    "has_reference_minmax": False,
-                },
-            )
-            if info.get("has_personal_points"):
-                combined["has_personal_points"] = True
-            if info.get("has_shared_points"):
-                combined["has_shared_points"] = True
-            if info.get("has_published_points"):
-                combined["has_published_points"] = True
-            if info.get("has_reference_minmax"):
-                combined["has_reference_minmax"] = True
-
-        self._ref_genus_summary_cache_key = cache_key
-        self._ref_genus_summary_cache = summary
-        return summary
-
-    def _suppress_ref_completer_updates(self):
-        if self._ref_completer_suppress:
-            return
-        self._ref_completer_suppress = True
-        try:
-            if hasattr(self, "_ref_genus_completer") and self._ref_genus_completer.popup():
-                self._ref_genus_completer.popup().hide()
-            if hasattr(self, "_ref_species_completer") and self._ref_species_completer.popup():
-                self._ref_species_completer.popup().hide()
-            if hasattr(self, "_ref_vernacular_completer") and self._ref_vernacular_completer.popup():
-                self._ref_vernacular_completer.popup().hide()
-        except Exception:
-            pass
-        QTimer.singleShot(0, lambda: (
-            self._ref_genus_completer.popup().hide() if hasattr(self, "_ref_genus_completer") and self._ref_genus_completer.popup() else None,
-            self._ref_species_completer.popup().hide() if hasattr(self, "_ref_species_completer") and self._ref_species_completer.popup() else None,
-            self._ref_vernacular_completer.popup().hide() if hasattr(self, "_ref_vernacular_completer") and self._ref_vernacular_completer.popup() else None
-        ))
-        QTimer.singleShot(0, lambda: setattr(self, "_ref_completer_suppress", False))
 
     def _format_observation_legend_label(self) -> str:
         if not self.active_observation_id:
@@ -9683,249 +9319,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         if date_value:
             return f"{name} {date_value}".strip()
         return name or self.tr("Observation")
-
-    def _update_ref_genus_suggestions(self, text, hide_on_exact: bool = False):
-        lookup = self._ensure_reference_taxon_lookup()
-        values = list(lookup.suggest_genera(text or "", limit=TAXON_COMPLETER_LIMIT)) if lookup else []
-        exclude_id = self.active_observation_id if hasattr(self, "active_observation_id") else None
-        genus_info_map = self._reference_genus_availability_summary(exclude_observation_id=exclude_id)
-        display_values = []
-        for genus in values:
-            info = genus_info_map.get(genus.strip().lower(), {})
-            emojis = self._reference_availability_emojis(info)
-            display_values.append(f"{genus} {' '.join(emojis)}".strip() if emojis else genus)
-        if hide_on_exact and text.strip():
-            text_lower = text.strip().lower()
-            if any(value.lower() == text_lower for value in values):
-                self._ref_genus_model.setStringList([])
-                if self._ref_genus_completer:
-                    self._ref_genus_completer.popup().hide()
-                return values
-        if self._ref_genus_model.stringList() != display_values:
-            self._ref_genus_model.setStringList(display_values)
-        return values
-
-    def _update_ref_species_suggestions(self, genus, text, hide_on_exact: bool = False):
-        genus = (genus or "").strip()
-        prefix = (text or "").strip()
-        lookup = self._ensure_reference_taxon_lookup()
-        values = [choice.species for choice in lookup.suggest_species(genus, prefix, limit=TAXON_COMPLETER_LIMIT)] if lookup else []
-        exclude_id = self.active_observation_id if hasattr(self, "active_observation_id") else None
-        if hasattr(self, "species_availability"):
-            cache = self.species_availability.get_cache()
-            for (g, s), _info in cache.items():
-                if g != genus:
-                    continue
-                if prefix and not s.lower().startswith(prefix.lower()):
-                    continue
-                values.append(s)
-        values = sorted({value for value in values if value})[:TAXON_COMPLETER_LIMIT]
-        if hide_on_exact and prefix:
-            prefix_lower = prefix.lower()
-            if any(value.lower() == prefix_lower for value in values):
-                self._ref_species_model.clear()
-                if self._ref_species_completer:
-                    self._ref_species_completer.popup().hide()
-                return values
-        self._ref_species_model.clear()
-        for species in values:
-            info = self._reference_species_info_case_insensitive(
-                genus,
-                species,
-                exclude_observation_id=exclude_id,
-            )
-            has_data = bool(
-                info.get("has_personal_points")
-                or info.get("has_shared_points")
-                or info.get("has_published_points")
-                or info.get("has_reference_minmax")
-            )
-            item = QStandardItem(species)
-            item.setData(species, Qt.UserRole)
-            item.setData(genus, Qt.UserRole + 1)
-            item.setData(species, Qt.UserRole + 2)
-            item.setData(bool(has_data), Qt.UserRole + 3)
-            self._ref_species_model.appendRow(item)
-        return values
-
-    def _on_ref_vernacular_selected(self, index: QModelIndex):
-        if self._ref_completer_suppress:
-            return
-        self._suppress_ref_completer_updates()
-        lookup = self._ensure_reference_taxon_lookup()
-        choice = self._ref_vernacular_choice_from_index(index)
-        if choice is None:
-            value = (self.ref_vernacular_input.text() or "").strip()
-            if not value or not lookup:
-                return
-            matches = lookup.resolve_common_name(value)
-            if len(matches) != 1:
-                return
-            choice = matches[0]
-        value = str(choice.common_name or self.ref_vernacular_input.text() or "").strip()
-        if not value:
-            return
-        self.ref_vernacular_input.blockSignals(True)
-        self.ref_vernacular_input.setText(value)
-        self.ref_vernacular_input.blockSignals(False)
-        current_genus = self._clean_ref_genus_text(self.ref_genus_input.text())
-        current_species = self._clean_ref_species_text(self.ref_species_input.text())
-        self._ref_taxon_fill_from_vernacular = True
-        try:
-            if choice.genus and not current_genus:
-                self.ref_genus_input.setText(choice.genus)
-            if choice.species and not current_species:
-                self.ref_species_input.setText(choice.species)
-        finally:
-            self._ref_taxon_fill_from_vernacular = False
-        genus = self._clean_ref_genus_text(self.ref_genus_input.text())
-        species_text = self._clean_ref_species_text(self.ref_species_input.text())
-        self._update_ref_genus_suggestions(genus)
-        species_suggestions = self._update_ref_species_suggestions(genus, species_text)
-        if not species_text:
-            self._set_ref_species_placeholder_from_suggestions(species_suggestions)
-        self._populate_reference_panel_sources()
-        self._update_reference_add_state()
-        if self._ref_vernacular_completer.popup():
-            self._ref_vernacular_completer.popup().hide()
-        self._ref_vernacular_model.clear()
-        self._ref_vernacular_completer.setCompletionPrefix("")
-
-    def _maybe_set_ref_vernacular_from_taxon(self):
-        if not hasattr(self, "ref_vernacular_input"):
-            return
-        lookup = self._ensure_reference_taxon_lookup()
-        if not lookup or not lookup.vernacular_db:
-            self._set_ref_vernacular_placeholder_from_suggestions([])
-            return
-        if self.ref_vernacular_input.text().strip():
-            return
-        genus = self._clean_ref_genus_text(self.ref_genus_input.text())
-        species = self._clean_ref_species_text(self.ref_species_input.text())
-        if not genus or not species:
-            self._set_ref_vernacular_placeholder_from_suggestions([])
-            return
-        suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species, limit=TAXON_COMPLETER_LIMIT)
-        choice = lookup.best_common_name_for_taxon(genus, species)
-        if choice and choice.common_name:
-            self.ref_vernacular_input.setText(choice.common_name)
-            self._set_ref_vernacular_placeholder_from_suggestions([])
-        else:
-            self._set_ref_vernacular_placeholder_from_suggestions(suggestions)
-
-    def _sync_ref_vernacular_from_taxon(self) -> None:
-        lookup = self._ensure_reference_taxon_lookup()
-        if not lookup or not lookup.vernacular_db:
-            self._set_ref_vernacular_placeholder_from_suggestions([])
-            return
-        genus = self._clean_ref_genus_text(self.ref_genus_input.text())
-        species = self._clean_ref_species_text(self.ref_species_input.text())
-        current = self.ref_vernacular_input.text().strip()
-        if not genus or not species:
-            if current:
-                self.ref_vernacular_input.blockSignals(True)
-                self.ref_vernacular_input.setText("")
-                self.ref_vernacular_input.blockSignals(False)
-            self._set_ref_vernacular_placeholder_from_suggestions([])
-            return
-
-        suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species, limit=TAXON_COMPLETER_LIMIT)
-        current_choice_matches = lookup.resolve_common_name(current) if current else []
-        current_matches = bool(
-            current
-            and len(current_choice_matches) == 1
-            and str(current_choice_matches[0].genus or "").strip().lower() == genus.lower()
-            and str(current_choice_matches[0].species or "").strip().lower() == species.lower()
-        )
-        if current_matches:
-            self._set_ref_vernacular_placeholder_from_suggestions([])
-            return
-
-        best_choice = lookup.best_common_name_for_taxon(genus, species) if genus and species else None
-        new_value = best_choice.common_name if best_choice and best_choice.common_name else ""
-        if current != new_value:
-            self.ref_vernacular_input.blockSignals(True)
-            self.ref_vernacular_input.setText(new_value)
-            self.ref_vernacular_input.blockSignals(False)
-        self._set_ref_vernacular_placeholder_from_suggestions([] if new_value else suggestions)
-
-    def _populate_reference_panel_sources(self, auto_select_single: bool = True):
-        if not hasattr(self, "ref_source_input"):
-            return
-        genus = self._clean_ref_genus_text(self.ref_genus_input.text())
-        species = self._clean_ref_species_text(self.ref_species_input.text())
-        current = self.ref_source_input.currentText().strip()
-        current_data = self.ref_source_input.currentData()
-        current_is_points = isinstance(current_data, dict) and current_data.get("kind") == "points"
-        allow_points = self._reference_allow_points()
-        values = self._reference_source_options(genus, species)
-        self.ref_source_input.blockSignals(True)
-        self.ref_source_input.clear()
-        self.ref_source_input.addItem("")
-        for label, data in values:
-            self.ref_source_input.addItem(label)
-            self.ref_source_input.setItemData(self.ref_source_input.count() - 1, data)
-        self.ref_source_input.blockSignals(False)
-        if current and (not current_is_points or allow_points):
-            idx = self.ref_source_input.findText(current)
-            if idx >= 0:
-                self.ref_source_input.setCurrentIndex(idx)
-            else:
-                self.ref_source_input.setCurrentText(current)
-        elif auto_select_single and len(values) == 1:
-            self.ref_source_input.setCurrentIndex(1)
-        else:
-            self.ref_source_input.setCurrentIndex(0)
-        self._update_reference_add_state()
-
-    def _reference_source_options(self, genus: str, species: str) -> list[tuple[str, dict]]:
-        options: list[tuple[str, dict]] = []
-        if not genus or not species:
-            return options
-        allow_points = self._reference_allow_points()
-        exclude_id = self.active_observation_id if hasattr(self, "active_observation_id") else None
-        info = self.species_availability.get_detailed_info(
-            genus,
-            species,
-            exclude_observation_id=exclude_id,
-        )
-        if allow_points:
-            if info.get("personal_count", 0) > 0:
-                options.append(
-                    (self.tr("Personal measurements"), {"kind": "points", "source_type": "personal"})
-                )
-            if info.get("shared_count", 0) > 0:
-                options.append(
-                    (self.tr("Shared measurements"), {"kind": "points", "source_type": "shared"})
-                )
-            if info.get("published_count", 0) > 0:
-                options.append(
-                    (self.tr("Published measurements"), {"kind": "points", "source_type": "published"})
-                )
-        personal_obs = ObservationDB.get_personal_observations_for_species(
-            genus, species, exclude_observation_id=exclude_id
-        )
-        for obs in personal_obs:
-            date_str = (obs.get("date") or "").split(" ")[0].split("T")[0]
-            author = (obs.get("author") or "").strip()
-            label = f"{self.tr('My data')} {date_str}".strip() if date_str else self.tr("My data")
-            options.append((
-                label,
-                {
-                    "kind": "observation",
-                    "observation_id": int(obs["id"]),
-                    "date": date_str,
-                    "author": author,
-                    "genus": genus,
-                    "species": species,
-                },
-            ))
-        sources = ReferenceDB.list_sources(genus or "", species or "", "")
-        for source in sources:
-            if not source:
-                continue
-            options.append((source, {"kind": "reference", "source": source}))
-        return options
 
     @staticmethod
     def _spore_points_for_observation(observation_id: int) -> list[dict]:
@@ -9973,222 +9366,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             "q_avg": float(np.mean(Q)),
         }
 
-    def _maybe_load_reference_panel_reference(self):
-        genus = self._clean_ref_genus_text(self.ref_genus_input.text())
-        species = self._clean_ref_species_text(self.ref_species_input.text())
-        if not genus or not species:
-            return
-        source = self.ref_source_input.currentText().strip() or None
-        data = self.ref_source_input.currentData()
-        if isinstance(data, dict) and data.get("kind") == "points":
-            if not self._reference_allow_points():
-                self.reference_values = {}
-                self._apply_reference_panel_values({})
-                return
-            source_type = data.get("source_type") or "personal"
-            exclude_id = self.active_observation_id if hasattr(self, "active_observation_id") else None
-            points = MeasurementDB.get_measurements_for_species(
-                genus,
-                species,
-                source_type=source_type,
-                measurement_category="spores",
-                exclude_observation_id=exclude_id,
-            )
-            if points:
-                stats = self._reference_stats_from_points(points)
-                ref = {
-                    **stats,
-                    "points": points,
-                    "points_label": self.ref_source_input.currentText().strip(),
-                    "source_kind": "points",
-                    "source_type": source_type,
-                    "genus": genus,
-                    "species": species,
-                }
-                self.reference_values = ref
-                self._apply_reference_panel_values(ref)
-                return
-            self.reference_values = {}
-            self._apply_reference_panel_values({})
-            return
-        if isinstance(data, dict) and data.get("kind") == "observation":
-            obs_id = data.get("observation_id")
-            if obs_id:
-                raw = MeasurementDB.get_measurements_for_observation(obs_id)
-                points = [
-                    m for m in raw
-                    if m.get("length_um") is not None
-                    and m.get("width_um") is not None
-                    and (m.get("measurement_type") in (None, "", "manual", "spore", "spores"))
-                ]
-                author = (data.get("author") or "").strip()
-                if not author:
-                    obs = ObservationDB.get_observation(obs_id)
-                    if obs:
-                        author = (obs.get("author") or "").strip()
-                if points:
-                    stats = self._reference_stats_from_points(points)
-                    ref = {
-                        **stats,
-                        "points": points,
-                        "source_kind": "observation",
-                        "observation_id": obs_id,
-                        "date": data.get("date") or "",
-                        "author": author,
-                        "genus": genus,
-                        "species": species,
-                    }
-                    self.reference_values = ref
-                    self._apply_reference_panel_values(ref)
-                    return
-            self.reference_values = {}
-            self._apply_reference_panel_values({})
-            return
-        if isinstance(data, dict) and data.get("kind") == "reference":
-            source = data.get("source") or source
-        ref = ReferenceDB.get_reference(genus, species, source)
-        if ref:
-            ref["source_kind"] = "reference"
-            self.reference_values = ref
-            self._apply_reference_panel_values(ref)
-
-    def _apply_reference_panel_values(self, ref_values):
-        if not hasattr(self, "ref_table"):
-            return
-        self.ref_table.blockSignals(True)
-        self.ref_table.clearContents()
-        self.ref_table.blockSignals(False)
-        if not ref_values:
-            return
-
-        def _set_cell(row, col, value):
-            if value is None:
-                return
-            item = QTableWidgetItem(f"{value:g}")
-            self.ref_table.setItem(row, col, item)
-
-        _set_cell(0, 0, ref_values.get("length_min"))
-        _set_cell(0, 1, ref_values.get("length_p05"))
-        _set_cell(0, 2, ref_values.get("length_p50"))
-        _set_cell(0, 3, ref_values.get("length_p95"))
-        _set_cell(0, 4, ref_values.get("length_max"))
-        _set_cell(1, 0, ref_values.get("width_min"))
-        _set_cell(1, 1, ref_values.get("width_p05"))
-        _set_cell(1, 2, ref_values.get("width_p50"))
-        _set_cell(1, 3, ref_values.get("width_p95"))
-        _set_cell(1, 4, ref_values.get("width_max"))
-        _set_cell(2, 0, ref_values.get("q_min"))
-        _set_cell(2, 2, ref_values.get("q_p50"))
-        _set_cell(2, 4, ref_values.get("q_max"))
-
-    def _collect_reference_ai_suggestions(self) -> list[dict]:
-        """Return AI suggestion entries for the active observation.
-
-        Merges Artsorkael + iNaturalist predictions across all images,
-        deduplicates by (source, identifier or scientific name), keeps the highest score,
-        and sorts descending by score.
-        """
-        obs_id = getattr(self, "active_observation_id", None)
-        obs_tab = getattr(self, "observations_tab", None)
-        if not obs_id or obs_tab is None:
-            return []
-        state = None
-        getter = getattr(obs_tab, "get_ai_suggestions_for_observation", None)
-        if callable(getter):
-            try:
-                state = getter(int(obs_id))
-            except Exception:
-                state = None
-        if not isinstance(state, dict):
-            observation = None
-            try:
-                observation = ObservationDB.get_observation(int(obs_id))
-            except Exception:
-                observation = None
-            loader = getattr(obs_tab, "_load_observation_ai_state", None)
-            if callable(loader) and observation is not None:
-                try:
-                    state = loader(observation)
-                except Exception:
-                    state = None
-        if not isinstance(state, dict):
-            return []
-
-        best_by_key: dict[tuple[str, str], dict] = {}
-        for source_key, preds_key in (("arts", "predictions"), ("inat", "inat_predictions")):
-            preds_by_image = state.get(preds_key)
-            if not isinstance(preds_by_image, dict):
-                continue
-            for _image_idx, preds in preds_by_image.items():
-                if not isinstance(preds, (list, tuple)):
-                    continue
-                for pred in preds:
-                    if not isinstance(pred, dict):
-                        continue
-                    entry = self._build_reference_ai_entry(pred, source_key)
-                    if entry is None:
-                        continue
-                    # Keyed by identifier when there is one: two concepts
-                    # sharing a name are different suggestions.
-                    dedupe_key = (
-                        source_key,
-                        entry["external_id"] or entry["scientific_name"].casefold(),
-                    )
-                    existing = best_by_key.get(dedupe_key)
-                    if existing is None or entry["score"] > existing["score"]:
-                        best_by_key[dedupe_key] = entry
-        entries = list(best_by_key.values())
-        entries.sort(key=lambda e: e.get("score", 0.0), reverse=True)
-        return entries
-
-    @staticmethod
-    def _ref_ai_prediction_score(pred: dict) -> float:
-        for key in ("probability", "combined_score", "vision_score", "score", "frequency_score"):
-            value = pred.get(key)
-            if value is None:
-                continue
-            try:
-                return float(value)
-            except (TypeError, ValueError):
-                continue
-        return 0.0
-
-    @staticmethod
-    def _ref_ai_scientific_from_taxon(taxon: dict) -> str:
-        for key in ("scientificName", "scientific_name"):
-            value = str(taxon.get(key) or "").strip()
-            if value:
-                return value
-        value = str(taxon.get("name") or "").strip()
-        parts = value.split()
-        if len(parts) >= 2 and parts[0][:1].isupper() and parts[1][:1].islower():
-            return value
-        return ""
-
-    @staticmethod
-    def _ref_ai_genus_species_from_taxon(taxon: dict) -> tuple[str, str]:
-        genus = (
-            taxon.get("genus")
-            or taxon.get("genusName")
-            or taxon.get("genus_name")
-            or ""
-        )
-        species = (
-            taxon.get("species")
-            or taxon.get("specificEpithet")
-            or taxon.get("specific_epithet")
-            or ""
-        )
-        genus = str(genus or "").strip()
-        species = str(species or "").strip()
-        if genus and species:
-            return genus, species
-        sci = MainWindow._ref_ai_scientific_from_taxon(taxon)
-        parts = sci.split()
-        if len(parts) >= 2:
-            return parts[0], parts[1]
-        return "", ""
-
     @staticmethod
     def _ref_ai_first_common_name(value) -> str:
         if isinstance(value, (list, tuple)):
@@ -10213,104 +9390,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             flags=re.IGNORECASE,
         )
         return (parts[0] if parts else text).strip()
-
-    def _ref_ai_vernacular_from_taxon(self, taxon: dict, source: str) -> str:
-        stored = SettingsDB.get_setting("vernacular_language", "no")
-        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
-        vernacular_names = taxon.get("vernacularNames") or taxon.get("vernacular_names") or {}
-        if isinstance(vernacular_names, dict) and lang:
-            direct = vernacular_names.get(lang)
-            text = self._ref_ai_first_common_name(direct)
-            if text:
-                return text
-            for code, value in vernacular_names.items():
-                if normalize_vernacular_language(str(code)) != lang:
-                    continue
-                text = self._ref_ai_first_common_name(value)
-                if text:
-                    return text
-        for key in ("preferred_common_name", "preferred_common_names", "common_name", "common_names"):
-            text = self._ref_ai_first_common_name(taxon.get(key))
-            if text:
-                return text
-        for key in ("vernacularName", "vernacular_name"):
-            text = self._ref_ai_first_common_name(taxon.get(key))
-            if text:
-                return text
-        if isinstance(vernacular_names, dict):
-            for value in vernacular_names.values():
-                text = self._ref_ai_first_common_name(value)
-                if text:
-                    return text
-        return ""
-
-    def _build_reference_ai_entry(self, pred: dict, source: str) -> dict | None:
-        try:
-            from .observations_tab import _normalize_ai_prediction_taxon
-        except Exception:
-            return None
-        try:
-            taxon = _normalize_ai_prediction_taxon(pred, source=source) or {}
-        except Exception:
-            taxon = dict(pred or {})
-        scientific = self._ref_ai_scientific_from_taxon(taxon)
-        genus, species = self._ref_ai_genus_species_from_taxon(taxon)
-        if not scientific and genus and species:
-            scientific = f"{genus} {species}"
-        if not scientific:
-            return None
-        vernacular = self._ref_ai_vernacular_from_taxon(taxon, source)
-        score = self._ref_ai_prediction_score(pred)
-        return {
-            "source": source,
-            "scientific_name": scientific,
-            "vernacular": vernacular,
-            "genus": genus,
-            "species": species,
-            "score": score,
-            # The provider's verbatim identifier (``NBIC:54701``), so the
-            # picker can resolve the concept instead of matching the name.
-            "external_id": ai_prediction_external_id(pred, taxon),
-        }
-
-    @staticmethod
-    def _format_ref_ai_display(entry: dict) -> str:
-        scientific = str(entry.get("scientific_name") or "").strip()
-        vernacular = str(entry.get("vernacular") or "").strip()
-        score = float(entry.get("score") or 0.0)
-        percent = int(round(score * 100)) if score <= 1.0 else int(round(score))
-        base = scientific
-        if vernacular and vernacular.casefold() != scientific.casefold():
-            base = f"{scientific} ({vernacular})"
-        return f"{base}  {percent}%"
-
-    def _refresh_reference_ai_suggestions(self) -> None:
-        combo = getattr(self, "ref_ai_suggestions_combo", None)
-        if combo is None:
-            return
-        entries = self._collect_reference_ai_suggestions()
-        header = (
-            self.tr("Select an AI suggestion...")
-            if entries
-            else self.tr("No AI suggestions")
-        )
-        combo.blockSignals(True)
-        try:
-            combo.clear()
-            combo.addItem(header, None)
-            first_item = combo.model().item(0) if hasattr(combo.model(), "item") else None
-            if first_item is not None:
-                first_item.setData("", AISuggestionItemDelegate.SOURCE_ROLE)
-            for entry in entries:
-                combo.addItem(self._format_ref_ai_display(entry), entry)
-                idx = combo.count() - 1
-                item = combo.model().item(idx) if hasattr(combo.model(), "item") else None
-                if item is not None:
-                    item.setData(entry.get("source", ""), AISuggestionItemDelegate.SOURCE_ROLE)
-            combo.setCurrentIndex(0)
-        finally:
-            combo.blockSignals(False)
-        combo.setEnabled(True)
 
     @staticmethod
     def _legacy_reference_requires_normalization(data: dict) -> bool:
@@ -10862,23 +9941,16 @@ class MainWindow(GeometryMixin, QMainWindow):
         )
         return saved if isinstance(saved, str) and saved else None
 
-    def _submit_reference_editor_result(self, editor, *, sync_panel: bool = False) -> bool:
+    def _submit_reference_editor_result(self, editor) -> bool:
         """Persist a validated editor's ``result_data()``.
 
         Normalized-first quick-add, then legacy write + normalized attach,
         falling back to a direct ``reference_series`` entry when no
-        normalized attach occurred. Shared by the legacy Quick-add dialog
-        (:meth:`_on_reference_panel_add_clicked`) and the Add-reference
-        picker's Enter-manually tab (:meth:`_on_add_reference_clicked`) and the
-        two-step create dialog (:meth:`_on_reference_picker_new_reference`) so
-        both submission entry points route through identical
-        persistence/dedup behavior. ``editor`` is duck-typed: either a
-        ``ReferenceAddDialog`` wrapper or the ``ReferenceEntryEditor`` it
-        wraps both satisfy the same accessor contract.
-
-        ``sync_panel`` additionally refreshes the legacy reference-panel
-        Source dropdown/state — only meaningful for the panel's own Quick-
-        add entry point, which owns those widgets.
+        normalized attach occurred. The two-step create dialog
+        (:meth:`_on_reference_picker_new_reference`) submits through here.
+        ``editor`` is duck-typed: either a ``ReferenceAddDialog`` wrapper or
+        the ``ReferenceEntryEditor`` it wraps both satisfy the same accessor
+        contract.
 
         Returns whether the submission actually stored or attached
         something. The Add-reference picker closes on that answer, so it
@@ -10941,14 +10013,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         legacy_id: int | None = None
         if data.get("source_kind") == "reference":
             legacy_id = ReferenceDB.set_reference(data)
-            self._refresh_reference_species_availability()
-            self._populate_reference_panel_sources()
-            if sync_panel and data.get("source"):
-                idx = self.ref_source_input.findText(data.get("source"))
-                if idx >= 0:
-                    self.ref_source_input.setCurrentIndex(idx)
-                else:
-                    self.ref_source_input.setCurrentText(data.get("source"))
         # Attempt to persist through the normalized library. For
         # legacy points/no-source paths this is effectively a no-op.
         normalized_attached = False
@@ -10969,9 +10033,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         # the translated series row for the attached set.
         if data.get("source_kind") == "existing_measurement_set":
             return bool(normalized_attached)
-        if sync_panel:
-            self.reference_values = data
-            self._apply_reference_panel_values(data)
         # Dual-plot dedup: when the normalized attach succeeded, the
         # attach helper already added a translated series row for the
         # measurement set. Suppress the legacy envelope's series row so
@@ -15045,13 +14106,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         if page is not None and self.tab_widget.currentIndex() == self.EDIT_PAGE:
             page.show_observation(getattr(self, "active_observation_id", None))
 
-    def refresh_after_observation_edits(self, observation_id, *, taxonomy_changed: bool = False) -> None:
+    def refresh_after_observation_edits(self, observation_id) -> None:
         """Rediger saved: refresh the table, list and header once, after it settles."""
-        QTimer.singleShot(
-            0, self, lambda: self._refresh_after_observation_edits(observation_id, taxonomy_changed)
-        )
+        QTimer.singleShot(0, self, lambda: self._refresh_after_observation_edits(observation_id))
 
-    def _refresh_after_observation_edits(self, observation_id, taxonomy_changed: bool) -> None:
+    def _refresh_after_observation_edits(self, observation_id) -> None:
         tab = self.observations_tab
         tab.refresh_observations()  # keeps the table's selection
         selected = tab.get_selected_observation()
@@ -15059,12 +14118,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         # Re-activate only the observation still shown: Rediger may have moved
         # on to another (a refresh must never switch it back).
         if selected and int(selected[0]) == int(observation_id or 0) == active:
-            tab._refresh_active_observation_after_edit(refresh_reference_species_availability=taxonomy_changed)
-        elif taxonomy_changed and hasattr(self, "_refresh_reference_species_availability"):
-            try:
-                self._refresh_reference_species_availability(force_refresh=True)
-            except Exception:
-                pass
+            tab._refresh_active_observation_after_edit()
 
     def _on_edit_page_images_requested(self, observation_id: int, path: str) -> None:
         """Edit images in Rediger: Bilder › Files and SD card, on that image."""
@@ -15323,7 +14377,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         if index == 2:
             self.apply_gallery_settings()
             self.refresh_gallery_filter_options()
-            self._refresh_reference_species_availability()
             self.schedule_gallery_refresh()
 
     def schedule_gallery_refresh(self):
@@ -18411,21 +17464,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         }
 
     def _active_reference_data_for_stats(self) -> dict | None:
-        genus = self._clean_ref_genus_text(self.ref_genus_input.text()) if hasattr(self, "ref_genus_input") else ""
-        species = self._clean_ref_species_text(self.ref_species_input.text()) if hasattr(self, "ref_species_input") else ""
-        if genus and species and hasattr(self, "ref_source_input"):
-            selected_source = self.ref_source_input.currentText().strip() or None
-            selected_data = self.ref_source_input.currentData()
-            if isinstance(selected_data, dict):
-                selected_kind = (selected_data.get("kind") or "").strip().lower()
-                if selected_kind == "reference":
-                    selected_source = selected_data.get("source") or selected_source
-            if selected_source:
-                selected_reference = ReferenceDB.get_reference(genus, species, selected_source)
-                if isinstance(selected_reference, dict) and self._parmasto_reference_metrics(selected_reference):
-                    selected_reference["source_kind"] = "reference"
-                    return selected_reference
-
         current = self.reference_values if isinstance(self.reference_values, dict) else None
         if current and self._parmasto_reference_metrics(current):
             return current
@@ -19168,27 +18206,6 @@ class MainWindow(GeometryMixin, QMainWindow):
     def apply_vernacular_language_change(self):
         if hasattr(self, "observations_tab"):
             self.observations_tab.apply_vernacular_language_change()
-        if hasattr(self, "ref_vernacular_label"):
-            self.ref_vernacular_label.setText(self._reference_vernacular_label())
-        if hasattr(self, "ref_vernacular_input"):
-            stored_vern = SettingsDB.get_setting("vernacular_language", "no")
-            lang = resolve_available_vernacular_language(stored_vern) or normalize_vernacular_language(stored_vern)
-            db_path = resolve_vernacular_db_path(lang)
-            if db_path:
-                self.ref_vernacular_db = VernacularDB(db_path, language_code=lang)
-            else:
-                self.ref_vernacular_db = None
-            self._ensure_reference_taxon_lookup()
-            if not self.ref_vernacular_input.text().strip():
-                self._set_ref_vernacular_placeholder_from_suggestions([])
-                self._update_ref_vernacular_suggestions_for_taxon()
-        if hasattr(self, "ref_species_input"):
-            genus = self._clean_ref_genus_text(self.ref_genus_input.text()) if hasattr(self, "ref_genus_input") else ""
-            if genus and not self._clean_ref_species_text(self.ref_species_input.text()):
-                species_suggestions = self._update_ref_species_suggestions(genus, "")
-                self._set_ref_species_placeholder_from_suggestions(species_suggestions)
-            elif not self._clean_ref_species_text(self.ref_species_input.text()):
-                self._set_ref_species_placeholder_from_suggestions([])
         for widget in QApplication.topLevelWidgets():
             if widget is self:
                 continue
@@ -19240,8 +18257,6 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def on_gallery_thumbnail_setting_changed(self):
         """Persist gallery settings and refresh thumbnails."""
-        if hasattr(self, "ref_source_input"):
-            self._populate_reference_panel_sources()
         sender = self.sender()
         hint = self.tr("Refreshing spore plot and gallery...")
         if sender is getattr(self, "gallery_sort_combo", None):
@@ -19314,16 +18329,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Persist stats-view settings and refresh the text preview."""
         self._save_gallery_settings()
         self._update_gallery_stats_preview()
-
-    def _collect_reference_panel_state(self) -> dict:
-        if not hasattr(self, "ref_genus_input"):
-            return {}
-        return {
-            "vernacular": self.ref_vernacular_input.text().strip() if hasattr(self, "ref_vernacular_input") else "",
-            "genus": self._clean_ref_genus_text(self.ref_genus_input.text()) if hasattr(self, "ref_genus_input") else "",
-            "species": self._clean_ref_species_text(self.ref_species_input.text()) if hasattr(self, "ref_species_input") else "",
-            "source": self.ref_source_input.currentText().strip() if hasattr(self, "ref_source_input") else "",
-        }
 
     def _serialize_reference_data_for_settings(self, data: dict | None) -> dict:
         if not isinstance(data, dict) or not data:
@@ -19438,33 +18443,6 @@ class MainWindow(GeometryMixin, QMainWindow):
     def _apply_saved_reference_state(self, settings: dict) -> None:
         if not isinstance(settings, dict):
             return
-        panel_state = settings.get("reference_panel")
-        if isinstance(panel_state, dict) and hasattr(self, "ref_genus_input"):
-            self.ref_vernacular_input.blockSignals(True)
-            self.ref_genus_input.blockSignals(True)
-            self.ref_species_input.blockSignals(True)
-            self.ref_source_input.blockSignals(True)
-            self.ref_vernacular_input.setText((panel_state.get("vernacular") or "").strip())
-            self.ref_genus_input.setText((panel_state.get("genus") or "").strip())
-            self.ref_species_input.setText((panel_state.get("species") or "").strip())
-            self.ref_source_input.blockSignals(False)
-            self.ref_species_input.blockSignals(False)
-            self.ref_genus_input.blockSignals(False)
-            self.ref_vernacular_input.blockSignals(False)
-            self._populate_reference_panel_sources()
-            source = (panel_state.get("source") or "").strip()
-            if source:
-                idx = self.ref_source_input.findText(source)
-                if idx >= 0:
-                    self.ref_source_input.setCurrentIndex(idx)
-                else:
-                    self.ref_source_input.setCurrentText(source)
-            if self.active_observation_id:
-                obs = ObservationDB.get_observation(self.active_observation_id)
-                obs_genus = self._clean_ref_genus_text(obs.get("genus")) if obs else ""
-                obs_species = self._clean_ref_species_text(obs.get("species")) if obs else ""
-                self._set_reference_panel_loaded_taxon(self.active_observation_id, obs_genus, obs_species)
-
         # Normalized library attachments are the authoritative durable
         # source for observation-level references; the gallery-settings
         # blob intentionally does NOT persist them (see
@@ -19526,8 +18504,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.reference_values = dict(last_entry.get("data", {}))
             merged = restored_series + preserved_normalized
             self._set_reference_series(merged)
-            self._apply_reference_panel_values(self.reference_values)
-            self._update_reference_add_state()
             return
 
         if has_saved_series:
@@ -19537,20 +18513,16 @@ class MainWindow(GeometryMixin, QMainWindow):
             # durable table and must survive tab switches).
             self.reference_values = {}
             self._set_reference_series(list(preserved_normalized))
-            self._update_reference_add_state()
             return
 
         restored_values = self._restore_reference_data_from_settings(settings.get("reference_values"))
         if isinstance(restored_values, dict) and restored_values:
             self.reference_values = restored_values
             self._set_reference_series([restored_values] + preserved_normalized)
-            self._apply_reference_panel_values(restored_values)
-            self._update_reference_add_state()
         elif preserved_normalized:
             # No legacy state to restore, but we still have normalized
             # attachments to keep visible.
             self._set_reference_series(list(preserved_normalized))
-            self._update_reference_add_state()
 
     def _gallery_settings_key(self):
         if not self.active_observation_id:
@@ -19636,7 +18608,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             # may still carry the key; the restore path drops it.
             "gallery_sort": self.gallery_sort_combo.currentData() if hasattr(self, "gallery_sort_combo") else "",
             "include_details": bool(self.gallery_include_details_checkbox.isChecked()) if hasattr(self, "gallery_include_details_checkbox") else False,
-            "reference_panel": self._collect_reference_panel_state(),
             "reference_values": self._serialize_reference_data_for_settings(self.reference_values),
             "reference_series": serialized_reference_series,
             "reference_use_overrides": reference_use_overrides,
@@ -20277,12 +19248,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             raise RuntimeError(
                 "Restore cannot continue because background work is still running."
             )
-        for attribute in ("_reference_taxon_lookup", "ref_vernacular_db"):
-            value = getattr(self, attribute, None)
-            close = getattr(value, "close", None)
-            if callable(close):
-                close()
-            setattr(self, attribute, None)
 
     def _reopen_database_state_after_restore(self) -> None:
         """Reinitialize schema-backed views after either replacement or rollback."""
@@ -20768,113 +19733,21 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.update_statistics()
         return True
 
-    def _refresh_reference_species_availability(self, force_refresh: bool = True) -> None:
-        if not hasattr(self, "species_availability"):
-            return
-        self.species_availability.get_cache(force_refresh=force_refresh)
-        if force_refresh:
-            self._ref_genus_summary_cache_key = None
-            self._ref_genus_summary_cache = {}
-        if hasattr(self, "ref_genus_input") and hasattr(self, "ref_species_input"):
-            genus = self._clean_ref_genus_text(self.ref_genus_input.text())
-            species_text = self.ref_species_input.text().strip()
-            if genus:
-                self._update_ref_species_suggestions(genus, species_text)
-
-    def _reference_panel_current_taxon(self) -> tuple[str, str]:
-        genus = self._clean_ref_genus_text(self.ref_genus_input.text()) if hasattr(self, "ref_genus_input") else ""
-        species = self._clean_ref_species_text(self.ref_species_input.text()) if hasattr(self, "ref_species_input") else ""
-        return genus, species
-
-    def _set_reference_panel_loaded_taxon(
-        self,
-        observation_id: int | None,
-        genus: str | None,
-        species: str | None,
-    ) -> None:
-        self._reference_panel_loaded_observation_id = observation_id
-        if genus and species:
-            self._reference_panel_loaded_taxon = (genus, species)
-        else:
-            self._reference_panel_loaded_taxon = None
-
     def load_reference_values(self):
         """Load reference values for the active observation."""
         self.reference_values = {}
-        self._refresh_reference_ai_suggestions()
         if not self.active_observation_id:
-            self._set_reference_panel_loaded_taxon(None, None, None)
             return
         obs = ObservationDB.get_observation(self.active_observation_id)
         if not obs:
-            self._set_reference_panel_loaded_taxon(None, None, None)
             return
-        obs_genus = self._clean_ref_genus_text(obs.get("genus"))
-        obs_species = self._clean_ref_species_text(obs.get("species"))
-        current_genus, current_species = self._reference_panel_current_taxon()
-        same_observation = self._reference_panel_loaded_observation_id == self.active_observation_id
-        loaded_taxon = self._reference_panel_loaded_taxon or ()
-        preserve_current_taxon = bool(
-            same_observation
-            and current_genus
-            and current_species
-            and (not loaded_taxon or (current_genus, current_species) != tuple(loaded_taxon))
-        )
-        if preserve_current_taxon:
-            genus, species = current_genus, current_species
-        else:
-            genus, species = obs_genus, obs_species
-            self._set_reference_panel_loaded_taxon(self.active_observation_id, genus, species)
+        genus = self._clean_ref_genus_text(obs.get("genus"))
+        species = self._clean_ref_species_text(obs.get("species"))
         if not (genus and species):
-            if hasattr(self, "ref_genus_input"):
-                self.ref_genus_input.blockSignals(True)
-                self.ref_genus_input.setText("")
-                self.ref_genus_input.blockSignals(False)
-            if hasattr(self, "ref_species_input"):
-                self.ref_species_input.blockSignals(True)
-                self.ref_species_input.setText("")
-                self.ref_species_input.blockSignals(False)
-            if hasattr(self, "ref_source_input"):
-                self.ref_source_input.blockSignals(True)
-                self.ref_source_input.setCurrentText("")
-                self.ref_source_input.blockSignals(False)
-            if hasattr(self, "ref_vernacular_input"):
-                self.ref_vernacular_input.blockSignals(True)
-                self.ref_vernacular_input.setText("")
-                self.ref_vernacular_input.blockSignals(False)
-            self._apply_reference_panel_values({})
             return
-        if not preserve_current_taxon:
-            if hasattr(self, "ref_source_input"):
-                self.ref_source_input.blockSignals(True)
-                self.ref_source_input.setCurrentText("")
-                self.ref_source_input.blockSignals(False)
-            if hasattr(self, "ref_vernacular_input"):
-                self.ref_vernacular_input.blockSignals(True)
-                self.ref_vernacular_input.setText("")
-                self.ref_vernacular_input.blockSignals(False)
         ref = ReferenceDB.get_reference(genus, species)
         if ref:
             self.reference_values = ref
-        if hasattr(self, "ref_genus_input"):
-            self.ref_genus_input.blockSignals(True)
-            self.ref_genus_input.setText(genus or "")
-            self.ref_genus_input.blockSignals(False)
-        if hasattr(self, "ref_species_input"):
-            self.ref_species_input.blockSignals(True)
-            self.ref_species_input.setText(species or "")
-            self.ref_species_input.blockSignals(False)
-        if hasattr(self, "ref_source_input"):
-            self._populate_reference_panel_sources()
-            source = self.reference_values.get("source") if self.reference_values else None
-            if source:
-                idx = self.ref_source_input.findText(source)
-                if idx >= 0:
-                    self.ref_source_input.setCurrentIndex(idx)
-                else:
-                    self.ref_source_input.setCurrentText(source)
-        self._apply_reference_panel_values(self.reference_values)
-        self._maybe_set_ref_vernacular_from_taxon()
         if self.reference_values:
             self._set_reference_series([self.reference_values])
         else:
@@ -20913,7 +19786,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.active_observation_id = None
         self.active_observation_name = None
         self._clear_normalized_reference_entries()
-        self._set_reference_panel_loaded_taxon(None, None, None)
         if hasattr(self, "live_lab_tab") and self.live_lab_tab is not None:
             try:
                 self.live_lab_tab.set_target_observation(None)
@@ -20962,7 +19834,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         observation = ObservationDB.get_observation(observation_id)
         self.auto_threshold = observation.get("auto_threshold") if observation else None
         self._update_spore_sharing_ui(observation_id)
-        self._set_reference_panel_loaded_taxon(None, None, None)
         self.load_reference_values()
         self._compute_observation_max_radius(observation_id)
         self.apply_gallery_settings()

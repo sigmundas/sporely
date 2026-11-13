@@ -1,93 +1,14 @@
-"""Tabbed "Add reference" picker dialog.
+"""Helpers for the reference drawer's Library and My-observations lists.
 
-Consolidates the reference-add entry points into one dialog: source tabs
-(Library / Community / My observations / Enter manually) sharing a single
-:class:`ReferencePreviewPane`, docked beside the tab widget in a top-level
-splitter so every tab's selection populates the same preview instance
-instead of each tab owning its own. All four tabs are wired.
-
-The Community tab embeds :class:`~ui.cloud_reference_dialog.CommunityResultsPane`,
-which relocates ``CloudReferenceDialog``'s browse/select flow (its search
-workers and payload builders, reused rather than duplicated) into the
-picker. Unlike that legacy dialog, genus/species are fixed by the picker's
-working taxon, so results load automatically instead of behind a search
-button, and the dialog's two footer buttons ("Import summary as reference" /
-"Use raw points for plot") become a radio the tab exposes instead
-("Range summary" / "Raw points (n=X)"). A cloud entry has no measurement-set
-or observation identity, so "Add to plot" routes through a dedicated
-``cloud_attach_callback(dict)`` rather than the string-identifier
-``attach_callback`` the other tabs use, straight to the same
-``_add_reference_series_entry`` path the legacy dialog already calls
-directly -- no new persistence. ``CloudReferenceDialog`` itself stays
-reachable for now; stage 6 removes that dead entry point.
-
-The Library tab does not fork any add/attach logic: selecting a result and
-clicking "Add to plot" calls the ``attach_callback`` supplied by the host
-(MainWindow), which is expected to be
-``MainWindow._attach_normalized_reference_to_active_observation`` — the
-exact path the (soon to be retired) ``ReferenceLibraryAttachDialog`` uses.
-Color assignment is not touched here: it happens automatically, keyed by
-list position, inside ``MainWindow._resolved_reference_series_entries``.
-
-Its list carries two states that must not be collapsed into one. The
-*selected* row is what the shared preview shows; the *checked* rows are what
-the footer will add to the plot. Rows are grouped by relevance to the picker's
-taxon (``group_library_candidates``) and rendered by
-:class:`~ui.library_source_row.LibrarySourceRow`. Each checked row carries its
-own role selector (Compared / Supports identification / Contradicts, default
-Compared) -- the role of the *use* that row would create, not of the
-publication -- and the footer offers a "Set all" shortcut once two or more
-rows are queued. Adding several sources routes through
-``library_attach_callback(measurement_set_id, role) -> (status, reason)``,
-called once per checked row in the order the rows were checked. ``status`` is
-``"attached"``, ``"already_attached"``, ``"failed"`` or
-``"observation_changed"`` (a failure a retry here cannot fix); succeeded items stay
-attached even when a later one fails (no rollback), the dialog lists every
-item's outcome, unchecks the ones that landed and keeps the failed ones
-checked so the user can retry them, and closes only when nothing failed.
-
-The My observations tab lists previous observations of the working taxon —
-the same query (``ObservationDB.get_personal_observations_for_species``)
-that populates the legacy Source dropdown's "My data <date>" entries — and
-routes "Add to plot" through the same ``attach_callback``, but with an
-``"observation:<id>"``-prefixed identifier: a personal observation has no
-normalized measurement-set identity, so the host dispatches that prefix to
-the legacy ``source_kind == "observation"`` comparison-series path instead
-of the measurement-set attach path.
-
-The Enter-manually tab embeds a
-:class:`~ui.reference_entry_editor.ReferenceEntryEditor` — the same paste/
-parse table, publication picker, and Data section the legacy Quick-add
-dialog uses, without its modal Save/Cancel chrome — sharing the shared
-:class:`ReferencePreviewPane` and this dialog's "Add to plot"/Cancel footer
-instead. "Add to plot" routes through a dedicated
-``manual_attach_callback(editor) -> bool`` rather than the string-identifier
-``attach_callback``, since a manual submission can fail validation or an
-observation-drift check *after* the click and must leave the picker open
-rather than claim success — the callback's return value tells this dialog
-whether to close. Changing the "Compare against" target rebinds the
-editor's publication/treatment identity (see
-:meth:`ReferenceEntryEditor.set_comparison_target`) without discarding
-already-entered measurement values, and to the submission path,
-``ReferenceEntryEditor`` is duck-typed identically to the legacy dialog's
-own wrapper, so ``MainWindow`` reuses one shared post-validation
-persistence routine for both.
-
-That tab also owns the footer's second action, "Save to library"
-(``manual_save_callback(editor) -> str | None``), which is hidden on the
-other three tabs — their sources are already stored somewhere. Saving is
-not plotting: it writes the library hierarchy, leaves the picker open and
-the plot untouched, and returns the new measurement set's id. While that id
-is held, "Add to plot" attaches *that* set through
-``attach_saved_set_callback(measurement_set_id) -> bool`` rather than
-submitting the editor a second time, which would store the same typed data
-twice. Editing the form afterwards drops the id, because the saved set no
-longer describes what is on screen.
-
-``confirm_attach_callback(roles) -> bool`` is asked once, with the role of
-every queued Library source, before a Library add attaches anything; the
-host uses it for the notice shown when the observation is already public.
-False attaches nothing and leaves the selection as it was.
+What remains of the retired "Add reference" picker dialog (removed in
+redesign stage 10a2): the Library list's filtering, relevance grouping,
+group headings and badges (``filter_library_candidates``,
+``group_library_candidates``, ``library_group_heading``,
+``relevance_badge_text``, ``semantic_badge_text``), the My-observations
+candidates (``default_my_observation_candidates``), and ``EditorScrollArea``.
+The drawer (:mod:`ui.reference_picker_drawer`), the reference create dialog
+and ``MainWindow`` use them; the translation context stays
+``AddReferenceDialog`` so existing translations keep working.
 """
 from __future__ import annotations
 

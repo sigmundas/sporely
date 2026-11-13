@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -331,20 +330,6 @@ def test_conflicting_identifiers_offer_nothing():
                                       ai_entries=entries) is None
     assert observation_identity_offer(_Lookup(), row, genus="Flammulina", species="velutipes",
                                       ai_entries=entries[:1]).sporely_taxon_id == 111
-
-
-def test_reference_ai_entries_carry_the_provider_identifier():
-    from ui.main_window import MainWindow
-
-    host = SimpleNamespace(
-        _ref_ai_scientific_from_taxon=MainWindow._ref_ai_scientific_from_taxon,
-        _ref_ai_genus_species_from_taxon=MainWindow._ref_ai_genus_species_from_taxon,
-        _ref_ai_prediction_score=MainWindow._ref_ai_prediction_score,
-        _ref_ai_vernacular_from_taxon=lambda taxon, source: "vintersopp",
-    )
-    entry = MainWindow._build_reference_ai_entry(host, _android_synced_prediction(), "arts")
-    assert entry["external_id"] == "NBIC:54701"
-    assert (entry["genus"], entry["species"]) == ("Flammulina", "velutipes")
 
 
 # ── The reference picker ─────────────────────────────────────────────────────

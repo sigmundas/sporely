@@ -6,7 +6,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QLineEdit, QTableWidget
+from PySide6.QtWidgets import QApplication, QComboBox
 
 import ui.main_window as main_window
 from ui.observations_tab import ObservationsTab
@@ -20,35 +20,6 @@ def qapp():
     return app
 
 
-class _EmptySpeciesAvailability:
-    DATA_POINT_EMOJI = "🔹"
-    MINMAX_EMOJI = "📏"
-
-    def get_cache(self, force_refresh: bool = False):
-        return {}
-
-    def get_detailed_info(
-        self,
-        genus: str,
-        species: str,
-        exclude_observation_id: int | None = None,
-    ) -> dict:
-        return {}
-
-    def get_species_display_name(
-        self,
-        genus: str,
-        species: str,
-        exclude_observation_id: int | None = None,
-    ) -> tuple[str, bool]:
-        return (f"{genus} {species}".strip(), False)
-
-
-class _NoVernacularLookup:
-    vernacular_db = None
-    language_code = "en"
-
-
 def _build_minimal_window(monkeypatch) -> main_window.MainWindow:
     monkeypatch.setattr(
         main_window.SettingsDB,
@@ -60,28 +31,15 @@ def _build_minimal_window(monkeypatch) -> main_window.MainWindow:
     monkeypatch.setattr(main_window.MainWindow, "load_default_objective", lambda self: None)
     monkeypatch.setattr(main_window.MainWindow, "_restore_geometry", lambda self: None)
     window = main_window.MainWindow()
-    window.ref_vernacular_label = QLabel()
-    window.ref_vernacular_input = QLineEdit()
-    window.ref_genus_input = QLineEdit()
-    window.ref_species_input = QLineEdit()
-    window.ref_source_input = QComboBox()
-    window.ref_source_input.setEditable(True)
-    window.ref_source_input.setInsertPolicy(QComboBox.NoInsert)
-    window.ref_source_input.addItem("")
-    window.ref_source_input.setCurrentIndex(0)
-    window.ref_table = QTableWidget(3, 5)
     window.reference_values = {}
     window.reference_series = []
-    window.species_availability = _EmptySpeciesAvailability()
-    window._reference_taxon_lookup = _NoVernacularLookup()
-    window._update_reference_add_state = lambda: None
     window.update_graph_plots_only = lambda: None
     window.active_observation_id = 1
     return window
 
 
-def test_rediger_taxon_change_refreshes_reference_cache_then_active_state(qapp) -> None:
-    """A taxon saved in Rediger (stage 9g2) refreshes the reference cache, then the active state.
+def test_rediger_save_refreshes_the_table_then_the_active_state(qapp) -> None:
+    """A save in Rediger (stage 9g2) refreshes the table, then the active observation.
 
     Rediger replaced the Edit observation dialog (stage 9g4c), whose save did
     the same: ``refresh_after_observation_edits`` → ``_refresh_after_observation_edits``
@@ -98,29 +56,24 @@ def test_rediger_taxon_change_refreshes_reference_cache_then_active_state(qapp) 
         active_observation_id = 1
         observations_tab = tab
 
-        def _refresh_reference_species_availability(self, force_refresh: bool = False):
-            call_order.append(("cache_refresh", force_refresh))
-
     host = _Host()
     tab.window = lambda: host
 
-    main_window.MainWindow._refresh_after_observation_edits(host, 1, True)
-    assert call_order == ["table", ("cache_refresh", True), ("active", False)]
+    main_window.MainWindow._refresh_after_observation_edits(host, 1)
+    assert call_order == ["table", ("active", False)]
 
-    # Another observation shown meanwhile: no switch back, the cache still refreshes.
+    # Another observation shown meanwhile: no switch back.
     call_order.clear()
     host.active_observation_id = 2
-    main_window.MainWindow._refresh_after_observation_edits(host, 1, True)
-    assert call_order == ["table", ("cache_refresh", True)]
+    main_window.MainWindow._refresh_after_observation_edits(host, 1)
+    assert call_order == ["table"]
 
 
-def test_load_reference_values_replaces_stale_fields_when_new_taxon_has_no_reference(
+def test_load_reference_values_clears_the_old_reference_when_the_new_taxon_has_none(
     monkeypatch,
     qapp,
 ) -> None:
     window = _build_minimal_window(monkeypatch)
-    window.ref_vernacular_input.setText("Old common name")
-    window.ref_source_input.setCurrentText("Old source")
     window.reference_values = {
         "genus": "Tricholoma",
         "species": "inamoenum",
@@ -129,7 +82,6 @@ def test_load_reference_values_replaces_stale_fields_when_new_taxon_has_no_refer
         "width_min": 3.0,
     }
     window.reference_series = [dict(window.reference_values)]
-    window._apply_reference_panel_values(window.reference_values)
 
     monkeypatch.setattr(
         main_window.ObservationDB,
@@ -146,13 +98,8 @@ def test_load_reference_values_replaces_stale_fields_when_new_taxon_has_no_refer
 
     window.load_reference_values()
 
-    assert window.ref_genus_input.text() == "Entoloma"
-    assert window.ref_species_input.text() == "sericeum"
-    assert window.ref_vernacular_input.text() == ""
-    assert window.ref_source_input.currentText() == ""
     assert window.reference_values == {}
     assert window.reference_series == []
-    assert window.ref_table.item(0, 0) is None
 
 
 def test_load_reference_values_reloads_new_reference_data_for_changed_taxon(
@@ -160,8 +107,6 @@ def test_load_reference_values_reloads_new_reference_data_for_changed_taxon(
     qapp,
 ) -> None:
     window = _build_minimal_window(monkeypatch)
-    window.ref_vernacular_input.setText("Old common name")
-    window.ref_source_input.setCurrentText("Old source")
     window.reference_values = {
         "genus": "Tricholoma",
         "species": "inamoenum",
@@ -170,7 +115,6 @@ def test_load_reference_values_reloads_new_reference_data_for_changed_taxon(
         "width_min": 3.0,
     }
     window.reference_series = [dict(window.reference_values)]
-    window._apply_reference_panel_values(window.reference_values)
 
     new_reference = {
         "genus": "Entoloma",
@@ -196,45 +140,10 @@ def test_load_reference_values_reloads_new_reference_data_for_changed_taxon(
 
     window.load_reference_values()
 
-    assert window.ref_genus_input.text() == "Entoloma"
-    assert window.ref_species_input.text() == "sericeum"
-    assert window.ref_source_input.currentText() == "Paper A"
     assert window.reference_values["genus"] == "Entoloma"
     assert window.reference_values["species"] == "sericeum"
+    assert window.reference_values["source"] == "Paper A"
     assert window.reference_series and window.reference_series[0]["data"]["genus"] == "Entoloma"
-    assert window.ref_table.item(0, 0).text() == "3.1"
-
-
-def test_load_reference_values_preserves_manual_taxon_for_same_observation(
-    monkeypatch,
-    qapp,
-) -> None:
-    window = _build_minimal_window(monkeypatch)
-    window.ref_genus_input.setText("Entoloma")
-    window.ref_species_input.setText("other")
-    window._reference_panel_loaded_observation_id = 1
-    window._reference_panel_loaded_taxon = ("Entoloma", "sericeum")
-
-    monkeypatch.setattr(
-        main_window.ObservationDB,
-        "get_observation",
-        lambda observation_id: {
-            "id": observation_id,
-            "genus": "Entoloma",
-            "species": "sericeum",
-        },
-    )
-    monkeypatch.setattr(main_window.ReferenceDB, "get_reference", lambda *args, **kwargs: None)
-    monkeypatch.setattr(main_window.ObservationDB, "get_personal_observations_for_species", lambda *args, **kwargs: [])
-    monkeypatch.setattr(main_window.ReferenceDB, "list_sources", lambda *args, **kwargs: [])
-
-    window.load_reference_values()
-
-    assert window.ref_genus_input.text() == "Entoloma"
-    assert window.ref_species_input.text() == "other"
-    assert window.reference_values == {}
-    assert window._reference_panel_loaded_observation_id == 1
-    assert window._reference_panel_loaded_taxon == ("Entoloma", "sericeum")
 
 
 def test_removing_last_reference_persists_and_restores_empty_series(

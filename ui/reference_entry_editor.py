@@ -40,7 +40,6 @@ from __future__ import annotations
 import json
 import math
 import re
-from dataclasses import asdict, replace as dc_replace
 
 from PySide6.QtCore import (
     QCoreApplication,
@@ -92,7 +91,6 @@ from references.measurement_content import (
     MeasurementDetails,
     ScalarStatistic,
     clear_pair,
-    content_from_row,
     encode_measurement_details,
     legacy_projection_losses,
     swap_length_width as swap_content_length_width,
@@ -100,15 +98,6 @@ from references.measurement_content import (
 from references.measurement_content_gates import (
     blocking_projection_losses,
     enhanced_editing_enabled,
-)
-from references.reference_comparison import (
-    build_domains,
-    comparison_view,
-)
-from references.reference_display import (
-    display_from_content,
-    display_from_points,
-    display_from_row,
 )
 from references.reference_plotting import range_payload_is_plottable
 
@@ -278,8 +267,6 @@ class ReferenceEntryEditor(QWidget):
         sporely_taxon_id: int | None = None,
         observation_taxon_id: int | None = None,
         require_explicit_publication_assignment: bool = False,
-        preview_pane=None,
-        comparison_view_factory=None,
         staged: bool = False,
     ):
         super().__init__(parent)
@@ -298,16 +285,6 @@ class ReferenceEntryEditor(QWidget):
             require_explicit_publication_assignment
         )
         self._default_hint_text = QCoreApplication.translate("ReferenceAddDialog", "Paste from Excel/csv or type values")
-        self._preview_pane = preview_pane
-        # How this editor's current entry becomes the shared preview's
-        # comparison model. The picker hands in its own factory so manual
-        # entry is drawn against the *same* frozen axes and the same
-        # observation baseline as the Library and Community tabs; a
-        # standalone editor (Quick add, tests, review scenarios) falls back
-        # to its own once-derived default axes rather than growing a second,
-        # divergent rendering path that nothing exercises.
-        self._comparison_view_factory = comparison_view_factory
-        self._fallback_domains = build_domains()
         # Normalized-library context: the observation this editor's result
         # will (if submitted) be attached to. ``_sporely_taxon_id`` is the
         # CURRENT comparison target's taxon id (may change via
@@ -609,7 +586,7 @@ class ReferenceEntryEditor(QWidget):
             self,
         )
         self.spore_table = SporeDataTable()
-        self.spore_table.itemChanged.connect(lambda *_: self._refresh_preview())
+        self.spore_table.itemChanged.connect(lambda *_: self._emit_data_changed())
         self._spore_section.body_layout().addWidget(self.spore_table)
         measure_column.addWidget(self._spore_section)
 
@@ -643,7 +620,7 @@ class ReferenceEntryEditor(QWidget):
             line_edit = QLineEdit()
             line_edit.setPlaceholderText(description)
             line_edit.setToolTip(description)
-            line_edit.textChanged.connect(lambda *_: self._refresh_preview())
+            line_edit.textChanged.connect(lambda *_: self._emit_data_changed())
             parmasto_layout.addRow(_math_label(math_label, description), line_edit)
             self.parmasto_inputs[key] = line_edit
         self._parmasto_section.body_layout().addLayout(parmasto_layout)
@@ -838,7 +815,7 @@ class ReferenceEntryEditor(QWidget):
         self._on_data_choice_toggled()
         # Not staged, or reopening values: the grid is there from the start.
         self.set_grid_revealed(not self._staged or self._has_grid_values())
-        self._refresh_preview()
+        self._emit_data_changed()
 
     @staticmethod
     def _coerce_int_or_none(value) -> int | None:
@@ -896,250 +873,14 @@ class ReferenceEntryEditor(QWidget):
         self._no_taxon_notice_label.setVisible(
             bool(self._observation_id) and not self._sporely_taxon_id
         )
-        self._refresh_preview()
+        self._emit_data_changed()
 
     # ------------------------------------------------------------------
     # Preview
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _decoded_raw_points(raw_points_json: str | None) -> list | None:
-        """The individual measurements a stored set really holds.
-
-        ``None`` means *unreadable*, and is deliberately not the same answer
-        as the empty list. A set with no ``raw_points_json`` published no
-        individual measurements, which is a fact about the source; a set whose
-        stored blob is malformed establishes nothing about the source, only
-        that Sporely cannot read what is on file. The Raw spores tab words
-        those two differently, so collapsing them here would put a claim in
-        the author's mouth.
-        """
-        if not raw_points_json:
-            return []
-        try:
-            decoded = json.loads(raw_points_json)
-        except (TypeError, ValueError):
-            return None
-        return decoded if isinstance(decoded, list) else None
-
-    @staticmethod
-    def _measurement_set_content(ms) -> MeasurementContent | None:
-        """Typed content of a stored set, or ``None`` when it cannot be read.
-
-        A malformed stored details object must not stop the preview from
-        showing the measured values; the manager's detail pane and the
-        repository both surface that condition with a real error message.
-        """
-        try:
-            return content_from_row(asdict(ms))
-        except MeasurementContentError:
-            return None
-
-    @staticmethod
-    def _apply_reported_statistics_to_pane(pane, content: MeasurementContent | None) -> None:
-        """Show meaning tags and reported median / S.D. in the preview pane."""
-        if content is None:
-            pane.set_reported_statistics("")
-            return
-        notice = mcv.unsupported_details_notice(content)
-        if notice:
-            pane.set_reported_statistics(notice, notice)
-            return
-        entries = mcv.content_tags(content) + mcv.content_reported_statistics(content)
-        pane.set_reported_statistics(
-            mcv.compact_tag_text(entries), mcv.explanation_text(entries)
-        )
-
-    def sync_preview(self) -> None:
-        """Repopulate the shared preview pane from current editor state.
-
-        Called by the host picker when the Enter-manually tab becomes
-        active again, so a tab switch always shows the manual entry's own
-        current data rather than a stale or cleared preview.
-        """
-        self._refresh_preview()
-
-    def _comparison_for(self, *, display=None, source_points=None):
-        """One comparison model for whatever manual entry currently holds.
-
-        Delegates to the host's factory when there is one, so the manual tab
-        renders on the picker's frozen axes and against the picker's
-        observation baseline — the same two things the Library and Community
-        tabs compare against, which is what makes switching between them
-        meaningful (contract N19). Standalone, the editor has no observation
-        to compare with and falls back to the default axes derived once in
-        ``__init__``; the axes still never move while the user types.
-        """
-        factory = self._comparison_view_factory
-        if factory is not None:
-            return factory(display=display, source_points=source_points)
-        return comparison_view(
-            domains=self._fallback_domains,
-            baseline=None,
-            display=display,
-            source_points=source_points,
-        )
-
-    def _preview_content(self) -> MeasurementContent:
-        """Working content, plus any Parmasto species mean, for display only.
-
-        A Parmasto species mean is a figure the user transcribed from a
-        source, not a midpoint this editor invented, so the comparison shows
-        it as the metric's centre when the grid's own Mean cell is empty —
-        which is what the summary table it replaced did. It is added to a
-        copy: the stored payload's mean columns are built from the grid, and
-        this must not quietly widen what gets written.
-        """
-        content = self._current_measurement_content() or MeasurementContent()
-        updates: dict[str, float] = {}
-        for metric, parmasto_key in (
-            ("length", "parmasto_length_mean"),
-            ("width", "parmasto_width_mean"),
-            ("q", "parmasto_q_mean"),
-        ):
-            if mcv.format_mean_cell(content, metric):
-                continue
-            value = self._parmasto_value(parmasto_key)
-            if value is not None:
-                updates[f"{metric}_mean"] = value
-        return dc_replace(content, **updates) if updates else content
-
-    def _refresh_preview(self) -> None:
+    def _emit_data_changed(self) -> None:
         self.data_changed.emit()
-        pane = self._preview_pane
-        if pane is None:
-            return
-        if self.use_existing_radio.isChecked():
-            ms = next(
-                (
-                    c for c in self._existing_sets_cache
-                    if c.id == self._selected_measurement_set_id
-                ),
-                None,
-            ) if self._selected_measurement_set_id else None
-            if ms is None:
-                pane.clear()
-                return
-            title = self._current_source_label() or QCoreApplication.translate("ReferenceAddDialog", "Existing measurement set")
-            # Reopening a stored set shows what it actually says, including a
-            # mean reported as an interval, which has no scalar column. The
-            # projection keeps outer and core apart and names each, so the
-            # comparison can draw both rather than flattening them into a
-            # Min/Max pair the source never printed that way.
-            stored_content = self._measurement_set_content(ms)
-            stored_points = self._decoded_raw_points(ms.raw_points_json)
-            stored_display = display_from_row(asdict(ms), source_kind="library")
-            pane.set_header(title, "", ms.raw_text or "")
-            pane.set_comparison(
-                self._comparison_for(
-                    display=stored_display, source_points=stored_points
-                )
-            )
-            self._apply_reported_statistics_to_pane(pane, stored_content)
-            if stored_points:
-                pane.set_raw_spore_points(stored_points)
-            else:
-                pane.set_raw_spores_unavailable(
-                    plotted_as_band=stored_display.has_any_range,
-                    unreadable=stored_points is None,
-                )
-            pane.set_method(
-                {
-                    "mount": ms.mount_medium or "",
-                    "stain": ms.stain or "",
-                    "sample_type": ms.preparation or "",
-                    "objective": ms.measurement_method or "",
-                }
-            )
-            pane.set_calibration(ms.notes or QCoreApplication.translate("ReferenceAddDialog", "No calibration details recorded."))
-            treatment = TaxonTreatmentRepository.get(ms.taxon_treatment_id)
-            treatment_notes = (getattr(treatment, "treatment_notes", None) or "").strip()
-            pane.set_provenance(
-                QCoreApplication.translate("ReferenceAddDialog", "Source notes: {notes}").format(
-                    notes=treatment_notes or QCoreApplication.translate("ReferenceAddDialog", "Not reported")
-                )
-            )
-            work = (
-                ReferenceWorkRepository.get(treatment.reference_work_id)
-                if treatment is not None
-                else None
-            )
-            method_recorded = bool(ms.mount_medium or ms.stain or ms.preparation or ms.measurement_method)
-            not_reported = QCoreApplication.translate("ReferenceAddDialog", "not reported")
-            pane.set_provenance_summary(
-                QCoreApplication.translate(
-                    "ReferenceAddDialog", "Reported by: {work} ({year}) · sample size: {size} · method recorded: {method}"
-                ).format(
-                    work=(work.title if work is not None else None) or title,
-                    year=work.year if work is not None and work.year else not_reported,
-                    size=ms.sample_size if getattr(ms, "sample_size", None) else not_reported,
-                    method=QCoreApplication.translate("ReferenceAddDialog", "yes") if method_recorded else not_reported,
-                )
-            )
-            return
-        title = self._current_source_label() or QCoreApplication.translate("ReferenceAddDialog", "Manual entry")
-        points = self.spore_table.get_points()
-        if points:
-            # Individual measurements: the projection counts them and states
-            # nothing else. No min/mean/max is synthesised here -- summarising
-            # points is the comparison model's job, and a caption that printed
-            # a computed mean beside a published one would blur the two.
-            pane.set_header(
-                title,
-                "",
-                QCoreApplication.translate("ReferenceAddDialog", "n = {count} spore measurements").format(count=len(points)),
-            )
-            pane.set_comparison(
-                self._comparison_for(
-                    display=display_from_points(points, source_kind="manual"),
-                    source_points=points,
-                )
-            )
-            # Manually entered, not yet reported by any external source.
-            pane.set_provenance_summary("")
-            pane.set_reported_statistics("")
-            pane.set_raw_spore_points(points)
-            pane.set_method({"mount": "", "stain": "", "sample_type": "", "objective": ""})
-            pane.set_calibration(QCoreApplication.translate("ReferenceAddDialog", "Not applicable: entered manually."))
-            pane.set_provenance(
-                QCoreApplication.translate("ReferenceAddDialog", "Manually entered")
-                + "\n"
-                + QCoreApplication.translate("ReferenceAddDialog", "Source notes: {notes}").format(
-                    notes=QCoreApplication.translate("ReferenceAddDialog", "Not reported")
-                )
-            )
-            return
-        content = self._preview_content()
-        display = display_from_content(content, source_kind="manual")
-        if not display.has_any_range and not display.has_centre_statistic:
-            pane.clear()
-            return
-        # The grid drives the same projection every other tab is drawn from,
-        # so a typical range stays a typical range, an explicit 5-95%
-        # interval stays a percentile interval, and a range with no stated
-        # centre gets no centre mark. The summary table this replaced applied
-        # its own extreme-or-typical fallback, which is how an inner typical
-        # range came to be printed in a "Min"/"Max" column.
-        # The note names what the typed grid actually amounts to, taken from
-        # the same projection the Library rows are badged from. It used to
-        # read a fixed "Range summary", the label of a data-mode selector the
-        # one-column layout replaced, so an explicitly typed 5-95% interval
-        # was announced in the preview as an ordinary range.
-        pane.set_header(title, "", mcv.data_label_text(display.data_label))
-        pane.set_comparison(self._comparison_for(display=display))
-        # Manually entered, not yet reported by any external source.
-        pane.set_provenance_summary("")
-        self._apply_reported_statistics_to_pane(pane, self._measurement_content)
-        pane.set_raw_spores_unavailable(plotted_as_band=display.has_any_range)
-        pane.set_method({"mount": "", "stain": "", "sample_type": "", "objective": ""})
-        pane.set_calibration(QCoreApplication.translate("ReferenceAddDialog", "Not applicable: entered manually."))
-        pane.set_provenance(
-            QCoreApplication.translate("ReferenceAddDialog", "Manually entered")
-            + "\n"
-            + QCoreApplication.translate("ReferenceAddDialog", "Source notes: {notes}").format(
-                notes=QCoreApplication.translate("ReferenceAddDialog", "Not reported")
-            )
-        )
 
     # ------------------------------------------------------------------
     # Hints
@@ -1216,7 +957,7 @@ class ReferenceEntryEditor(QWidget):
             return
         self._sync_measurement_content_from_table()
         self._refresh_measurement_content_view()
-        self._refresh_preview()
+        self._emit_data_changed()
 
     def _on_measurement_editing_finished(self, row: int, col: int) -> None:
         """Canonicalise one committed cell, then re-fold.
@@ -1262,7 +1003,7 @@ class ReferenceEntryEditor(QWidget):
                 self._formatting_minmax = False
         self._sync_measurement_content_from_table()
         self._refresh_measurement_content_view()
-        self._refresh_preview()
+        self._emit_data_changed()
 
     _MINMAX_ROW_BY_DIMENSION = {"length": 0, "width": 1, "q": 2}
 
@@ -1455,7 +1196,7 @@ class ReferenceEntryEditor(QWidget):
             ).format(metric=mcv.metric_label(metric)),
             tone="info",
         )
-        self._refresh_preview()
+        self._emit_data_changed()
 
     def _on_clear_reported_statistics_clicked(self) -> None:
         # Fold the table in first: otherwise the next sync would reinstate
@@ -1473,7 +1214,7 @@ class ReferenceEntryEditor(QWidget):
             ),
             tone="info",
         )
-        self._refresh_preview()
+        self._emit_data_changed()
 
     def _apply_parsed_dimension(self, row: int, dim, mean_text: str) -> None:
         """Write one parsed metric into its grid row.
@@ -1537,7 +1278,7 @@ class ReferenceEntryEditor(QWidget):
         # Parmasto biometric, so the value goes to the Q row's Mean cell.
         self._render_measurement_preview(result)
         self._refresh_measurement_content_view()
-        self._refresh_preview()
+        self._emit_data_changed()
 
     _MEASUREMENT_PREVIEW_NOISE_PREFIXES = (
         "Parsed first range as length.",
@@ -1725,7 +1466,7 @@ class ReferenceEntryEditor(QWidget):
         self._sync_measurement_content_from_table()
         self._refresh_measurement_content_view()
         self._set_hint(QCoreApplication.translate("ReferenceAddDialog", "Length and width swapped."), tone="info")
-        self._refresh_preview()
+        self._emit_data_changed()
 
     def _parmasto_value(self, key: str):
         widget = self.parmasto_inputs.get(key)
@@ -2357,20 +2098,20 @@ class ReferenceEntryEditor(QWidget):
                     break
             else:
                 self._selected_measurement_set_id = None
-        self._refresh_preview()
+        self._emit_data_changed()
 
     def _on_existing_set_selection_changed(self) -> None:
         selected_rows = self._existing_sets_table.selectionModel().selectedRows()
         if not selected_rows:
             self._selected_measurement_set_id = None
-            self._refresh_preview()
+            self._emit_data_changed()
             return
         row = selected_rows[0].row()
         item = self._existing_sets_table.item(row, 0)
         self._selected_measurement_set_id = (
             str(item.data(Qt.UserRole)) if item else None
         )
-        self._refresh_preview()
+        self._emit_data_changed()
 
     def _on_data_choice_toggled(self, *_args) -> None:
         use_existing = self.use_existing_radio.isChecked()
@@ -2384,7 +2125,7 @@ class ReferenceEntryEditor(QWidget):
             section.setEnabled(not use_existing)
         if use_existing:
             self._refresh_existing_sets_table()
-        self._refresh_preview()
+        self._emit_data_changed()
 
     def _build_raw_points_json(self) -> str | None:
         points = self.spore_table.get_points()

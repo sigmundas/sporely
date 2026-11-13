@@ -24,9 +24,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtWidgets import (
     QApplication,
-    QComboBox,
-    QLabel,
-    QLineEdit,
     QTableWidget,
 )
 
@@ -94,25 +91,11 @@ def _build_minimal_window(monkeypatch, qapp):
     monkeypatch.setattr(main_window.MainWindow, "load_default_objective", lambda self: None)
     monkeypatch.setattr(main_window.MainWindow, "_restore_geometry", lambda self: None)
     window = main_window.MainWindow()
-    window.ref_vernacular_input = QLineEdit()
-    window.ref_vernacular_label = QLabel()
-    window.ref_genus_input = QLineEdit()
-    window.ref_species_input = QLineEdit()
-    window.ref_source_input = QComboBox()
-    window.ref_source_input.setEditable(True)
-    window.ref_source_input.addItem("")
     window.table = QTableWidget(3, 5)
-    window.ref_table = window.table
     window.reference_values = {}
     window.reference_series = []
-    window.species_availability = _EmptySpeciesAvailability()
     window.active_observation_id = None
     # Neutralize UI-only branches that would otherwise require full init.
-    window._refresh_reference_species_availability = lambda: None
-    window._populate_reference_panel_sources = lambda auto_select_single=True: None
-    window._apply_reference_panel_values = lambda data: None
-    window._update_reference_add_state = lambda: None
-    window._maybe_load_reference_panel_reference = lambda: None
     window._active_sporely_taxon_id = lambda: 7
     window._clean_ref_genus_text = lambda text: (text or "").strip()
     window._clean_ref_species_text = lambda text: (text or "").strip()
@@ -132,7 +115,7 @@ def _add_through_live_path(window, dialog):
 
     if dialog.exec() != QDialog.Accepted:
         return False
-    return window._submit_reference_editor_result(dialog, sync_panel=False)
+    return window._submit_reference_editor_result(dialog)
 
 def test_add_existing_set_does_not_append_empty_envelope(monkeypatch, qapp):
     """When the dialog returns ``source_kind=existing_measurement_set``
@@ -141,8 +124,6 @@ def test_add_existing_set_does_not_append_empty_envelope(monkeypatch, qapp):
     translated attachment row appended by the attach helper.
     """
     window = _build_minimal_window(monkeypatch, qapp)
-    window.ref_genus_input.setText("Agaricus")
-    window.ref_species_input.setText("bisporus")
 
     dialog_payload = {
         "genus": "Agaricus",

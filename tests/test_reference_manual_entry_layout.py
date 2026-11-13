@@ -26,7 +26,6 @@ from PySide6.QtWidgets import QApplication, QGroupBox, QMessageBox, QTabWidget
 
 from references import measurement_content_gates as gates
 from ui.reference_entry_editor import ReferenceEntryEditor
-from ui.reference_preview_pane import ReferencePreviewPane
 
 MEAN_COLUMN = 2
 
@@ -87,14 +86,12 @@ def historical_closed_policy(monkeypatch):
 @pytest.fixture()
 def editor() -> ReferenceEntryEditor:
     _app()
-    pane = ReferencePreviewPane(None)
     return ReferenceEntryEditor(
         None,
         "Hebeloma",
         "crustuliniforme",
         observation_id=42,
         sporely_taxon_id=7,
-        preview_pane=pane,
     )
 
 
@@ -103,8 +100,15 @@ def _parse(editor: ReferenceEntryEditor, text: str) -> None:
     editor._on_parse_measurement_clicked()
 
 
-def _source(editor: ReferenceEntryEditor, metric: str):
-    return editor._preview_pane.comparison_view.view().metric(metric).source
+def _content(editor: ReferenceEntryEditor):
+    """What the editor would store for the entry on screen."""
+    return editor._current_measurement_content()
+
+
+def _metric(editor: ReferenceEntryEditor, metric: str):
+    """The stated meaning of one metric's numbers in that content."""
+    content = _content(editor)
+    return content.details.metrics.get(metric) if content and content.details else None
 
 
 # --- Layout ------------------------------------------------------------------
@@ -187,13 +191,15 @@ def test_parsing_a_published_range_fills_the_typical_columns_only(editor):
     assert editor.measurement_cell_text(0, 3) == "13.00"
     assert editor.measurement_cell_text(0, 4) == ""
 
-    length = _source(editor, "length")
-    assert length.outer is None
-    assert (length.core.low, length.core.high) == pytest.approx((8.4, 13.0))
-    assert length.centres == ()
+    content = _content(editor)
+    length = _metric(editor, "length")
+    assert (content.length_min, content.length_max) == (None, None)
+    assert (content.length_core_min, content.length_core_max) == pytest.approx((8.4, 13.0))
+    assert content.length_mean is None
+    assert length is None or (length.mean_interval is None and length.median is None)
 
 
-def test_parsing_outer_and_core_fills_and_draws_both(editor):
+def test_parsing_outer_and_core_fills_and_keeps_both(editor):
     _parse(editor, OUTER_AND_CORE)
 
     assert editor.measurement_cell_text(0, 0) == "9.50"
@@ -201,18 +207,19 @@ def test_parsing_outer_and_core_fills_and_draws_both(editor):
     assert editor.measurement_cell_text(0, 3) == "11.30"
     assert editor.measurement_cell_text(0, 4) == "11.70"
 
-    length = _source(editor, "length")
-    assert (length.outer.low, length.outer.high) == pytest.approx((9.5, 11.7))
-    assert length.outer.meaning == "reported_extremes"
-    assert (length.core.low, length.core.high) == pytest.approx((9.8, 11.3))
+    content = _content(editor)
+    length = _metric(editor, "length")
+    assert (content.length_min, content.length_max) == pytest.approx((9.5, 11.7))
+    assert length.outer_range.kind == "reported_extremes"
+    assert (content.length_core_min, content.length_core_max) == pytest.approx((9.8, 11.3))
     # Parenthesised extremes around a typical range say nothing about
     # percentiles (contract N12).
-    assert length.core.meaning != "percentile_interval"
-    assert length.core.percentile_bounds is None
-    assert length.centres == ()
+    assert length.core_range.kind != "percentile_interval"
+    assert length.core_range.percentile_bounds is None
+    assert content.length_mean is None and length.mean_interval is None and length.median is None
 
 
-def test_explicit_5_95_data_stays_a_percentile_interval_in_the_preview(editor):
+def test_explicit_5_95_data_stays_a_percentile_interval(editor):
     """Contract N25: an explicitly stated 5-95% interval keeps that meaning.
 
     This is the one case where the inner band really is a percentile
@@ -221,15 +228,17 @@ def test_explicit_5_95_data_stays_a_percentile_interval_in_the_preview(editor):
     """
     _parse(editor, EXPLICIT_5_95)
 
-    length = _source(editor, "length")
-    assert length.core.meaning == "percentile_interval"
-    assert length.core.percentile_bounds == pytest.approx((5.0, 95.0))
-    assert (length.core.low, length.core.high) == pytest.approx((8.4, 13.0))
-    assert length.outer.meaning == "reported_extremes"
-    assert (length.outer.low, length.outer.high) == pytest.approx((7.5, 13.2))
+    content = _content(editor)
+    length = _metric(editor, "length")
+    assert length.core_range.kind == "percentile_interval"
+    assert length.core_range.percentile_bounds == pytest.approx((5.0, 95.0))
+    assert (content.length_core_min, content.length_core_max) == pytest.approx((8.4, 13.0))
+    assert length.outer_range.kind == "reported_extremes"
+    assert (content.length_min, content.length_max) == pytest.approx((7.5, 13.2))
     # The reported mean is an interval and is never collapsed to a midpoint.
-    assert length.centre("mean").interval == pytest.approx((9.2, 11.7))
-    assert length.centre("median").interval == pytest.approx((9.2, 11.7))
+    assert content.length_mean is None
+    assert (length.mean_interval.lower, length.mean_interval.upper) == pytest.approx((9.2, 11.7))
+    assert (length.median.lower, length.median.upper) == pytest.approx((9.2, 11.7))
 
 
 # --- Editing after a parse ---------------------------------------------------
@@ -245,10 +254,11 @@ def test_editing_a_bound_keeps_the_descriptor_the_source_stated(editor):
     _parse(editor, EXPLICIT_5_95)
     editor.set_measurement_cell_text(0, 1, "8.60")
 
-    length = _source(editor, "length")
-    assert (length.core.low, length.core.high) == pytest.approx((8.6, 13.0))
-    assert length.core.meaning == "percentile_interval"
-    assert length.core.percentile_bounds == pytest.approx((5.0, 95.0))
+    content = _content(editor)
+    length = _metric(editor, "length")
+    assert (content.length_core_min, content.length_core_max) == pytest.approx((8.6, 13.0))
+    assert length.core_range.kind == "percentile_interval"
+    assert length.core_range.percentile_bounds == pytest.approx((5.0, 95.0))
 
 
 def test_emptying_a_described_pair_takes_its_descriptor_with_it(editor):
@@ -257,8 +267,8 @@ def test_emptying_a_described_pair_takes_its_descriptor_with_it(editor):
     editor.set_measurement_cell_text(0, 1, "")
     editor.set_measurement_cell_text(0, 3, "")
 
-    length = _source(editor, "length")
-    assert length.core is None
+    content = _content(editor)
+    assert (content.length_core_min, content.length_core_max) == (None, None)
     assert editor._measurement_content.details.metrics["length"].core_range is None
 
 
@@ -275,76 +285,15 @@ def test_swapping_l_and_w_moves_numbers_and_descriptors_together(editor):
     assert editor.measurement_cell_text(0, 1) == "5.10"
     assert editor.measurement_cell_text(1, 1) == "8.40"
 
-    length = _source(editor, "length")
-    width = _source(editor, "width")
-    assert (length.core.low, length.core.high) == pytest.approx((5.1, 7.2))
-    assert length.core.meaning == "percentile_interval"
-    assert length.centre("mean").interval == pytest.approx((5.6, 6.7))
-    assert (width.core.low, width.core.high) == pytest.approx((8.4, 13.0))
-    assert width.core.meaning == "percentile_interval"
-    assert width.centre("mean").interval == pytest.approx((9.2, 11.7))
-
-
-# --- The preview follows the entry -------------------------------------------
-
-
-def test_the_comparison_axes_do_not_move_while_the_entry_changes(editor):
-    """Contract N19: the axes are frozen for the session.
-
-    A preview that rescaled as the user typed would silently invalidate the
-    shape they had just read.
-    """
-    _parse(editor, PUBLISHED_RANGE)
-    before = {
-        metric: (
-            editor._preview_pane.comparison_view.view().metric(metric).domain.low,
-            editor._preview_pane.comparison_view.view().metric(metric).domain.high,
-        )
-        for metric in ("length", "width", "q")
-    }
-
-    _parse(editor, EXPLICIT_5_95)
-    editor.set_measurement_cell_text(0, 4, "40.00")
-
-    after = {
-        metric: (
-            editor._preview_pane.comparison_view.view().metric(metric).domain.low,
-            editor._preview_pane.comparison_view.view().metric(metric).domain.high,
-        )
-        for metric in ("length", "width", "q")
-    }
-    assert after == before
-
-
-def test_an_empty_grid_shows_the_baseline_rather_than_a_source(editor):
-    """Contract N21: nothing entered is not a grid of dashes."""
-    view = editor._preview_pane.comparison_view.view()
-    assert view is None or view.has_source is False
-
-
-def test_the_manual_preview_names_the_data_the_way_the_library_rows_do(editor):
-    """The note is the projection's data label, not a fixed caption.
-
-    It used to read "Range summary" whatever had been typed -- the label of
-    a data-mode selector the one-column layout removed. An explicitly stated
-    5-95% interval was therefore announced in the same words as a plain
-    published range, contradicting both the badge a Library row carries for
-    the same content and the caption drawn two lines below it.
-    """
-    _parse(editor, PUBLISHED_RANGE)
-    assert editor._preview_pane.summary_note_label.text() == "Published range"
-
-    _parse(editor, EXPLICIT_5_95)
-    assert editor._preview_pane.summary_note_label.text() == "5–95% range"
-
-
-def test_the_raw_spores_tab_never_invents_rows_for_a_range(editor):
-    """Contract N22: a published range has no per-spore measurements."""
-    _parse(editor, EXPLICIT_5_95)
-
-    text = editor._preview_pane.raw_spores_text.toPlainText()
-    assert "were not published for this source" in text
-    assert "9.2" not in text
+    content = _content(editor)
+    length = _metric(editor, "length")
+    width = _metric(editor, "width")
+    assert (content.length_core_min, content.length_core_max) == pytest.approx((5.1, 7.2))
+    assert length.core_range.kind == "percentile_interval"
+    assert (length.mean_interval.lower, length.mean_interval.upper) == pytest.approx((5.6, 6.7))
+    assert (content.width_core_min, content.width_core_max) == pytest.approx((8.4, 13.0))
+    assert width.core_range.kind == "percentile_interval"
+    assert (width.mean_interval.lower, width.mean_interval.upper) == pytest.approx((9.2, 11.7))
 
 
 # --- The Stage 3 semantic boundary -------------------------------------------
@@ -366,17 +315,16 @@ def test_the_footer_will_not_offer_to_add_an_entry_that_cannot_be_stored(editor)
 
 
 @pytest.mark.usefixtures("historical_closed_policy")
-def test_the_preview_and_the_refusal_describe_the_same_entry(editor):
-    """The picture and the block must not disagree.
+def test_the_entry_and_the_refusal_describe_the_same_interval(editor):
+    """The editor's reading and the block must not disagree.
 
-    The whole failure mode this stage names is a preview that is right while
-    the stored row is wrong. If the comparison shows a percentile interval,
-    the refusal must be about that percentile interval.
+    If the entry holds a percentile interval, the refusal must be about that
+    percentile interval.
     """
     _parse(editor, EXPLICIT_5_95)
 
-    core = _source(editor, "length").core
-    assert core.meaning == "percentile_interval"
+    core = _metric(editor, "length").core_range
+    assert core.kind == "percentile_interval"
     kinds = {kind for _metric, kind in editor._blocked_projection_losses()}
     assert "percentile_interval" in kinds
 
@@ -428,12 +376,12 @@ def test_q_extremes_plus_a_q_typical_range_block_on_real_numeric_loss(editor):
 
 
 def test_an_explicit_percentile_interval_is_stored_with_its_meaning(editor):
-    """The stored entry says what the preview shows: a 5-95% interval."""
+    """The stored entry keeps what the editor read: a 5-95% interval."""
     _parse(editor, EXPLICIT_5_95)
 
     assert editor._blocked_projection_losses() == []
     assert editor.is_ready_to_submit() is True
-    assert _source(editor, "length").core.meaning == "percentile_interval"
+    assert _metric(editor, "length").core_range.kind == "percentile_interval"
     payload = editor.normalized_measurement_set_payload()
     assert (payload.length_core_min, payload.length_core_max) == (8.4, 13.0)
     length = json.loads(payload.measurement_details_json)["metrics"]["length"]

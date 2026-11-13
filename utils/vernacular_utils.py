@@ -103,18 +103,6 @@ def vernacular_language_label(code: str | None) -> str:
     return VERNACULAR_LANGUAGE_LABELS.get(lang, lang.upper() if lang else "")
 
 
-def common_name_display_label(lang_code: str | None, default_label: str) -> str:
-    """Return the preferred label for the common name field/header."""
-    lang = normalize_vernacular_language(lang_code)
-    override = COMMON_NAME_LABEL_OVERRIDES.get(lang)
-    if override:
-        return override
-    label = vernacular_language_label(lang)
-    if label:
-        return f"{default_label} ({label})"
-    return default_label
-
-
 def _order_vernacular_languages(languages: Iterable[str]) -> list[str]:
     ordered = [code for code in VERNACULAR_LANGUAGE_ORDER if code in languages]
     for code in sorted(set(languages)):

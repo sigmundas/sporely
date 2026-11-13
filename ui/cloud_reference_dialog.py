@@ -20,14 +20,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from references.reference_comparison import ComparisonView, comparison_view
-from references.reference_display import (
-    display_from_community_summary,
-    display_from_points,
-)
 from utils.cloud_sync import CloudSyncError, SporelyCloudClient
 
-from .reference_preview_pane import ReferencePreviewPane
 from .two_line_row import CheckableTwoLineRow, TwoLineRow
 
 # Quiet period after the last keystroke in the Community tab's search field
@@ -295,165 +289,15 @@ def community_points_payload(detail: dict[str, Any], tr: Callable[[str], str]) -
     }
 
 
-def community_detail_preview_fields(detail: dict[str, Any], tr: Callable[[str], str]) -> dict[str, Any]:
-    """Compute every field a review pane needs for one community dataset detail.
-
-    Shared by :class:`CloudReferenceDialog` and the Community tab's
-    ``CommunityResultsPane`` so both apply the identical computation to
-    whichever :class:`~ui.reference_preview_pane.ReferencePreviewPane`
-    instance they own, through that pane's public ``set_*`` API.
-    """
-    kind = str(detail.get("_kind") or "").strip()
-    genus = str(detail.get("genus") or "").strip()
-    species = str(detail.get("species") or "").strip()
-    contributor = str(detail.get("contributor_label") or "—")
-    observed_on = str(detail.get("observed_on") or "").strip()
-    measurement_count = int(detail.get("measurement_count") or 0)
-
-    title = f"{genus} {species}".strip() or tr("Community dataset")
-    if kind == "reference":
-        title += f" ({tr('Reference')})"
-    else:
-        title += f" ({tr('Observation dataset')})"
-    meta = tr("Contributor: {contributor}  •  Date: {date}  •  n={count}").format(
-        contributor=contributor,
-        date=observed_on or "—",
-        count=measurement_count,
-    )
-
-    rows: list[tuple[str, str, str, str]] = []
-    for key in ("length", "width", "q"):
-        median_value = detail.get(f"{key}_p50")
-        if median_value is None:
-            median_value = detail.get(f"{key}_avg")
-        rows.append(
-            (
-                tr(key.capitalize()),
-                format_stat_value(detail.get(f"{key}_min")),
-                format_stat_value(median_value),
-                format_stat_value(detail.get(f"{key}_max")),
-            )
-        )
-
-    qc_flags = detail.get("qc_flags") or {}
-    qc_lines = []
-    if isinstance(qc_flags, dict):
-        for key, label in (
-            ("has_mount", tr("Mount recorded")),
-            ("has_stain", tr("Stain recorded")),
-            ("has_sample_type", tr("Sample type recorded")),
-            ("has_contrast", tr("Contrast recorded")),
-            ("has_objective", tr("Objective recorded")),
-            ("has_scale", tr("Scale recorded")),
-            ("has_point_geometry", tr("Measurement points recorded")),
-        ):
-            if qc_flags.get(key):
-                qc_lines.append(label)
-    note = tr("QC signals: {signals}").format(
-        signals=", ".join(qc_lines) if qc_lines else tr("No extra QC metadata")
-    )
-
-    measurements = detail.get("measurements_json") or []
-    raw_lines = []
-    for row in measurements[:200]:
-        if not isinstance(row, dict):
-            continue
-        raw_lines.append(
-            f"L={format_stat_value(row.get('length_um'))}  "
-            f"W={format_stat_value(row.get('width_um'))}  "
-            f"Q={format_stat_value((float(row.get('length_um')) / float(row.get('width_um'))) if row.get('length_um') is not None and row.get('width_um') not in (None, 0) else None)}"
-        )
-    raw_text = "\n".join(raw_lines) if raw_lines else tr("No raw point data returned.")
-
-    def _join_list(value: Any) -> str:
-        if isinstance(value, list):
-            cleaned = [str(item).strip() for item in value if str(item).strip()]
-            return ", ".join(cleaned) if cleaned else "—"
-        text = str(value or "").strip()
-        return text or "—"
-
-    method_mapping = {
-        "mount": _join_list(detail.get("mount_media") or detail.get("mount_medium")),
-        "stain": _join_list(detail.get("stains") or detail.get("stain")),
-        "sample_type": _join_list(detail.get("sample_types") or detail.get("sample_type")),
-        "contrast": _join_list(detail.get("contrasts") or detail.get("contrast")),
-        "objective": _join_list(detail.get("objectives") or detail.get("objective_name")),
-    }
-    scale_min = detail.get("scale_min")
-    scale_max = detail.get("scale_max")
-    if scale_min is not None or scale_max is not None:
-        if scale_min == scale_max or scale_max is None:
-            scale_text = f"{format_stat_value(scale_min)} µm/px"
-        else:
-            scale_text = f"{format_stat_value(scale_min)}-{format_stat_value(scale_max)} µm/px"
-    else:
-        scale_text = format_stat_value(detail.get("scale_microns_per_pixel"))
-        if scale_text != "—":
-            scale_text += " µm/px"
-    method_mapping["scale"] = scale_text
-
-    calibration_lines = []
-    if scale_text != "—":
-        calibration_lines.append(f"{tr('Scale')}: {scale_text}")
-    if kind == "observation":
-        calibration_lines.append(
-            tr("Calibration details come from image/objective metadata in the synced observation dataset.")
-        )
-    else:
-        calibration_lines.append(tr("Reference rows currently expose summary values only."))
-    calibration_text = "\n".join(calibration_lines)
-
-    provenance_lines = [
-        f"{tr('Kind')}: {kind or '—'}",
-        f"{tr('Contributor')}: {contributor}",
-        f"{tr('Date')}: {observed_on or '—'}",
-    ]
-    if kind == "reference":
-        provenance_lines.append(f"{tr('Source')}: {detail.get('source') or '—'}")
-        provenance_lines.append(tr("Imported reference values are currently treated as shared reference material."))
-    else:
-        provenance_lines.append(f"{tr('Observation id')}: {detail.get('observation_id') or '—'}")
-        provenance_lines.append(tr("Location and private observation content are intentionally excluded from this review flow."))
-    provenance_text = "\n".join(provenance_lines)
-
-    method_recorded = any(
-        method_mapping[key] != "—"
-        for key in ("mount", "stain", "sample_type", "contrast", "objective")
-    )
-    not_reported = tr("not reported")
-    provenance_summary = tr(
-        "Reported by: {contributor} ({date}) · sample size: {size} · method recorded: {method}"
-    ).format(
-        contributor=contributor,
-        date=observed_on or not_reported,
-        size=measurement_count if measurement_count else not_reported,
-        method=tr("yes") if method_recorded else not_reported,
-    )
-
-    return {
-        "title": title,
-        "meta": meta,
-        "rows": rows,
-        "note": note,
-        "raw_text": raw_text,
-        "method_mapping": method_mapping,
-        "calibration_text": calibration_text,
-        "provenance_text": provenance_text,
-        "provenance_summary": provenance_summary,
-        "points_count": len(measurements) if isinstance(measurements, list) else 0,
-    }
-
-
 class CommunityResultsPane(QWidget):
-    """Browse/select flow for the Community tab of ``AddReferenceDialog``.
+    """The reference drawer's Community list: browse, select and tick results.
 
-    Reuses ``CloudReferenceDialog``'s search/detail workers and payload
-    builders (``_CloudSearchWorker``, ``_CloudDetailWorker``,
-    ``community_summary_reference_payload``, ``community_points_payload``,
-    ``community_detail_preview_fields``) rather than duplicating them, and
-    populates the host's shared ``ReferencePreviewPane`` instance instead of
-    owning its own. Unlike ``CloudReferenceDialog``, there is no full taxon
-    entry form: results load automatically for the host's working taxon
+    Uses this module's search/detail workers and payload builders
+    (``_CloudSearchWorker``, ``_CloudDetailWorker``,
+    ``community_summary_reference_payload``, ``community_points_payload``).
+    The drawer's plot is the preview, so this pane draws none itself (stage
+    10a4). There is no taxon entry form: results load automatically for the
+    host's working taxon
     (``set_taxon``), mirroring the My-observations tab. A single search field
     overrides that taxon, debounced per keystroke, and accepts a genus alone
     as well as a genus and species; clearing it returns to the host's taxon.
@@ -478,39 +322,14 @@ class CommunityResultsPane(QWidget):
         *,
         genus: str = "",
         species: str = "",
-        preview_pane: ReferencePreviewPane,
         results: list[dict[str, Any]] | None = None,
         exclude_observation_cloud_id: str | None = None,
-        comparison_view_factory: Callable[..., ComparisonView] | None = None,
-        preview_is_active: Callable[[], bool] | None = None,
         checkable: bool = False,
     ) -> None:
         super().__init__(parent)
         self._checkable = bool(checkable)
         self._genus = str(genus or "").strip()
         self._species = str(species or "").strip()
-        self._preview_pane = preview_pane
-        # How this pane turns a projected community source into the shared
-        # preview's comparison model. Supplied by the host, which owns the
-        # session's frozen axes and the current observation; without one the
-        # pane still renders, on axes derived from the selected source alone,
-        # which is the right fallback for a host that has no observation to
-        # compare against rather than a reason to fall back to a table.
-        self._comparison_view_factory = comparison_view_factory or (
-            lambda display=None, source_points=None: comparison_view(
-                domains={}, display=display, source_points=source_points
-            )
-        )
-        # Whether this pane is the one the shared preview currently belongs to.
-        # Search and detail both complete asynchronously and can land long
-        # after the user has moved to the Library or My-observations tab; a
-        # write that ignored ownership would replace the source that tab just
-        # put on screen with one from a tab the user is no longer looking at.
-        # Request generations cannot solve this -- the response is not stale,
-        # it is simply no longer the pane being displayed -- so state is kept
-        # either way and only the painting is gated. The default suits a host
-        # that gives this pane a preview to itself.
-        self._preview_is_active = preview_is_active or (lambda: True)
         # The active observation's own cloud identity (``observations.cloud_id``
         # locally), so a dataset built from the exact observation already
         # being plotted never reappears as a comparison candidate against
@@ -610,7 +429,6 @@ class CommunityResultsPane(QWidget):
         self._mode_group = QButtonGroup(self)
         self._mode_group.addButton(self.range_summary_radio)
         self._mode_group.addButton(self.raw_points_radio)
-        self._mode_group.buttonToggled.connect(self._on_mode_changed)
         mode_row.addWidget(self.range_summary_radio)
         mode_row.addWidget(self.raw_points_radio)
         mode_row.addStretch(1)
@@ -716,7 +534,6 @@ class CommunityResultsPane(QWidget):
         self._selected_error = None
         self.results_list.clearSelection()
         self.results_list.clear()
-        self._render_preview()
         self.selection_changed.emit()
 
         if self._injected_results is not None:
@@ -858,7 +675,6 @@ class CommunityResultsPane(QWidget):
             self._selected_result = None
             self._selected_detail = None
             self._selected_error = None
-            self._render_preview()
             self.selection_changed.emit()
             return
         row = items[0].data(Qt.UserRole)
@@ -866,13 +682,11 @@ class CommunityResultsPane(QWidget):
             self._selected_result = None
             self._selected_detail = None
             self._selected_error = None
-            self._render_preview()
             self.selection_changed.emit()
             return
         self._selected_result = dict(self._results[row])
         self._selected_detail = None
         self._selected_error = None
-        self._render_preview()
         self.selection_changed.emit()
 
         if self._injected_results is not None:
@@ -892,14 +706,10 @@ class CommunityResultsPane(QWidget):
         self._detail_worker = None
         self._selected_detail = dict(detail or {})
         self._selected_error = None
-        # Radio state first: the preview renders whichever mode is checked, so
-        # settling the mode before drawing avoids showing the raw-points
-        # comparison for one paint and then the summary one because the
-        # raw-points radio turned out to be unavailable. It is pane-local
-        # widget state and is updated whether or not this pane currently owns
-        # the shared preview, so the footer's payload stays correct.
+        # Radio state before telling the host: the payload it reads follows
+        # whichever mode is checked, and raw points are only offered when the
+        # detail carries measurements.
         self._update_mode_radio_state()
-        self._render_preview()
         self.selection_changed.emit()
 
     def _on_detail_error(self, message: str, generation: int) -> None:
@@ -908,68 +718,11 @@ class CommunityResultsPane(QWidget):
         self._detail_worker = None
         self._selected_detail = None
         self._selected_error = str(message or "").strip()
-        self._render_preview()
         self.selection_changed.emit()
 
     # ------------------------------------------------------------------
     # Rendering into the shared preview
     # ------------------------------------------------------------------
-
-    def _render_preview(self) -> None:
-        """Paint this pane's current state, if the preview is currently ours.
-
-        Every transition goes through here rather than writing to the shared
-        pane directly, so there is one place that decides both *what* this tab
-        has to say and *whether* it is the tab entitled to say it. The state
-        itself is always kept, which is what lets :meth:`sync_preview` restore
-        a selection -- loaded, still loading or failed -- when the user comes
-        back to this tab.
-        """
-        if not self._preview_is_active():
-            return
-        if self._selected_error is not None:
-            self._show_error_preview(self._selected_error)
-        elif self._selected_detail:
-            self._show_detail_preview()
-        elif self._selected_result is not None:
-            self._show_loading_preview()
-        else:
-            self._preview_pane.clear()
-
-    def _show_loading_preview(self) -> None:
-        """A selected result whose detail has not arrived yet.
-
-        ``clear()`` first, and not merely a new header: the pane is shared, so
-        the method, calibration, provenance and raw-spore rows still on it
-        belong to whatever was selected before. Leaving them under this
-        source's name would attribute another dataset's mount medium and
-        another author's spores to the row the user just clicked.
-
-        No source band is drawn either. The list-level aggregate is not the
-        detail, and a band painted from it would be replaced by a different
-        one a moment later.
-        """
-        self._preview_pane.clear()
-        self._preview_pane.set_header(
-            QCoreApplication.translate("CommunityResultsPane", "Loading review details..."),
-            community_result_source_label(self._selected_result or {}, self.tr),
-            QCoreApplication.translate("CommunityResultsPane", "Loading dataset details..."),
-        )
-
-    def _show_error_preview(self, message: str) -> None:
-        """A selected result whose detail could not be fetched.
-
-        Same reasoning as the loading state, and the same ``clear()``: a
-        failed fetch establishes nothing about this dataset, so nothing may
-        remain on screen that a reader could take for its content.
-        """
-        self._preview_pane.clear()
-        self._preview_pane.set_header(
-            QCoreApplication.translate("CommunityResultsPane", "Could not load dataset"),
-            message,
-            QCoreApplication.translate("CommunityResultsPane", "This result could not be reviewed."),
-        )
-        self._preview_pane.set_raw_spores(message)
 
     def _selected_measurements(self) -> list[Any]:
         """The individual measurements behind the current detail, if any."""
@@ -982,45 +735,6 @@ class CommunityResultsPane(QWidget):
         """Whether the checked mode is the raw-points one."""
         return self.raw_points_radio.isChecked() and self.raw_points_radio.isEnabled()
 
-    def _show_detail_preview(self) -> None:
-        """The loaded detail, in whichever mode is currently checked."""
-        fields = community_detail_preview_fields(self._selected_detail, self.tr)
-        self._preview_pane.set_header(fields["title"], fields["meta"], fields["note"])
-
-        measurements = self._selected_measurements()
-        if self._use_raw_points():
-            # The mode that attaches the contributors' individual
-            # measurements, so the pane compares those: the projection states
-            # no range, and the comparison derives measured extremes, a
-            # measured 5-95 interval and a measured median from the points.
-            display = display_from_points(measurements, source_kind="community")
-            source_points: list[Any] | None = measurements
-        else:
-            # The aggregate. ``display_from_community_summary`` tags the
-            # p05/p95 pair as a percentile interval only where the payload
-            # actually carries both bounds; a result with bare min/max stays a
-            # published range rather than acquiring 5-95 semantics it never
-            # stated. No points are passed: the summary's own numbers are what
-            # this mode will attach.
-            display = display_from_community_summary(self._selected_detail)
-            source_points = None
-        self._preview_pane.set_comparison(
-            self._comparison_view_factory(display=display, source_points=source_points)
-        )
-
-        if measurements:
-            self._preview_pane.set_raw_spore_points(measurements)
-        else:
-            # Contract N22: a community aggregate's range is never expanded
-            # into plausible-looking per-spore rows to fill this tab.
-            self._preview_pane.set_raw_spores_unavailable(
-                plotted_as_band=display.has_any_range
-            )
-        self._preview_pane.set_method(fields["method_mapping"])
-        self._preview_pane.set_calibration(fields["calibration_text"])
-        self._preview_pane.set_provenance(fields["provenance_text"])
-        self._preview_pane.set_provenance_summary(fields["provenance_summary"])
-
     def _update_mode_radio_state(self) -> None:
         n = len(self._selected_measurements())
         self.raw_points_radio.setText(QCoreApplication.translate("CommunityResultsPane", "Raw points (n={count})").format(count=n))
@@ -1028,38 +742,9 @@ class CommunityResultsPane(QWidget):
         if not self.raw_points_radio.isEnabled() and self.raw_points_radio.isChecked():
             self.range_summary_radio.setChecked(True)
 
-    def _on_mode_changed(self, _button=None, checked: bool = True) -> None:
-        """Redraw the preview when the user switches what will be added.
-
-        The two radios choose between two genuinely different claims -- the
-        contributors' aggregate and their individual measurements -- so the
-        pane must show the one about to be attached rather than whichever was
-        current when the detail loaded.
-
-        ``QButtonGroup.buttonToggled`` fires once for the radio being cleared
-        and once for the one being checked; only the second is acted on, so a
-        single click repaints the comparison once.
-        """
-        if not checked:
-            return
-        if self._selected_detail:
-            self._render_preview()
-
     # ------------------------------------------------------------------
     # Host-facing API
     # ------------------------------------------------------------------
-
-    def sync_preview(self) -> None:
-        """Re-apply the current selection to the (shared) preview pane.
-
-        Called by the host when switching back to this tab, since the preview
-        pane is shared across tabs and may show another tab's content in
-        between. Restores whichever state this tab is in -- a loaded detail, a
-        selection still waiting on its detail, or a failed one -- because a
-        response that arrived while the user was elsewhere was recorded but
-        deliberately not painted.
-        """
-        self._render_preview()
 
     def has_selection(self) -> bool:
         return self._selected_detail is not None
@@ -1114,7 +799,6 @@ class CommunityResultsPane(QWidget):
 __all__ = [
     "CommunityResultsPane",
     "community_default_import_source",
-    "community_detail_preview_fields",
     "community_points_payload",
     "community_result_q_range_label",
     "community_result_source_label",

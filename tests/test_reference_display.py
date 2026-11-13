@@ -493,7 +493,7 @@ def test_community_aggregate_maps_onto_the_existing_contract():
     assert q.scalar_mean == 1.75
     # An aggregate of other people's points is not this desktop's raw data.
     assert not display.has_raw_points
-    # The same n that community_detail_preview_fields prints as "n=30".
+    # The cloud measurement count is the sample size.
     assert display.sample_size == 30
     assert display.statistics_origin == "computed"
 
