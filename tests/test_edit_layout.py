@@ -44,9 +44,10 @@ def test_latitude_and_longitude_share_a_row_and_comments_sit_side_by_side(qtbot,
 
 def test_the_map_line_opens_its_tools(qtbot, window, rediger):
     editor = rediger.editor()
-    assert not editor.map_tools.isVisible() and not editor.map_btn.isVisible()
+    # Open map is on the line itself (stage 10f2); the tools hold the map link.
+    assert not editor.map_tools.isVisible() and editor.map_btn.isVisible()
     qtbot.mouseClick(editor.map_tools_toggle, Qt.LeftButton)
-    assert editor.map_tools.isVisible() and editor.maplink_input.isVisible() and editor.map_btn.isVisible()
+    assert editor.map_tools.isVisible() and editor.maplink_input.isVisible() and editor.maplink_open_btn.isVisible()
     qtbot.mouseClick(editor.map_tools_toggle, Qt.LeftButton)
     assert not editor.map_tools.isVisible()
 

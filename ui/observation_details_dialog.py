@@ -832,10 +832,12 @@ class ObservationDetailsDialog(QDialog):
         left_layout.addWidget(position_row, _details_row, 1)
         _details_row += 1
 
-        # Map button - opens location in browser
-        self.map_btn = QPushButton(self.tr("Map"))
-        self.map_btn.setMinimumWidth(64)
-        self.map_btn.clicked.connect(self.open_map)
+        # Open map: the map services as a menu on the map line (stage 10f2),
+        # filled for the position when it opens.
+        self.map_btn = QPushButton(self.tr("Open map"))
+        self.map_menu = QMenu(self.map_btn)
+        self.map_menu.aboutToShow.connect(self._fill_map_menu)
+        self.map_btn.setMenu(self.map_menu)
         self.map_btn.setEnabled(False)
 
         self.maplink_input = QLineEdit()
@@ -864,6 +866,7 @@ class ObservationDetailsDialog(QDialog):
         self.map_summary_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.map_summary_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         map_line_layout.addWidget(self.map_summary_label, 1)
+        map_line_layout.addWidget(self.map_btn, 0)
         self.paste_map_link_btn = QPushButton(self.tr("Paste map link"), map_line)
         self.paste_map_link_btn.setToolTip(self.tr("Set the position from a map link on the clipboard"))
         self.paste_map_link_btn.clicked.connect(self._paste_map_link_from_clipboard)
@@ -879,7 +882,6 @@ class ObservationDetailsDialog(QDialog):
         map_tools_layout.addWidget(self.paste_link_label, 0)
         map_tools_layout.addWidget(self.maplink_input, 1)
         map_tools_layout.addWidget(self.maplink_open_btn, 0)
-        map_tools_layout.addWidget(self.map_btn, 0)
         self.map_tools.setVisible(False)
         left_layout.addWidget(self.map_tools, _details_row, 0, 1, 2)
         _details_row += 1
@@ -1555,7 +1557,7 @@ class ObservationDetailsDialog(QDialog):
         )
         self._register_hint_widget(
             self.map_btn,
-            self.tr("Open location in Google Maps"),
+            self.tr("Open the position in a map service"),
             allow_when_disabled=True,
             disabled_hint=self.tr("Enter coordinates to enable the map"),
         )
@@ -3756,7 +3758,8 @@ class ObservationDetailsDialog(QDialog):
             self.map_tools.setVisible(bool(open_))
         if hasattr(self, "map_tools_toggle"):
             arrow = "▾" if open_ else "▸"
-            self.map_tools_toggle.setText(f"{arrow}  {self.tr('Map')}")
+            label = self.tr("Map")  # outside the f-string, where lupdate finds it
+            self.map_tools_toggle.setText(f"{arrow}  {label}")
         self._update_map_line_summary()
 
     def _update_map_line_summary(self) -> None:
@@ -4017,19 +4020,18 @@ class ObservationDetailsDialog(QDialog):
         self._update_map_button()
         self._schedule_location_lookup()
 
-    def open_map(self):
-        """Open the GPS coordinates in a map service."""
+    def _fill_map_menu(self) -> None:
+        """The map services for the position in the form, as Open map opens."""
+        self.map_menu.clear()
         lat = self.lat_input.value()
         lon = self.lon_input.value()
-
         # Check if we have valid coordinates (not at minimum/special value)
         if lat <= self.lat_input.minimum() or lon <= self.lon_input.minimum():
             return
-
         genus = self.genus_input.text().strip()
         species = self.species_input.text().strip()
         species_name = f"{genus} {species}".strip() if genus and species else None
-        self.map_helper.show_map_service_dialog(lat, lon, species_name)
+        self.map_helper.populate_map_menu(self.map_menu, lat, lon, species_name)
 
     def _resolved_country_code_for_current_coords(
         self,

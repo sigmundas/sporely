@@ -218,8 +218,31 @@ def _images_new(context: ReviewContext, *, size: tuple[int, int] = (1500, 950), 
     return host
 
 
+def _with_map_menu(host: QWidget) -> QWidget:
+    """The window with Open map's menu drawn where it opened: both are Qt's
+    own renders (the menu is a window of its own, not in the window's grab)."""
+    from PySide6.QtGui import QPainter, QPixmap
+    from PySide6.QtWidgets import QLabel
+
+    menu = host.window_under_review.edit_page.editor().map_menu
+    base = host.grab()
+    canvas = QPixmap(base.size())
+    canvas.setDevicePixelRatio(base.devicePixelRatio())
+    painter = QPainter(canvas)
+    painter.drawPixmap(0, 0, base)
+    if menu.isVisible():
+        painter.drawPixmap(host.mapFromGlobal(menu.mapToGlobal(menu.rect().topLeft())), menu.grab())
+    painter.end()
+    label = QLabel()
+    label.setPixmap(canvas)
+    label.resize(host.size())
+    host._map_menu_capture = label  # kept alive until the capture
+    return label
+
+
 def _edit_mode(
     context: ReviewContext, *, size: tuple[int, int] = (1500, 950), typed: bool = False, syncing: bool = False,
+    map_menu: bool = False,
 ) -> QWidget:
     """Rediger in place (stage 9g2): Edit in the mode bar shows the form as a mode.
 
@@ -254,6 +277,14 @@ def _edit_mode(
         page = window.edit_page
         page.editor().location_input.setText("Lade, Trondheim")
         page.save_now()
+    if map_menu:
+        editor = window.edit_page.editor()
+        editor.lat_input.setValue(63.43123)
+        editor.lon_input.setValue(10.39456)
+        _settle(0.3)
+        button = editor.map_btn
+        editor.map_menu.popup(button.mapToGlobal(button.rect().bottomLeft()))
+        _settle(0.3)
     if syncing:
         tab._set_status_progress_visible(True)
         tab._set_status_progress_cancel_visible(True)
@@ -528,6 +559,19 @@ def register_mode_bar_scenarios(registry: ScenarioRegistry) -> None:
             locale="de_DE",
         )
     )
+    for suffix, locale, size in (("", "nb_NO", (1500, 950)), ("-small-de", "de_DE", (1100, 720))):
+        registry.register(
+            ReviewScenario(
+                id=f"edit.map-menu{suffix}",
+                group="mode-bar",
+                title=f"Rediger, Open map's menu ({locale})",
+                description="A position set: Open map on the map line shows the map services as a menu (stage 10f2).",
+                build=lambda context, size=size: _edit_mode(context, size=size, map_menu=True),
+                capture_target=_with_map_menu,
+                viewport=size,
+                locale=locale,
+            )
+        )
     registry.register(
         ReviewScenario(
             id="edit.rediger-small-de",

@@ -1625,66 +1625,35 @@ class MapServiceHelper:
             f"{easting:.0f},{northing:.0f}/{zoom}/background/{bg}"
         )
 
-    def show_map_service_dialog(self, lat, lon, species_name=None):
-        """Show a dialog to choose a map service."""
-        tr = lambda text: QCoreApplication.translate("ObservationsTab", text)
-        dialog = QDialog(self.parent)
-        dialog.setWindowTitle(tr("Open Map"))
-        dialog.setModal(True)
-        dialog.setMinimumWidth(300)
-
-        layout = QVBoxLayout(dialog)
-        layout.setSpacing(4)
-        layout.setContentsMargins(16, 16, 16, 12)
-
-        header = QLabel(tr("Choose a map service:"))
-        header.setStyleSheet("font-weight: bold; margin-bottom: 4px;")
-        layout.addWidget(header)
-
+    def map_services(self, lat, lon, species_name=None) -> list[tuple[str, str, object]]:
+        """The map services for a position: ``(label, description, open)``.
+        With a complete species name, its iNaturalist and GBIF pages follow
+        (``None`` marks where a separator goes)."""
+        # QCoreApplication.translate with the context spelled out: lupdate
+        # cannot tell a local tr's context, and filed these under none.
         species_complete = bool(species_name and len(species_name.split()) >= 2)
-
-        btn_style = (
-            "QPushButton#mapLink { text-align: left; padding: 7px 12px;"
-            " border: 1px solid #d0d0d0; border-radius: 4px;"
-            " background-color: white; color: #2c3e50;"
-            f" font-size: {pt(10)}pt; font-weight: normal; }}"
-            "QPushButton#mapLink:hover { background-color: #e8f0fe;"
-            " border-color: #4a90d9; color: #2c3e50; }"
-        )
-
-        def add_link(label_text, description, handler):
-            btn = QPushButton(label_text)
-            btn.setObjectName("mapLink")
-            btn.setStyleSheet(btn_style)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.setToolTip(description)
-            btn.clicked.connect(handler)
-            layout.addWidget(btn)
 
         def open_url(url):
             import webbrowser
             webbrowser.open(url)
-            dialog.accept()
 
         def open_google_maps():
             open_url(f"https://www.google.com/maps?q={lat},{lon}")
 
         def open_kilden():
             easting, northing = self._utm_from_latlon(lat, lon)
-            url = (
+            open_url(
                 "https://kilden.nibio.no/?topic=arealinformasjon"
                 f"&zoom=14&x={easting:.2f}&y={northing:.2f}&bgLayer=graatone"
             )
-            open_url(url)
 
         def open_norge_i_bilder():
             easting, northing = self._utm_from_latlon(lat, lon)
-            url = (
+            open_url(
                 "https://www.norgeibilder.no/"
                 f"?x={easting:.0f}&y={northing:.0f}&level=17&utm=33"
                 "&projects=&layers=&plannedOmlop=0&plannedGeovekst=0"
             )
-            open_url(url)
 
         def open_artskart():
             try:
@@ -1701,40 +1670,51 @@ class MapServiceHelper:
                 url = self._artskart_base_link(lat, lon, zoom=12, bg="nibwmts")
             open_url(url)
 
-        def open_inat_local():
-            try:
-                self.open_inaturalist_map(lat, lon, species_name)
-            finally:
-                dialog.accept()
-
-        def open_inat_species():
-            try:
-                self.open_inaturalist_species(species_name)
-            finally:
-                dialog.accept()
-
-        def open_gbif_species():
-            try:
-                self.open_gbif_species(species_name)
-            finally:
-                dialog.accept()
-
-        add_link("Google Maps", tr("Open location in Google Maps"), open_google_maps)
-        add_link("Kilden (NIBIO)", tr("Agricultural & land-use maps"), open_kilden)
-        add_link("Adb", tr("Species occurrence map (Artsdatabanken)"), open_artskart)
-        add_link("Norge i Bilder", tr("Aerial imagery of Norway"), open_norge_i_bilder)
-        add_link("iNaturalist — nearby observations", tr("Observations near this location"), open_inat_local)
+        services = [
+            ("Google Maps", QCoreApplication.translate("ObservationsTab", "Open location in Google Maps"), open_google_maps),
+            ("Kilden (NIBIO)", QCoreApplication.translate("ObservationsTab", "Agricultural & land-use maps"), open_kilden),
+            ("Artskart (Artsdatabanken)", QCoreApplication.translate("ObservationsTab", "Species occurrence map (Artsdatabanken)"), open_artskart),
+            ("Norge i Bilder", QCoreApplication.translate("ObservationsTab", "Aerial imagery of Norway"), open_norge_i_bilder),
+            (QCoreApplication.translate("ObservationsTab", "iNaturalist — nearby observations"), QCoreApplication.translate("ObservationsTab", "Observations near this location"),
+             lambda: self.open_inaturalist_map(lat, lon, species_name)),
+        ]
         if species_complete:
-            add_link(f"iNaturalist — {species_name}", tr("Species page on iNaturalist"), open_inat_species)
-            add_link(f"GBIF — {species_name}", tr("Species page on GBIF"), open_gbif_species)
+            services.append(None)
+            services.append((f"iNaturalist — {species_name}", QCoreApplication.translate("ObservationsTab", "Species page on iNaturalist"),
+                             lambda: self.open_inaturalist_species(species_name)))
+            services.append((f"GBIF — {species_name}", QCoreApplication.translate("ObservationsTab", "Species page on GBIF"),
+                             lambda: self.open_gbif_species(species_name)))
+        return services
 
-        layout.addStretch()
+    def populate_map_menu(self, menu: QMenu, lat, lon, species_name=None) -> None:
+        """Fill ``menu`` with the map services for a position (stage 10f2:
+        a menu where the dialog was). Each opens in the browser."""
+        menu.clear()
+        menu.setToolTipsVisible(True)
+        for service in self.map_services(lat, lon, species_name):
+            if service is None:
+                menu.addSeparator()
+                continue
+            label, description, handler = service
+            action = menu.addAction(label)
+            action.setToolTip(description)
+            action.setStatusTip(description)
+            action.triggered.connect(lambda _checked=False, h=handler: h())
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Close)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
+    def show_map_service_menu(self, lat, lon, species_name=None, anchor: QWidget | None = None) -> None:
+        """The map services as a menu under ``anchor`` (at the pointer without one).
 
-        dialog.exec()
+        The menu belongs to the anchor's window, not the anchor: a table
+        rebuilt while it is open replaces its link label (Codex, 10f2)."""
+        from shiboken6 import isValid
+
+        owner = anchor.window() if anchor is not None else self.parent
+        menu = QMenu(owner if isinstance(owner, QWidget) else None)
+        self.populate_map_menu(menu, lat, lon, species_name)
+        pos = anchor.mapToGlobal(anchor.rect().bottomLeft()) if anchor is not None else QCursor.pos()
+        menu.exec(pos)
+        if isValid(menu):
+            menu.deleteLater()
 
 
 class INatAIGuessWorker(QThread):
@@ -6567,7 +6547,8 @@ class ObservationsTab(QWidget):
                     map_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
                     map_label.setOpenExternalLinks(False)
                     map_label.linkActivated.connect(
-                        lambda _=None, la=lat, lo=lon, sn=species_name: self.show_map_service_dialog(la, lo, sn)
+                        lambda _=None, la=lat, lo=lon, sn=species_name, w=map_label:
+                            self.show_map_service_menu(la, lo, sn, anchor=w)
                     )
                     _prepare_table_link_label(map_label)
                     _map_hint = self.tr("Open map service")
@@ -8151,9 +8132,9 @@ class ObservationsTab(QWidget):
                 parts.append(text)
         return " ".join(parts).lower()
 
-    def show_map_service_dialog(self, lat, lon, species_name):
-        """Show a dialog to choose a map service."""
-        self.map_helper.show_map_service_dialog(lat, lon, species_name)
+    def show_map_service_menu(self, lat, lon, species_name, anchor=None):
+        """The map services as a menu under ``anchor`` (the table's Map link)."""
+        self.map_helper.show_map_service_menu(lat, lon, species_name, anchor=anchor)
 
     def _on_observations_gallery_selection_changed(self, selected_paths) -> None:
         # Persistent hint while a multi-select is active on the panel

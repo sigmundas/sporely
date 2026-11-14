@@ -6347,8 +6347,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
         from .observations_tab import MapServiceHelper
         if not hasattr(self, "_map_helper"):
             self._map_helper = MapServiceHelper(self)
-        self._map_helper.show_map_service_dialog(
-            self._current_exif_lat, self._current_exif_lon
+        self._map_helper.show_map_service_menu(
+            self._current_exif_lat, self._current_exif_lon, anchor=self.exif_map_btn
         )
 
     # -- Bilder's shared strip (stage 9f3) ------------------------------------

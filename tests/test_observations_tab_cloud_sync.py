@@ -2032,7 +2032,7 @@ def _make_observation_table_render_tab(*, dead_map=None, public_map=None, search
         gallery_widget=SimpleNamespace(clear=lambda: None),
         _update_publish_controls=lambda: None,
         set_status_message=lambda *args, **kwargs: None,
-        show_map_service_dialog=lambda *args, **kwargs: None,
+        show_map_service_menu=lambda *args, **kwargs: None,
         _artsobs_dead_by_observation_id=dead_map or {},
         _artsobs_public_published_by_observation_id=public_map or {},
     )
@@ -2062,7 +2062,7 @@ def test_render_observations_table_places_status_before_map_and_external(qapp):
         gallery_widget=SimpleNamespace(clear=lambda: None),
         _update_publish_controls=lambda: None,
         set_status_message=lambda *args, **kwargs: None,
-        show_map_service_dialog=lambda *args, **kwargs: None,
+        show_map_service_menu=lambda *args, **kwargs: None,
         _render_publish_cell=lambda row, observation_or_links: table.setItem(
             row,
             9,
