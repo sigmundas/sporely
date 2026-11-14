@@ -153,6 +153,9 @@ CALIBRATION_IDS = {
 PREFERENCES_IDS = {
     "preferences.profile", "preferences.profile-not-synced", "preferences.profile-not-synced-dark",
     "preferences.profile-not-synced-de",
+    "preferences.publishing-login-failed", "preferences.publishing-login-failed-dark",
+    "preferences.cloud-login-failed", "preferences.credential-prompt-missing-nb",
+    "preferences.credential-prompt-missing-de",
 }
 ALL_IDS = (
     REFERENCE_IDS

@@ -102,17 +102,21 @@ def clear_saved_web_credentials() -> list[str]:
 
 def _prompt_web_credentials(
     parent=None,
-    title: str = "Log in to Artsobservasjoner (web)",
+    title: str | None = None,
 ) -> tuple[Optional[str], Optional[str], bool]:
-    """Show a Qt dialog for Artsobservasjoner credentials."""
+    """Ask for Artsobservasjoner credentials.
+
+    What is missing is said in red under the form (stage 10d2), not in a
+    message box; the prompt's text is translated (context ``CredentialPrompt``).
+    """
+    from PySide6.QtCore import QCoreApplication, Qt
     from PySide6.QtWidgets import (
+        QCheckBox,
         QDialog,
         QDialogButtonBox,
         QFormLayout,
-        QCheckBox,
         QLabel,
         QLineEdit,
-        QMessageBox,
         QVBoxLayout,
     )
 
@@ -123,58 +127,88 @@ def _prompt_web_credentials(
     remember_login = False
 
     dialog = QDialog(parent)
-    dialog.setWindowTitle(title)
+    dialog.setWindowTitle(title or QCoreApplication.translate("CredentialPrompt", "Log in to {service}").format(
+        service="Artsobservasjoner"
+    ))
     dialog.setModal(True)
     dialog.setMinimumWidth(420)
 
     layout = QVBoxLayout(dialog)
-    layout.addWidget(QLabel("Enter your Artsobservasjoner email and password:"))
+    layout.addWidget(QLabel(
+        QCoreApplication.translate("CredentialPrompt", "Enter your {service} email and password:").format(
+            service="Artsobservasjoner"
+        )
+    ))
 
     form = QFormLayout()
     username_edit = QLineEdit()
-    username_edit.setPlaceholderText("Email")
+    username_edit.setPlaceholderText(QCoreApplication.translate("CredentialPrompt", "Email"))
     username_edit.setText(saved_username)
     password_edit = QLineEdit()
-    password_edit.setPlaceholderText("Password")
+    password_edit.setPlaceholderText(QCoreApplication.translate("CredentialPrompt", "Password"))
     password_edit.setEchoMode(QLineEdit.Password)
     if has_saved_password:
         password_edit.setText("********")
-    form.addRow("Email:", username_edit)
-    form.addRow("Password:", password_edit)
+    form.addRow(QCoreApplication.translate("CredentialPrompt", "Email:"), username_edit)
+    form.addRow(QCoreApplication.translate("CredentialPrompt", "Password:"), password_edit)
     layout.addLayout(form)
 
-    remember_checkbox = QCheckBox("Save password on this device")
+    remember_checkbox = QCheckBox(QCoreApplication.translate("CredentialPrompt", "Save password on this device"))
     remember_checkbox.setChecked(bool(saved_username or has_saved_password))
     if not can_store_password:
         remember_checkbox.setChecked(False)
         remember_checkbox.setEnabled(False)
-        remember_checkbox.setToolTip("Install keyring to enable encrypted password storage.")
+        remember_checkbox.setToolTip(
+            QCoreApplication.translate("CredentialPrompt", "Install keyring to enable encrypted password storage.")
+        )
     layout.addWidget(remember_checkbox)
 
     if has_saved_password:
-        layout.addWidget(QLabel("Saved password loaded (shown masked)."))
+        layout.addWidget(QLabel(QCoreApplication.translate("CredentialPrompt", "Saved password loaded (shown masked).")))
     if not can_store_password:
-        warning = QLabel("Secure password storage unavailable: password will not be saved.")
+        warning = QLabel(QCoreApplication.translate(
+            "CredentialPrompt", "Secure password storage unavailable: password will not be saved."
+        ))
         warning.setStyleSheet("color: #b35c00;")
         layout.addWidget(warning)
 
-    buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+    invalid_label = QLabel("")
+    invalid_label.setObjectName("credentialValidationMessage")
+    invalid_label.setWordWrap(True)
+    invalid_label.setStyleSheet("color: #c0392b;")
+    invalid_label.setVisible(False)
+    layout.addWidget(invalid_label)
+
+    # The app's own button text: Qt's standard buttons are not translated here.
+    buttons = QDialogButtonBox()
+    buttons.addButton(QCoreApplication.translate("CredentialPrompt", "OK"), QDialogButtonBox.AcceptRole)
+    buttons.addButton(QCoreApplication.translate("CredentialPrompt", "Cancel"), QDialogButtonBox.RejectRole)
     layout.addWidget(buttons)
 
     def _on_password_edited(_text: str):
         nonlocal password_edited
         password_edited = True
 
+    def _clear_invalid(*_args) -> None:
+        invalid_label.clear()
+        invalid_label.setVisible(False)
+
+    def _show_invalid(field, message: str) -> None:
+        invalid_label.setText(message)
+        invalid_label.setVisible(True)
+        if field is not None:
+            field.setFocus(Qt.OtherFocusReason)
+
     password_edit.textEdited.connect(_on_password_edited)
+    username_edit.textEdited.connect(_clear_invalid)
+    password_edit.textEdited.connect(_clear_invalid)
+    remember_checkbox.toggled.connect(_clear_invalid)
 
     def _accept_if_valid():
         nonlocal submitted_password, remember_login
         if not username_edit.text().strip() or not password_edit.text():
-            QMessageBox.warning(
-                dialog,
-                "Missing Information",
-                "Please enter both email and password.",
-            )
+            missing = username_edit if not username_edit.text().strip() else password_edit
+            _show_invalid(missing, QCoreApplication.translate("CredentialPrompt", "Please enter both email and password."))
             return
         if has_saved_password and not password_edited:
             submitted_password = saved_password
@@ -182,11 +216,9 @@ def _prompt_web_credentials(
             submitted_password = password_edit.text()
         remember_login = bool(remember_checkbox.isChecked())
         if remember_login and not can_store_password:
-            QMessageBox.warning(
-                dialog,
-                "Secure Storage Unavailable",
-                "Password saving requires secure keyring support on this system.",
-            )
+            _show_invalid(remember_checkbox, QCoreApplication.translate(
+                "CredentialPrompt", "Password saving requires secure keyring support on this system."
+            ))
             return
         dialog.accept()
 
@@ -573,10 +605,7 @@ class ArtsObservasjonerAuth:
         Raises:
             RuntimeError: on login failure.
         """
-        username, password, remember_login = _prompt_web_credentials(
-            parent=parent,
-            title="Log in to Artsobservasjoner (mobile)",
-        )
+        username, password, remember_login = _prompt_web_credentials(parent=parent)
         if username is None:
             return None
         if not password:
@@ -778,10 +807,7 @@ class ArtsObservasjonerAuth:
             "cancelled": bool,
         }
         """
-        username, password, remember_login = _prompt_web_credentials(
-            parent=parent,
-            title="Log in to Artsobservasjoner",
-        )
+        username, password, remember_login = _prompt_web_credentials(parent=parent)
         if username is None:
             print("[artsobs_auth] login cancelled by user")
             return {"mobile": None, "web": None, "cancelled": True}

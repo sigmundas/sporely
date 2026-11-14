@@ -7,6 +7,8 @@ files=(
   "ui/database_settings_dialog.py"
   "ui/main_window.py"
   "ui/hint_status.py"
+  "utils/artportalen_auth.py"
+  "utils/artsobservasjoner_auto_login.py"
   "ui/portable_import_dialog.py"
   "ui/image_import_dialog.py"
   "ui/raw_processing_controls.py"

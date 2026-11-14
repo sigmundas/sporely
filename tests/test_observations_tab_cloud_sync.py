@@ -1938,10 +1938,8 @@ def test_on_cloud_login_failure_toast_survives_idle_hint_refresh(monkeypatch, qa
         observations_tab=observations_tab_fake,
         _refresh_cloud_sync_ui=lambda: None,
         parent=lambda: None,
+        _show_cloud_notice=lambda *args, **kwargs: None,  # the Sporely Cloud card's notice (stage 10d2)
     )
-
-    # Bypass the modal QMessageBox to keep the test headless.
-    monkeypatch.setattr(main_window.QMessageBox, "warning", lambda *args, **kwargs: 0)
 
     main_window.ArtsobservasjonerSettingsDialog._on_cloud_login_failure(dialog, "Bad creds")
 

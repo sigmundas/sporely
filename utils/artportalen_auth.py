@@ -8,7 +8,7 @@ from typing import Callable, Dict, Optional
 from urllib.parse import urljoin, urlparse
 
 import requests
-from app_identity import APP_NAME, app_data_dir
+from app_identity import app_data_dir
 
 _ARTPORTALEN_USERNAME_KEY = "artportalen_username"
 _ARTPORTALEN_KEYRING_SERVICE = "Sporely.Artportalen"
@@ -106,7 +106,13 @@ def clear_saved_credentials() -> list[str]:
     return _clear_saved_credentials()
 
 
-def _prompt_credentials(parent=None, title: str = "Log in to Artportalen") -> tuple[Optional[str], Optional[str], bool]:
+def _prompt_credentials(parent=None, title: str | None = None) -> tuple[Optional[str], Optional[str], bool]:
+    """Ask for Artportalen credentials.
+
+    What is missing is said in red under the form (stage 10d2), not in a
+    message box; the prompt's text is translated (context ``CredentialPrompt``).
+    """
+    from PySide6.QtCore import QCoreApplication, Qt
     from PySide6.QtWidgets import (
         QCheckBox,
         QDialog,
@@ -114,7 +120,6 @@ def _prompt_credentials(parent=None, title: str = "Log in to Artportalen") -> tu
         QFormLayout,
         QLabel,
         QLineEdit,
-        QMessageBox,
         QVBoxLayout,
     )
 
@@ -125,58 +130,88 @@ def _prompt_credentials(parent=None, title: str = "Log in to Artportalen") -> tu
     remember_login = False
 
     dialog = QDialog(parent)
-    dialog.setWindowTitle(title)
+    dialog.setWindowTitle(title or QCoreApplication.translate("CredentialPrompt", "Log in to {service}").format(
+        service="Artportalen"
+    ))
     dialog.setModal(True)
     dialog.setMinimumWidth(420)
 
     layout = QVBoxLayout(dialog)
-    layout.addWidget(QLabel("Enter your Artportalen email and password:"))
+    layout.addWidget(QLabel(
+        QCoreApplication.translate("CredentialPrompt", "Enter your {service} email and password:").format(
+            service="Artportalen"
+        )
+    ))
 
     form = QFormLayout()
     username_edit = QLineEdit()
-    username_edit.setPlaceholderText("Email")
+    username_edit.setPlaceholderText(QCoreApplication.translate("CredentialPrompt", "Email"))
     username_edit.setText(saved_username)
     password_edit = QLineEdit()
-    password_edit.setPlaceholderText("Password")
+    password_edit.setPlaceholderText(QCoreApplication.translate("CredentialPrompt", "Password"))
     password_edit.setEchoMode(QLineEdit.Password)
     if has_saved_password:
         password_edit.setText("********")
-    form.addRow("Email:", username_edit)
-    form.addRow("Password:", password_edit)
+    form.addRow(QCoreApplication.translate("CredentialPrompt", "Email:"), username_edit)
+    form.addRow(QCoreApplication.translate("CredentialPrompt", "Password:"), password_edit)
     layout.addLayout(form)
 
-    remember_checkbox = QCheckBox("Save password on this device")
+    remember_checkbox = QCheckBox(QCoreApplication.translate("CredentialPrompt", "Save password on this device"))
     remember_checkbox.setChecked(bool(saved_username or has_saved_password))
     if not can_store_password:
         remember_checkbox.setChecked(False)
         remember_checkbox.setEnabled(False)
-        remember_checkbox.setToolTip("Install keyring to enable encrypted password storage.")
+        remember_checkbox.setToolTip(
+            QCoreApplication.translate("CredentialPrompt", "Install keyring to enable encrypted password storage.")
+        )
     layout.addWidget(remember_checkbox)
 
     if has_saved_password:
-        layout.addWidget(QLabel("Saved password loaded (shown masked)."))
+        layout.addWidget(QLabel(QCoreApplication.translate("CredentialPrompt", "Saved password loaded (shown masked).")))
     if not can_store_password:
-        warning = QLabel("Secure password storage unavailable: password will not be saved.")
+        warning = QLabel(QCoreApplication.translate(
+            "CredentialPrompt", "Secure password storage unavailable: password will not be saved."
+        ))
         warning.setStyleSheet("color: #b35c00;")
         layout.addWidget(warning)
 
-    buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+    invalid_label = QLabel("")
+    invalid_label.setObjectName("credentialValidationMessage")
+    invalid_label.setWordWrap(True)
+    invalid_label.setStyleSheet("color: #c0392b;")
+    invalid_label.setVisible(False)
+    layout.addWidget(invalid_label)
+
+    # The app's own button text: Qt's standard buttons are not translated here.
+    buttons = QDialogButtonBox()
+    buttons.addButton(QCoreApplication.translate("CredentialPrompt", "OK"), QDialogButtonBox.AcceptRole)
+    buttons.addButton(QCoreApplication.translate("CredentialPrompt", "Cancel"), QDialogButtonBox.RejectRole)
     layout.addWidget(buttons)
 
     def _on_password_edited(_text: str):
         nonlocal password_edited
         password_edited = True
 
+    def _clear_invalid(*_args) -> None:
+        invalid_label.clear()
+        invalid_label.setVisible(False)
+
+    def _show_invalid(field, message: str) -> None:
+        invalid_label.setText(message)
+        invalid_label.setVisible(True)
+        if field is not None:
+            field.setFocus(Qt.OtherFocusReason)
+
     password_edit.textEdited.connect(_on_password_edited)
+    username_edit.textEdited.connect(_clear_invalid)
+    password_edit.textEdited.connect(_clear_invalid)
+    remember_checkbox.toggled.connect(_clear_invalid)
 
     def _accept_if_valid():
         nonlocal submitted_password, remember_login
         if not username_edit.text().strip() or not password_edit.text():
-            QMessageBox.warning(
-                dialog,
-                "Missing Information",
-                "Please enter both email and password.",
-            )
+            missing = username_edit if not username_edit.text().strip() else password_edit
+            _show_invalid(missing, QCoreApplication.translate("CredentialPrompt", "Please enter both email and password."))
             return
         if has_saved_password and not password_edited:
             submitted_password = saved_password
@@ -184,11 +219,9 @@ def _prompt_credentials(parent=None, title: str = "Log in to Artportalen") -> tu
             submitted_password = password_edit.text()
         remember_login = bool(remember_checkbox.isChecked())
         if remember_login and not can_store_password:
-            QMessageBox.warning(
-                dialog,
-                "Secure Storage Unavailable",
-                "Password saving requires secure keyring support on this system.",
-            )
+            _show_invalid(remember_checkbox, QCoreApplication.translate(
+                "CredentialPrompt", "Password saving requires secure keyring support on this system."
+            ))
             return
         dialog.accept()
 
@@ -200,6 +233,7 @@ def _prompt_credentials(parent=None, title: str = "Log in to Artportalen") -> tu
 
     if dialog.exec() != QDialog.Accepted:
         return None, None, False
+
     return username_edit.text().strip(), submitted_password, remember_login
 
 
@@ -587,97 +621,3 @@ class ArtportalenAuth:
         else:
             self.save_cookies(cookies)
         return cookies
-
-    @staticmethod
-    def _parse_cookie_text(raw_text: str) -> Dict[str, str]:
-        text = (raw_text or "").strip()
-        if not text:
-            return {}
-        try:
-            parsed = json.loads(text)
-        except Exception:
-            parsed = None
-        if isinstance(parsed, dict):
-            return {
-                str(key).strip(): str(value).strip()
-                for key, value in parsed.items()
-                if str(key).strip() and str(value).strip()
-            }
-
-        cookies: Dict[str, str] = {}
-        for part in text.split(";"):
-            chunk = part.strip()
-            if not chunk or "=" not in chunk:
-                continue
-            name, value = chunk.split("=", 1)
-            name = name.strip()
-            value = value.strip()
-            if name and value:
-                cookies[name] = value
-        return cookies
-
-    def import_cookies_with_gui(self, parent=None) -> Optional[Dict[str, str]]:
-        from PySide6.QtCore import QUrl
-        from PySide6.QtGui import QDesktopServices
-        from PySide6.QtWidgets import (
-            QDialog,
-            QDialogButtonBox,
-            QLabel,
-            QMessageBox,
-            QPushButton,
-            QTextEdit,
-            QVBoxLayout,
-        )
-
-        dialog = QDialog(parent)
-        dialog.setWindowTitle("Import Artportalen session cookies")
-        dialog.setModal(True)
-        dialog.setMinimumWidth(520)
-
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(
-            QLabel(
-                "1. Open Artportalen in your browser and log in.\n"
-                "2. Copy the Cookie request header from a logged-in request to artportalen.se\n"
-                "   or paste a JSON object with cookie names and values.\n"
-                f"3. Paste it below so {APP_NAME} can reuse the session."
-            )
-        )
-
-        open_btn = QPushButton("Open Artportalen login page")
-        open_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(self.LOGIN_URL)))
-        layout.addWidget(open_btn)
-
-        text_edit = QTextEdit()
-        text_edit.setPlaceholderText('Cookie header or JSON, e.g. {"CookieName": "value"}')
-        layout.addWidget(text_edit, 1)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        layout.addWidget(buttons)
-
-        def _accept() -> None:
-            cookies = self._parse_cookie_text(text_edit.toPlainText())
-            if not cookies:
-                QMessageBox.warning(
-                    dialog,
-                    "Missing Cookies",
-                    "Paste a Cookie header value or a JSON cookie object.",
-                )
-                return
-            if not self.validate_cookies(cookies):
-                QMessageBox.warning(
-                    dialog,
-                    "Login Failed",
-                    "Those cookies did not validate against Artportalen. "
-                    "Log in in your browser first, then copy a fresh session cookie header.",
-                )
-                return
-            self.save_cookies(cookies)
-            dialog.accept()
-
-        buttons.accepted.connect(_accept)
-        buttons.rejected.connect(dialog.reject)
-
-        if dialog.exec() != QDialog.Accepted:
-            return None
-        return self.load_cookies()

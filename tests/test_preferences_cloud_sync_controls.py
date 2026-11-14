@@ -213,6 +213,7 @@ def test_remove_saved_passwords_clears_all_keyring_services_but_keeps_sessions(m
         tr=lambda text: text,
         _update_status=lambda: calls.append("status"),
         _update_controls=lambda: calls.append("controls"),
+        _show_notice=lambda text, tone="error", details=None: calls.append(f"notice:{tone}"),
     )
 
     main_window.ArtsobservasjonerSettingsDialog._remove_saved_passwords(dialog)
@@ -223,7 +224,7 @@ def test_remove_saved_passwords_clears_all_keyring_services_but_keeps_sessions(m
         "cloud",
         "status",
         "controls",
-        "information",
+        "notice:success",
     ]
 
 
@@ -693,6 +694,7 @@ def test_cloud_login_failure_refreshes_parent_ui_without_crashing(monkeypatch):
     fake_dialog = SimpleNamespace(
         tr=lambda text: text,
         parent=lambda: settings_hub_fake,
+        _show_cloud_notice=lambda text, tone="error", details=None: warning_calls.append(((text, tone, details), {})),
         observations_tab=SimpleNamespace(
             _reset_status_progress=lambda: events.append("reset_progress"),
             _set_status_progress_visible=lambda visible: events.append(f"progress_visible:{bool(visible)}"),
@@ -728,7 +730,8 @@ def test_cloud_login_failure_refreshes_parent_ui_without_crashing(monkeypatch):
     ]
     assert "settings_refresh" in events
     assert "badge_refresh" in events
-    assert warning_calls
+    # The user is told in the Sporely Cloud card's bar, the error in Details.
+    assert warning_calls == [(("Sporely Cloud login failed.", "error", "Connection closed"), {})]
 
 
 def test_cloud_profile_refresh_temporary_refresh_failure_does_not_wipe_or_flag(monkeypatch):

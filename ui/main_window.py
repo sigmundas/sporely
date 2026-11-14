@@ -2703,29 +2703,40 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         user_key_edit.setText(user_key)
         form.addRow(self.tr("User API key:"), user_key_edit)
         layout.addLayout(form)
+        # What is missing, said under the form (stage 10d2).
+        invalid_label = QLabel("", dialog)
+        invalid_label.setObjectName("credentialValidationMessage")
+        invalid_label.setWordWrap(True)
+        invalid_label.setStyleSheet("color: #c0392b;")
+        invalid_label.setVisible(False)
+        layout.addWidget(invalid_label)
 
         buttons = QDialogButtonBox(dialog)
         ok_btn = buttons.addButton(self.tr("OK"), QDialogButtonBox.AcceptRole)
         cancel_btn = buttons.addButton(self.tr("Cancel"), QDialogButtonBox.RejectRole)
         layout.addWidget(buttons)
 
+        def _show_invalid(field: QLineEdit, message: str) -> None:
+            invalid_label.setText(message)
+            invalid_label.setVisible(True)
+            field.setFocus(Qt.OtherFocusReason)
+
+        def _clear_invalid(*_args) -> None:
+            invalid_label.clear()
+            invalid_label.setVisible(False)
+
         def _accept_if_valid() -> None:
             if app_key_edit is not None and not app_key_edit.text().strip():
-                QMessageBox.warning(
-                    dialog,
-                    self.tr("Missing Information"),
-                    self.tr("Please enter the app API key and your user API key."),
-                )
+                _show_invalid(app_key_edit, self.tr("Please enter the app API key and your user API key."))
                 return
             if not user_key_edit.text().strip():
-                QMessageBox.warning(
-                    dialog,
-                    self.tr("Missing Information"),
-                    self.tr("Please enter your user API key."),
-                )
+                _show_invalid(user_key_edit, self.tr("Please enter your user API key."))
                 return
             dialog.accept()
 
+        user_key_edit.textEdited.connect(_clear_invalid)
+        if app_key_edit is not None:
+            app_key_edit.textEdited.connect(_clear_invalid)
         ok_btn.clicked.connect(_accept_if_valid)
         cancel_btn.clicked.connect(dialog.reject)
         user_key_edit.returnPressed.connect(_accept_if_valid)
@@ -3126,6 +3137,41 @@ class ArtsobservasjonerSettingsDialog(QDialog):
     def set_hint(self, text: str | None, tone: str = "info") -> None:
         if self._hint_controller is not None:
             self._hint_controller.set_hint(text, tone=tone)
+
+    def _show_notice(self, text: str, tone: str = "error", *, details: str | None = None) -> None:
+        """A notice in this page's bottom bar (stage 10d2), instead of a message box."""
+        if self._hint_controller is None or not self.window().isVisible():
+            self._show_notice_after_closing(text, tone, details=details)
+            return
+        self._hint_controller.show_notice(text, tone, details=details)
+
+    def _show_cloud_notice(self, text: str, tone: str = "error", *, details: str | None = None) -> None:
+        """A notice about the Sporely Cloud card: in Preferanser it is on the Profile page.
+
+        Preferanser holds this dialog inside its page widgets, so it is an
+        ancestor, not the direct parent.
+        """
+        current = self.parent() if callable(getattr(self, "parent", None)) else None
+        while current is not None:
+            show_on_profile = getattr(current, "_show_profile_notice", None)
+            if callable(show_on_profile):
+                if not current.isVisible():
+                    self._show_notice_after_closing(text, tone, details=details)
+                    return
+                show_on_profile(text, tone, details=details)
+                return
+            current = current.parent() if callable(getattr(current, "parent", None)) else None
+        self._show_notice(text, tone, details=details)
+
+    def _show_notice_after_closing(self, text: str, tone: str, *, details: str | None = None) -> None:
+        """Preferanser (or this dialog) closed before the result came, as a sign-in
+        can finish after its window is gone: a message box, as before, so it is
+        not lost in a closed window's bar."""
+        message = f"{text}\n\n{details}" if details else text
+        if tone in ("error", "warning"):
+            QMessageBox.warning(self, "Sporely", message)
+        else:
+            QMessageBox.information(self, "Sporely", message)
 
     def _on_target_selection_changed(self) -> None:
         self._update_controls()
@@ -3728,11 +3774,14 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                     pass
             self._refresh_cloud_sync_ui()
         except Exception as exc:
-            QMessageBox.warning(
-                self,
-                self.tr("Login Failed"),
-                self.tr("Unable to save cloud login.\n\n{error}").format(error=exc),
-            )
+            from utils.cloud_sync import ACCOUNT_MISMATCH_MESSAGE
+
+            error = str(exc).strip()
+            if ACCOUNT_MISMATCH_MESSAGE and ACCOUNT_MISMATCH_MESSAGE in error:
+                message = self.tr("This database belongs to another Sporely Cloud account.")
+            else:
+                message = self.tr("Could not save the Sporely Cloud login.")
+            self._show_cloud_notice(message, "error", details=error or None)
             self._cloud_client = None
 
     def _on_cloud_login_failure(self, message: str) -> None:
@@ -3776,10 +3825,8 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 except Exception:
                     pass
         self._refresh_cloud_sync_ui()
-        QMessageBox.warning(
-            self,
-            self.tr("Login Failed"),
-            self.tr("Sporely Cloud login failed.\n\n{error}").format(error=message),
+        self._show_cloud_notice(
+            self.tr("Sporely Cloud login failed."), "error", details=str(message or "").strip() or None,
         )
 
     def _on_cloud_login_finished(self) -> None:
@@ -3793,11 +3840,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             SporelyCloudClient.clear_credentials()
             update_app_settings({"cloud_user_email": None})
         except Exception as exc:
-            QMessageBox.warning(
-                self,
-                self.tr("Logout Failed"),
-                self.tr("Unable to remove cloud login.\n\n{error}").format(error=exc),
-            )
+            self._show_cloud_notice(self.tr("Could not sign out of Sporely Cloud."), "error", details=str(exc))
             return
         self._cloud_client = None
         # Invalidate the parent's cached client *before* refreshing this
@@ -3857,11 +3900,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             clear_saved_cloud_password()
             update_app_settings({"cloud_user_email": None})
         except Exception as exc:
-            QMessageBox.warning(
-                self,
-                self.tr("Reset Failed"),
-                self.tr("Unable to reset cloud account link.\n\n{error}").format(error=exc),
-            )
+            self._show_cloud_notice(self.tr("Could not reset the cloud account link."), "error", details=str(exc))
             return
         self._cloud_client = None
         settings_hub = self.parent()
@@ -3877,30 +3916,21 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 _clear_cached_cloud_avatar(settings_hub)
         self._update_cloud_controls()
         self._update_status()
-        QMessageBox.information(
-            self,
-            self.tr("Account Link Reset"),
+        self._show_cloud_notice(
             self.tr("Cloud account link has been cleared. You can now sign in with a different account."),
+            "success",
         )
 
     def _open_login(self):
         selected_uploader = self._selected_uploader()
         if not selected_uploader:
-            QMessageBox.warning(
-                self,
-                self.tr("Login Unavailable"),
-                self.tr("No upload targets are configured."),
-            )
+            self._show_notice(self.tr("No upload targets are configured."), "warning")
             return
 
         if selected_uploader.key == "inat":
             oauth = self._inat_oauth_client(require_credentials=True)
             if oauth is None:
-                QMessageBox.warning(
-                    self,
-                    self.tr("Login Unavailable"),
-                    self.tr("Missing iNaturalist Client ID."),
-                )
+                self._show_notice(self.tr("Missing iNaturalist Client ID."), "error")
                 return
             try:
                 self.login_button.setText(self.tr("Waiting for browser..."))
@@ -3920,13 +3950,9 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 return
             except Exception as exc:
                 try:
-                    QMessageBox.warning(
-                        self,
-                        self.tr("Login Failed"),
-                        self.tr("iNaturalist login failed.\n\n{error}").format(error=exc),
-                    )
+                    self._show_notice(self.tr("iNaturalist login failed."), "error", details=str(exc))
                 except RuntimeError:
-                    pass
+                    pass  # Preferanser closed while the browser was open
                 return
             finally:
                 try:
@@ -3935,7 +3961,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 except RuntimeError:
                     pass
             if token:
-                self._on_login_success({"access_token": token}, target_key="inat", already_saved=True)
+                self._on_login_success({"access_token": token}, target_key="inat")
             return
         if selected_uploader.key == "mo":
             app_key, _user_key = self._mushroomobserver_credentials()
@@ -3943,46 +3969,30 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 return
             app_key, user_key = self._mushroomobserver_credentials()
             if not app_key or not user_key:
-                QMessageBox.warning(
-                    self,
-                    self.tr("Login Unavailable"),
-                    self.tr("Missing Mushroom Observer app key or user API key."),
-                )
+                self._show_notice(self.tr("Missing Mushroom Observer app key or user API key."), "error")
                 return
-            self._on_login_success({"user_key": user_key}, target_key="mo", already_saved=True)
+            self._on_login_success({"user_key": user_key}, target_key="mo")
             return
         if selected_uploader.key == "artportalen":
             try:
                 from utils.artportalen_auth import ArtportalenAuth
             except Exception as exc:
-                QMessageBox.warning(
-                    self,
-                    self.tr("Login Unavailable"),
-                    self.tr(f"Could not load the Artportalen login helper.\n\n{exc}"),
-                )
+                self._show_notice(self.tr("Could not load the Artportalen login helper."), "error", details=str(exc))
                 return
             try:
                 cookies = ArtportalenAuth().login_with_gui(parent=self)
             except Exception as exc:
-                QMessageBox.warning(
-                    self,
-                    self.tr("Login Failed"),
-                    self.tr("Artportalen login failed.\n\n{error}").format(error=exc),
-                )
+                self._show_notice(self.tr("Artportalen login failed."), "error", details=str(exc))
                 return
             if not cookies:
                 return
-            self._on_login_success(cookies, target_key="artportalen", already_saved=True)
+            self._on_login_success(cookies, target_key="artportalen")
             return
 
         try:
             from utils.artsobservasjoner_auto_login import ArtsObservasjonerAuth
         except Exception as exc:
-            QMessageBox.warning(
-                self,
-                self.tr("Login Unavailable"),
-                self.tr(f"Could not load the login module.\n\n{exc}")
-            )
+            self._show_notice(self.tr("Could not load the login module."), "error", details=str(exc))
             return
 
         auth = ArtsObservasjonerAuth(cookies_file=self.cookies_file)
@@ -3991,32 +4001,15 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             try:
                 cookies = auth.login_web_with_gui(parent=self)
             except Exception as exc:
-                QMessageBox.warning(
-                    self,
-                    self.tr("Login Failed"),
-                    self.tr("Login failed.\n\n{error}").format(error=exc)
-                )
+                self._show_notice(self.tr("Artsobservasjoner login failed."), "error", details=str(exc))
                 return
             if not cookies:
                 return
-            self._on_login_success(cookies, target_key="web", already_saved=True)
+            self._on_login_success(cookies, target_key="web")
             return
 
-    def _on_login_success(self, cookies: dict, target_key: str, already_saved: bool = False):
-        if not already_saved:
-            try:
-                from utils.artsobservasjoner_auto_login import ArtsObservasjonerAuth
-
-                auth = ArtsObservasjonerAuth(cookies_file=self.cookies_file)
-                auth.save_cookies(cookies, target=target_key)
-            except Exception as exc:
-                QMessageBox.warning(
-                    self,
-                    self.tr("Login Failed"),
-                    self.tr(f"Unable to save login cookies.\n\n{exc}")
-                )
-                return
-
+    def _on_login_success(self, _cookies: dict, target_key: str):
+        """A login finished; its helper saved the session already."""
         self._update_status()
         self._update_controls()
         # No modal dialog; status label updates in the settings dialog.
@@ -4033,11 +4026,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                     if token_file.exists():
                         token_file.unlink()
             except Exception as exc:
-                QMessageBox.warning(
-                    self,
-                    self.tr("Logout Failed"),
-                    self.tr(f"Unable to remove login tokens.\n\n{exc}")
-                )
+                self._show_logout_failed(selected_uploader, exc)
                 return
             self._update_status()
             self._update_controls()
@@ -4046,11 +4035,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             try:
                 SettingsDB.set_setting(self.SETTING_MO_USER_API_KEY, "")
             except Exception as exc:
-                QMessageBox.warning(
-                    self,
-                    self.tr("Logout Failed"),
-                    self.tr(f"Unable to remove login credentials.\n\n{exc}")
-                )
+                self._show_logout_failed(selected_uploader, exc)
                 return
             self._update_status()
             self._update_controls()
@@ -4061,11 +4046,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
 
                 ArtportalenAuth().clear_cookies()
             except Exception as exc:
-                QMessageBox.warning(
-                    self,
-                    self.tr("Logout Failed"),
-                    self.tr(f"Unable to remove Artportalen session.\n\n{exc}")
-                )
+                self._show_logout_failed(selected_uploader, exc)
                 return
             self._update_status()
             self._update_controls()
@@ -4081,14 +4062,17 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             else:
                 return
         except Exception as exc:
-            QMessageBox.warning(
-                self,
-                self.tr("Logout Failed"),
-                self.tr(f"Unable to remove login cookies.\n\n{exc}")
-            )
+            self._show_logout_failed(selected_uploader, exc)
             return
         self._update_status()
         self._update_controls()
+
+    def _show_logout_failed(self, uploader, exc: Exception) -> None:
+        self._show_notice(
+            self.tr("Could not sign out of {service}.").format(service=self._uploader_display_label(uploader)),
+            "error",
+            details=str(exc),
+        )
 
     def _remove_saved_passwords(self) -> None:
         answer = QMessageBox.question(
@@ -4121,23 +4105,21 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self._update_status()
         self._update_controls()
         if failures:
-            QMessageBox.warning(
-                self,
-                self.tr("Password removal incomplete"),
+            self._show_notice(
                 self.tr(
-                    "Some saved passwords could not be removed from the system "
-                    "credential store. You can remove them using your operating "
-                    "system's password or credential manager.\n\n{error}"
-                ).format(error='\n'.join(failures)),
+                    "Some saved passwords could not be removed. Remove them in your "
+                    "system's password or credential manager."
+                ),
+                "warning",
+                details="\n".join(str(failure) for failure in failures),
             )
             return
-        QMessageBox.information(
-            self,
-            self.tr("Saved passwords removed"),
+        self._show_notice(
             self.tr(
                 "Saved passwords were removed. Existing session cookies and access "
                 "tokens were kept."
             ),
+            "success",
         )
 
     def _load_settings(self):
