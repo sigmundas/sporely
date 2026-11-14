@@ -13,7 +13,7 @@ from .notices import register_notice_scenarios
 from .analysis_tab import register_analysis_tab_scenarios
 from .observations import register_observation_scenarios
 from .raw_processing import register_raw_processing_scenarios
-from .portable_import import register_portable_import_scenarios
+from .portable_import import register_archive_message_scenarios, register_portable_import_scenarios
 from .preferences import register_preferences_scenarios
 from .quick_fixes import register_quick_fix_scenarios
 from .style_tokens import register_style_token_scenarios
@@ -33,6 +33,7 @@ def create_registry() -> ScenarioRegistry:
     register_observation_scenarios(registry)
     register_raw_processing_scenarios(registry)
     register_portable_import_scenarios(registry)
+    register_archive_message_scenarios(registry)
     register_preferences_scenarios(registry)
     register_quick_fix_scenarios(registry)
     register_live_lab_scenarios(registry)

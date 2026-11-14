@@ -7,7 +7,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog, QFileDialog
 
 import ui.main_window as main_window
 from ui.observations_tab import ObservationsTab
@@ -366,7 +366,7 @@ def test_restore_rejects_legacy_package_before_backup_validation(monkeypatch, qa
     monkeypatch.setattr(
         main_window, "validate_full_backup", lambda path: calls.append("validate")
     )
-    monkeypatch.setattr(QMessageBox, "critical", lambda *args: calls.append("rejected"))
+    monkeypatch.setattr(main_window, "show_message_box", lambda *args, **kwargs: calls.append("rejected"))
     dummy = type("Window", (), {
         "tr": staticmethod(lambda value: value),
         "_full_backup_worker": None,
@@ -409,7 +409,7 @@ def test_restore_action_starts_preparation_worker_without_running_restore_inline
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *args: ("backup.sporely", ""))
     monkeypatch.setattr(main_window, "classify_archive", lambda path: main_window.ArchiveRoute.FULL_BACKUP)
     monkeypatch.setattr(main_window, "validate_full_backup", lambda path: manifest)
-    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.Yes)
+    monkeypatch.setattr(main_window, "ask_wrapped_yes_no", lambda *args, **kwargs: True)
     monkeypatch.setattr(main_window, "_FullRestoreWorker", WorkerStub)
     dummy = type("Window", (), {
         "tr": staticmethod(lambda value: value),
@@ -600,7 +600,7 @@ def test_restore_cancel_schedules_staged_cleanup_off_ui_thread(monkeypatch, qapp
         })(),
         "cleanup": lambda self: calls.append("inline-cleanup"),
     })()
-    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.Cancel)
+    monkeypatch.setattr(main_window, "ask_wrapped_yes_no", lambda *args, **kwargs: False)
     dummy = type("Window", (), {
         "tr": staticmethod(lambda value: value),
         "_set_observations_status": lambda self, *args, **kwargs: None,
@@ -619,13 +619,13 @@ def test_restore_prepare_failure_releases_maintenance_barrier(monkeypatch, qapp)
     dummy = type("Window", (), {
         "tr": staticmethod(lambda value: value),
         "_end_restore_maintenance": lambda self: calls.append("release"),
-        "_on_full_restore_failed": lambda self, error: (
-            main_window.MainWindow._on_full_restore_failed(self, error)
+        "_on_full_restore_failed": lambda self, error, **kwargs: (
+            main_window.MainWindow._on_full_restore_failed(self, error, **kwargs)
         ),
         "setEnabled": lambda self, enabled: calls.append(("enabled", enabled)),
         "_set_observations_status": lambda self, *args, **kwargs: None,
     })()
-    monkeypatch.setattr(QMessageBox, "critical", lambda *args: calls.append("error"))
+    monkeypatch.setattr(main_window, "show_message_box", lambda *args, **kwargs: calls.append("error"))
 
     main_window.MainWindow._on_full_restore_prepare_failed(dummy, "broken")
 
@@ -640,7 +640,7 @@ def test_prepared_restore_closes_live_state_before_starting_swap_worker(monkeypa
             "contents": {"observations": 1, "images": 2},
         })(),
     })()
-    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.Yes)
+    monkeypatch.setattr(main_window, "ask_wrapped_yes_no", lambda *args, **kwargs: True)
     dummy = type("Window", (), {
         "tr": staticmethod(lambda value: value),
         "_set_observations_status": lambda self, *args, **kwargs: None,
@@ -680,9 +680,10 @@ def test_import_observations_cancel_is_noop(monkeypatch, qapp):
 def test_invalid_import_archive_never_opens_actionable_dialog(monkeypatch, qapp):
     calls = []
     monkeypatch.setattr(main_window, "PortableImportDialog", lambda *args: calls.append("dialog"))
-    monkeypatch.setattr(QMessageBox, "critical", lambda *args: calls.append("error"))
+    monkeypatch.setattr(main_window, "show_message_box", lambda *args, **kwargs: calls.append("error"))
     dummy = type("Window", (), {
         "tr": staticmethod(lambda value: value),
+        "_say_archive_unchecked": main_window.MainWindow._say_archive_unchecked,
     })()
     main_window.MainWindow._on_portable_preview_failed(dummy, "corrupt")
     assert calls == ["error"]

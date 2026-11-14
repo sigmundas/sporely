@@ -279,7 +279,7 @@ from .splitter_state import (
     install_persistent_splitter,
     restore_splitter_sizes,
 )
-from .dialog_helpers import ask_measurements_exist_delete, ask_wrapped_yes_no, make_github_help_button
+from .dialog_helpers import ask_measurements_exist_delete, ask_wrapped_yes_no, make_github_help_button, show_message_box
 from .calibration_dialog import CalibrationDialog
 from .ingestion_hub_tab import IngestionHubTab
 from .mode_bar import ModeBar
@@ -19210,23 +19210,22 @@ class MainWindow(GeometryMixin, QMainWindow):
         try:
             route = classify_archive(filename)
         except ArchiveRoutingError as exc:
-            QMessageBox.critical(
-                self,
-                self.tr("Invalid Sporely Archive"),
-                self.tr("The archive could not be identified safely: {error}").format(
-                    error=exc
-                ),
+            show_message_box(
+                self, "critical", self.tr("Import Observations"),
+                self.tr("Sporely cannot read this file as an archive."),
+                informative=self.tr("Choose a .sporely file exported from Sporely."),
+                details=str(exc),
             )
             return
         if route is ArchiveRoute.LEGACY_DATA_PACKAGE:
             self.import_database_bundle(filename)
             return
         if route is ArchiveRoute.FULL_BACKUP:
-            QMessageBox.critical(
-                self,
-                self.tr("Wrong Archive Type"),
-                self.tr(
-                    "This is a full Sporely backup. Use Restore Sporely Backup instead."
+            show_message_box(
+                self, "warning", self.tr("Import Observations"),
+                self.tr("This file is a full Sporely backup, not an observation archive."),
+                informative=self.tr(
+                    "File › Restore Sporely Backup… brings it back, and replaces everything in Sporely."
                 ),
             )
             return
@@ -19251,11 +19250,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self._set_observations_status("")
                 return
         except PortableImportError as exc:
-            QMessageBox.critical(
-                self,
-                self.tr("Invalid Sporely Archive"),
-                self.tr("The archive could not be validated: {error}").format(error=exc),
-            )
+            self._say_archive_unchecked(str(exc))
             return
         selected = dialog.selected_observation_ids()
         if not selected:
@@ -19276,10 +19271,14 @@ class MainWindow(GeometryMixin, QMainWindow):
         worker.start()
 
     def _on_portable_preview_failed(self, error: str) -> None:
-        QMessageBox.critical(
-            self,
-            self.tr("Invalid Sporely Archive"),
-            self.tr("The archive could not be validated: {error}").format(error=error),
+        self._say_archive_unchecked(error)
+
+    def _say_archive_unchecked(self, error: str) -> None:
+        show_message_box(
+            self, "critical", self.tr("Import Observations"),
+            self.tr("Sporely could not check this archive, so nothing was imported."),
+            informative=self.tr("The file may be damaged, or made by a newer version of Sporely."),
+            details=error,
         )
 
     def _on_portable_preview_worker_finished(self) -> None:
@@ -19305,10 +19304,16 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._set_observations_status(message, level="success", auto_clear_ms=12000)
 
     def _on_portable_import_failed(self, error: str) -> None:
-        QMessageBox.critical(
-            self,
-            self.tr("Import Failed"),
-            self.tr("The observations could not be imported: {error}").format(error=error),
+        # Not "nothing was imported": the import can be committed before a
+        # later step (journal cleanup) fails (Codex, 10g).
+        show_message_box(
+            self, "critical", self.tr("Import Observations"),
+            self.tr("The import did not finish."),
+            informative=self.tr(
+                "Some observations may already have been imported. "
+                "Check the observation list before you try again."
+            ),
+            details=error,
         )
 
     def _on_portable_import_worker_finished(self) -> None:
@@ -19323,13 +19328,17 @@ class MainWindow(GeometryMixin, QMainWindow):
         if getattr(self, "_restore_maintenance_active", False):
             return
         if self._full_backup_worker is not None and self._full_backup_worker.isRunning():
-            QMessageBox.warning(self, self.tr("Restore Sporely Backup"), self.tr("Wait for the current backup to finish before restoring."))
+            show_message_box(
+                self, "information", self.tr("Restore Sporely Backup"),
+                self.tr("Sporely is making a backup."),
+                informative=self.tr("Restore when it has finished."),
+            )
             return
         if getattr(self, "_full_restore_worker", None) is not None:
-            QMessageBox.warning(
-                self,
-                self.tr("Restore Sporely Backup"),
-                self.tr("A Sporely restore is already being prepared."),
+            show_message_box(
+                self, "information", self.tr("Restore Sporely Backup"),
+                self.tr("A backup is already being checked for restoring."),
+                informative=self.tr("Wait until Sporely asks you to confirm it."),
             )
             return
         filename, _ = QFileDialog.getOpenFileName(
@@ -19343,29 +19352,31 @@ class MainWindow(GeometryMixin, QMainWindow):
         try:
             route = classify_archive(filename)
         except ArchiveRoutingError as exc:
-            QMessageBox.critical(
-                self,
-                self.tr("Invalid Sporely Backup"),
-                self.tr("The backup could not be identified safely: {error}").format(
-                    error=exc
-                ),
+            show_message_box(
+                self, "critical", self.tr("Restore Sporely Backup"),
+                self.tr("Sporely cannot read this file as a backup."),
+                informative=self.tr("Choose a .sporely file that File › Back Up Sporely… made."),
+                details=str(exc),
             )
             return
         if route is not ArchiveRoute.FULL_BACKUP:
             message = (
-                self.tr(
-                    "Legacy Sporely data packages are not full backups and cannot be restored here."
-                )
+                self.tr("This file is an older Sporely data package, not a full backup.")
                 if route is ArchiveRoute.LEGACY_DATA_PACKAGE
-                else self.tr(
-                    "Observation archives are not full backups and cannot be restored here."
-                )
+                else self.tr("This file is an observation archive, not a full backup.")
             )
-            QMessageBox.critical(self, self.tr("Wrong Archive Type"), message)
+            show_message_box(
+                self, "warning", self.tr("Restore Sporely Backup"), message,
+                informative=self.tr("File › Import Observations… adds its observations instead."),
+            )
             return
         running = self._running_restore_blocking_threads()
         if running:
-            QMessageBox.warning(self, self.tr("Restore Sporely Backup"), self.tr("Wait for background work to finish before restoring."))
+            show_message_box(
+                self, "information", self.tr("Restore Sporely Backup"),
+                self.tr("Sporely is still working in the background."),
+                informative=self.tr("Restore when it has finished."),
+            )
             return
         if not self._begin_restore_maintenance():
             return
@@ -19488,21 +19499,22 @@ class MainWindow(GeometryMixin, QMainWindow):
     def _on_full_restore_prepared(self, prepared: PreparedRestore) -> None:
         manifest = prepared.manifest
         summary = self.tr(
-            "Created: {created}\nApp version: {version}\nObservations: {observations}\nImages: {images}\n\n"
-            "The backup is validated. A fresh safety backup will be created before replacement. Restore now?"
+            "Replace everything in Sporely with this backup?\n\n"
+            "Made {created} with Sporely {version}: {observations} observations, {images} images.\n\n"
+            "Sporely first makes a safety backup of what you have now."
         ).format(
             created=manifest.created_at,
             version=manifest.app_version,
             observations=manifest.contents.get("observations", 0),
             images=manifest.contents.get("images", 0),
         )
-        if QMessageBox.question(
+        if not ask_wrapped_yes_no(
             self,
             self.tr("Restore Sporely Backup"),
             summary,
-            QMessageBox.Yes | QMessageBox.Cancel,
-            QMessageBox.Cancel,
-        ) != QMessageBox.Yes:
+            yes_text=self.tr("Restore"),
+            no_text=self.tr("Cancel"),
+        ):
             self._start_restore_filesystem_worker("cleanup_cancel", prepared)
             return
         self._set_observations_status(
@@ -19575,7 +19587,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         error = self._pending_restore_error or self.tr("Restore preparation failed.")
         self._pending_restore_error = None
-        self._on_full_restore_failed(error)
+        self._on_full_restore_failed(error, state="unchanged")  # nothing was replaced yet
 
     def _on_full_restore_commit_completed(self, result: RestoreResult) -> None:
         self._pending_restore_swap = None
@@ -19587,11 +19599,13 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._pending_restore_swap = None
         self._pending_restore_qsettings = None
         self._pending_restore_error = None
+        state = "rolled_back"
         try:
             self._reopen_database_state_after_restore()
         except Exception as reopen_exc:
             error += f"; could not reopen the previous installation: {reopen_exc}"
-        self._on_full_restore_failed(error)
+            state = "unknown"
+        self._on_full_restore_failed(error, state=state)
 
     def _on_full_restore_filesystem_failed(self, operation: str, error: str) -> None:
         if operation == "apply":
@@ -19608,16 +19622,22 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._pending_restore_swap = None
         self._pending_restore_qsettings = None
         self._pending_restore_error = None
-        self._on_full_restore_failed(error)
+        # Staged cleanup runs before anything is replaced (cancel, or a
+        # failure to pause Sporely); apply, commit and rollback may leave the
+        # previous data, the backup's, or a mix.
+        state = "unchanged" if operation.startswith("cleanup_") else "unknown"
+        self._on_full_restore_failed(error, state=state)
 
     def _on_full_restore_unrecoverable(self, error: str) -> None:
         """Fail closed when live state cannot be quiesced for safe rollback."""
-        QMessageBox.critical(
-            self,
-            self.tr("Restore Failed"),
-            self.tr(
-                "The restore could not be rolled back safely. Recovery copies were preserved. Restart Sporely before continuing: {error}"
-            ).format(error=error),
+        show_message_box(
+            self, "critical", self.tr("Restore Sporely Backup"),
+            self.tr("The restore failed and could not be undone safely."),
+            informative=self.tr(
+                "Sporely will close. Recovery copies of your data were kept. "
+                "Start Sporely again before doing anything else."
+            ),
+            details=error,
         )
         self._closing_after_restore = True
         self.close()
@@ -19630,7 +19650,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             worker.deleteLater()
 
     def _on_full_restore_prepare_failed(self, error: str) -> None:
-        self._on_full_restore_failed(error)
+        self._on_full_restore_failed(error, state="unchanged")
 
     def _on_full_restore_worker_finished(self) -> None:
         worker = self._full_restore_worker
@@ -19643,17 +19663,38 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def _on_full_restore_completed(self, result: RestoreResult) -> None:
         self._set_observations_status(self.tr("Sporely backup restored."), level="success", auto_clear_ms=12000)
-        QMessageBox.information(
-            self,
-            self.tr("Restore Complete"),
-            self.tr("The backup was restored successfully. Restart Sporely to load the restored installation.\n\nSafety backup: {path}").format(path=result.safety_backup),
+        show_message_box(
+            self, "information", self.tr("Restore Sporely Backup"),
+            self.tr("The backup was restored."),
+            informative=self.tr(
+                "Sporely will close. Start it again to use the restored data.\n\n"
+                "The safety backup of your previous data is here:\n{path}"
+            ).format(path=result.safety_backup),
         )
         self._closing_after_restore = True
         self.close()
 
-    def _on_full_restore_failed(self, error: str) -> None:
+    def _on_full_restore_failed(self, error: str, state: str = "unknown") -> None:
+        """``state`` says what is known of the data: "unchanged" (nothing
+        was replaced), "rolled_back" (the previous data was put back) or
+        "unknown" (a failed apply, commit or rollback; Codex, 10g)."""
         self._end_restore_maintenance()
-        QMessageBox.critical(self, self.tr("Restore Failed"), self.tr("The backup was not restored: {error}").format(error=error))
+        if state == "unchanged":
+            text = self.tr("The backup was not restored.")
+            informative = self.tr("Nothing in Sporely was changed.")
+        elif state == "rolled_back":
+            text = self.tr("The backup was not restored.")
+            informative = self.tr("Your previous data was put back.")
+        else:
+            text = self.tr("The restore did not complete.")
+            informative = self.tr(
+                "Your data may be the previous data or partly restored. "
+                "Check your observations before you go on."
+            )
+        show_message_box(
+            self, "critical", self.tr("Restore Sporely Backup"), text,
+            informative=informative, details=error,
+        )
         self._set_observations_status(self.tr("Restore failed."), level="error", auto_clear_ms=12000)
 
     def import_database_bundle(self, filename: str | None = None) -> None:

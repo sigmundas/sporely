@@ -80,6 +80,9 @@ OTHER_UI_IDS = {
     "raw-processing.methods",
     "portable-import.all-selected",
     "portable-import.subset",
+    "archive-messages.import-failed", "archive-messages.import-failed-de",
+    "archive-messages.full-backup-for-import", "archive-messages.full-backup-for-import-de",
+    "archive-messages.import-failed-details", "archive-messages.restore-complete",
 }
 TAXON_PICKER_IDS = {
     "taxon-picker.search-genus",
@@ -206,7 +209,7 @@ def test_registry_has_unique_semantic_ids_and_expected_groups() -> None:
     ids = [scenario.id for scenario in registry.all()]
     assert len(ids) == len(set(ids))
     assert set(registry.groups()) == {
-        "analysis", "calibration", "conflict", "live-lab", "measure", "mode-bar", "notices", "observations",
+        "analysis", "archive-messages", "calibration", "conflict", "live-lab", "measure", "mode-bar", "notices", "observations",
         "portable-import", "preferences", "quick-fixes", "raw-processing", "reference-library", "style-tokens",
         "taxon-picker",
     }
