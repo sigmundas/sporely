@@ -149,6 +149,10 @@ CALIBRATION_IDS = {
     "calibration.no-image", "calibration.no-image-dark", "calibration.export-failed",
     "calibration.export-failed-de", "calibration.new-objective-missing",
 }
+PREFERENCES_IDS = {
+    "preferences.profile", "preferences.profile-not-synced", "preferences.profile-not-synced-dark",
+    "preferences.profile-not-synced-de",
+}
 ALL_IDS = (
     REFERENCE_IDS
     | CONFLICT_IDS
@@ -162,6 +166,7 @@ ALL_IDS = (
     | MODE_BAR_IDS
     | NOTICE_IDS
     | CALIBRATION_IDS
+    | PREFERENCES_IDS
 )
 
 
@@ -185,7 +190,7 @@ def test_registry_has_unique_semantic_ids_and_expected_groups() -> None:
     assert len(ids) == len(set(ids))
     assert set(registry.groups()) == {
         "analysis", "calibration", "conflict", "live-lab", "measure", "mode-bar", "notices", "observations",
-        "portable-import", "quick-fixes", "raw-processing", "reference-library", "style-tokens",
+        "portable-import", "preferences", "quick-fixes", "raw-processing", "reference-library", "style-tokens",
         "taxon-picker",
     }
     assert {scenario.id for scenario in registry.all()} == ALL_IDS

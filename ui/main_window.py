@@ -855,6 +855,31 @@ class DatabaseBundleOptionsDialog(QDialog):
         }
 
 
+def build_sync_log_dialog(parent: QWidget, text: str) -> QDialog:
+    """The Sync log: the last cloud sync's status, summary and errors.
+
+    One builder for the main window and Preferanser (stage 10d1).
+    """
+    dialog = QDialog(parent)
+    dialog.setWindowTitle(QCoreApplication.translate("MainWindow", "Sync log"))
+    dialog.setMinimumSize(700, 420)
+    dialog.setWindowFlags(dialog.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+    layout = QVBoxLayout(dialog)
+    layout.setContentsMargins(16, 16, 16, 16)
+    layout.setSpacing(12)
+
+    view = QPlainTextEdit(dialog)
+    view.setReadOnly(True)
+    view.setPlainText(text)
+    view.setLineWrapMode(QPlainTextEdit.WidgetWidth)
+    layout.addWidget(view, 1)
+
+    buttons = QDialogButtonBox(QDialogButtonBox.Ok, Qt.Horizontal, dialog)
+    buttons.accepted.connect(dialog.accept)
+    layout.addWidget(buttons)
+    return dialog
+
+
 class SettingsHubDialog(QDialog):
     """Single settings hub with left-nav pane and stacked content pages.
 
@@ -999,6 +1024,11 @@ class SettingsHubDialog(QDialog):
         if page_index == self.PAGE_PUBLISHING:
             hint_bar = getattr(self._artsobs_dialog, "hint_bar", None)
             help_button = getattr(self._artsobs_dialog, "_help_button", None)
+        elif page_index == self.PAGE_PROFILE:
+            # The page's own bar, for its notices (stage 10d1). Not the
+            # publishing dialog's, whose cloud card the page holds: that bar
+            # shows the publishing services' sign-in state.
+            hint_bar = getattr(self, "_profile_hint_bar", None)
         elif page_index == self.PAGE_DATABASE:
             hint_bar = getattr(self._db_dialog, "hint_bar", None)
         elif page_index == self.PAGE_APPEARANCE:
@@ -1014,6 +1044,9 @@ class SettingsHubDialog(QDialog):
     # ── Pages ─────────────────────────────────────────────────────────────────
 
     def _build_profile_page(self) -> QWidget:
+        # The page's bottom bar, shown in the hub's bottom row (stage 10d1).
+        self._profile_hint_bar = HintBar(self)
+        self._profile_hint_controller = HintStatusController(self._profile_hint_bar, self)
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1951,13 +1984,22 @@ class SettingsHubDialog(QDialog):
         buffer.close()
         return bytes(data)
 
+    def _show_profile_notice(self, text: str, tone: str = "error", *, details: str | None = None) -> None:
+        """A notice in the Profile page's bottom bar (stage 10d1), instead of a message box.
+
+        Shows the Profile page first: Save works from every page.
+        """
+        if self._nav.currentRow() != self.PAGE_PROFILE:
+            self._nav.setCurrentRow(self.PAGE_PROFILE)
+        controller = getattr(self, "_profile_hint_controller", None)
+        if controller is not None:
+            controller.show_notice(text, tone, details=details)
+
     def _choose_profile_avatar(self) -> None:
         client = self._get_cloud_client()
         if client is None:
-            QMessageBox.information(
-                self,
-                self.tr("Sporely Cloud"),
-                self.tr("Sign in to Sporely Cloud before changing your profile photo."),
+            self._show_profile_notice(
+                self.tr("Sign in to Sporely Cloud before changing your profile photo."), "warning",
             )
             return
         path, _ = QFileDialog.getOpenFileName(
@@ -1987,13 +2029,9 @@ class SettingsHubDialog(QDialog):
                     delattr(parent, "_avatar_pixmap_cached")
                 if hasattr(parent, "_update_corner_ui"):
                     parent._update_corner_ui()
-            QMessageBox.information(self, self.tr("Sporely Cloud"), self.tr("Profile photo updated."))
+            self._show_profile_notice(self.tr("Profile photo updated."), "success")
         except Exception as exc:
-            QMessageBox.warning(
-                self,
-                self.tr("Upload Failed"),
-                self.tr("Could not update profile photo.\n\n{error}").format(error=exc),
-            )
+            self._show_profile_notice(self.tr("Could not update profile photo."), "error", details=str(exc))
 
     def _refresh_cloud_profile_fields(self, force: bool = False) -> None:
         if not hasattr(self, "_profile_email"):
@@ -2202,20 +2240,9 @@ class SettingsHubDialog(QDialog):
         pull_only: bool = False,
     ) -> None:
         main_window = self._settings_hub_main_window()
-        if main_window is None:
-            QMessageBox.warning(
-                self,
-                self.tr("Cloud Sync"),
-                self.tr("Cloud sync is not available right now."),
-            )
-            return
-        starter = getattr(main_window, "start_cloud_sync", None)
+        starter = getattr(main_window, "start_cloud_sync", None) if main_window is not None else None
         if not callable(starter):
-            QMessageBox.warning(
-                self,
-                self.tr("Cloud Sync"),
-                self.tr("Cloud sync is not available right now."),
-            )
+            self._show_profile_notice(self.tr("Cloud sync is not available right now."), "error")
             return
         started = False
         try:
@@ -2232,26 +2259,7 @@ class SettingsHubDialog(QDialog):
         finally:
             self.refresh_cloud_sync_status()
         if not started:
-            QMessageBox.information(
-                self,
-                self.tr("Cloud Sync"),
-                self.tr("Cloud sync is already running or could not start."),
-            )
-
-    def _build_cloud_sync_details_dialog(self, lines: list[str]) -> QDialog:
-        dialog = QDialog(self)
-        dialog.setWindowTitle(self.tr("Sync log"))
-        dialog.setMinimumSize(560, 320)
-        layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
-
-        text = QPlainTextEdit(dialog)
-        text.setReadOnly(True)
-        text.setPlainText("\n".join(lines))
-        text.setLineWrapMode(QPlainTextEdit.WidgetWidth)
-        layout.addWidget(text, 1)
-        return dialog
+            self._show_profile_notice(self.tr("Cloud sync is already running or could not start."), "info")
 
     def _show_cloud_sync_details(self) -> None:
         main_window = self._settings_hub_main_window()
@@ -2289,7 +2297,7 @@ class SettingsHubDialog(QDialog):
             lines.extend(f"- {message}" for message in error_messages)
         if not lines:
             lines.append(self.tr("No cloud sync details are available yet."))
-        self._build_cloud_sync_details_dialog(lines).exec()
+        build_sync_log_dialog(self, "\n".join(lines)).exec()
 
     def _on_cloud_login_changed(self, client=None, email: str | None = None) -> None:
         self._cloud_profile_loaded_user_id = ""
@@ -2351,14 +2359,16 @@ class SettingsHubDialog(QDialog):
                     pass
         self.refresh_cloud_sync_status()
 
-    def _profile_sync_error_message(self, exc: Exception) -> str:
+    def _profile_sync_error_notice(self, exc: Exception) -> tuple[str, str | None]:
+        """What to say when the profile did not reach Sporely Cloud: the
+        message, and the error itself for Details when it adds anything."""
         text = str(exc or "").strip()
         lower = text.lower()
         if is_cloud_auth_error(exc):
-            return self.tr("Your Sporely Cloud session expired. Please sign in again.")
+            return self.tr("Your Sporely Cloud session expired. Please sign in again."), None
         if "profiles_username_key" in lower or ("username" in lower and "taken" in lower):
-            return self.tr("That username is already taken. Please choose a different one.")
-        return self.tr("The local profile was saved, but Sporely Cloud was not updated.\n\n{error}").format(error=exc)
+            return self.tr("That username is already taken. Please choose a different one."), None
+        return self.tr("The local profile was saved, but Sporely Cloud was not updated."), text or None
 
     def _clear_invalid_cloud_session(self) -> None:
         try:
@@ -2430,11 +2440,8 @@ class SettingsHubDialog(QDialog):
             except Exception as exc:
                 if is_cloud_reauth_required_error(exc) or is_cloud_auth_error(exc):
                     self._mark_cloud_session_needs_reauth(exc)
-                QMessageBox.warning(
-                    self,
-                    self.tr("Profile Not Synced"),
-                    self._profile_sync_error_message(exc),
-                )
+                message, details = self._profile_sync_error_notice(exc)
+                self._show_profile_notice(message, "error", details=details)
                 return False
         return True
 
@@ -5578,24 +5585,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         return "\n".join(lines)
 
     def _build_cloud_sync_details_dialog(self) -> QDialog:
-        dialog = QDialog(self)
-        dialog.setWindowTitle(self.tr("Sync log"))
-        dialog.setMinimumSize(700, 420)
-        dialog.setWindowFlags(dialog.windowFlags() & ~Qt.WindowContextHelpButtonHint)
-        layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
-
-        text = QPlainTextEdit(dialog)
-        text.setReadOnly(True)
-        text.setPlainText(self._cloud_sync_details_text())
-        text.setLineWrapMode(QPlainTextEdit.WidgetWidth)
-        layout.addWidget(text, 1)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok, Qt.Horizontal, dialog)
-        buttons.accepted.connect(dialog.accept)
-        layout.addWidget(buttons)
-        return dialog
+        return build_sync_log_dialog(self, self._cloud_sync_details_text())
 
     def _show_cloud_sync_details_dialog(self) -> None:
         self._build_cloud_sync_details_dialog().exec()

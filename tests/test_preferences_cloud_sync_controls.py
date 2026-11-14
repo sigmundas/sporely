@@ -558,16 +558,18 @@ def test_profile_cloud_sync_log_button_shows_summary_and_errors(monkeypatch, qap
 
     captured: dict[str, object] = {}
 
-    def fake_build(lines):
-        captured["lines"] = list(lines)
+    def fake_build(parent, text):
+        captured["parent"] = parent
+        captured["text"] = text
         return SimpleNamespace(exec=lambda: captured.setdefault("executed", True))
 
-    monkeypatch.setattr(dialog, "_build_cloud_sync_details_dialog", fake_build)
+    # The shared Sync log builder (stage 10d1).
+    monkeypatch.setattr(main_window, "build_sync_log_dialog", fake_build)
 
     dialog.cloud_sync_log_button.click()
 
-    assert captured["executed"] is True
-    text = "\n".join(captured["lines"])
+    assert captured["executed"] is True and captured["parent"] is dialog
+    text = captured["text"]
     assert "Status: ok" in text
     assert "Summary: Cloud sync complete." in text
     assert "Observations: 5 checked; 5 re-dirtied due to pending local images; 5 skipped as no-op." in text
@@ -914,9 +916,11 @@ def _build_profile_save_fake_dialog(events, fake_client, fake_main_window, profi
         _on_cloud_logout_changed=lambda: events.append("logout"),
         _settings_hub_main_window=lambda: fake_main_window,
         parent=lambda: None,
+        # The Profile page's notice (stage 10d1), recorded.
+        _show_profile_notice=lambda text, tone="error", *, details=None: events.append(("notice", tone, text)),
     )
-    fake_dialog._profile_sync_error_message = MethodType(
-        main_window.SettingsHubDialog._profile_sync_error_message,
+    fake_dialog._profile_sync_error_notice = MethodType(
+        main_window.SettingsHubDialog._profile_sync_error_notice,
         fake_dialog,
     )
     fake_dialog._mark_cloud_session_needs_reauth = MethodType(
@@ -974,8 +978,9 @@ def test_profile_save_temporary_refresh_failure_does_not_wipe_or_flag(monkeypatc
             {},
         )
     ]
-    # User is still warned about the failure (via _profile_sync_error_message).
-    assert warning_calls
+    # The user is still told, in the Profile page's bar.
+    assert [e for e in events if isinstance(e, tuple) and e[:2] == ("notice", "error")]
+    assert warning_calls == []
 
 
 def test_profile_save_reauth_required_flags_session_without_wiping(monkeypatch):
@@ -1018,8 +1023,9 @@ def test_profile_save_reauth_required_flags_session_without_wiping(monkeypatch):
     # Session flagged for re-auth so the UI can prompt sign-in.
     assert settings_payload["cloud_last_sync_status"] == "reauth_required"
     assert "idle_hint" in events
-    # User still warned.
-    assert warning_calls
+    # The user is still told, in the Profile page's bar.
+    assert [e for e in events if isinstance(e, tuple) and e[:2] == ("notice", "error")]
+    assert warning_calls == []
 
 
 def test_raw_processing_preferences_page_exposes_advanced_controls(monkeypatch, qapp):

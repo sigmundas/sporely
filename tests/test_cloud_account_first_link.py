@@ -120,8 +120,10 @@ def test_profile_error_only_blames_username_for_username_conflicts(error, taken)
     from ui import main_window
 
     dialog = SimpleNamespace(tr=lambda text: text)
-    message = main_window.SettingsHubDialog._profile_sync_error_message(dialog, Exception(error))
+    message, details = main_window.SettingsHubDialog._profile_sync_error_notice(dialog, Exception(error))
     assert ("username is already taken" in message) is taken
+    # Details carry the server's error only when the message does not say it all.
+    assert (details is None) is taken
 
 
 def test_refused_first_link_at_sign_in_saves_no_credentials(local_db, monkeypatch):
