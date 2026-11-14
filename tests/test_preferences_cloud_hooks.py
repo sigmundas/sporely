@@ -144,3 +144,60 @@ def test_changing_account_from_the_standalone_dialog_redraws_the_corner(monkeypa
     main_window.ArtsobservasjonerSettingsDialog._on_reset_cloud_account(dialog)
 
     assert window._cloud_client is None and corner == ["corner"]
+
+
+def _another_account(hub, *, fetch_profile):
+    client = SimpleNamespace(**dict(hub._cloud_client.__dict__))
+    client.user_id = "user-456"
+    client.save_credentials = lambda **_kwargs: None
+    client.fetch_current_user_info = lambda: {"email": "new@example.com"}
+    client.fetch_profile = fetch_profile
+    return client
+
+
+A_PHOTO = "https://example.supabase.co/storage/v1/object/public/avatars/user-123/avatar.jpg"
+
+
+def test_signing_in_to_an_account_without_a_photo_drops_the_previous_photo(signed_in, monkeypatch):
+    """Codex: the previous account's photo stayed, and was saved into the profile."""
+    _parent, hub, _corner = signed_in
+    monkeypatch.setattr(cloud_sync, "ensure_database_linked_to_cloud_user", lambda _client: None)
+    saved = []
+    monkeypatch.setattr(main_window.SettingsDB, "set_profile", lambda *args: saved.append(args))
+    hub._profile_avatar_url = A_PHOTO
+    no_photo = _another_account(hub, fetch_profile=lambda: {"id": "user-456", "username": "b", "avatar_url": None})
+
+    hub._artsobs_dialog._on_cloud_login_success(no_photo, "new@example.com")
+
+    assert hub._profile_avatar_url == ""
+    assert saved and saved[-1][-1] == ""  # the profile keeps no photo URL
+
+
+def test_a_failed_profile_fetch_keeps_the_photo(signed_in, monkeypatch):
+    _parent, hub, _corner = signed_in
+    monkeypatch.setattr(cloud_sync, "ensure_database_linked_to_cloud_user", lambda _client: None)
+    hub._profile_avatar_url = A_PHOTO
+
+    def unavailable():
+        raise cloud_sync.CloudSyncError("GET profiles: 503")
+
+    same_account = _another_account(hub, fetch_profile=unavailable)
+    same_account.user_id = "user-123"
+
+    hub._artsobs_dialog._on_cloud_login_success(same_account, "a@example.com")
+
+    assert hub._profile_avatar_url == A_PHOTO  # not known to be gone
+
+
+def test_a_failed_profile_fetch_for_another_account_drops_the_photo(signed_in, monkeypatch):
+    """Codex: kept after a failed fetch, A's photo showed for B."""
+    _parent, hub, _corner = signed_in
+    monkeypatch.setattr(cloud_sync, "ensure_database_linked_to_cloud_user", lambda _client: None)
+    hub._profile_avatar_url = A_PHOTO
+
+    def unavailable():
+        raise cloud_sync.CloudSyncError("GET profiles: 503")
+
+    hub._artsobs_dialog._on_cloud_login_success(_another_account(hub, fetch_profile=unavailable), "new@example.com")
+
+    assert hub._profile_avatar_url == ""

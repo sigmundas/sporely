@@ -97,6 +97,8 @@ def _clear_cached_cloud_avatar(owner) -> None:
     """Prevent a signed-out corner from being repainted with an old avatar."""
     if hasattr(owner, "_avatar_pixmap_cached"):
         delattr(owner, "_avatar_pixmap_cached")
+    if hasattr(owner, "_avatar_cached_user_id"):
+        delattr(owner, "_avatar_cached_user_id")
 
 # Stage micrometer: tick-marked ruler bar inside a circle
 try:
@@ -2025,8 +2027,7 @@ class SettingsHubDialog(QDialog):
                 self._render_profile_avatar()
             parent = self.parent()
             if parent is not None:
-                if hasattr(parent, "_avatar_pixmap_cached"):
-                    delattr(parent, "_avatar_pixmap_cached")
+                _clear_cached_cloud_avatar(parent)
                 if hasattr(parent, "_update_corner_ui"):
                     parent._update_corner_ui()
             self._show_profile_notice(self.tr("Profile photo updated."), "success")
@@ -2073,8 +2074,10 @@ class SettingsHubDialog(QDialog):
                 return
             user_info = {}
         account_email = str(user_info.get("email") or account_email or "").strip()
+        cloud_profile_loaded = False
         try:
             cloud_profile = client.fetch_profile()
+            cloud_profile_loaded = True
         except Exception as exc:
             if is_cloud_reauth_required_error(exc) or is_cloud_auth_error(exc):
                 self._mark_cloud_session_needs_reauth(exc)
@@ -2116,8 +2119,13 @@ class SettingsHubDialog(QDialog):
         self._profile_email.setToolTip(profile_tooltip)
         if bio:
             self._profile_bio.setPlainText(bio)
-        if avatar_url:
+        if avatar_url or cloud_profile_loaded:
+            # The signed-in account's photo, or none: the previous account's
+            # photo must not stay (photos are only ever set in the cloud).
             self._profile_avatar_url = avatar_url
+        elif user_id and f"/avatars/{user_id}/" not in str(self._profile_avatar_url or ""):
+            # Not loaded: keep the photo only if it is this account's.
+            self._profile_avatar_url = ""
         SettingsDB.set_profile(
             self._profile_name.text().strip(),
             self._profile_email.text().strip(),
@@ -5232,12 +5240,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         cloud_client = getattr(self, "_cloud_client", None)
         has_cloud_session = _has_active_or_reloadable_cloud_session(settings, cloud_client)
         cloud_email = str(settings.get("cloud_user_email") or "").strip()
-        cloud_user_id = str(
-            getattr(cloud_client, "user_id", "")
-            or settings.get("cloud_user_id")
-            or settings.get("linked_cloud_user_id")
-            or ""
-        ).strip()
+        cloud_user_id = self._corner_cloud_user_id(settings)
         if has_cloud_session:
             self._avatar_corner_btn.setVisible(True)
             self._avatar_corner_btn.setToolTip(self.tr("Sporely Cloud Profile"))
@@ -5806,10 +5809,24 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._close_after_cloud_sync = False
         self.close()
 
+    def _corner_cloud_user_id(self, settings: dict | None = None) -> str:
+        """The account the corner shows: the cached client's, else the stored one."""
+        if settings is None:
+            settings = get_app_settings()
+        return str(
+            getattr(getattr(self, "_cloud_client", None), "user_id", "")
+            or settings.get("cloud_user_id")
+            or settings.get("linked_cloud_user_id")
+            or ""
+        ).strip()
+
     def _fetch_and_set_cloud_avatar(self, user_id: str):
+        user_id = str(user_id or "").strip()
         if hasattr(self, "_avatar_pixmap_cached"):
-            self._apply_cloud_avatar(self._avatar_pixmap_cached)
-            return
+            if getattr(self, "_avatar_cached_user_id", None) == user_id:
+                self._apply_cloud_avatar(self._avatar_pixmap_cached)
+                return
+            _clear_cached_cloud_avatar(self)  # another account's photo
 
         if not hasattr(self, "_avatar_network"):
             from PySide6.QtNetwork import QNetworkAccessManager
@@ -5840,21 +5857,26 @@ class MainWindow(GeometryMixin, QMainWindow):
             req.setRawHeader(b"Authorization", f"Bearer {token}".encode())
 
         reply = self._avatar_network.get(req)
-        reply.finished.connect(lambda: self._handle_avatar_reply(reply))
+        reply.finished.connect(lambda: self._handle_avatar_reply(reply, user_id))
 
-    def _handle_avatar_reply(self, reply):
+    def _handle_avatar_reply(self, reply, user_id: str):
         try:
             from PySide6.QtNetwork import QNetworkReply
+            settings = get_app_settings()
             if (
                 reply.error() == QNetworkReply.NoError
                 and _has_active_or_reloadable_cloud_session(
-                    get_app_settings(), getattr(self, "_cloud_client", None)
+                    settings, getattr(self, "_cloud_client", None)
                 )
+                # A slow reply for an account signed out of since must not
+                # show, or be kept, for the account signed in now.
+                and self._corner_cloud_user_id(settings) == user_id
             ):
                 data = reply.readAll()
                 pixmap = QPixmap()
                 if pixmap.loadFromData(data):
                     self._avatar_pixmap_cached = pixmap
+                    self._avatar_cached_user_id = user_id
                     self._apply_cloud_avatar(pixmap)
         except Exception:
             pass
