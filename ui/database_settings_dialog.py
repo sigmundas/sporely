@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from database.models import SettingsDB
 from database.schema import (
+    APP_SETTINGS_LOCK,
     get_app_settings,
     save_app_settings,
     get_database_path,
@@ -347,25 +348,26 @@ class DatabaseSettingsDialog(QDialog):
     def _save_settings(self):
         if self._loading_settings:
             return
-        settings = get_app_settings()
         db_folder = self.db_path_input.text().strip()
         images_dir = self.images_dir_input.text().strip()
 
-        old_db_path = settings.get("database_path")
-        old_ref_path = settings.get("reference_database_path")
-        if db_folder:
-            settings["database_folder"] = db_folder
-            settings.pop("database_path", None)
-            settings.pop("reference_database_path", None)
-        else:
-            settings.pop("database_folder", None)
+        with APP_SETTINGS_LOCK:  # no other write may land between the read and the save
+            settings = get_app_settings()
+            old_db_path = settings.get("database_path")
+            old_ref_path = settings.get("reference_database_path")
+            if db_folder:
+                settings["database_folder"] = db_folder
+                settings.pop("database_path", None)
+                settings.pop("reference_database_path", None)
+            else:
+                settings.pop("database_folder", None)
 
-        if images_dir:
-            settings["images_dir"] = images_dir
-        else:
-            settings.pop("images_dir", None)
+            if images_dir:
+                settings["images_dir"] = images_dir
+            else:
+                settings.pop("images_dir", None)
 
-        save_app_settings(settings)
+            save_app_settings(settings)
 
         if db_folder:
             try:

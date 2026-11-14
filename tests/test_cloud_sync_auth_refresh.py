@@ -472,7 +472,15 @@ def test_refresh_retries_with_settings_token_after_stale_invalid_grant(monkeypat
             },
         ]
     )
-    monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: next(settings_snapshots))
+    last_snapshot: list[dict] = []
+
+    def read_settings():
+        # The store keeps its last state: the refresh checks it is unchanged
+        # before saving.
+        last_snapshot[:] = [next(settings_snapshots, None) or last_snapshot[0]]
+        return dict(last_snapshot[0])
+
+    monkeypatch.setattr(cloud_sync, "get_app_settings", read_settings)
 
     refresh_calls: list[str] = []
 

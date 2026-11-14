@@ -21,6 +21,7 @@ from .schema import (
     LEGACY_RECOVERY_MARKER_COLUMN,
     new_sync_key,
     save_app_settings,
+    APP_SETTINGS_LOCK,
 )
 from utils.exif_reader import get_image_datetime
 from utils.calibration_assets import (
@@ -670,14 +671,15 @@ def reset_cloud_sync_state() -> dict[str, int]:
     finally:
         conn.close()
 
-    app_settings = get_app_settings()
     removed_app_settings = 0
-    for key in sorted(_CLOUD_APP_SETTING_KEYS):
-        if key in app_settings:
-            removed_app_settings += 1
-            app_settings.pop(key, None)
-    if removed_app_settings:
-        save_app_settings(app_settings)
+    with APP_SETTINGS_LOCK:  # no other write may land between the read and the save
+        app_settings = get_app_settings()
+        for key in sorted(_CLOUD_APP_SETTING_KEYS):
+            if key in app_settings:
+                removed_app_settings += 1
+                app_settings.pop(key, None)
+        if removed_app_settings:
+            save_app_settings(app_settings)
 
     return {
         "observations": observation_count,

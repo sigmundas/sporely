@@ -1,8 +1,11 @@
 """Database schema and initialization"""
 import json
+import os
 import re
 import sqlite3
 import shutil
+import stat
+import threading
 import uuid
 from pathlib import Path
 
@@ -322,29 +325,69 @@ def save_objectives(objectives: dict) -> None:
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(normalized, handle, indent=2)
 
+# Held for every write of app_settings.json, and by callers that read the
+# settings, change them and save the whole dict back (hold it across all
+# three). Without it two threads' updates interleave and one is lost: a sync
+# worker saving its pull time could write back the Sporely Cloud tokens a
+# sign-out had just cleared. Reentrant; held only for file I/O.
+APP_SETTINGS_LOCK = threading.RLock()
+
+
 def _load_app_settings() -> dict:
-    if not SETTINGS_PATH.exists():
-        return {}
-    try:
-        with open(SETTINGS_PATH, "r", encoding="utf-8") as handle:
-            data = json.load(handle)
-        return data if isinstance(data, dict) else {}
-    except (OSError, json.JSONDecodeError):
-        return {}
+    # Read under the lock too: on Windows a file open for reading cannot be
+    # replaced, so a write would fail while another thread reads.
+    with APP_SETTINGS_LOCK:
+        if not SETTINGS_PATH.exists():
+            return {}
+        try:
+            with open(SETTINGS_PATH, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            return data if isinstance(data, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            return {}
 
 def get_app_settings() -> dict:
     return _load_app_settings()
 
 def save_app_settings(settings: dict) -> None:
-    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(SETTINGS_PATH, "w", encoding="utf-8") as handle:
-        json.dump(settings, handle, indent=2)
+    """Write the settings file whole.
+
+    Written to a temporary file and moved into place, so a reader on another
+    thread never sees a half-written file (which reads as no settings).
+    """
+    with APP_SETTINGS_LOCK:
+        SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        target = Path(os.path.realpath(SETTINGS_PATH))  # a symlink's file, not the link
+        temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+        # The file holds tokens: the copy is never readable by more users than
+        # the file is, not even while it is being written.
+        mode = stat.S_IMODE(target.stat().st_mode) if target.exists() else 0o666
+        try:
+            if temporary.exists():  # left by a crash, possibly with looser permissions
+                temporary.unlink()
+            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                json.dump(settings, handle, indent=2)
+            if target.exists():
+                shutil.copymode(target, temporary)
+            try:
+                os.replace(temporary, target)
+            except PermissionError:
+                # Windows, when another program has the file open: write it
+                # in place, as before (the copy goes first, to free its space).
+                temporary.unlink()
+                with open(target, "w", encoding="utf-8") as handle:
+                    json.dump(settings, handle, indent=2)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
 
 def update_app_settings(updates: dict) -> dict:
-    settings = _load_app_settings()
-    settings.update(updates)
-    save_app_settings(settings)
-    return settings
+    with APP_SETTINGS_LOCK:
+        settings = _load_app_settings()
+        settings.update(updates)
+        save_app_settings(settings)
+        return settings
 
 def get_database_path() -> Path:
     settings = _load_app_settings()

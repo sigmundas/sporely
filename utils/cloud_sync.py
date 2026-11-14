@@ -37,7 +37,13 @@ from dataclasses import dataclass, field
 import time
 
 from app_identity import app_data_dir, runtime_profile_scope, using_isolated_profile
-from database.schema import get_connection, get_app_settings, get_images_dir, update_app_settings
+from database.schema import (
+    APP_SETTINGS_LOCK,
+    get_app_settings,
+    get_connection,
+    get_images_dir,
+    update_app_settings,
+)
 from database.models import (
     CLOUD_IMAGE_STATE_DELETED,
     CLOUD_IMAGE_STATE_DELETE_PENDING,
@@ -1942,7 +1948,11 @@ def _read_current_cloud_session_settings() -> tuple[str | None, str | None, str 
     a single helper keeps every call site symmetric with respect to
     ``get_app_settings()`` monkeypatches in tests.
     """
-    settings = get_app_settings()
+    return _cloud_session_from_settings(get_app_settings())
+
+
+def _cloud_session_from_settings(settings: dict) -> tuple[str | None, str | None, str | None]:
+    """The ``(access_token, user_id, refresh_token)`` triple of ``settings``."""
     access_raw = str(settings.get('cloud_access_token') or '').strip()
     user_raw = _normalize_cloud_user_id(settings.get('cloud_user_id'))
     refresh_raw = str(settings.get('cloud_refresh_token') or '').strip()
@@ -1962,6 +1972,38 @@ def _read_current_cloud_session_settings() -> tuple[str | None, str | None, str 
 # race into a wait — the second thread arrives after the first has
 # already saved rotated tokens and simply adopts them.
 _CLOUD_REFRESH_LOCK = threading.RLock()
+
+# Guards the stored session (access token, user id, refresh token) against a
+# refresh that finishes after the user signed out or signed in again.  A
+# refresh saves its new tokens only if the stored session is still the one it
+# started from; the check and the write happen under this lock, and sign-in
+# and sign-out write under it too, so a sign-out cannot land between them.
+# It is the settings file's own lock, which every settings write takes, so no
+# other settings update can write back tokens it read before a sign-out.
+# Separate from _CLOUD_REFRESH_LOCK, which is held across the refresh's
+# network call: signing out must never wait on the network.
+_CLOUD_SESSION_WRITE_LOCK = APP_SETTINGS_LOCK
+
+
+def _save_refreshed_session(
+    client: 'SporelyCloudClient',
+    started_from: tuple[str | None, str | None, str | None],
+) -> bool:
+    """Save a refreshed client's tokens if the stored session is unchanged.
+
+    ``started_from`` is the stored session the refresh began with.  Saves
+    nothing, and returns False, when nothing was stored then or the stored
+    session has changed since: the user signed out (saving would sign the
+    old account back in) or signed in again, possibly to another account
+    (saving would overwrite that session).
+    """
+    with _CLOUD_SESSION_WRITE_LOCK:
+        if not any(started_from):
+            return False
+        if _read_current_cloud_session_settings() != started_from:
+            return False
+        client.save_credentials()
+        return True
 
 
 def _settings_session_is_compatible(
@@ -6491,6 +6533,7 @@ class SporelyCloudClient(
             )
             if not candidate_refresh:
                 return False
+            started_from = (settings_access, settings_user_id, settings_refresh)
 
             try:
                 refreshed = type(self).refresh_login(candidate_refresh)
@@ -6526,6 +6569,7 @@ class SporelyCloudClient(
                 if after_refresh and after_refresh != candidate_refresh:
                     # A newer refresh token appeared on disk after we
                     # snapshotted.  Retry once with it before giving up.
+                    started_from = (after_access, after_user_id, after_refresh)
                     try:
                         refreshed = type(self).refresh_login(after_refresh)
                     except CloudTemporarilyUnavailableError:
@@ -6546,7 +6590,8 @@ class SporelyCloudClient(
                 refreshed.access_token, refreshed.user_id, refreshed.refresh_token
             )
             try:
-                self.save_credentials()
+                # Not saved if the user signed out or in while this ran.
+                _save_refreshed_session(self, started_from)
             except Exception:
                 pass
             return True
@@ -6900,14 +6945,24 @@ class SporelyCloudClient(
             else:
                 return client
         if refresh_text:
-            try:
-                client = cls.refresh_login(str(refresh_text))
-                client.save_credentials()
-                return client
-            except CloudTemporarilyUnavailableError:
-                raise
-            except CloudSyncError:
-                pass
+            # Under the refresh lock, so two loaders never spend the same
+            # refresh token, and after re-reading what is stored.
+            with _CLOUD_REFRESH_LOCK:
+                started_from = _cloud_session_from_settings(settings)
+                if _read_current_cloud_session_settings() != started_from:
+                    changed = True  # another loader refreshed, or the user signed in or out
+                else:
+                    changed = False
+                    try:
+                        client = cls.refresh_login(str(refresh_text))
+                        changed = not _save_refreshed_session(client, started_from)
+                    except CloudTemporarilyUnavailableError:
+                        raise
+                    except CloudSyncError:
+                        return None
+            if changed:
+                return cls.from_stored_credentials()  # load what is stored now
+            return client
         return None
 
     def fetch_current_user_id(self) -> str:
@@ -7023,7 +7078,8 @@ class SporelyCloudClient(
         _clear_session_scoped_caches()
         if email is not None:
             updates['cloud_user_email'] = str(email or '').strip()
-        update_app_settings(updates)
+        with _CLOUD_SESSION_WRITE_LOCK:
+            update_app_settings(updates)
         # Only change the saved password when the caller explicitly asked us to.
         # Auto-login/refresh paths should preserve whatever the user chose earlier.
         if remember_password is True and email and password:
@@ -7035,24 +7091,26 @@ class SporelyCloudClient(
     def clear_session() -> None:
         """Forget only the cloud tokens so the saved password can survive re-login."""
         _clear_session_scoped_caches()
-        update_app_settings({
-            'cloud_access_token': None,
-            'cloud_user_id': None,
-            'cloud_refresh_token': None,
-            'cloud_auth_method': None,
-        })
+        with _CLOUD_SESSION_WRITE_LOCK:
+            update_app_settings({
+                'cloud_access_token': None,
+                'cloud_user_id': None,
+                'cloud_refresh_token': None,
+                'cloud_auth_method': None,
+            })
 
     @staticmethod
     def clear_credentials() -> None:
         _clear_session_scoped_caches()
         clear_saved_cloud_password()
-        update_app_settings({
-            'cloud_access_token': None,
-            'cloud_user_id': None,
-            'cloud_refresh_token': None,
-            'cloud_user_email': None,
-            'cloud_auth_method': None,
-        })
+        with _CLOUD_SESSION_WRITE_LOCK:
+            update_app_settings({
+                'cloud_access_token': None,
+                'cloud_user_id': None,
+                'cloud_refresh_token': None,
+                'cloud_user_email': None,
+                'cloud_auth_method': None,
+            })
 
     # ── REST helpers ─────────────────────────────────────────────────────
 
@@ -9285,7 +9343,8 @@ class OAuthSporelyCloudClient(SporelyCloudClient):
         }
         if email is not None:
             updates['cloud_user_email'] = str(email or '').strip()
-        update_app_settings(updates)
+        with _CLOUD_SESSION_WRITE_LOCK:
+            update_app_settings(updates)
 
     @classmethod
     def from_stored_credentials(cls) -> 'OAuthSporelyCloudClient | None':
@@ -9327,16 +9386,26 @@ class OAuthSporelyCloudClient(SporelyCloudClient):
             else:
                 return client
         if refresh_text:
-            try:
-                client = cls.refresh_login(refresh_text)
-                client.save_credentials()
-                return client
-            except CloudTemporarilyUnavailableError:
-                raise
-            except CloudReauthRequiredError:
-                raise  # propagate; caller surfaces reauth_required status
-            except CloudSyncError:
-                return None
+            # Under the refresh lock, so two loaders never spend the same
+            # refresh token, and after re-reading what is stored.
+            with _CLOUD_REFRESH_LOCK:
+                started_from = _cloud_session_from_settings(settings)
+                if _read_current_cloud_session_settings() != started_from:
+                    changed = True  # another loader refreshed, or the user signed in or out
+                else:
+                    changed = False
+                    try:
+                        client = cls.refresh_login(refresh_text)
+                        changed = not _save_refreshed_session(client, started_from)
+                    except CloudTemporarilyUnavailableError:
+                        raise
+                    except CloudReauthRequiredError:
+                        raise  # propagate; caller surfaces reauth_required status
+                    except CloudSyncError:
+                        return None
+            if changed:
+                return cls.from_stored_credentials()  # load what is stored now
+            return client
         return None
 
     @classmethod
