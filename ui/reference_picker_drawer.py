@@ -17,13 +17,22 @@ The page holds no persistence of its own. Every change goes through the
 ``host`` (``MainWindow``), whose methods reuse the existing attach, detach and
 role paths and refuse to act when the active observation is no longer the one
 the page was loaded for.
+
+"Compare with" (stage 7e, owner 2026-11-14) sets which taxon the three
+sources look for: the observation's own by default, or another one picked
+with the taxon picker, from its AI suggestions or by name. It changes only
+what the drawer searches and what "New reference…" files the reference
+under, never the observation's identification. It is kept while the same
+observation is shown, and goes back to the observation's own taxon when
+another one is.
 """
 from __future__ import annotations
 
+from html import escape
 from typing import Protocol
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtGui import QFont, QPalette
 from PySide6.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
@@ -38,6 +47,7 @@ from PySide6.QtWidgets import (
 )
 
 from database.reference_library import MeasurementSetCandidate, MeasurementSetRepository, ReferenceLibraryError
+from database.taxon_suggestions import ai_prediction_external_id, reference_default_suggestions
 from references.reference_display import format_measurement_expression
 
 from .add_reference_dialog import (
@@ -50,7 +60,78 @@ from .add_reference_dialog import (
 )
 from .library_source_row import DEFAULT_REFERENCE_USE_ROLE, LibraryResultsList, LibrarySourceRow
 from .segmented_selector import SegmentedSelector
+from .taxon_picker import AiSuggestion, TaxonPicker
 from .two_line_row import CheckableTwoLineRow
+
+
+def _ai_prediction_score(prediction: dict) -> float | None:
+    for key in ("probability", "combined_score", "vision_score", "score", "frequency_score"):
+        value = prediction.get(key)
+        if value is None:
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _ai_scientific_name(taxon: dict) -> tuple[str, str]:
+    """``(genus, species)`` of an AI prediction's taxon; species is empty for a genus."""
+    genus = str(taxon.get("genus") or taxon.get("genusName") or taxon.get("genus_name") or "").strip()
+    species = str(
+        taxon.get("species") or taxon.get("specificEpithet") or taxon.get("specific_epithet") or ""
+    ).strip()
+    if genus and species:
+        return genus, species
+    name = ""
+    for key in ("scientificName", "scientific_name", "name"):
+        name = " ".join(str(taxon.get(key) or "").split())
+        if name:
+            break
+    parts = name.split()
+    # A binomial: a capitalised genus and a lower-case epithet (authorities follow).
+    if len(parts) >= 2 and parts[0][:1].isupper() and parts[1][:1].islower():
+        return parts[0], parts[1]
+    return (parts[0], "") if len(parts) == 1 and parts[0][:1].isupper() else ("", "")
+
+
+def reference_ai_entries(ai_state: dict | None) -> list[dict]:
+    """The observation's AI predictions as entries for ``reference_default_suggestions``.
+
+    ``ai_state`` is the observation's stored AI state (Artsorakel under
+    ``predictions``, iNaturalist under ``inat_predictions``, each by image).
+    Only names and scores are read; nothing is looked up or written.
+    """
+    from .observations_tab import _normalize_ai_prediction_taxon
+
+    entries: list[dict] = []
+    if not isinstance(ai_state, dict):
+        return entries
+    for source, key in (("arts", "predictions"), ("inat", "inat_predictions")):
+        by_image = ai_state.get(key)
+        if not isinstance(by_image, dict):
+            continue
+        for predictions in by_image.values():
+            for prediction in predictions if isinstance(predictions, (list, tuple)) else ():
+                if not isinstance(prediction, dict):
+                    continue
+                try:
+                    taxon = _normalize_ai_prediction_taxon(prediction, source=source) or {}
+                except Exception:
+                    taxon = dict(prediction)
+                genus, species = _ai_scientific_name(taxon)
+                if not genus:
+                    continue
+                entries.append({
+                    "source": source,
+                    "genus": genus,
+                    "species": species,
+                    "scientific_name": " ".join(part for part in (genus, species) if part),
+                    "score": _ai_prediction_score(prediction),
+                    "external_id": ai_prediction_external_id(prediction, taxon),
+                })
+    return entries
 
 
 class ReferencePickerHost(Protocol):
@@ -69,6 +150,10 @@ class ReferencePickerHost(Protocol):
     def reference_picker_my_observations(self, context: dict) -> list[PersonalObservationCandidate]: ...
     def reference_picker_observation_series(self, context: dict, source_observation_id: int) -> dict | None: ...
     def reference_picker_series_key(self, data: dict) -> object | None: ...
+    # "Compare with": the names database for the taxon picker (None without
+    # one) and the observation's stored AI predictions (reference_ai_entries).
+    def reference_picker_taxon_lookup(self) -> object | None: ...
+    def reference_picker_ai_entries(self, context: dict) -> list[dict]: ...
 
 
 class ReferencePickerPage(QWidget):
@@ -100,10 +185,44 @@ class ReferencePickerPage(QWidget):
         # My observations: candidates and their plot-series keys.
         self._my_observations: list[PersonalObservationCandidate] = []
         self._my_observation_keys: dict[int, object] = {}
+        # "Compare with": None is the observation's own taxon; otherwise the
+        # observation it was chosen for and the taxon (taxon_id, genus,
+        # species, rank).
+        self._target: dict | None = None
+        self.target_picker: TaxonPicker | None = None
+        self._target_lookup = None  # the picker's names database, opened on first use
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 4, 12, 12)
         layout.setSpacing(8)
+
+        target_row = QHBoxLayout()
+        target_row.setSpacing(8)
+        self.target_label = QLabel("", self)
+        self.target_label.setObjectName("referenceTargetLabel")
+        self.target_label.setTextFormat(Qt.RichText)
+        self.target_label.setWordWrap(True)
+        target_row.addWidget(self.target_label, 1)
+        self.change_target_btn = QPushButton(self.tr("Change…"), self)
+        self.change_target_btn.setObjectName("linkButton")
+        self.change_target_btn.setCursor(Qt.PointingHandCursor)
+        self.change_target_btn.setToolTip(self.tr(
+            "Compare with another taxon: one of the AI suggestions, or any name. "
+            "The observation's identification is not changed."
+        ))
+        self.change_target_btn.clicked.connect(self.begin_target_change)
+        target_row.addWidget(self.change_target_btn, 0, Qt.AlignTop)
+        self.reset_target_btn = QPushButton(self.tr("Reset"), self)
+        self.reset_target_btn.setObjectName("linkButton")
+        self.reset_target_btn.setCursor(Qt.PointingHandCursor)
+        self.reset_target_btn.clicked.connect(self.reset_target)
+        self.reset_target_btn.setVisible(False)
+        target_row.addWidget(self.reset_target_btn, 0, Qt.AlignTop)
+        layout.addLayout(target_row)
+        # The taxon picker goes here while the target is being changed.
+        self._target_layout = QVBoxLayout()
+        self._target_layout.setContentsMargins(0, 0, 0, 0)
+        layout.addLayout(self._target_layout)
 
         source_row = QHBoxLayout()
         source_row.setSpacing(8)
@@ -184,6 +303,12 @@ class ReferencePickerPage(QWidget):
         self._set_status("")
         previous = self._current_observation_id()
         self._context = self._host.reference_picker_context()
+        if self._current_observation_id() != previous or self._context is None:
+            # A change begun for another observation ends with it.
+            self._end_target_change()
+        if self._target is not None and self._target.get("observation_id") != self._current_observation_id():
+            self._target = None  # chosen for another observation
+        self._refresh_target_line()
         if self._current_observation_id() != previous:
             # Another observation: its own plot series, and its own taxon to search.
             self._community_keys = self._community_keys_by_observation.setdefault(self._current_observation_id(), {})
@@ -204,12 +329,20 @@ class ReferencePickerPage(QWidget):
         self._attached = dict(self._host.reference_picker_attached(int(self._context["observation_id"])))
         self._populate()
 
+    def _target_context(self) -> dict:
+        """The observation's context with "Compare with"'s taxon in place of its own."""
+        context = dict(self._context or {})
+        if self._target is not None and self._context is not None:
+            for key in ("taxon_id", "genus", "species"):
+                context[key] = self._target.get(key)
+        return context
+
     def _taxon_name(self) -> str:
-        context = self._context or {}
+        context = self._target_context()
         return " ".join(part for part in (context.get("genus") or "", context.get("species") or "") if part).strip()
 
     def _visible_groups(self) -> list[tuple[str, list[MeasurementSetCandidate]]]:
-        context = self._context or {}
+        context = self._target_context()
         taxon_id = context.get("taxon_id")
         taxon_id = str(taxon_id) if taxon_id not in (None, "") else None
         filtered = filter_library_candidates(
@@ -330,7 +463,7 @@ class ReferencePickerPage(QWidget):
     # -- Community -------------------------------------------------------------
 
     def _refresh_community(self) -> None:
-        context = self._context or {}
+        context = self._target_context()
         if self.community_pane is None:
             from .cloud_reference_dialog import CommunityResultsPane
 
@@ -453,17 +586,24 @@ class ReferencePickerPage(QWidget):
         context = self._context
         if context is None:
             return
-        self._my_observations = list(self._host.reference_picker_my_observations(context))
+        self._my_observations = list(self._host.reference_picker_my_observations(self._target_context()))
         plotted = self._host.reference_picker_series_keys(int(context["observation_id"]))
         for candidate in self._my_observations:
-            data = self._host.reference_picker_observation_series(context, candidate.observation_id)
+            data = self._host.reference_picker_observation_series(
+                self._series_context(candidate), candidate.observation_id
+            )
             key = self._host.reference_picker_series_key(data) if data else None
             label = (
                 self.tr("My observation — {author}").format(author=candidate.author)
                 if candidate.author else self.tr("My observation")
             )
+            # Another target can list other species (a genus, say): name them.
+            name = (
+                " ".join(part for part in (candidate.genus, candidate.species) if part)
+                if self._target is not None else ""
+            )
             detail = " · ".join(part for part in (
-                candidate.date, self.tr("n = {count}").format(count=candidate.n), candidate.location,
+                name, candidate.date, self.tr("n = {count}").format(count=candidate.n), candidate.location,
             ) if part)
             row = CheckableTwoLineRow(label, detail, self.my_observations_list)
             row.set_checked_silently(key is not None and key in plotted)
@@ -481,6 +621,16 @@ class ReferencePickerPage(QWidget):
             empty.setFlags(Qt.NoItemFlags)
             self.my_observations_list.addItem(empty)
 
+    def _series_context(self, candidate: PersonalObservationCandidate | None) -> dict:
+        """The context a My observations series is labelled with: the
+        candidate's own name. The same whatever "Compare with" is, so a
+        series plotted under one target is found again under another (its
+        plot key includes the name); a genus lists several species."""
+        context = self._target_context()
+        if candidate is not None and candidate.genus:
+            context["genus"], context["species"] = candidate.genus, candidate.species
+        return context
+
     def my_observation_row(self, observation_id: int) -> CheckableTwoLineRow | None:
         for index in range(self.my_observations_list.count()):
             item = self.my_observations_list.item(index)
@@ -497,7 +647,12 @@ class ReferencePickerPage(QWidget):
                 row.set_checked_silently(not checked)
             return
         if checked:
-            data = self._host.reference_picker_observation_series(self._context or {}, source_observation_id)
+            candidate = next(
+                (c for c in self._my_observations if c.observation_id == source_observation_id), None
+            )
+            data = self._host.reference_picker_observation_series(
+                self._series_context(candidate), source_observation_id
+            )
             key = self._host.reference_picker_add_series(observation_id, data) if data else None
             if key is None:
                 if row is not None:
@@ -520,6 +675,212 @@ class ReferencePickerPage(QWidget):
 
     def _current_observation_id(self) -> int:
         return int((self._context or {}).get("observation_id") or 0)
+
+    # -- Compare with ----------------------------------------------------------
+
+    def observation_shown(self, observation_id) -> None:
+        """The host showed an observation, with the drawer open or not: a
+        target chosen for another one is dropped (A, then B, then A again
+        compares with A's own taxon)."""
+        try:
+            shown = int(observation_id or 0)
+        except (TypeError, ValueError):
+            shown = 0
+        if shown != self._current_observation_id():
+            self._end_target_change()  # begun for the observation the page still shows
+        if self._target is not None and self._target.get("observation_id") != shown:
+            self._target = None
+            self._end_target_change()
+            self._community_stale = True  # it searched for the dropped target
+            if self._context is not None and self._current_observation_id() == shown:
+                self._apply_target()
+
+    def comparison_target(self) -> dict | None:
+        """The taxon chosen in "Compare with" for the shown observation
+        (``observation_id``, ``taxon_id``, ``genus``, ``species``, ``rank``),
+        or None while it is the observation's own."""
+        if self._target is None or self._target.get("observation_id") != self._current_observation_id():
+            return None
+        return dict(self._target)
+
+    def _refresh_target_line(self) -> None:
+        context = self._context
+        if context is None:
+            self.target_label.setText("")
+            self.change_target_btn.setEnabled(False)
+            self.reset_target_btn.setVisible(False)
+            self.new_reference_btn.setEnabled(True)
+            self.new_reference_btn.setToolTip("")
+            return
+        own = " ".join(part for part in (context.get("genus") or "", context.get("species") or "") if part)
+        if self._target is None:
+            # Normally the observation's own taxon goes without saying.
+            name = own
+            note = "" if own else self.tr("the observation has no taxon")
+        else:
+            name = " ".join(part for part in (self._target.get("genus") or "", self._target.get("species") or "") if part)
+            note = ""
+        text = self.tr("Compare with {taxon}").format(taxon=f"<i>{escape(name)}</i>") if name else self.tr("Compare with")
+        if note:
+            dim = self.palette().color(QPalette.PlaceholderText).name()
+            text += f" <span style='color: {dim}'>· {escape(note)}</span>"
+        self.target_label.setText(text)
+        self.change_target_btn.setEnabled(True)
+        self.reset_target_btn.setVisible(self._target is not None)
+        self.reset_target_btn.setToolTip(
+            self.tr("Compare with the observation's taxon ({taxon}) again.").format(taxon=own)
+            if own else self.tr("Compare with the observation's taxon again.")
+        )
+        # A new reference is filed under the target: under another taxon it
+        # needs a species from the names database.
+        target = self._target
+        allowed = target is None or (target.get("taxon_id") is not None and bool(target.get("species")))
+        self.new_reference_btn.setEnabled(allowed)
+        self.new_reference_btn.setToolTip("" if allowed else self.tr(
+            "Choose a species from the list in “Change…” to add a reference for it."
+        ))
+
+    def begin_target_change(self) -> None:
+        """Show the taxon picker, with the observation's AI suggestions under it."""
+        context = self._context
+        if context is None:
+            return
+        # Asked each time: the host's lookup follows the names language.
+        self._target_lookup = self._host.reference_picker_taxon_lookup()
+        if self.target_picker is None:
+            picker = TaxonPicker(self._target_lookup, self)
+            picker.setObjectName("referenceTargetPicker")
+            picker.concept_picked.connect(self._on_target_concept)
+            picker.free_text_committed.connect(self._on_target_free_text)
+            picker.search_input.installEventFilter(self)
+            self._target_layout.addWidget(picker)
+            self.target_picker = picker
+        picker = self.target_picker
+        picker.set_lookup(self._target_lookup)
+        picker.ai_label.setText(self.tr("AI suggestions:"))
+        picker.set_ai_suggestions(self._ai_suggestions())
+        own_id = context.get("taxon_id")
+        try:
+            picker.set_current_taxon_id(int(own_id) if own_id not in (None, "") else None)
+        except (TypeError, ValueError):
+            picker.set_current_taxon_id(None)
+        picker.clear_display()
+        picker.setVisible(True)
+        self.change_target_btn.setVisible(False)
+        picker.search_input.setFocus(Qt.OtherFocusReason)
+
+    def _ai_suggestions(self) -> list[AiSuggestion]:
+        context = self._context or {}
+        try:
+            entries = list(self._host.reference_picker_ai_entries(context))
+        except Exception:
+            entries = []
+        if not entries:
+            return []
+        kwargs = dict(
+            own_genus=context.get("genus") or "",
+            own_species=context.get("species") or "",
+            own_taxon_id=context.get("taxon_id"),
+            ai_entries=entries,
+        )
+        try:
+            defaults = reference_default_suggestions(self._target_lookup, **kwargs)
+        except Exception:
+            defaults = reference_default_suggestions(None, **kwargs)
+        suggestions = []
+        for row in defaults.ai:
+            scores = [score for _service, score in row.ai_scores if score is not None] or (
+                [row.score] if row.score is not None else []
+            )
+            suggestions.append(AiSuggestion(
+                label=row.scientific_name,
+                scientific_name=row.scientific_name,
+                score=max(scores) if scores else None,
+                taxon_id=row.sporely_taxon_id,
+            ))
+        suggestions.sort(key=lambda s: -(s.score or 0.0))
+        return suggestions
+
+    def _on_target_concept(self, row, concept) -> None:
+        name = " ".join(str(concept.scientific_name or row.name or "").split())
+        genus, _space, species = name.partition(" ")
+        self._set_target(
+            taxon_id=int(concept.sporely_taxon_id), genus=genus, species=species, rank=str(row.rank or ""),
+        )
+
+    def _on_target_free_text(self, text: str) -> None:
+        genus, _space, species = " ".join(str(text or "").split()).partition(" ")
+        self._set_target(taxon_id=None, genus=genus, species=species, rank="")
+
+    def _set_target(self, *, taxon_id, genus: str, species: str, rank: str) -> None:
+        self._end_target_change()
+        if self._context is None or not genus:
+            return
+        own_id = self._context.get("taxon_id")
+        # The observation's own concept, or its own name used as typed.
+        own = (
+            (taxon_id is not None and own_id not in (None, "") and str(taxon_id) == str(own_id))
+            or (
+                taxon_id is None
+                and (genus.casefold(), species.casefold())
+                == (str(self._context.get("genus") or "").casefold(), str(self._context.get("species") or "").casefold())
+            )
+        )
+        if own:
+            self._target = None
+        else:
+            self._target = {
+                "observation_id": self._current_observation_id(),
+                "taxon_id": taxon_id,
+                "genus": genus,
+                "species": species,
+                "rank": rank,
+            }
+        self._apply_target()
+
+    def reset_target(self) -> None:
+        """Back to the observation's own taxon."""
+        self._end_target_change()
+        if self._target is None:
+            return
+        self._target = None
+        self._apply_target()
+
+    def _apply_target(self) -> None:
+        """Search the sources again for the target that was just set."""
+        self._refresh_target_line()
+        self._set_status("")
+        self._populate()
+        self._load_my_observations()
+        self._community_stale = True
+        if self._source == "community":
+            self._refresh_community()
+
+    def _end_target_change(self) -> None:
+        picker = self.target_picker
+        # isHidden, not isVisible: the drawer may be closed.
+        if picker is not None and not picker.isHidden():
+            had_focus = picker.isAncestorOf(self.focusWidget()) if self.focusWidget() else False
+            picker.setVisible(False)
+            self.change_target_btn.setVisible(True)
+            if had_focus:
+                self.change_target_btn.setFocus(Qt.OtherFocusReason)
+
+    def eventFilter(self, obj, event):
+        picker = self.target_picker
+        if (
+            picker is not None and obj is picker.search_input
+            and event.type() in (QEvent.ShortcutOverride, QEvent.KeyPress)
+            and event.key() == Qt.Key_Escape and not picker.is_popup_visible()
+        ):
+            # Esc with no list open puts the line back; it does not close the
+            # drawer (whose Esc is a shortcut: claimed before it fires).
+            if event.type() == QEvent.ShortcutOverride:
+                event.accept()
+            else:
+                self._end_target_change()
+            return True
+        return super().eventFilter(obj, event)
 
     def _on_check_toggled(self, set_id: str, checked: bool) -> None:
         observation_id = self._current_observation_id()

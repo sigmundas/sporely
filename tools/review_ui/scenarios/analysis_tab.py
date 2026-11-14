@@ -132,6 +132,47 @@ def _open_drawer(window) -> None:
         ticked[0].set_expanded(True)
 
 
+#: Stored AI predictions for "Compare with": a species in the sample
+#: taxonomy, a second one, and one it does not have (a name to search for).
+COMPARE_AI_STATE = {
+    "predictions": {
+        "0": [
+            {"probability": 0.41, "scientificName": "Cortinarius pulchripes", "name": "Cortinarius pulchripes"},
+            {"probability": 0.18, "scientificName": "Cortinarius rubellus", "name": "Cortinarius rubellus"},
+            {"probability": 0.07, "scientificName": "Cortinarius albonigrellus", "name": "Cortinarius albonigrellus"},
+        ],
+    },
+}
+
+
+def _compare(context: ReviewContext, state: str):
+    """The reference drawer's "Compare with" (stage 7e): "picker" while
+    changing it (the AI suggestions under the search), "other" after a name
+    the library has sets for was chosen."""
+    def after(window) -> None:
+        import json
+
+        from database.models import ObservationDB
+
+        from ..taxon_sample import sample_lookup
+
+        ObservationDB.update_observation(
+            int(window.active_observation_id), ai_state_json=json.dumps(COMPARE_AI_STATE)
+        )
+        path = review_profile(context).root / f"taxonomy-sample-{context.state.get('analysis-tab.builds', 0)}.sqlite3"
+        # The sample taxonomy instead of the installed names database.
+        window.reference_picker_taxon_lookup = lambda: sample_lookup(path)
+        window._toggle_reference_drawer()
+        page = window.reference_picker_page
+        page.begin_target_change()
+        if state == "other":
+            picker = page.target_picker
+            picker.search_for("Cortinarius rubellus")
+            # Not in the taxonomy: the last entry uses it as a name.
+            picker._activate_index(picker.model.index(picker.model.rowCount() - 1, 0))
+    return after
+
+
 def _update_failed(window) -> None:
     """Update from library for an attachment that is gone: the error on
     Analysis's bar with Details open (stage 10e2). The real handler, so the
@@ -242,6 +283,26 @@ def register_analysis_tab_scenarios(registry: ScenarioRegistry) -> None:
             locale="de_DE",
         )
     )
+    compare_states = (
+        ("picker", "", "nb_NO", "light", "changing it: the taxon search with the AI suggestions under it"),
+        ("picker", "-dark", "nb_NO", "dark", "changing it, dark theme"),
+        ("picker", "-de", "de_DE", "light", "changing it, German strings"),
+        ("other", "", "nb_NO", "light", "another taxon chosen: the library lists its sets, and Reset goes back"),
+        ("other", "-de", "de_DE", "light", "another taxon chosen, German strings"),
+    )
+    for state, suffix, locale, theme, description in compare_states:
+        registry.register(
+            ReviewScenario(
+                id=f"analysis.reference-compare-{state}{suffix}",
+                group="analysis",
+                title=f"Analysis tab, reference drawer: Compare with ({state}, {locale}, {theme})",
+                description=f"Compare with in the reference drawer, {description} (stage 7e).",
+                build=lambda context, state=state: _analysis_tab(context, after=_compare(context, state)),
+                viewport=(1500, 950),
+                locale=locale,
+                theme=theme,
+            )
+        )
     create_states = (
         ("source", "step 1, the publication (it already has sets for this taxon)"),
         ("measurements", "step 2 before parsing: only the paste field, Parse and Fill in manually"),

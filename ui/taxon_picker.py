@@ -61,6 +61,8 @@ from database.taxon_search import (
     TaxonSearchRow,
 )
 
+from .flow_layout import FlowLayout
+
 SOURCE_NOTE_SETTING = "taxon_picker_source_note_dismissed"
 
 ROLE_ENTRY = Qt.UserRole + 41
@@ -518,15 +520,13 @@ class TaxonPicker(QWidget):
         layout.addWidget(self.card)
         self.ai_strip = QWidget()
         self.ai_strip.setObjectName("taxonPickerAiStrip")
-        ai_layout = QHBoxLayout(self.ai_strip)
-        ai_layout.setContentsMargins(0, 0, 0, 0)
-        ai_layout.setSpacing(5)
+        # The chips wrap: a narrow host (the reference drawer) has room for few.
+        ai_layout = FlowLayout(self.ai_strip, spacing=5)
         self.ai_label = QLabel()
         self.ai_label.setObjectName("taxonPickerAiLabel")
         ai_layout.addWidget(self.ai_label)
         self._ai_layout = ai_layout
         self.ai_buttons: list[QToolButton] = []
-        ai_layout.addStretch(1)
         self.ai_strip.setVisible(False)
         layout.addWidget(self.ai_strip)
         # A crowded host must not squash the card or the chips: the picker
@@ -619,7 +619,7 @@ class TaxonPicker(QWidget):
                 " padding: 1px 9px; background: palette(base); color: palette(text); }"
             )
             button.clicked.connect(lambda _checked=False, s=suggestion: self._on_ai_chip(s))
-            self._ai_layout.insertWidget(1 + i, button)
+            self._ai_layout.insert_widget(1 + i, button)
             self.ai_buttons.append(button)
         self.ai_strip.setVisible(bool(self.ai_buttons))
 

@@ -47,6 +47,7 @@ class ReferenceCreateDialog(GeometryMixin, QDialog):
         species: str,
         observation_id: int | None,
         sporely_taxon_id: int | None,
+        comparison_target: dict | None = None,
         common_name: str | None = None,
         save_callback: Callable[[ReferenceEntryEditor], object] | None = None,
         add_callback: Callable[[ReferenceEntryEditor], bool] | None = None,
@@ -71,6 +72,7 @@ class ReferenceCreateDialog(GeometryMixin, QDialog):
         self.taxon_label.setTextFormat(Qt.RichText)
         self.taxon_label.setStyleSheet("font-weight: 600;")
         header.addWidget(self.taxon_label, 0)
+        common_label = None
         if common_name:
             common_label = QLabel(common_name, self)
             common_label.setStyleSheet(f"color: #7f8c8d; font-size: {pt(9)}pt;")
@@ -91,6 +93,21 @@ class ReferenceCreateDialog(GeometryMixin, QDialog):
             observation_taxon_id=sporely_taxon_id,
             staged=True,
         )
+        if comparison_target is not None:
+            # "Compare with" another taxon in the drawer: the reference is
+            # filed under that one. The editor keeps the observation's own
+            # taxon for its drift check, as the old picker's selector did.
+            self.editor.set_comparison_target(
+                genus=comparison_target.get("genus") or "",
+                species=comparison_target.get("species") or "",
+                sporely_taxon_id=comparison_target.get("taxon_id"),
+            )
+            target = " ".join(
+                part for part in (comparison_target.get("genus") or "", comparison_target.get("species") or "") if part
+            )
+            self.taxon_label.setText(f"<i>{target}</i>" if target else self.tr("No taxon"))
+            if common_label is not None:
+                common_label.setVisible(False)
         self.editor.data_changed.connect(self._update_buttons)
         self.editor_scroll = EditorScrollArea(self)
         self.editor_scroll.setWidgetResizable(True)

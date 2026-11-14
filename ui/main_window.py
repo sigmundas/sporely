@@ -9129,6 +9129,56 @@ class MainWindow(GeometryMixin, QMainWindow):
             source_observation_id, context.get("genus") or "", context.get("species") or "",
         )
 
+    def _note_reference_observation(self, observation_id) -> None:
+        page = getattr(self, "reference_picker_page", None)
+        if page is not None:
+            page.observation_shown(observation_id)
+
+    def reference_picker_taxon_lookup(self):
+        """The names database for the drawer's "Compare with" picker, or None
+        without one (a name can then still be used as typed). Kept while the
+        names language stays the same."""
+        try:
+            stored = SettingsDB.get_setting("vernacular_language", "no")
+            lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
+            db_path = resolve_vernacular_db_path(lang)
+            if not db_path:
+                return None
+            cached = getattr(self, "_reference_taxon_lookup", None)
+            if cached is not None and cached[0] == (lang, str(db_path)):
+                return cached[1]
+            from database.taxon_lookup import TaxonLookupService
+
+            lookup = TaxonLookupService(
+                vernacular_db=VernacularDB(db_path, language_code=lang),
+                language_code=lang,
+                include_reference_data=True,
+            )
+            self._reference_taxon_lookup = ((lang, str(db_path)), lookup)
+            return lookup
+        except Exception:
+            return None
+
+    def reference_picker_ai_entries(self, context: dict) -> list[dict]:
+        """The observation's stored AI predictions, for "Compare with".
+
+        Only what is already on this computer (the Observations tab's cache
+        or the stored AI state): opening the picker never asks Sporely Cloud.
+        """
+        from .reference_picker_drawer import reference_ai_entries
+
+        try:
+            observation_id = int(context["observation_id"])
+        except (KeyError, TypeError, ValueError):
+            return []
+        tab = getattr(self, "observations_tab", None)
+        state = getattr(tab, "_ai_suggestions_cache", {}).get(observation_id) if tab is not None else None
+        if not isinstance(state, dict):
+            observation = ObservationDB.get_observation(observation_id) or {}
+            deserialize = getattr(tab, "_deserialize_ai_state", None)
+            state = deserialize(observation.get("ai_state_json")) if callable(deserialize) else None
+        return reference_ai_entries(state)
+
     def _on_reference_picker_new_reference(self) -> None:
         """"New reference…" in the drawer: the two-step create dialog (stage 7d).
 
@@ -9147,6 +9197,10 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         captured_observation_id = int(context["observation_id"])
         captured_taxon_id = context.get("taxon_id")
+        # "Compare with" another taxon files the reference under that one.
+        target = self.reference_picker_page.comparison_target()
+        if target is not None and int(target.get("observation_id") or 0) != captured_observation_id:
+            target = None
 
         def _still_active() -> bool:
             current = getattr(self, "active_observation_id", None)
@@ -9211,6 +9265,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             common_name=(observation.get("common_name") or "").strip() or None,
             observation_id=captured_observation_id,
             sporely_taxon_id=context.get("taxon_id"),
+            comparison_target=target,
             save_callback=_save,
             add_callback=_add,
         )
@@ -19945,7 +20000,9 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self._suppress_gallery_update = previous_suppress
         if suppress_gallery and self.is_analysis_visible():
             self.schedule_gallery_refresh()
-        # An open reference drawer follows the new observation.
+        # An open reference drawer follows the new observation; a closed one
+        # forgets a "Compare with" chosen for another.
+        self._note_reference_observation(observation_id)
         self._reload_reference_drawer_if_open()
         if hasattr(self, "observations_tab"):
             QTimer.singleShot(0, self, self._select_active_observation_row)
@@ -20051,6 +20108,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Deferred image-selection handler to avoid crashes during tab hiding."""
         self.active_observation_id = observation_id
         self.active_observation_name = display_name
+        self._note_reference_observation(observation_id)
         self.update_observation_header(observation_id)
         observation = ObservationDB.get_observation(observation_id)
         self.auto_threshold = observation.get("auto_threshold") if observation else None
