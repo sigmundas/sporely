@@ -387,6 +387,10 @@ class _Notice:
 
 
 class HintStatusController(QObject):
+    #: True when a notice is shown, False when it goes (a host can show its
+    #: bar only while there is one: Mål, stage 10f1).
+    noticeChanged = Signal(bool)
+
     """Controls a persistent hint plus temporary status messages in a HintBar.
 
     Also accepts a plain ``QLabel`` for legacy call-sites, though a
@@ -604,6 +608,7 @@ class HintStatusController(QObject):
         self._notice_timer.stop()
         self._start_notice_countdown()
         self._restore_hint()
+        self.noticeChanged.emit(True)
 
     def _start_notice_countdown(self) -> None:
         """Start a notice's timeout, unless its bar is hidden (a host shows a
@@ -611,7 +616,8 @@ class HintStatusController(QObject):
         notice = self._notice
         if notice is None or not notice.timeout_ms or notice.details_open:
             return
-        if self._hint_bar is not None and self._hint_bar.isHidden():
+        # Hidden itself, or on a page not shown (another tab): it waits.
+        if self._hint_bar is not None and not self._hint_bar.isVisible():
             return
         self._notice_timer.start(notice.timeout_ms)
 
@@ -624,6 +630,7 @@ class HintStatusController(QObject):
         self._notice_on_top = False
         if not self._status_timer.isActive():
             self._restore_hint()
+        self.noticeChanged.emit(False)
 
     def has_notice(self) -> bool:
         return self._notice is not None
@@ -709,9 +716,9 @@ class HintStatusController(QObject):
         if watched is None or not _qt_is_valid(watched):
             return False
         if watched is self._hint_bar and self._hint_bar is not None:
-            if event.type() == QEvent.HideToParent:
-                self._notice_timer.stop()  # unseen: the countdown waits
-            elif event.type() == QEvent.ShowToParent:
+            if event.type() in (QEvent.HideToParent, QEvent.Hide):
+                self._notice_timer.stop()  # unseen (its page too): the countdown waits
+            elif event.type() in (QEvent.ShowToParent, QEvent.Show):
                 self._start_notice_countdown()
             return False
         hint_text = watched.property("_hint_text") if hasattr(watched, "property") else None

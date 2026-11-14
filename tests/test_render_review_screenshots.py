@@ -122,6 +122,8 @@ MEASURE_TAB_IDS = {
     for suffix in ("", "-dark")
 } | {"measure.tab-de", "measure.tab-small", "measure.view-drawer-de"} | {
     "measure.microscope-settings", "measure.microscope-settings-dark", "measure.microscope-settings-de",
+    "measure.image-failed", "measure.image-failed-dark", "measure.image-failed-small-de",
+    "measure.microscope-settings-failed", "measure.microscope-settings-failed-de",
 }
 ANALYSIS_TAB_IDS = {
     "analysis.tab", "analysis.tab-dark", "analysis.tab-small",
@@ -151,6 +153,7 @@ MODE_BAR_IDS = {
 NOTICE_IDS = {
     "notice.error", "notice.error-dark", "notice.error-details", "notice.error-details-dark",
     "notice.undo", "notice.error-details-small-de", "notice.analysis-details",
+    "notice.update-available", "notice.update-available-de",
 }
 CALIBRATION_IDS = {
     "calibration.no-image", "calibration.no-image-dark", "calibration.export-failed",

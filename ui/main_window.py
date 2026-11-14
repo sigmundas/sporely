@@ -5059,6 +5059,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.edit_page.cloudShownChanged.connect(self._refresh_new_observation_header)
         self.edit_page.use_shared_strip(self.observations_tab.gallery_widget)  # stage 9g3c
         self.tab_widget.addTab(self.edit_page, self.tr("Edit"))
+        # A notice for a screen without a bar shows on the next screen with one.
+        self.tab_widget.currentChanged.connect(self._show_pending_screen_notice)
+        self.live_lab_tab.sourceChanged.connect(self._show_pending_screen_notice)
 
         # Stage 9a: a mode bar replaces the tab bar. The pages stay in
         # tab_widget, which remains the one source of truth for the page shown.
@@ -6081,24 +6084,18 @@ class MainWindow(GeometryMixin, QMainWindow):
         return latest_padded > current_padded
 
     def _show_update_dialog(self, latest_version: str, url: str):
+        """A notice on the screen shown, with the download page as its action
+        (stage 10f1; it was a question). It stays until dismissed."""
         current = self.app_version or self.tr("Unknown")
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Information)
-        box.setWindowTitle(self.tr("Update available"))
-        box.setText(
-            self.tr("A newer version of Sporely is available.")
+        self.show_screen_notice(
+            self.tr("Sporely {latest} is available (you have {current}).").format(
+                latest=latest_version, current=current
+            ),
+            "info",
+            undo=lambda: QDesktopServices.openUrl(QUrl(url)),
+            undo_text=self.tr("Open download page"),
+            timeout_ms=0,
         )
-        box.setInformativeText(
-            self.tr("Current version: {current}\nLatest version: {latest}").format(
-                current=current,
-                latest=latest_version
-            )
-        )
-        open_btn = box.addButton(self.tr("Open download page"), QMessageBox.AcceptRole)
-        box.addButton(self.tr("Later"), QMessageBox.RejectRole)
-        box.exec()
-        if box.clickedButton() == open_btn:
-            QDesktopServices.openUrl(QUrl(url))
 
     def create_control_panel(self):
         """Build the Measure tab's controls; ``create_measure_tab`` places them (stage 6).
@@ -6233,6 +6230,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         export_image_btn.setMinimumHeight(35)
         export_image_btn.clicked.connect(self.export_annotated_image)
         view_buttons_row.addWidget(export_image_btn)
+        self.measure_export_image_btn = export_image_btn
+        self._sync_export_image_enabled()
         view_buttons_row.setStretch(0, 1)
         view_buttons_row.setStretch(1, 1)
         zoom_layout.addLayout(view_buttons_row)
@@ -6697,8 +6696,8 @@ class MainWindow(GeometryMixin, QMainWindow):
     def create_measure_tab(self):
         """Create the measure tab with control panel, image panel, and stats panel."""
         tab = QWidget()
-        layout = QHBoxLayout(tab)
-        layout.setSpacing(10)
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(6)
         layout.setContentsMargins(0, 0, 0, 0)
 
         self.measure_tab = tab
@@ -6738,6 +6737,16 @@ class MainWindow(GeometryMixin, QMainWindow):
             minimum_sizes=[360, SECONDARY_PANEL_MIN_WIDTH],
         )
         layout.addWidget(self.measure_main_splitter, 1)
+
+        # Mål's bottom bar is there only while a notice is (owner, stage
+        # 10f1): a failure or result has a place, and the image keeps its
+        # height otherwise. Mål registers no hover hints on it.
+        self.measure_hint_bar = HintBar(tab)
+        self.measure_hint_bar.set_wrap_mode(True)
+        self.measure_hint_bar.hide()
+        self._measure_hint_controller = HintStatusController(self.measure_hint_bar, self)
+        self._measure_hint_controller.noticeChanged.connect(self.measure_hint_bar.setVisible)
+        layout.addWidget(self.measure_hint_bar, 0)
 
         self.next_image_shortcut = QShortcut(QKeySequence(Qt.Key_N), tab)
         self.next_image_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
@@ -7386,6 +7395,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_hint_bar = self.gallery_hint_progress.hint_bar
         bottom_row.addWidget(self.gallery_hint_progress, 1)
         self._gallery_hint_controller = HintStatusController(self.gallery_hint_bar, self)
+        for button in (self.gallery_copy_stats_btn, self.gallery_save_stats_btn):
+            self._gallery_hint_controller.register_widget(
+                button, button.toolTip(), disabled_hint=self.tr("Select an observation first.")
+            )
         if self._pending_gallery_hint_widgets:
             for widget, hint, tone, allow_when_disabled in self._pending_gallery_hint_widgets:
                 if widget:
@@ -7432,6 +7445,52 @@ class MainWindow(GeometryMixin, QMainWindow):
     def _set_gallery_hint(self, text: str | None, tone: str = "info") -> None:
         if self._gallery_hint_controller is not None:
             self._gallery_hint_controller.set_hint(text, tone=tone)
+
+    def _screen_notice_controller(self) -> HintStatusController | None:
+        """The bottom bar of the screen shown (stage 10f1): Vis, Mål (its bar
+        shows only with a notice), Analyse, Bilder (Live's, or Filer's
+        editor's), Kameraimport, Rediger (its form's). None for a screen with
+        no bar (Filer without an editor, Rediger without a form)."""
+        tabs = getattr(self, "tab_widget", None)
+        page = tabs.currentWidget() if tabs is not None else None
+        observations = getattr(self, "observations_tab", None)
+        if page is None or page is observations:
+            return getattr(observations, "_status_hint_controller", None)
+        if page is getattr(self, "measure_tab", None):
+            return getattr(self, "_measure_hint_controller", None)
+        if page is getattr(self, "analysis_tab", None):
+            return self._gallery_hint_controller
+        if page is getattr(self, "live_lab_tab", None):
+            if page.current_source() == page.SOURCE_FILES:
+                files = getattr(self, "files_source_page", None)
+                return getattr(files.editor() if files is not None else None, "_hint_controller", None)
+            return getattr(page, "_hint_controller", None)
+        if page is getattr(self, "ingestion_hub_tab", None):
+            return getattr(page, "_hint_controller", None)
+        if page is getattr(self, "edit_page", None):
+            return getattr(page.editor(), "_hint_controller", None)
+        return getattr(observations, "_status_hint_controller", None)
+
+    def show_screen_notice(
+        self, text: str, tone: str = "error", details: str | None = None, **kwargs
+    ) -> None:
+        """A failure, result or refusal, said in the bar of the screen shown.
+
+        A screen without a bar keeps it until a screen with one shows."""
+        controller = self._screen_notice_controller()
+        if controller is None:
+            self._pending_screen_notice = (text, tone, details, kwargs)
+            return
+        self._pending_screen_notice = None
+        controller.show_notice(text, tone, details=details, **kwargs)
+
+    _pending_screen_notice = None
+
+    def _show_pending_screen_notice(self, *_args) -> None:
+        pending = self._pending_screen_notice
+        if pending is not None and self._screen_notice_controller() is not None:
+            text, tone, details, kwargs = pending
+            self.show_screen_notice(text, tone, details, **kwargs)
 
     # Where the reference flows say a failure or a result (stage 10e2): the
     # comparison list, the reference drawer and the library button are on
@@ -11166,18 +11225,10 @@ class MainWindow(GeometryMixin, QMainWindow):
                 lab_metadata=ingest_metadata,
                 output_dir=output_dir,
             )
-        except RawRenderingUnavailableError as exc:
-            QMessageBox.warning(
-                self,
-                "RAW Rendering Unavailable",
-                f"Could not prepare {Path(original_path).name}: {exc}",
-            )
-            return
-        except RuntimeError as exc:
-            QMessageBox.warning(
-                self,
-                "Image Preparation Failed",
-                f"Could not prepare {Path(original_path).name}: {exc}",
+        except (RawRenderingUnavailableError, RuntimeError) as exc:
+            self.show_screen_notice(
+                self.tr("Could not open {name}.").format(name=Path(original_path).name),
+                details=str(exc),
             )
             return
 
@@ -11209,6 +11260,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._update_measure_copyright_overlay()
 
         self.current_pixmap = self._load_pixmap_cached(self.current_image_path)
+        self._sync_export_image_enabled()
         self.image_label.set_image(self.current_pixmap)
         self.update_exif_panel(self.current_image_path)
         QTimer.singleShot(
@@ -11797,9 +11849,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         message = self.tr("Changed %n image(s).", "", len(outcome.image_ids))
         if outcome.measurements:
             message += " " + self.tr("%n measurement(s) recalculated.", "", outcome.measurements)
-        controller = getattr(self, "_hint_controller", None)
-        if controller is not None:
-            controller.set_status(message, timeout_ms=6000, tone="success")
+        self.show_screen_notice(message, "success")
 
     def _on_measure_gallery_edit_requested(self, _image_id, filepath: str) -> None:
         path = (filepath or "").strip() or None
@@ -11846,11 +11896,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         try:
             ImageDB.delete_image(image_id)
         except Exception as exc:
-            QMessageBox.critical(
-                self,
-                self.tr("Delete failed"),
-                self.tr("Could not delete image: {error}").format(error=exc),
-            )
+            self.show_screen_notice(self.tr("Could not delete the image."), details=str(exc))
             return
 
         if next_id:
@@ -11997,6 +12043,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.current_image_id = None
         self.current_image_path = None
         self.current_pixmap = None
+        self._sync_export_image_enabled()
         self.current_image_type = None
         self.auto_gray_cache = None
         self.auto_gray_cache_id = None
@@ -13263,10 +13310,20 @@ class MainWindow(GeometryMixin, QMainWindow):
         import_dir = str(Path(filepath).parent)
         update_app_settings({"last_import_dir": import_dir})
 
+    def _sync_export_image_enabled(self) -> None:
+        """Mål's Export image needs an image (stage 10f1: disabled, saying why)."""
+        button = getattr(self, "measure_export_image_btn", None)
+        if button is None:
+            return
+        pixmap = getattr(self, "current_pixmap", None)
+        has_image = pixmap is not None and not pixmap.isNull()
+        button.setEnabled(has_image)
+        button.setToolTip("" if has_image else self.tr("Open an image to export it."))
+
     def export_annotated_image(self):
         """Export the current image view with annotations."""
         if not self.current_pixmap:
-            QMessageBox.warning(self, "No image", "Load an image before exporting.")
+            self.show_screen_notice(self.tr("Open an image to export it."), "warning")
             return
 
         default_name = "annotated_image"
@@ -14243,13 +14300,12 @@ class MainWindow(GeometryMixin, QMainWindow):
         if ObservationDB.get_observation(observation_id) is None:
             return False
         if live.is_session_running() and int(live._target_observation_id or 0) != observation_id:
-            QMessageBox.information(
-                self,
-                self.tr("Live session running"),
+            self.show_screen_notice(
                 self.tr(
                     "Images shows the Live session's observation while the session runs. "
                     "End the session to edit this photo."
                 ),
+                "info",
             )
             return True
         if int(getattr(self, "active_observation_id", 0) or 0) != observation_id:
@@ -16825,10 +16881,12 @@ class MainWindow(GeometryMixin, QMainWindow):
             fig.savefig(filename, **save_kwargs)
             if export_format == "png8":
                 self._quantize_png8(Path(filename))
-            self.measure_status_label.setText(f"\u2713 Plot exported to {Path(filename).name}")
-            self.measure_status_label.setStyleSheet(f"color: #27ae60; font-weight: bold; font-size: {pt(9)}pt;")
+            # Said on Analysis, where the button is (it went to Mål's status line).
+            self.show_screen_notice(
+                self.tr("Plot exported to {name}.").format(name=Path(filename).name), "success"
+            )
         except Exception as exc:
-            QMessageBox.warning(self, "Export Failed", str(exc))
+            self.show_screen_notice(self.tr("Could not export the plot."), details=str(exc))
         finally:
             if needs_restore:
                 if dark:
@@ -17161,12 +17219,16 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         text, _name, _date = self._build_stats_text()
         self.gallery_stats_preview.setPlainText(text or "")
+        # Nothing to export without an observation: the buttons say so (stage 10f1).
+        for button in (getattr(self, "gallery_copy_stats_btn", None), getattr(self, "gallery_save_stats_btn", None)):
+            if button is not None:
+                button.setEnabled(bool(text))
 
     def copy_spore_stats(self):
         """Copy stats + table to clipboard."""
         text, _name, _date = self._build_stats_text()
         if not text:
-            QMessageBox.warning(self, self.tr("No Observation"), self.tr("Select an observation first."))
+            self.show_screen_notice(self.tr("Select an observation first."), "warning")
             return
         QApplication.clipboard().setText(text)
 
@@ -17174,7 +17236,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Save stats + table to a text file."""
         text, name, date_value = self._build_stats_text()
         if not text:
-            QMessageBox.warning(self, self.tr("No Observation"), self.tr("Select an observation first."))
+            self.show_screen_notice(self.tr("Select an observation first."), "warning")
             return
         default_name = name or "stats"
         safe_name = re.sub(r'[<>:"/\\\\|?*]', "_", str(default_name))
@@ -17198,7 +17260,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         try:
             Path(filename).write_text(text, encoding="utf-8")
         except Exception as exc:
-            QMessageBox.warning(self, self.tr("Save Failed"), str(exc))
+            self.show_screen_notice(self.tr("Could not save the statistics."), details=str(exc))
 
     def _get_measurement_by_id(self, measurement_id):
         """Load a measurement record by id."""

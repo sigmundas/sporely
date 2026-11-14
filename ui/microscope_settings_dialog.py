@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QPushButton,
     QVBoxLayout,
 )
@@ -38,6 +37,7 @@ from database.models import (
 )
 from database.schema import load_objectives, objective_display_name, objective_sort_value
 
+from .hint_status import HintBar, HintStatusController
 from .styles import pt
 
 # category for DatabaseTerms -> image column
@@ -113,6 +113,15 @@ class MicroscopeSettingsDialog(QDialog):
         layout.addWidget(self.effect_label)
         layout.addStretch(1)
 
+        # What went wrong is said above the buttons (stage 10f1), in a bar
+        # that is there only while it has something to say.
+        self.hint_bar = HintBar(self)
+        self.hint_bar.set_wrap_mode(True)
+        self.hint_bar.hide()
+        self._hint_controller = HintStatusController(self.hint_bar, self)
+        self._hint_controller.noticeChanged.connect(self.hint_bar.setVisible)
+        layout.addWidget(self.hint_bar)
+
         buttons = QHBoxLayout()
         buttons.addStretch(1)
         self.cancel_btn = QPushButton(self.tr("Cancel"), self)
@@ -184,17 +193,14 @@ class MicroscopeSettingsDialog(QDialog):
             )
         except MicroscopeSettingsChanged:
             self._update_effect()
-            QMessageBox.information(
-                self,
-                self.tr("Change microscope settings"),
+            self._hint_controller.show_notice(
                 self.tr("The images changed while this window was open. Check the new counts and apply again."),
+                "warning",
             )
             return
         except Exception as exc:
-            QMessageBox.warning(
-                self,
-                self.tr("Change microscope settings"),
-                self.tr("Nothing was changed: {error}").format(error=str(exc)),
+            self._hint_controller.show_notice(
+                self.tr("Nothing was changed."), "error", details=str(exc)
             )
             return
         self.accept()

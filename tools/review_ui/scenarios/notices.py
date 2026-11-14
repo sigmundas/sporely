@@ -12,8 +12,14 @@ from PySide6.QtWidgets import QWidget
 from ..context import ReviewContext
 from ..registry import ReviewScenario, ScenarioRegistry
 from .analysis_tab import _analysis_tab
-from .measure_tab import _settle
+from .measure_tab import _measure_tab, _settle
 from .mode_bar import _edit_mode
+
+def _update_available(window) -> None:
+    window.tab_widget.setCurrentWidget(window.observations_tab)
+    window.app_version = "0.9.28"
+    window._show_update_dialog("0.9.30", "https://sporely.no/download")
+
 
 TEXT = {
     "nb_NO": {
@@ -117,6 +123,18 @@ def register_notice_scenarios(registry: ScenarioRegistry) -> None:
             locale="de_DE",
         )
     )
+    for suffix, locale in (("", "nb_NO"), ("-de", "de_DE")):
+        registry.register(
+            ReviewScenario(
+                id=f"notice.update-available{suffix}",
+                group="notices",
+                title=f"Notice: Update available on Vis ({locale[:2]})",
+                description="It was a question; now a notice whose action opens the download page (stage 10f1).",
+                build=lambda context: _measure_tab(context, after=_update_available),
+                viewport=(1500, 950),
+                locale=locale,
+            )
+        )
     registry.register(
         ReviewScenario(
             id="notice.analysis-details",

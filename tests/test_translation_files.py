@@ -11,14 +11,14 @@ I18N = Path(__file__).resolve().parent.parent / "i18n"
 
 
 @pytest.mark.parametrize("lang, expected", [
-    ("nb_NO", "En nyere versjon av Sporely er tilgjengelig."),
-    ("sv_SE", "En nyare version av Sporely finns tillgänglig."),
-    ("de_DE", "Eine neuere Version von Sporely ist verfügbar."),
+    ("nb_NO", "Åpne nedlastingsside"),
+    ("sv_SE", "Öppna nedladdningssidan"),
+    ("de_DE", "Download-Seite öffnen"),
 ])
 def test_each_language_loads_its_own_translation(lang, expected):
     translator = QTranslator()
     assert translator.load(str(I18N / f"Sporely_{lang}.qm"))
-    assert translator.translate("MainWindow", "A newer version of Sporely is available.") == expected
+    assert translator.translate("MainWindow", "Open download page") == expected
 
 
 def test_the_supported_languages_are_the_shipped_ones():

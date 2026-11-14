@@ -161,9 +161,13 @@ def test_a_running_live_session_for_another_observation_keeps_bilder(qtbot, wind
     _show_view(qtbot, window)
     # The precondition only: a session runs for the first observation.
     monkeypatch.setattr(live, "is_session_running", lambda: True)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: pytest.fail("no message box"))
     told = []
-    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: told.append(args[2]))
+    window.observations_tab._status_hint_controller.noticeChanged.connect(
+        lambda shown: shown and told.append(window.observations_tab._status_hint_controller.notice_text())
+    )
     assert window.open_files_for_image(other, photo) is True
+    # Said on the screen shown (stage 10f1), here Vis.
     assert told and "End the session" in told[0]
     assert window.tab_widget.currentWidget() is window.observations_tab
     assert int(window.active_observation_id) == first

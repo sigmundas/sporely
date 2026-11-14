@@ -8,6 +8,7 @@ show the tab as the user sees it.
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 from PySide6.QtCore import QPointF
 from PySide6.QtWidgets import QApplication, QWidget
@@ -98,7 +99,77 @@ def _microscope_settings(context: ReviewContext) -> QWidget:
     return dialog
 
 
+def _image_failed(context: ReviewContext, window) -> None:
+    """Mål: an image that cannot be prepared; its notice, Details open (stage 10f1).
+    The real handler; only the RAW library is missing."""
+    from unittest.mock import patch
+
+    import ui.main_window as main_window
+    from database.models import ImageDB
+    from utils.local_image_ingest import RawRenderingUnavailableError
+
+    def unavailable(path, **_kwargs):
+        raise RawRenderingUnavailableError("RAW support needs the rawpy package, which is not installed.")
+
+    deadline = time.monotonic() + 5
+    while window.current_pixmap is None and time.monotonic() < deadline:  # the first image is shown
+        _settle(0.1)
+    image = dict(ImageDB.get_images_for_observation(int(window.active_observation_id))[0])
+    image["filepath"] = str(Path(image["filepath"]).with_name("IMG_4021.ORF"))
+    with patch.object(main_window, "prepare_local_ingest_image", unavailable):  # this call only
+        window.load_image_record(image)
+    window.measure_hint_bar._details_btn.click()
+
+
+def _microscope_settings_failed(context: ReviewContext) -> QWidget:
+    """The batch dialog after Apply failed: its notice beside the buttons, Details open (stage 10f1)."""
+    from unittest.mock import patch
+
+    from database.models import MicroscopeSettingsDB
+
+    def locked(*_args, **_kwargs):
+        raise RuntimeError("database is locked")
+
+    dialog = _microscope_settings(context)
+    with patch.object(MicroscopeSettingsDB, "apply", locked):  # this click only
+        dialog.apply_btn.click()
+    dialog.hint_bar._details_btn.click()
+    _settle(0.3)
+    return dialog
+
+
 def register_measure_tab_scenarios(registry: ScenarioRegistry) -> None:
+    for suffix, theme, locale, size in (
+        ("", "light", "nb_NO", (1500, 950)), ("-dark", "dark", "nb_NO", (1500, 950)),
+        ("-small-de", "light", "de_DE", (1100, 720)),
+    ):
+        registry.register(
+            ReviewScenario(
+                id=f"measure.image-failed{suffix}",
+                group="measure",
+                title=f"Measure tab: an image that cannot be opened ({locale[:2]}{', dark' if theme == 'dark' else ''})",
+                description="Mål's bottom bar shows only with a notice: the error, Details open (stage 10f1).",
+                build=lambda context, size=size: _measure_tab(
+                    context, size=size, after=lambda window: _image_failed(context, window)
+                ),
+                viewport=size,
+                locale=locale,
+                theme=theme,
+            )
+        )
+    for suffix, locale in (("", "nb_NO"), ("-de", "de_DE")):
+        registry.register(
+            ReviewScenario(
+                id=f"measure.microscope-settings-failed{suffix}",
+                group="measure",
+                title=f"Change microscope settings: Apply failed ({locale[:2]})",
+                description="The failure beside the buttons, Details open (stage 10f1).",
+                build=lambda context: _microscope_settings_failed(context),
+                viewport=(560, 400),
+                natural_size=True,
+                locale=locale,
+            )
+        )
     for suffix, theme, locale in (("", "light", "nb_NO"), ("-dark", "dark", "nb_NO"), ("-de", "light", "de_DE")):
         registry.register(
             ReviewScenario(

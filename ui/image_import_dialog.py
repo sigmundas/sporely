@@ -5779,23 +5779,15 @@ class ImageImportDialog(GeometryMixin, QDialog):
         paths = sorted(self._missing_exif_paths)
         self._missing_exif_paths.clear()
         names = [Path(p).name for p in paths if p]
-        preview = "\n".join(f"- {name}" for name in names[:5])
-        extra = ""
-        if len(names) > 5:
-            extra = self.tr("\n...and {count} more.").format(count=len(names) - 5)
-        QMessageBox.warning(
-            self,
-            self.tr("Missing image files"),
+        # A notice in this page's bar (stage 10f1), the files under Details.
+        self._hint_controller.show_notice(
             self.tr(
                 "Some image files are missing or were moved. EXIF data could not be read."
             )
-            + "\n\n"
-            + self.tr("Missing files:")
-            + "\n"
-            + preview
-            + extra
-            + "\n\n"
+            + " "
             + self.tr("Please relink or remove the missing images."),
+            "warning",
+            details=self.tr("Missing files:") + "\n" + "\n".join(f"- {name}" for name in names),
         )
 
     def _update_current_image_exif(self, result: ImageImportResult) -> None:
