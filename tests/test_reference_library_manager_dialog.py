@@ -791,14 +791,8 @@ def test_manager_surfaces_in_use_delete_error_without_removing_set(
         )
     )
     ObservationReferenceUseRepository.attach(observation_id, ms.id)
-    warnings: list[str] = []
     monkeypatch.setattr(
         QMessageBox, "question", lambda *args, **kwargs: QMessageBox.Yes
-    )
-    monkeypatch.setattr(
-        QMessageBox,
-        "warning",
-        lambda _parent, _title, message, *args, **kwargs: warnings.append(message),
     )
 
     dialog = ReferenceLibraryManagerDialog(None, active_observation_id=None)
@@ -808,8 +802,9 @@ def test_manager_surfaces_in_use_delete_error_without_removing_set(
         dialog._on_delete_selected_clicked()
 
         assert MeasurementSetRepository.get(ms.id) is not None
-        assert warnings
-        assert "attached" in warnings[0].lower()
+        notice = dialog._hint_controller._notice  # the bottom bar (stage 10e)
+        assert notice is not None and notice.tone == "error"
+        assert "attached" in notice.text.lower()
         assert dialog.current_selection_kind() == "measurement_set"
     finally:
         dialog.deleteLater()

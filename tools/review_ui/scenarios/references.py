@@ -312,6 +312,86 @@ def _library_manager(context: ReviewContext):
     return dialog
 
 
+def _library_technical_details(context: ReviewContext):
+    """Referansebibliotek: a publication, its identifiers under Technical details, open (stage 10e1)."""
+    from ui.reference_library_manager_dialog import ReferenceLibraryManagerDialog
+
+    fixture = _fixture(context)
+    dialog = ReferenceLibraryManagerDialog(
+        context.host, active_observation_id=42, cloud_client=object(), sporely_taxon_id=7,
+    )
+    dialog.refresh_works(select_id=fixture["work"].id)
+    dialog.technical_section.set_expanded(True)
+    return dialog
+
+
+def _library_delete_failed(context: ReviewContext):
+    """Referansebibliotek: deleting a measurement set in use failed; Details open (stage 10e1).
+
+    The real delete path: the confirmation answers Yes and the repository
+    refuses, as it does for a set attached to an observation.
+    """
+    from PySide6.QtWidgets import QMessageBox
+
+    from database.reference_library import MeasurementSetRepository, ReferenceLibraryError
+    from ui.reference_library_manager_dialog import ReferenceLibraryManagerDialog
+
+    fixture = _fixture(context)
+
+    def refuse(_set_id):
+        raise ReferenceLibraryError("FOREIGN KEY constraint failed (observation_reference_uses)")
+
+    context.enter_fixture(patch.object(MeasurementSetRepository, "delete", refuse))
+    context.enter_fixture(patch.object(QMessageBox, "question", lambda *_a, **_k: QMessageBox.Yes))
+    dialog = ReferenceLibraryManagerDialog(
+        context.host, active_observation_id=42, cloud_client=object(), sporely_taxon_id=7,
+    )
+    dialog.refresh_works(select_id=fixture["work"].id)
+    dialog._refresh_hierarchy_for_current_work(select_set_id=fixture["sets"][0].id)
+    dialog._on_delete_selected_clicked()
+    dialog.hint_bar._details_btn.click()
+    return dialog
+
+
+class _ReviewSharingClient:
+    """Two shared reference sets; stopping one fails (no network)."""
+
+    def list_my_reference_sharing(self):
+        def row(set_id, label, status):
+            return {
+                "source_measurement_set_id": set_id, "status": status, "stopped_at": None,
+                "hidden_by_moderation": False, "public_observation_count": 2,
+                "species_page_contributions": [{
+                    "contribution_id": f"c-{set_id}", "sporely_taxon_id": 1,
+                    "canonical_scientific_name": "Cortinarius caperatus",
+                    "current_revision": 3, "shared_at": None, "hidden_at": None,
+                }],
+                "source_short_label": label, "source_raw_text": "11–14 × 7–9 µm",
+            }
+
+        return {"status": "ok", "sets": [
+            row("set-a", "Niskanen et al. 2024", "shared"),
+            row("set-b", "Petersen 1990", "shared"),
+        ]}
+
+    def stop_sharing_reference_set(self, _set_id):
+        from utils.cloud_sync import CloudSyncError
+
+        raise CloudSyncError("HTTPSConnectionPool: Max retries exceeded (timed out)")
+
+
+def _my_shared_failed(context: ReviewContext):
+    """Mine delte referanser: stopping sharing failed; Details open (stage 10e1)."""
+    from ui.reference_sharing_dialogs import MySharedReferencesDialog
+
+    dialog = MySharedReferencesDialog(_ReviewSharingClient(), parent=context.host)
+    dialog.confirm_stop_sharing = lambda: True
+    dialog.select_row(0)
+    dialog.stop_btn.click()
+    dialog.hint_bar._details_btn.click()
+    return dialog
+
+
 def _measurement_set_form_enhanced(context: ReviewContext):
     """The library-manager form with enhanced editing switched on.
 
@@ -785,6 +865,61 @@ def register_reference_scenarios(registry: ScenarioRegistry) -> None:
             description="A selected publication, taxon treatment, and measurement set exercise the three-pane CRUD manager.",
             viewport=(1100, 700),
             build=_library_manager,
+        ),
+        ReviewScenario(
+            id="reference.library-technical-details",
+            group="reference-library",
+            title="Reference Library: identifiers under Technical details, open (nb)",
+            description="UUID, revision and citation key are behind a closed section under the details (stage 10e1).",
+            viewport=(1100, 700),
+            build=_library_technical_details,
+            locale="nb_NO",
+        ),
+        ReviewScenario(
+            id="reference.library-delete-failed",
+            group="reference-library",
+            title="Reference Library: a failed delete in the bottom bar, Details open (nb)",
+            description="Failures are notices beside Close, not message boxes (stage 10e1).",
+            viewport=(1100, 700),
+            build=_library_delete_failed,
+            locale="nb_NO",
+        ),
+        ReviewScenario(
+            id="reference.library-delete-failed-dark",
+            group="reference-library",
+            title="Reference Library: a failed delete, Details open (nb, dark)",
+            description="The notice in the dark theme (stage 10e1).",
+            viewport=(1100, 700),
+            build=_library_delete_failed,
+            locale="nb_NO",
+            theme="dark",
+        ),
+        ReviewScenario(
+            id="reference.library-delete-failed-small-de",
+            group="reference-library",
+            title="Reference Library: a failed delete in a small window (de)",
+            description="The long German notice beside Close (stage 10e1).",
+            viewport=(860, 600),
+            build=_library_delete_failed,
+            locale="de_DE",
+        ),
+        ReviewScenario(
+            id="reference.my-shared-failed",
+            group="reference-library",
+            title="My shared references: stopping sharing failed, Details open (nb)",
+            description="Results and failures are notices left of the buttons (stage 10e1).",
+            viewport=(900, 460),
+            build=_my_shared_failed,
+            locale="nb_NO",
+        ),
+        ReviewScenario(
+            id="reference.my-shared-failed-de",
+            group="reference-library",
+            title="My shared references: stopping sharing failed (de)",
+            description="The German notice and buttons on one row (stage 10e1).",
+            viewport=(900, 460),
+            build=_my_shared_failed,
+            locale="de_DE",
         ),
         ReviewScenario(
             id="reference.measurement-set-form-enhanced",

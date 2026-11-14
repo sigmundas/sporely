@@ -28,9 +28,16 @@ def qapp():
 
 
 @pytest.fixture
-def boxes(monkeypatch):
+def notices(monkeypatch):
+    """What each action said in the dialog's bottom bar (notices since stage 10e)."""
     seen: list[str] = []
-    monkeypatch.setattr(rsd, "show_message", lambda _p, _i, _t, text: seen.append(text))
+    real = rsd.MySharedReferencesDialog._show_notice
+
+    def record(self, text, tone="error", *, details=None):
+        seen.append(text)
+        real(self, text, tone, details=details)
+
+    monkeypatch.setattr(rsd.MySharedReferencesDialog, "_show_notice", record)
     return seen
 
 
@@ -144,7 +151,7 @@ def test_hidden_and_stopped_is_hidden_with_no_action(qapp):
     assert rsd.set_status(row) == "hidden" and rsd.set_action("hidden") is None
 
 
-def test_stop_sharing_calls_rpc_and_reloads(qapp, monkeypatch, boxes):
+def test_stop_sharing_calls_rpc_and_reloads(qapp, monkeypatch, notices):
     client = FakeClient([_set("a", "shared")])
     dialog = MySharedReferencesDialog(client)
     monkeypatch.setattr(dialog, "confirm_stop_sharing", lambda: True)
@@ -153,7 +160,7 @@ def test_stop_sharing_calls_rpc_and_reloads(qapp, monkeypatch, boxes):
     assert ("stop", "a") in client.calls
     assert client.calls[-1] == ("list",)
     assert dialog.table.item(0, 0).text() == "Stopped"
-    assert boxes == []
+    assert notices == []
     dialog.deleteLater()
 
 
@@ -167,18 +174,18 @@ def test_stop_cancelled_calls_nothing(qapp, monkeypatch):
     dialog.deleteLater()
 
 
-def test_share_again_calls_rpc_and_reloads(qapp, boxes):
+def test_share_again_calls_rpc_and_reloads(qapp, notices):
     client = FakeClient([_set("b", "stopped")])
     dialog = MySharedReferencesDialog(client)
     dialog.select_row(0)
     dialog.share_again_btn.click()
     assert ("share_again", "b") in client.calls and client.calls[-1] == ("list",)
     assert dialog.table.item(0, 0).text() == "Shared"
-    assert boxes == []
+    assert notices == []
     dialog.deleteLater()
 
 
-def test_share_again_that_stays_hidden_never_reports_success(qapp, boxes):
+def test_share_again_that_stays_hidden_never_reports_success(qapp, notices):
     client = FakeClient([_set("b", "stopped")])
     dialog = MySharedReferencesDialog(client)
     dialog.select_row(0)
@@ -191,7 +198,7 @@ def test_share_again_that_stays_hidden_never_reports_success(qapp, boxes):
     client.share_reference_set_again = again
     dialog.share_again_btn.click()
     assert dialog.table.item(0, 0).text() == "Hidden"
-    assert len(boxes) == 1 and "hidden by moderation" in boxes[0]
+    assert len(notices) == 1 and "hidden by moderation" in notices[0]
     dialog.deleteLater()
 
 
@@ -202,13 +209,13 @@ def test_share_again_that_stays_hidden_never_reports_success(qapp, boxes):
     (cloud_sync.CloudSyncError("HTTP 429 rate_limited"), "Too many requests"),
     (cloud_sync.CloudSyncError("offline"), "Could not reach Sporely Cloud"),
 ])
-def test_action_failures_are_reported_truthfully(qapp, monkeypatch, boxes, result, needle):
+def test_action_failures_are_reported_truthfully(qapp, monkeypatch, notices, result, needle):
     client = FakeClient([_set("a", "shared")], action_result=result)
     dialog = MySharedReferencesDialog(client)
     monkeypatch.setattr(dialog, "confirm_stop_sharing", lambda: True)
     dialog.select_row(0)
     dialog.stop_btn.click()
-    assert len(boxes) == 1 and needle in boxes[0]
+    assert len(notices) == 1 and needle in notices[0]
     assert client.calls[-1] == ("list",)
     dialog.deleteLater()
 
@@ -432,7 +439,7 @@ def test_batch_confirm_skips_notice_when_observation_drifted(monkeypatch):
     assert len(shown) == 1
 
 
-def test_share_again_absent_after_reload_says_sharing_is_restored(qapp, boxes):
+def test_share_again_absent_after_reload_says_sharing_is_restored(qapp, notices):
     client = FakeClient([_set("b", "stopped")])
     dialog = MySharedReferencesDialog(client)
     dialog.select_row(0)
@@ -444,9 +451,9 @@ def test_share_again_absent_after_reload_says_sharing_is_restored(qapp, boxes):
 
     client.share_reference_set_again = again
     dialog.share_again_btn.click()
-    assert len(boxes) == 1
-    assert "Sharing is restored" in boxes[0] and "attached to a public observation" in boxes[0]
-    assert "couldn't confirm" not in boxes[0]
+    assert len(notices) == 1
+    assert "Sharing is restored" in notices[0] and "attached to a public observation" in notices[0]
+    assert "couldn't confirm" not in notices[0]
     dialog.deleteLater()
 
 
@@ -488,7 +495,7 @@ def test_precision_notice_box_has_no_dont_show_checkbox(qapp, settings, monkeypa
     {"status": "error"},
     cloud_sync.CloudSyncError("offline"),
 ])
-def test_share_again_with_failed_reload_says_couldnt_confirm(qapp, boxes, reload_result):
+def test_share_again_with_failed_reload_says_couldnt_confirm(qapp, notices, reload_result):
     client = FakeClient([_set("b", "stopped")])
     dialog = MySharedReferencesDialog(client)
     dialog.select_row(0)
@@ -500,6 +507,6 @@ def test_share_again_with_failed_reload_says_couldnt_confirm(qapp, boxes, reload
 
     client.share_reference_set_again = again
     dialog.share_again_btn.click()
-    assert len(boxes) == 1 and "couldn't confirm" in boxes[0]
-    assert "Sharing is restored" not in boxes[0]
+    assert len(notices) == 1 and "couldn't confirm" in notices[0]
+    assert "Sharing is restored" not in notices[0]
     dialog.deleteLater()

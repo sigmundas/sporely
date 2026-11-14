@@ -83,8 +83,7 @@ def test_marked_row_is_visibly_not_copyable(qapp, monkeypatch):
     assert dialog.copy_button.isEnabled()
     copied = []
     monkeypatch.setattr(catalogue, "copy_curated_bundle_to_personal_library", lambda b: copied.append(b))
-    warnings = []
-    monkeypatch.setattr(catalogue.QMessageBox, "warning", lambda *a, **k: warnings.append(a))
     dialog.table.selectRow(0)
     dialog._copy_selected()
-    assert copied == [] and len(warnings) == 1
+    notice = dialog._hint_controller._notice  # the bottom bar (stage 10e)
+    assert copied == [] and notice is not None and "cannot be copied" in notice.text

@@ -32,6 +32,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .hint_status import HintBar, HintStatusController
+
 SET_STATUSES = ("shared", "stopped", "hidden")
 
 
@@ -58,20 +60,14 @@ def rate_limited_message(result: dict | None = None) -> str:
     return QCoreApplication.translate("ReferenceSharing", "Too many requests. Please wait a moment and try again.")
 
 
-def _error_message(exc: Exception) -> str:
+def _error_message(exc: Exception) -> tuple[str, str | None]:
+    """A failed sharing request: what to say, and the error behind Details."""
     if _is_rate_limited_error(exc):
-        return rate_limited_message()
+        return rate_limited_message(), None
     if _is_serialization_error(exc):
-        return QCoreApplication.translate("ReferenceSharing", "Sporely Cloud was busy with another change. Please try again.")
-    return QCoreApplication.translate(
-        "ReferenceSharing", "Could not reach Sporely Cloud: {error}").format(error=str(exc))
-
-
-def show_message(parent, icon, title: str, text: str) -> None:
-    """A plain-text message box (user/reference text is never rich text)."""
-    box = QMessageBox(icon, title, text, QMessageBox.Ok, parent)
-    box.setTextFormat(Qt.PlainText)
-    box.exec()
+        return QCoreApplication.translate(
+            "ReferenceSharing", "Sporely Cloud was busy with another change. Please try again."), None
+    return QCoreApplication.translate("ReferenceSharing", "Could not reach Sporely Cloud."), str(exc)
 
 
 def set_status(item: dict) -> str:
@@ -178,11 +174,15 @@ class MySharedReferencesDialog(QDialog):
         self.hint_label.setTextFormat(Qt.PlainText)
         layout.addWidget(self.hint_label)
 
+        # Results and failures show in the bottom bar, left of the buttons,
+        # not in message boxes (stage 10e).
         row = QHBoxLayout()
+        row.setSpacing(8)
+        self.hint_bar = HintBar(self)
+        row.addWidget(self.hint_bar, 1)
         self.refresh_btn = QPushButton(QCoreApplication.translate("ReferenceSharing", "Refresh"), self)
         self.refresh_btn.clicked.connect(self.refresh)
         row.addWidget(self.refresh_btn)
-        row.addStretch(1)
         self.stop_btn = QPushButton(QCoreApplication.translate("ReferenceSharing", "Stop sharing…"), self)
         self.stop_btn.clicked.connect(self._on_stop_clicked)
         row.addWidget(self.stop_btn)
@@ -193,6 +193,7 @@ class MySharedReferencesDialog(QDialog):
         close_btn.clicked.connect(self.accept)
         row.addWidget(close_btn)
         layout.addLayout(row)
+        self._hint_controller = HintStatusController(self.hint_bar, self)
 
         self.refresh()
 
@@ -207,7 +208,8 @@ class MySharedReferencesDialog(QDialog):
         try:
             result = self._client.list_my_reference_sharing()
         except Exception as exc:
-            self.status_label.setText(_error_message(exc))
+            text, details = _error_message(exc)
+            self.status_label.setText(f"{text}\n{details}" if details else text)
             self._update_buttons()
             return
         if isinstance(result, dict) and result.get("status") == "rate_limited":
@@ -291,6 +293,9 @@ class MySharedReferencesDialog(QDialog):
         box.setDefaultButton(QMessageBox.Cancel)
         return box.exec() == QMessageBox.Yes
 
+    def _show_notice(self, text: str, tone: str = "error", *, details: str | None = None) -> None:
+        self._hint_controller.show_notice(text, tone, details=details)
+
     def _run_action(self, action: str) -> None:
         row = self._selected_row()
         if not row or set_action(set_status(row)) != action:
@@ -306,8 +311,9 @@ class MySharedReferencesDialog(QDialog):
             else:
                 result = self._client.share_reference_set_again(set_id)
         except Exception as exc:
-            show_message(self, QMessageBox.Warning, self.windowTitle(), _error_message(exc))
+            text, details = _error_message(exc)
             self.refresh()
+            self._show_notice(text, "error", details=details)
             return
         ok, message = action_result_message(action, result)
         self.refresh()
@@ -334,8 +340,7 @@ class MySharedReferencesDialog(QDialog):
                     "Sporely couldn't confirm that this reference set is shared "
                     "again. Refresh to check its status.")
         if message:
-            icon = QMessageBox.Information if ok else QMessageBox.Warning
-            show_message(self, icon, self.windowTitle(), message)
+            self._show_notice(message, "success" if ok else "warning")
 
     def _on_stop_clicked(self) -> None:
         self._run_action("stop")
