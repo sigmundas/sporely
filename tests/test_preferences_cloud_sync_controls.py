@@ -886,6 +886,7 @@ def test_cloud_login_success_does_not_auto_start_sync(monkeypatch):
         set_hint=lambda text, tone="info": events.append(f"hint:{tone}:{text}"),
         _refresh_cloud_sync_ui=lambda: events.append("refresh_ui"),
     )
+    _with_host_lookup(fake_dialog)
 
     monkeypatch.setattr(cloud_sync, "ensure_database_linked_to_cloud_user", lambda client: "user-123")
     monkeypatch.setattr(main_window, "update_app_settings", lambda payload: settings_payload.update(payload))
@@ -1072,6 +1073,13 @@ def test_raw_processing_preferences_page_exposes_advanced_controls(monkeypatch, 
 # client in place, so a freshly reopened dialog appeared signed in again.
 # ---------------------------------------------------------------------------
 
+def _with_host_lookup(dialog):
+    """The real lookup of Preferanser (or the opening window) on a stand-in."""
+    dialog._settings_hub = MethodType(main_window.ArtsobservasjonerSettingsDialog._settings_hub, dialog)
+    dialog._settings_host = MethodType(main_window.ArtsobservasjonerSettingsDialog._settings_host, dialog)
+    return dialog
+
+
 def _make_logout_dialog(monkeypatch, *, parent, cached_client):
     """A lightweight stand-in for ArtsobservasjonerSettingsDialog, exercising
     the real _logout_cloud/_cached_cloud_client methods without building a
@@ -1084,6 +1092,7 @@ def _make_logout_dialog(monkeypatch, *, parent, cached_client):
         _update_cloud_controls=lambda: events.append("update_controls"),
         _update_status=lambda: events.append("update_status"),
     )
+    _with_host_lookup(dialog)
     monkeypatch.setattr(cloud_sync.SporelyCloudClient, "clear_credentials", lambda: events.append("clear_credentials"))
     monkeypatch.setattr(main_window, "update_app_settings", lambda updates: events.append(("update_app_settings", dict(updates))))
     return dialog, events
@@ -1150,7 +1159,7 @@ def test_stale_cached_client_does_not_survive_reopen_after_signout(monkeypatch):
 
     main_window.ArtsobservasjonerSettingsDialog._logout_cloud(dialog)
 
-    reopened_dialog = SimpleNamespace(_cloud_client=None, parent=lambda: main_window_fake)
+    reopened_dialog = _with_host_lookup(SimpleNamespace(_cloud_client=None, parent=lambda: main_window_fake))
     resolved = main_window.ArtsobservasjonerSettingsDialog._cached_cloud_client(reopened_dialog)
 
     assert resolved is None, "Reopening after sign-out must show the logged-out state, not the stale session"

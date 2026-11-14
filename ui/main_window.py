@@ -2327,6 +2327,13 @@ class SettingsHubDialog(QDialog):
     def _on_cloud_logout_changed(self) -> None:
         self._cloud_profile_loaded_user_id = ""
         self._cloud_client = None
+        # The main window's client goes first, before anything that can fail:
+        # the card's labels below read the cached client through Preferanser
+        # and the main window, and would otherwise take the signed-out
+        # account's client back.
+        main_window = self._settings_hub_main_window()
+        if main_window is not None:
+            setattr(main_window, "_cloud_client", None)
         if hasattr(self, "_profile_email"):
             self._profile_email.setReadOnly(False)
             self._profile_email.setToolTip("")
@@ -2339,9 +2346,7 @@ class SettingsHubDialog(QDialog):
             cloud_dialog._cloud_usage_summary_user_id = ""
             if hasattr(cloud_dialog, "_update_cloud_account_summary_labels"):
                 cloud_dialog._update_cloud_account_summary_labels()
-        main_window = self._settings_hub_main_window()
         if main_window is not None:
-            setattr(main_window, "_cloud_client", None)
             _clear_cached_cloud_avatar(main_window)
             updater = getattr(main_window, "_update_corner_ui", None)
             if callable(updater):
@@ -2781,11 +2786,32 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             except Exception:
                 pass
 
+    def _settings_hub(self):
+        """Preferanser when this dialog is its Profile and Online publishing
+        content, else None (opened on its own from the main window).
+
+        Preferanser holds the dialog inside its page widgets, so it is an
+        ancestor, not the direct parent: ``self.parent()`` is a page.
+        """
+        current = self.parent() if callable(getattr(self, "parent", None)) else None
+        while current is not None:
+            if callable(getattr(current, "_on_cloud_logout_changed", None)):
+                return current
+            current = current.parent() if callable(getattr(current, "parent", None)) else None
+        return None
+
+    def _settings_host(self):
+        """Preferanser, or the window that opened this dialog on its own."""
+        hub = self._settings_hub()
+        if hub is not None:
+            return hub
+        return self.parent() if callable(getattr(self, "parent", None)) else None
+
     def _cached_cloud_client(self):
         client = getattr(self, "_cloud_client", None)
         if client is not None:
             return client
-        parent = self.parent() if hasattr(self, "parent") else None
+        parent = self._settings_host()
         if parent is not None:
             getter = getattr(parent, "_cached_cloud_client", None)
             if callable(getter):
@@ -3151,17 +3177,14 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         Preferanser holds this dialog inside its page widgets, so it is an
         ancestor, not the direct parent.
         """
-        current = self.parent() if callable(getattr(self, "parent", None)) else None
-        while current is not None:
-            show_on_profile = getattr(current, "_show_profile_notice", None)
-            if callable(show_on_profile):
-                if not current.isVisible():
-                    self._show_notice_after_closing(text, tone, details=details)
-                    return
-                show_on_profile(text, tone, details=details)
-                return
-            current = current.parent() if callable(getattr(current, "parent", None)) else None
-        self._show_notice(text, tone, details=details)
+        hub = self._settings_hub()
+        show_on_profile = getattr(hub, "_show_profile_notice", None)
+        if not callable(show_on_profile):
+            self._show_notice(text, tone, details=details)
+        elif not hub.isVisible():
+            self._show_notice_after_closing(text, tone, details=details)
+        else:
+            show_on_profile(text, tone, details=details)
 
     def _show_notice_after_closing(self, text: str, tone: str, *, details: str | None = None) -> None:
         """Preferanser (or this dialog) closed before the result came, as a sign-in
@@ -3766,7 +3789,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             SettingsDB.set_setting("profile_email", str(email or "").strip())
             self._cloud_client = client
             self.set_hint(self.tr("Logged in to Sporely Cloud"), tone="success")
-            settings_hub = self.parent()
+            settings_hub = self._settings_host()
             if settings_hub is not None and hasattr(settings_hub, "_on_cloud_login_changed"):
                 try:
                     settings_hub._on_cloud_login_changed(client, str(email or "").strip())
@@ -3849,7 +3872,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         # _cloud_client attribute when this dialog's own cache is empty.  A
         # stale parent cache would otherwise re-hydrate self._cloud_client
         # immediately below, undoing the sign-out within this same call.
-        settings_hub = self.parent()
+        settings_hub = self._settings_host()  # Preferanser is an ancestor, not the parent
         if settings_hub is not None:
             if hasattr(settings_hub, "_on_cloud_logout_changed"):
                 try:
@@ -3903,7 +3926,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             self._show_cloud_notice(self.tr("Could not reset the cloud account link."), "error", details=str(exc))
             return
         self._cloud_client = None
-        settings_hub = self.parent()
+        settings_hub = self._settings_host()  # Preferanser is an ancestor, not the parent
         if settings_hub is not None:
             if hasattr(settings_hub, "_on_cloud_logout_changed"):
                 try:
@@ -3914,6 +3937,12 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                 if hasattr(settings_hub, "_cloud_client"):
                     settings_hub._cloud_client = None
                 _clear_cached_cloud_avatar(settings_hub)
+                updater = getattr(settings_hub, "_update_corner_ui", None)
+                if callable(updater):  # the corner shows signed out, as after a sign-out
+                    try:
+                        updater()
+                    except Exception:
+                        pass
         self._update_cloud_controls()
         self._update_status()
         self._show_cloud_notice(
