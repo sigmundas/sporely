@@ -1276,6 +1276,8 @@ def test_explicit_ui_update_refreshes_row_and_preserves_display_override(libs):
         MainWindow._restore_reference_uses_for_observation, stub
     )
     stub.update_graph_plots_only = lambda: plot_refreshes.append(True)
+    notices: list[tuple[str, str]] = []
+    stub._show_reference_notice = lambda text, tone="error", details=None: notices.append((tone, text))
 
     MethodType(MainWindow._update_reference_use_from_library, stub)(
         use.id, obs_id
@@ -1290,6 +1292,8 @@ def test_explicit_ui_update_refreshes_row_and_preserves_display_override(libs):
     assert stub.reference_series[0]["data"]["plot_color"] == "#123456"
     assert stub.reference_series[0]["data"]["library_update_available"] is False
     assert plot_refreshes == [True]
+    # Said on Analysis, where the row is (stage 10e2), not on Mål's status line.
+    assert notices == [("success", "Reference snapshot updated from the library.")]
 
 
 def test_explicit_ui_update_refuses_observation_drift(monkeypatch):
@@ -1305,17 +1309,16 @@ def test_explicit_ui_update_refuses_observation_drift(monkeypatch):
         "refresh_snapshot",
         lambda use_id: refresh_calls.append(use_id),
     )
-    monkeypatch.setattr(
-        "ui.main_window.QMessageBox.warning",
-        lambda _parent, _title, message: warnings.append(message),
-    )
     stub = SimpleNamespace(active_observation_id=12)
     stub.tr = MethodType(lambda self, text, *args, **kwargs: text, stub)
+    stub._show_reference_notice = lambda text, tone="error", details=None: warnings.append((tone, text))
 
     MethodType(MainWindow._update_reference_use_from_library, stub)("use-1", 11)
 
     assert refresh_calls == []
-    assert warnings
+    assert warnings == [
+        ("warning", "The active observation changed. Reopen the reference and try again.")
+    ]
 
 
 def test_restore_distinguishes_successor_from_same_set_update(libs):
@@ -1376,6 +1379,8 @@ def test_successor_review_cancellation_keeps_historical_attachment(libs):
     stub.tr = MethodType(lambda self, text, *args, **kwargs: text, stub)
     stub._confirm_reference_successor_adoption = lambda *_args: False
     stub.update_graph_plots_only = lambda: plot_refreshes.append(True)
+    notices: list[tuple[str, str]] = []
+    stub._show_reference_notice = lambda text, tone="error", details=None: notices.append((tone, text))
 
     MethodType(MainWindow._review_reference_successor, stub)(use.id, obs_id)
 
@@ -1423,6 +1428,8 @@ def test_confirmed_successor_review_adopts_and_refreshes_row(libs):
         MainWindow._restore_reference_uses_for_observation, stub
     )
     stub.update_graph_plots_only = lambda: plot_refreshes.append(True)
+    notices: list[tuple[str, str]] = []
+    stub._show_reference_notice = lambda text, tone="error", details=None: notices.append((tone, text))
 
     MethodType(MainWindow._review_reference_successor, stub)(use.id, obs_id)
 
@@ -1438,6 +1445,7 @@ def test_confirmed_successor_review_adopts_and_refreshes_row(libs):
     assert preference is not None
     assert preference.recent_use_sequence == 1
     assert plot_refreshes == [True]
+    assert notices == [("success", "Successor measurement set adopted.")]
 
 
 def test_successor_review_text_includes_both_full_citations():

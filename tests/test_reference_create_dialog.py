@@ -354,14 +354,19 @@ def test_nothing_is_written_when_the_observation_changed_while_open(qtbot, monke
         qtbot.mouseClick(dialog.next_btn, Qt.LeftButton)
         _parse(qtbot, dialog)
         window.active_observation_id = other_id  # another observation became active
-        qtbot.mouseClick(dialog.add_btn, Qt.LeftButton)
-        assert dialog.isVisible() and dialog.result() == 0  # stays open
-        qtbot.mouseClick(dialog.save_btn, Qt.LeftButton)
-        assert dialog.isVisible() and dialog.result() == 0
+        for button in (dialog.add_btn, dialog.save_btn):
+            dialog.hint_controller.dismiss_notice()
+            qtbot.mouseClick(button, Qt.LeftButton)
+            assert dialog.isVisible() and dialog.result() == 0  # stays open
+            said.append((dialog.hint_controller._notice.tone, dialog.hint_controller.current_text()))
         dialog.reject()
 
+    said: list[tuple[str, str]] = []
     _run_create_dialog(monkeypatch, qtbot, window, drive)
-    assert [kind for kind, _text in no_message_boxes] == ["warning", "warning"]
+    # Said in the dialog's bar (stage 10e2); Save's own "Not saved" hint does not cover it.
+    assert no_message_boxes == []
+    assert [tone for tone, _text in said] == ["warning", "warning"]
+    assert all("active observation changed" in text for _tone, text in said)
     assert ObservationReferenceUseRepository.list_for_observation(observation_id) == []
     assert ObservationReferenceUseRepository.list_for_observation(other_id) == []
     after = {c.measurement_set_id for c in MeasurementSetRepository.list_attachment_candidates(exclude_ids=set())}
@@ -442,15 +447,18 @@ def test_nothing_is_written_when_the_taxon_changed_while_open(qtbot, monkeypatch
             conn.close()
         else:
             _link_taxon(observation_id, new_taxon)
-        qtbot.mouseClick(dialog.add_btn, Qt.LeftButton)
-        assert dialog.isVisible() and dialog.result() == 0
-        qtbot.mouseClick(dialog.save_btn, Qt.LeftButton)
-        assert dialog.isVisible() and dialog.result() == 0
+        for button in (dialog.add_btn, dialog.save_btn):
+            dialog.hint_controller.dismiss_notice()
+            qtbot.mouseClick(button, Qt.LeftButton)
+            assert dialog.isVisible() and dialog.result() == 0
+            said.append((dialog.hint_controller._notice.tone, dialog.hint_controller.current_text()))
         dialog.reject()
 
+    said: list[tuple[str, str]] = []
     _run_create_dialog(monkeypatch, qtbot, window, drive)
-    assert [kind for kind, _text in no_message_boxes] == ["warning", "warning"]
-    assert all("taxon changed" in text for _kind, text in no_message_boxes)
+    assert no_message_boxes == []
+    assert [tone for tone, _text in said] == ["warning", "warning"]
+    assert all("taxon changed" in text for _tone, text in said)
     assert ObservationReferenceUseRepository.list_for_observation(observation_id) == []
     after = {c.measurement_set_id for c in MeasurementSetRepository.list_attachment_candidates(exclude_ids=set())}
     assert after == before

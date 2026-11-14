@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import random
 
+from dataclasses import replace
+
 from PySide6.QtCore import QPointF
 from PySide6.QtWidgets import QWidget
 
@@ -130,6 +132,14 @@ def _open_drawer(window) -> None:
         ticked[0].set_expanded(True)
 
 
+def _update_failed(window) -> None:
+    """Update from library for an attachment that is gone: the error on
+    Analysis's bar with Details open (stage 10e2). The real handler, so the
+    error under Details is the repository's own."""
+    window._update_reference_use_from_library("5f0c2a9e-7d41-4c55-9a0b-3e2f8c1d6b70", int(window.active_observation_id))
+    window.gallery_hint_bar._details_btn.click()
+
+
 CREATE_PASTED = "(9.0–)9.5–11.0(–12.0) × (5.0–)5.3–6.0(–6.4) µm, Q = 1.6–2.0, n = 30"
 
 
@@ -141,9 +151,12 @@ def _create_dialog(context: ReviewContext, state: str, *, linked: bool = True) -
     seeded = seed_analysis(context, attach=False)
     work_id = None
     if state != "source" or linked:
-        from database.reference_library import TaxonTreatmentRepository
+        from database.reference_library import ReferenceWorkRepository, TaxonTreatmentRepository
 
         work_id = TaxonTreatmentRepository.get(seeded["sets"][0].taxon_treatment_id).reference_work_id
+        if state == "ambiguous":
+            # A second publication with the same label (stage 10e2).
+            ReferenceWorkRepository.create(replace(ReferenceWorkRepository.get(work_id), id="", doi=None))
     dialog = ReferenceCreateDialog(
         None,
         genus="Cortinarius",
@@ -159,11 +172,17 @@ def _create_dialog(context: ReviewContext, state: str, *, linked: bool = True) -
     if work_id:
         editor.publication_combo.setCurrentIndex(editor.publication_combo.findData(work_id))
         editor.locator_input.setText("pp. 146–148")
-    if state != "source":
+    if state not in ("source", "ambiguous"):
         dialog.show_step(MEASUREMENTS_STEP)
     if state == "parsed":
         editor.measurement_paste_input.setText(CREATE_PASTED)
         editor._on_parse_measurement_clicked()
+    if state == "ambiguous":
+        # The typed name matches both publications; Next says so by the field.
+        label = editor.publication_combo.itemText(editor.publication_combo.findData(work_id))
+        editor.publication_combo.setCurrentIndex(0)
+        editor.publication_combo.lineEdit().setText(label)
+        dialog._on_next_clicked()
     dialog.show()
     _settle(0.3)
     return dialog
@@ -274,6 +293,31 @@ def register_analysis_tab_scenarios(registry: ScenarioRegistry) -> None:
             locale="nb_NO",
         )
     )
+    for theme, locale, suffix in (("light", "nb_NO", ""), ("dark", "nb_NO", "-dark"), ("light", "de_DE", "-de")):
+        registry.register(
+            ReviewScenario(
+                id=f"analysis.reference-update-failed{suffix}",
+                group="analysis",
+                title=f"Analysis tab: a library update failed ({locale[:2]}{', dark' if theme == 'dark' else ''})",
+                description="Update from library for a gone attachment: the error on Analysis's bar, Details open (stage 10e2).",
+                build=lambda context: _analysis_tab(context, after=_update_failed),
+                viewport=(1500, 950),
+                locale=locale,
+                theme=theme,
+            )
+        )
+    for locale, suffix in (("nb_NO", ""), ("de_DE", "-de")):
+        registry.register(
+            ReviewScenario(
+                id=f"analysis.create-reference-ambiguous{suffix}",
+                group="analysis",
+                title=f"New reference dialog: publication name matches two ({locale[:2]})",
+                description="Step 1: the typed name matches two publications; Next says so in red under the field (stage 10e2).",
+                build=lambda context: _create_dialog(context, "ambiguous"),
+                viewport=(760, 640),
+                locale=locale,
+            )
+        )
     registry.register(
         ReviewScenario(
             id="analysis.tab-small",

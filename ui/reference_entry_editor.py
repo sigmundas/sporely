@@ -43,6 +43,7 @@ import re
 
 from PySide6.QtCore import (
     QCoreApplication,
+    QPoint,
     Qt,
     QSignalBlocker,
     QSortFilterProxyModel,
@@ -67,6 +68,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QSizePolicy,
     QStackedWidget,
     QTableWidget,
@@ -280,6 +282,8 @@ class ReferenceEntryEditor(QWidget):
         self._prefill_data = data or {}
         self._hint_controller: HintStatusController | None = None
         self._hint_registrations: list[tuple[QWidget, str, str]] = []
+        self._validation_labels: list[QLabel] = []
+        self._invalid_entry: tuple | None = None
         self._plot_color = None
         self._require_explicit_publication_assignment = bool(
             require_explicit_publication_assignment
@@ -546,6 +550,10 @@ class ReferenceEntryEditor(QWidget):
         measurement_footnote.setWordWrap(True)
         measurement_footnote.setStyleSheet(f"color: #7f8c8d; font-size: {pt(9)}pt;")
         grid_panel_layout.addWidget(measurement_footnote)
+        self.measurement_validation_label = self._make_validation_label(
+            "referenceMeasurementValidationMessage"
+        )
+        minmax_layout.addWidget(self.measurement_validation_label)
         measure_column.addWidget(self._measurement_group)
 
         # Correction is offered as *retraction*: a reader who knows a tag is
@@ -588,6 +596,10 @@ class ReferenceEntryEditor(QWidget):
         self.spore_table = SporeDataTable()
         self.spore_table.itemChanged.connect(lambda *_: self._emit_data_changed())
         self._spore_section.body_layout().addWidget(self.spore_table)
+        self.points_validation_label = self._make_validation_label(
+            "referencePointsValidationMessage"
+        )
+        self._spore_section.body_layout().addWidget(self.points_validation_label)
         measure_column.addWidget(self._spore_section)
 
         self._parmasto_section = CollapsibleSection(
@@ -652,6 +664,10 @@ class ReferenceEntryEditor(QWidget):
         self.new_publication_btn.clicked.connect(self._on_new_publication_clicked)
         pub_row.addWidget(self.new_publication_btn)
         pub_layout.addLayout(pub_row)
+        self.publication_validation_label = self._make_validation_label(
+            "referencePublicationValidationMessage"
+        )
+        pub_layout.addWidget(self.publication_validation_label)
 
         treatment_form = QFormLayout()
         # No read-only "Taxon" row here: both hosts already show the taxon
@@ -777,6 +793,10 @@ class ReferenceEntryEditor(QWidget):
             self._on_existing_set_selection_changed
         )
         data_layout.addWidget(self._existing_sets_table)
+        self.data_validation_label = self._make_validation_label(
+            "referenceDataValidationMessage"
+        )
+        data_layout.addWidget(self.data_validation_label)
         self._existing_sets_cache: list[MeasurementSet] = []
         self._legacy_source_prefill: str | None = None
         source_column.addWidget(data_group)
@@ -796,6 +816,12 @@ class ReferenceEntryEditor(QWidget):
 
         self.use_existing_radio.toggled.connect(self._on_data_choice_toggled)
         self.enter_new_radio.toggled.connect(self._on_data_choice_toggled)
+        # A validation message goes as soon as the entry changes (not when a
+        # field merely loses focus, which also reports data_changed).
+        self.data_changed.connect(self._clear_invalid_if_changed)
+        self.publication_combo.editTextChanged.connect(self._clear_invalid_if_changed)
+        self.publication_combo.currentIndexChanged.connect(self._clear_invalid_if_changed)
+        self.measurement_paste_input.textChanged.connect(self._clear_invalid_if_changed)
 
         # The hint/status row is its own widget so a host that scrolls this
         # editor can lift it out (take_hint_row) and pin it below the
@@ -911,6 +937,103 @@ class ReferenceEntryEditor(QWidget):
     def _set_hint(self, text: str | None, tone: str = "info") -> None:
         if self._hint_controller is not None:
             self._hint_controller.set_hint(text, tone=tone)
+
+    # Validation (stage 10e2): what keeps the entry from being saved is said
+    # in red by the part of the form it is about, instead of a message box,
+    # and goes when that part is changed.
+    def _make_validation_label(self, name: str) -> QLabel:
+        label = QLabel("", self)
+        label.setObjectName(name)
+        label.setWordWrap(True)
+        label.setStyleSheet("color: #c0392b;")
+        label.setVisible(False)
+        self._validation_labels.append(label)
+        return label
+
+    def _entry_state(self) -> tuple:
+        """What the user has entered, to tell a change from a focus change."""
+        table = self.spore_table
+        return (
+            self.publication_combo.currentText(),
+            self.measurement_paste_input.text(),
+            self._selected_work_id,
+            self._pending_reference_work is not None,
+            self.use_existing_radio.isChecked(),
+            self._selected_measurement_set_id,
+            tuple(field.text() for row in self.measurement_inputs for field in row),
+            tuple(field.text() for field in self.parmasto_inputs.values()),
+            tuple(
+                item.text() if item is not None else ""
+                for r in range(table.rowCount())
+                for c in range(table.columnCount())
+                for item in (table.item(r, c),)
+            ),
+            self._blocked_losses_text(),
+        )
+
+    def _blocked_losses_text(self) -> str:
+        try:
+            return repr(self._blocked_projection_losses())
+        except Exception:  # an unreadable entry: compared by its fields above
+            return ""
+
+    def _show_invalid(self, label: QLabel, field: QWidget | None, message: str) -> None:
+        self._clear_invalid()
+        label.setText(message)
+        label.setVisible(True)
+        if field is not None and field.isVisible():
+            # Moving the focus can finish an edit (a cell's 9 becomes 9.00),
+            # which reports a change: the entry is compared from after it.
+            field.setFocus(Qt.OtherFocusReason)
+        self._invalid_entry = self._entry_state()
+        # A host that scrolls the editor brings the message into view, its
+        # start included (ensureWidgetVisible centres a label wider than the
+        # view, cutting off the beginning of the sentence).
+        scroll = self.parentWidget()
+        while scroll is not None and not isinstance(scroll, QScrollArea):
+            scroll = scroll.parentWidget()
+        if scroll is not None and scroll.widget() is not None:
+            QApplication.sendPostedEvents()  # the label's new height
+            if scroll.widget().layout() is not None:
+                scroll.widget().layout().activate()
+            origin = label.mapTo(scroll.widget(), QPoint(0, 0))
+            view = scroll.viewport().size()
+            bar = scroll.verticalScrollBar()
+            bottom = origin.y() + label.sizeHint().height() + 8
+            if bottom > bar.value() + view.height():
+                bar.setValue(bottom - view.height())
+            if origin.y() < bar.value():
+                bar.setValue(max(0, origin.y() - 8))
+            hbar = scroll.horizontalScrollBar()
+            if origin.x() < hbar.value():
+                hbar.setValue(max(0, origin.x() - 8))
+
+    def _clear_invalid(self, *_args) -> None:
+        self._invalid_entry = None
+        for label in self._validation_labels:
+            label.clear()
+            label.setVisible(False)
+
+    def _clear_invalid_if_changed(self, *_args) -> None:
+        if self._invalid_entry is not None and self._entry_state() != self._invalid_entry:
+            self._clear_invalid()
+
+    def validation_message(self) -> str:
+        """The validation message showing, or "" (for hosts, tests and scenarios)."""
+        return next(
+            (label.text() for label in self._validation_labels if not label.isHidden()), ""
+        )
+
+    def explain_ambiguous_publication(self) -> None:
+        """Say, by the publication field, that the typed name matches several."""
+        self._show_invalid(
+            self.publication_validation_label,
+            self.publication_combo,
+            QCoreApplication.translate(
+                "ReferenceAddDialog",
+                "Several publications match this name — choose one from the list.",
+            ),
+        )
 
     # ------------------------------------------------------------------
     # The 3 x 5 measurement grid
@@ -1632,22 +1755,15 @@ class ReferenceEntryEditor(QWidget):
         and returns ``False`` on invalid/incomplete input, or when the
         user declines an explicit legacy-only confirmation.
         """
+        self._clear_invalid()
         if self._resolve_typed_publication() == "ambiguous":
-            message = QCoreApplication.translate(
-                "ReferenceAddDialog",
-                "Several publications match this name — choose one from the list.")
-            self._set_hint(message, tone="warning")
-            QMessageBox.warning(
-                self,
-                QCoreApplication.translate("ReferenceAddDialog", "Choose a publication"),
-                message,
-            )
+            self.explain_ambiguous_publication()
             return False
         if self.use_existing_radio.isChecked():
             if not self._selected_measurement_set_id:
-                QMessageBox.warning(
-                    self,
-                    QCoreApplication.translate("ReferenceAddDialog", "Missing Data"),
+                self._show_invalid(
+                    self.data_validation_label,
+                    self._existing_sets_table,
                     QCoreApplication.translate("ReferenceAddDialog", "Select an existing measurement set or switch to \"Enter new data\"."),
                 )
                 return False
@@ -1664,9 +1780,9 @@ class ReferenceEntryEditor(QWidget):
         if self._entering_individual_points():
             data = self._points_data()
             if not data:
-                QMessageBox.warning(
-                    self,
-                    QCoreApplication.translate("ReferenceAddDialog", "Missing Data"),
+                self._show_invalid(
+                    self.points_validation_label,
+                    self.spore_table,
                     QCoreApplication.translate("ReferenceAddDialog", "Enter at least one length and width value."),
                 )
                 return False
@@ -1678,11 +1794,9 @@ class ReferenceEntryEditor(QWidget):
                 # showing the source's percentile interval or reported mean,
                 # and saving a row that no longer says those things would
                 # make the picture and the evidence disagree.
-                QMessageBox.warning(
-                    self,
-                    QCoreApplication.translate(
-                        "ReferenceAddDialog", "Reported statistics cannot be saved yet"
-                    ),
+                self._show_invalid(
+                    self.measurement_validation_label,
+                    self._clear_reported_statistics_btn,
                     QCoreApplication.translate(
                         "ReferenceAddDialog",
                         "This version cannot store everything this source "
@@ -1705,9 +1819,11 @@ class ReferenceEntryEditor(QWidget):
                 return False
             data = self._reference_record_data()
             if not data:
-                QMessageBox.warning(
-                    self,
-                    QCoreApplication.translate("ReferenceAddDialog", "Missing Data"),
+                self._show_invalid(
+                    self.measurement_validation_label,
+                    self._measurement_input(0, 1)
+                    if self.is_grid_revealed()
+                    else self.measurement_paste_input,
                     QCoreApplication.translate("ReferenceAddDialog", "Enter at least one reference or Parmasto value."),
                 )
                 return False
@@ -1986,10 +2102,10 @@ class ReferenceEntryEditor(QWidget):
         try:
             from .reference_library_manager_dialog import ReferenceWorkEditor
         except Exception as exc:
-            QMessageBox.warning(
-                self,
-                QCoreApplication.translate("ReferenceAddDialog", "New publication"),
-                QCoreApplication.translate("ReferenceAddDialog", "Reference library editor is unavailable: {error}").format(error=str(exc)),
+            self._hint_controller.show_notice(
+                QCoreApplication.translate("ReferenceAddDialog", "Could not open the publication editor."),
+                "error",
+                details=str(exc),
             )
             return
         editor = ReferenceWorkEditor(self, persist_on_accept=False)

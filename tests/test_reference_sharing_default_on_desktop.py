@@ -331,7 +331,7 @@ def _attach_host(monkeypatch, obs):
     host._confirm_public_reference_attach = MethodType(
         mw.MainWindow._confirm_public_reference_attach, host)
     host._attach_normalized_reference_outcome = (
-        lambda obs_id, ms_id, role: attached.append((obs_id, ms_id, role)) or ("attached", None, None))
+        lambda obs_id, ms_id, role: attached.append((obs_id, ms_id, role)) or ("attached", None, None, None))
     host._attach_normalized_reference_to_active_observation = MethodType(
         mw.MainWindow._attach_normalized_reference_to_active_observation, host)
     return host, attached

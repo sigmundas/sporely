@@ -255,6 +255,19 @@ def _range(context: ReviewContext):
     return dialog
 
 
+def _missing_values(context: ReviewContext, size: tuple[int, int] = (900, 720)):
+    """Edit selected reference data: Save with no values says so under the
+    measurements, in view (stage 10e2)."""
+    from PySide6.QtWidgets import QApplication
+
+    dialog = _make_add_dialog(context)
+    dialog.resize(*size)  # the size it is shown at: the message scrolls into view there
+    dialog.show()
+    QApplication.processEvents()
+    dialog.save_btn.click()
+    return dialog
+
+
 def _reported_statistics(context: ReviewContext):
     dialog = _make_add_dialog(context)
     _populate_reported_statistics(dialog)
@@ -833,6 +846,32 @@ def register_reference_scenarios(registry: ScenarioRegistry) -> None:
             ),
             viewport=(900, 780),
             build=_reported_statistics,
+        ),
+        ReviewScenario(
+            id="reference.add-missing-values",
+            group="reference-library",
+            title="Edit reference — Save with no values (stage 10e2)",
+            description="What is missing is said in red under the measurements, scrolled into view, instead of a message box.",
+            viewport=(900, 720),
+            build=_missing_values,
+        ),
+        ReviewScenario(
+            id="reference.add-missing-values-dark",
+            group="reference-library",
+            title="Edit reference — Save with no values (dark)",
+            description="The validation message in the dark theme.",
+            viewport=(900, 720),
+            build=_missing_values,
+            theme="dark",
+        ),
+        ReviewScenario(
+            id="reference.add-missing-values-small-de",
+            group="reference-library",
+            title="Edit reference — Save with no values (small window, de)",
+            description="The dialog's minimum size with German strings: the message is scrolled into view.",
+            viewport=(580, 480),
+            build=lambda context: _missing_values(context, (580, 480)),
+            locale="de_DE",
         ),
         ReviewScenario(
             id="reference.raw-points",

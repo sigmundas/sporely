@@ -391,11 +391,7 @@ def test_save_with_no_storable_measurements_says_so(monkeypatch, qapp, libs):
     window._active_sporely_taxon_id = lambda: 7
     window._observation_taxon_identity = lambda _obs_id: ("Agaricus", "bisporus")
     warnings = []
-    monkeypatch.setattr(
-        main_window.QMessageBox,
-        "warning",
-        lambda _parent, _title, text, *a, **kw: warnings.append(text),
-    )
+    window._show_reference_notice = lambda text, tone="error", details=None: warnings.append((tone, text))
 
     assert (
         window._persist_normalized_reference_from_dialog(
@@ -404,7 +400,8 @@ def test_save_with_no_storable_measurements_says_so(monkeypatch, qapp, libs):
         is False
     )
     assert len(warnings) == 1
-    assert "nothing for the reference library to store" in warnings[0]
+    assert warnings[0][0] == "warning"
+    assert "nothing for the reference library to store" in warnings[0][1]
     assert ObservationReferenceUseRepository.list_for_observation(observation_id) == []
 
 
@@ -1169,8 +1166,8 @@ def test_typed_publication_matching_several_works_asks_to_choose(monkeypatch, qa
     for _ in range(2):
         ReferenceWorkRepository.create(ReferenceWork(
             id="", type="book", title="Funga Nordica", short_label="Funga Nordica", year=2008))
-    warnings = []
-    monkeypatch.setattr(ree.QMessageBox, "warning", lambda _p, title, text: warnings.append(text))
+    monkeypatch.setattr(ree.QMessageBox, "warning",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no message box")))
     monkeypatch.setattr(ree.QMessageBox, "question",
                         lambda *a, **k: (_ for _ in ()).throw(AssertionError("no legacy prompt")))
     editor = ReferenceEntryEditor(None, genus="Panaeolus", species="fimicola",
@@ -1179,6 +1176,7 @@ def test_typed_publication_matching_several_works_asks_to_choose(monkeypatch, qa
     editor.measurement_paste_input.setText("(9-)11-15 x 7-9")
     editor._parse_measurement_btn.click()
     assert editor.validate_and_build_result() is False
-    assert warnings == ["Several publications match this name — choose one from the list."]
-    assert "Several publications match" in editor.hint_bar._label.text()
+    # Said by the publication field (stage 10e2), not in a message box.
+    assert editor.validation_message() == "Several publications match this name — choose one from the list."
+    assert not editor.publication_validation_label.isHidden()
     assert editor.result_data() is None or editor.result_data().get("reference_work_id") is None

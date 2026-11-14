@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtCore import QCoreApplication, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -137,13 +137,7 @@ class ReferenceCreateDialog(GeometryMixin, QDialog):
         # Typed text that exactly names a library publication counts as
         # choosing it; several with that name must be told apart here.
         if self.editor.bind_typed_publication() == "ambiguous":
-            self.hint_controller.set_hint(
-                QCoreApplication.translate(
-                    "ReferenceAddDialog",
-                    "Several publications match this name — choose one from the list.",
-                ),
-                tone="warning",
-            )
+            self.editor.explain_ambiguous_publication()
             return
         self.show_step(MEASUREMENTS_STEP)
 
@@ -189,12 +183,15 @@ class ReferenceCreateDialog(GeometryMixin, QDialog):
         """Store the reference in the library; it is not plotted. Closes on success."""
         if self._save_callback is None or not self.editor.validate_and_build_result():
             return
+        self.hint_controller.dismiss_notice()
         saved = self._save_callback(self.editor)
         if not saved:
-            # The host has said why; nothing was stored, so stay open.
-            self.hint_controller.set_hint(
-                self.tr("Not saved — nothing was stored in the reference library."), tone="warning"
-            )
+            # Nothing was stored, so stay open. The host normally says why
+            # in this bar; a hint would cover that notice.
+            if not self.hint_controller.has_notice():
+                self.hint_controller.set_hint(
+                    self.tr("Not saved — nothing was stored in the reference library."), tone="warning"
+                )
             return
         self.saved_measurement_set_id = str(saved)
         self.accept()
@@ -203,6 +200,7 @@ class ReferenceCreateDialog(GeometryMixin, QDialog):
         """Store the reference and add it to the plot. Closes on success."""
         if self._add_callback is None or not self.editor.validate_and_build_result():
             return
+        self.hint_controller.dismiss_notice()
         if not self._add_callback(self.editor):
             return
         self.added_to_plot = True

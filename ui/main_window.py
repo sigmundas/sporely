@@ -7433,6 +7433,22 @@ class MainWindow(GeometryMixin, QMainWindow):
         if self._gallery_hint_controller is not None:
             self._gallery_hint_controller.set_hint(text, tone=tone)
 
+    # Where the reference flows say a failure or a result (stage 10e2): the
+    # comparison list, the reference drawer and the library button are on
+    # Analysis, so its bottom bar; while the New reference dialog saves or
+    # adds, that dialog's own bar (see _on_reference_picker_new_reference).
+    _reference_notice_sink = None
+
+    def _show_reference_notice(
+        self, text: str, tone: str = "error", details: str | None = None
+    ) -> None:
+        sink = self._reference_notice_sink
+        if sink is not None:
+            sink(text, tone, details)
+            return
+        if self._gallery_hint_controller is not None:
+            self._gallery_hint_controller.show_notice(text, tone, details=details)
+
     def _queue_gallery_refresh_hint(self, text: str | None) -> None:
         self._gallery_pending_refresh_hint = (text or "").strip()
 
@@ -8462,12 +8478,9 @@ class MainWindow(GeometryMixin, QMainWindow):
                     dialog, updated, legacy_id=None
                 )
             except Exception as exc:
-                QMessageBox.warning(
-                    self,
-                    self.tr("Reference library"),
-                    self.tr("Reference stored locally, but library sync failed: {error}").format(
-                        error=str(exc)
-                    ),
+                self._show_reference_notice(
+                    self.tr("The reference was saved, but adding it to the reference library failed."),
+                    details=str(exc),
                 )
             return
         self._sync_reference_values_from_series_data(key, updated)
@@ -8689,35 +8702,29 @@ class MainWindow(GeometryMixin, QMainWindow):
             getattr(self, "active_observation_id", 0) or 0
         )
         if not use_id or not observation_id or active_observation_id != observation_id:
-            QMessageBox.warning(
-                self,
-                self.tr("Adopt successor"),
+            self._show_reference_notice(
                 self.tr(
                     "The active observation changed. Reopen the reference and "
                     "try again."
                 ),
+                "warning",
             )
             return
         try:
             use = ObservationReferenceUseRepository.get(use_id)
             status = ObservationReferenceUseRepository.successor_status(use_id)
         except ReferenceLibraryError as exc:
-            QMessageBox.warning(
-                self,
-                self.tr("Adopt successor"),
-                self.tr("Could not review the successor: {error}").format(
-                    error=str(exc)
-                ),
+            self._show_reference_notice(
+                self.tr("Could not review the successor."), details=str(exc)
             )
             return
         if use is None or status.state != "successor_available":
-            QMessageBox.warning(
-                self,
-                self.tr("Adopt successor"),
+            self._show_reference_notice(
                 self.tr(
                     "This successor is no longer available. The historical "
                     "attachment was not changed."
                 ),
+                "warning",
             )
             return
         if not self._confirm_reference_successor_adoption(use, status):
@@ -8731,12 +8738,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                 expected_successor_snapshot_json=status.successor_snapshot_json,
             )
         except ReferenceLibraryError as exc:
-            QMessageBox.warning(
-                self,
-                self.tr("Adopt successor"),
-                self.tr("Could not adopt the successor: {error}").format(
-                    error=str(exc)
-                ),
+            self._show_reference_notice(
+                self.tr("Could not adopt the successor."), details=str(exc)
             )
             return
         self._restore_reference_uses_for_observation(observation_id)
@@ -8747,10 +8750,9 @@ class MainWindow(GeometryMixin, QMainWindow):
             )
         except ReferenceLibraryError:
             pass
-        if hasattr(self, "measure_status_label"):
-            self.measure_status_label.setText(
-                self.tr("Successor measurement set adopted.")
-            )
+        self._show_reference_notice(
+            self.tr("Successor measurement set adopted."), "success"
+        )
 
     def _update_reference_use_from_library(
         self, use_id: str, observation_id: int
@@ -8760,13 +8762,12 @@ class MainWindow(GeometryMixin, QMainWindow):
             getattr(self, "active_observation_id", 0) or 0
         )
         if not use_id or not observation_id or active_observation_id != observation_id:
-            QMessageBox.warning(
-                self,
-                self.tr("Update library reference"),
+            self._show_reference_notice(
                 self.tr(
                     "The active observation changed. Reopen the reference and "
                     "try again."
                 ),
+                "warning",
             )
             return
         try:
@@ -8774,21 +8775,17 @@ class MainWindow(GeometryMixin, QMainWindow):
                 use_id
             )
         except ReferenceLibraryError as exc:
-            QMessageBox.warning(
-                self,
-                self.tr("Update library reference"),
-                self.tr("Could not update from the library: {error}").format(
-                    error=str(exc)
-                ),
+            self._show_reference_notice(
+                self.tr("Could not update from the library."), details=str(exc)
             )
             return
         if int(getattr(self, "active_observation_id", 0) or 0) != observation_id:
             return
         self._restore_reference_uses_for_observation(observation_id)
         self.update_graph_plots_only()
-        if changed and hasattr(self, "measure_status_label"):
-            self.measure_status_label.setText(
-                self.tr("Reference snapshot updated from the library.")
+        if changed:
+            self._show_reference_notice(
+                self.tr("Reference snapshot updated from the library."), "success"
             )
 
     def _build_malformed_reference_series_entry(self, use) -> dict | None:
@@ -8968,9 +8965,13 @@ class MainWindow(GeometryMixin, QMainWindow):
             QTimer.singleShot(0, self._reload_reference_drawer_if_open)
             return "observation_changed", self._reference_picker_drift_reason()
         try:
-            status, reason, _severity = self._attach_normalized_reference_outcome(int(observation_id), str(set_id), role)
+            status, reason, _severity, details = self._attach_normalized_reference_outcome(
+                int(observation_id), str(set_id), role
+            )
         except Exception as exc:  # e.g. a locked database
             return "failed", self.tr("Could not attach reference: {error}").format(error=str(exc))
+        if reason and details:
+            reason = f"{reason} ({details})"  # the drawer's row has no Details
         return status, reason
 
     def _reference_series_entry_for_use(self, use_id: str) -> dict | None:
@@ -9081,10 +9082,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         """
         context = self.reference_picker_context()
         if context is None:
-            QMessageBox.information(
-                self,
-                self.tr("Add reference"),
-                self.tr("Select an observation first before adding a reference."),
+            self._show_reference_notice(
+                self.tr("Select an observation first before adding a reference."), "info"
             )
             return
         captured_observation_id = int(context["observation_id"])
@@ -9093,39 +9092,57 @@ class MainWindow(GeometryMixin, QMainWindow):
         def _still_active() -> bool:
             current = getattr(self, "active_observation_id", None)
             if current is None or int(current) != captured_observation_id:
-                QMessageBox.warning(
-                    self,
-                    self.tr("Add reference"),
+                self._show_reference_notice(
                     self.tr(
                         "The active observation changed while the picker "
                         "was open. Reopen the observation and try again — "
                         "no reference was attached."
                     ),
+                    "warning",
                 )
                 return False
             # The dialog files the reference under the taxon it opened with;
             # a link changed or cleared since then would misfile it.
             if self._active_sporely_taxon_id() != captured_taxon_id:
-                QMessageBox.warning(
-                    self,
-                    self.tr("Add reference"),
+                self._show_reference_notice(
                     self.tr(
                         "The observation's taxon changed while the dialog was "
                         "open. Close it and try again — no reference was saved."
                     ),
+                    "warning",
                 )
                 return False
             return True
 
+        # While the dialog is open, what Save and Add have to say goes in
+        # its bar (it stays open when they fail). ``posted`` keeps what the
+        # last of them said, for a step that succeeded and closed it.
+        posted: list[tuple[str, str, str | None]] = []
+
+        def _say_in_dialog(text: str, tone: str, details: str | None) -> None:
+            posted.append((text, tone, details))
+            dialog.hint_controller.show_notice(text, tone, details=details)
+
+        def _in_dialog(step):
+            # Only Save and Add speak in the dialog; anything else that
+            # happens while it is open stays on Analysis's bar.
+            posted.clear()
+            previous_sink = self._reference_notice_sink
+            self._reference_notice_sink = _say_in_dialog
+            try:
+                return step()
+            finally:
+                self._reference_notice_sink = previous_sink
+
         def _save(editor) -> str | None:
-            if not _still_active():
-                return None
-            return self._save_manual_reference_to_library(editor)
+            return _in_dialog(
+                lambda: self._save_manual_reference_to_library(editor) if _still_active() else None
+            )
 
         def _add(editor) -> bool:
-            if not _still_active():
-                return False
-            return bool(self._submit_reference_editor_result(editor))
+            return _in_dialog(
+                lambda: bool(self._submit_reference_editor_result(editor)) if _still_active() else False
+            )
 
         observation = ObservationDB.get_observation(captured_observation_id) or {}
         dialog = ReferenceCreateDialog(
@@ -9139,10 +9156,15 @@ class MainWindow(GeometryMixin, QMainWindow):
             add_callback=_add,
         )
         try:
-            dialog.exec()
+            accepted = dialog.exec() == QDialog.Accepted
         finally:
             dialog.deleteLater()
         self._reload_reference_drawer_if_open()
+        if accepted and posted:
+            # A step that succeeded closed the dialog with something still
+            # to say (a library write that failed after the reference was
+            # saved): Analysis's bar says it instead.
+            self._show_reference_notice(*posted[-1])
 
     def _on_reference_picker_details(self, candidate) -> None:
         from .reference_library_manager_dialog import ReferenceLibraryManagerDialog
@@ -9176,10 +9198,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         """
         data = self._personal_observation_series_data(source_observation_id, genus, species)
         if data is None:
-            QMessageBox.warning(
-                self,
-                self.tr("Add reference"),
-                self.tr("This observation has no usable spore measurements."),
+            self._show_reference_notice(
+                self.tr("This observation has no usable spore measurements."), "warning"
             )
             return
         self._add_reference_series_entry(data)
@@ -9244,15 +9264,14 @@ class MainWindow(GeometryMixin, QMainWindow):
         """
         current = getattr(self, "active_observation_id", None)
         if current is None or int(current) != int(captured_observation_id):
-            QMessageBox.warning(
-                self,
-                self.tr("Attach library reference"),
+            self._show_reference_notice(
                 self.tr(
                     "The active observation changed while the reference "
                     "library was open, so the attachment was cancelled. "
                     "Re-open the library from the intended observation "
                     "to try again."
                 ),
+                "warning",
             )
             return
         self._attach_normalized_reference_to_active_observation(
@@ -9271,22 +9290,22 @@ class MainWindow(GeometryMixin, QMainWindow):
         """
         observation_id = getattr(self, "active_observation_id", None)
         if not observation_id:
-            QMessageBox.information(
-                self,
-                self.tr("Attach library reference"),
-                self.tr("Select an observation first before attaching a reference."),
+            self._show_reference_notice(
+                self.tr("Select an observation first before attaching a reference."), "info"
             )
             return
         if not measurement_set_id:
             return
         if not self._confirm_public_reference_attach(int(observation_id), [role]):
             return  # cancelled: nothing attached
-        status, reason, severity = self._attach_normalized_reference_outcome(
+        status, reason, severity, details = self._attach_normalized_reference_outcome(
             int(observation_id), measurement_set_id, role
         )
+        self._last_reference_attach_failure = "\n".join(part for part in (reason, details) if part)
         if reason:
-            box = QMessageBox.critical if severity == "critical" else QMessageBox.warning
-            box(self, self.tr("Attach library reference"), reason)
+            self._show_reference_notice(
+                reason, "error" if severity == "critical" else "warning", details
+            )
 
     def _confirm_picker_batch_attach(self, captured_observation_id: int, roles) -> bool:
         """The picker's batch confirm. When the active observation drifted
@@ -9311,14 +9330,15 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def _attach_normalized_reference_outcome(
         self, observation_id: int, measurement_set_id: str, role: str
-    ) -> tuple[str, str | None, str | None]:
+    ) -> tuple[str, str | None, str | None, str | None]:
         """Attach one library measurement set and report what happened.
 
-        Returns ``(status, reason, severity)`` where ``status`` is
+        Returns ``(status, reason, severity, details)`` where ``status`` is
         ``"attached"`` (a new use row was created and plotted),
         ``"already_attached"`` (the use already existed; its stored role is
         left untouched) or ``"failed"`` (nothing new is attached). ``reason``
-        is user-facing text, ``None`` when there is nothing to say. Never
+        is user-facing text, ``None`` when there is nothing to say, and
+        ``details`` the error behind it (for a notice's Details). Never
         shows a dialog itself, so a batch caller can collect one outcome per
         item. ``attach_with_status`` semantics, plotability translation,
         rollback of newly-created rows on translator failure and the
@@ -9331,11 +9351,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 role=role,
             )
         except ReferenceLibraryError as exc:
-            return (
-                "failed",
-                self.tr("Could not attach reference: {error}").format(error=str(exc)),
-                "warning",
-            )
+            return "failed", self.tr("Could not attach the reference."), "warning", str(exc)
         entry = translate_observation_reference_use(use)
         if entry is None:
             if created:
@@ -9351,17 +9367,18 @@ class MainWindow(GeometryMixin, QMainWindow):
                     return (
                         "failed",
                         self.tr(
-                            "Attachment could not be plotted and the rollback "
-                            "of the persisted row failed: {error}. The row "
-                            "with id {use_id} may still be present; please "
-                            "detach it manually."
-                        ).format(error=str(rollback_exc), use_id=use.id),
+                            "The attachment could not be plotted, and removing "
+                            "it again failed. It may still be listed; detach "
+                            "it by hand."
+                        ),
                         "critical",
+                        f"observation_reference_use {use.id}: {rollback_exc}",
                     )
                 return (
                     "failed",
                     self.tr("The attachment snapshot could not be translated for the plot."),
                     "warning",
+                    None,
                 )
             # A pre-existing use came back with an unplottable snapshot.
             # Never detach someone else's persisted row as a "rollback"
@@ -9378,6 +9395,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                     "row so you can detach it."
                 ),
                 "warning",
+                None,
             )
         self._add_reference_series_entry(entry)
         if created:
@@ -9385,8 +9403,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                 MeasurementSetPreferenceRepository.mark_used(measurement_set_id)
             except ReferenceLibraryError:
                 pass
-            return "attached", None, None
-        return "already_attached", None, None
+            return "attached", None, None, None
+        return "already_attached", None, None, None
 
     def _clean_ref_species_text(self, text: str | None) -> str:
         if not text:
@@ -9605,14 +9623,13 @@ class MainWindow(GeometryMixin, QMainWindow):
         if not active_obs_id:
             return False
         if captured_obs_id is not None and int(captured_obs_id) != int(active_obs_id):
-            QMessageBox.warning(
-                self,
-                self.tr("Reference library"),
+            self._show_reference_notice(
                 self.tr(
                     "The active observation changed while this dialog was "
                     "open. No normalized library entry was created. Reopen "
                     "the observation and try again."
                 ),
+                "warning",
             )
             return False
         observation_id = int(captured_obs_id) if captured_obs_id is not None else int(active_obs_id)
@@ -9636,14 +9653,13 @@ class MainWindow(GeometryMixin, QMainWindow):
             and live_taxon_id is not None
             and int(captured_taxon_id) != int(live_taxon_id)
         ):
-            QMessageBox.warning(
-                self,
-                self.tr("Reference library"),
+            self._show_reference_notice(
                 self.tr(
                     "The observation's taxon changed while this dialog "
                     "was open. No normalized library entry was created. "
                     "Reopen the observation and try again."
                 ),
+                "warning",
             )
             return False
         source_kind = payload.get("source_kind")
@@ -9675,12 +9691,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                 legacy_reference_value_id=legacy_id
             )
         except Exception as exc:
-            QMessageBox.warning(
-                self,
-                self.tr("Reference library"),
-                self.tr("Could not build the normalized measurement set: {error}").format(
-                    error=str(exc)
-                ),
+            self._show_reference_notice(
+                self.tr("Could not build the normalized measurement set."), details=str(exc)
             )
             return False
         if payload_ms is None:
@@ -9693,15 +9705,14 @@ class MainWindow(GeometryMixin, QMainWindow):
                 # disabled for this state (ReferenceEntryEditor.
                 # has_storable_measurement_content), and this is the
                 # backstop if it is ever reached anyway.
-                QMessageBox.warning(
-                    self,
-                    self.tr("Reference library"),
+                self._show_reference_notice(
                     self.tr(
                         "This entry has no measurement range and no "
                         "individual spore measurements, so there is "
                         "nothing for the reference library to store. "
                         "Nothing was saved."
                     ),
+                    "warning",
                 )
             # The attaching callers stay silent: a Parmasto-only entry
             # legitimately has no normalized measurement set, its legacy
@@ -9805,12 +9816,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                     )
                 )
             except Exception as exc:
-                QMessageBox.warning(
-                    self,
-                    self.tr("Reference library"),
-                    self.tr("Could not add the library reference: {error}").format(
-                        error=str(exc)
-                    ),
+                self._show_reference_notice(
+                    self.tr("Could not add the library reference."), details=str(exc)
                 )
                 return False
             if attach:
@@ -9841,10 +9848,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         try:
             treatments = TaxonTreatmentRepository.list_for_work(str(work_id))
         except Exception as exc:
-            QMessageBox.warning(
-                self,
-                self.tr("Reference library"),
-                self.tr("Could not read treatments: {error}").format(error=str(exc)),
+            self._show_reference_notice(
+                self.tr("Could not read the publication's treatments."), details=str(exc)
             )
             return False
         matching = [
@@ -9860,14 +9865,13 @@ class MainWindow(GeometryMixin, QMainWindow):
             )
         ]
         if len(matching) > 1:
-            QMessageBox.warning(
-                self,
-                self.tr("Reference library"),
+            self._show_reference_notice(
                 self.tr(
                     "This publication already has more than one treatment "
                     "matching the observation's taxon. Open the reference "
                     "library manager to pick one and attach it manually."
                 ),
+                "warning",
             )
             return False
         if matching:
@@ -9883,10 +9887,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                     )
                 )
             except Exception as exc:
-                QMessageBox.warning(
-                    self,
-                    self.tr("Reference library"),
-                    self.tr("Could not create treatment: {error}").format(error=str(exc)),
+                self._show_reference_notice(
+                    self.tr("Could not create the treatment."), details=str(exc)
                 )
                 return False
         payload_ms.taxon_treatment_id = treatment.id
@@ -9914,25 +9916,18 @@ class MainWindow(GeometryMixin, QMainWindow):
                 except Exception as rollback_exc:
                     treatment_rollback_error = str(rollback_exc)
             if treatment_rollback_error is not None:
-                QMessageBox.critical(
-                    self,
-                    self.tr("Reference library"),
+                self._show_reference_notice(
                     self.tr(
-                        "Could not create measurement set ({error}); the "
-                        "compensating cleanup of taxon_treatment {tid} "
-                        "also failed ({rollback}). Please review the "
-                        "reference library manager."
-                    ).format(
-                        error=str(exc),
-                        tid=treatment.id,
-                        rollback=treatment_rollback_error,
+                        "Could not create the measurement set, and the "
+                        "treatment made for it could not be removed. Review "
+                        "it in the reference library manager."
                     ),
+                    details=f"measurement_set: {exc}\n"
+                    f"taxon_treatment {treatment.id}: {treatment_rollback_error}",
                 )
                 return False
-            QMessageBox.warning(
-                self,
-                self.tr("Reference library"),
-                self.tr("Could not create measurement set: {error}").format(error=str(exc)),
+            self._show_reference_notice(
+                self.tr("Could not create the measurement set."), details=str(exc)
             )
             return False
         # The shared attach helper swallows ReferenceLibraryError and
@@ -9943,6 +9938,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         # created set (and treatment, when we created it here) if the
         # attachment did not land.
         attach_ok = False
+        self._last_reference_attach_failure = ""
         try:
             self._attach_normalized_reference_to_active_observation(
                 created_set.id, "compared"
@@ -9972,15 +9968,18 @@ class MainWindow(GeometryMixin, QMainWindow):
                 # leaves persisted state behind. Surface the details so
                 # the user knows what to reconcile manually instead of
                 # silently accumulating orphans across retries.
-                QMessageBox.critical(
-                    self,
-                    self.tr("Reference library"),
+                self._show_reference_notice(
                     self.tr(
-                        "Attachment failed and the compensating cleanup "
-                        "could not fully roll back. The following rows may "
-                        "still be present and should be reviewed in the "
-                        "reference library manager:\n\n{errors}"
-                    ).format(errors="\n".join(rollback_errors)),
+                        "The reference could not be attached, and what was "
+                        "created for it could not all be removed. Review the "
+                        "rows under Details in the reference library manager."
+                    ),
+                    details="\n\n".join(
+                        part for part in (
+                            getattr(self, "_last_reference_attach_failure", ""),
+                            "\n".join(rollback_errors),
+                        ) if part
+                    ),
                 )
             return False
         return True
@@ -10110,12 +10109,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                     )
                 )
             except Exception as exc:
-                QMessageBox.warning(
-                    self,
-                    self.tr("Reference library"),
-                    self.tr("Could not add the library reference: {error}").format(
-                        error=str(exc)
-                    ),
+                self._show_reference_notice(
+                    self.tr("Could not add the library reference."), details=str(exc)
                 )
                 return False
         legacy_id: int | None = None
@@ -10129,12 +10124,9 @@ class MainWindow(GeometryMixin, QMainWindow):
                 editor, data, legacy_id=legacy_id
             )
         except Exception as exc:
-            QMessageBox.warning(
-                self,
-                self.tr("Reference library"),
-                self.tr("Reference stored locally, but library sync failed: {error}").format(
-                    error=str(exc)
-                ),
+            self._show_reference_notice(
+                self.tr("The reference was saved, but adding it to the reference library failed."),
+                details=str(exc),
             )
         # An existing-measurement-set selection has no legacy envelope to
         # persist as a panel entry; the attach helper already appended

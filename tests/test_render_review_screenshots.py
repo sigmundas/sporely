@@ -25,6 +25,7 @@ PYTHON = ROOT / ".venv" / "bin" / "python"
 REFERENCE_IDS = {
     "reference.analysis-panel-five-rows",
     "reference.add-range",
+    "reference.add-missing-values", "reference.add-missing-values-dark", "reference.add-missing-values-small-de",
     "reference.reported-statistics",
     "reference.measurement-set-form-enhanced",
     "reference.raw-points",
@@ -129,6 +130,8 @@ ANALYSIS_TAB_IDS = {
     "analysis.create-reference-source", "analysis.create-reference-measurements",
     "analysis.create-reference-parsed", "analysis.create-reference-parsed-dark",
     "analysis.create-reference-parsed-de", "analysis.create-reference-unlinked",
+    "analysis.reference-update-failed", "analysis.reference-update-failed-dark", "analysis.reference-update-failed-de",
+    "analysis.create-reference-ambiguous", "analysis.create-reference-ambiguous-de",
 }
 MODE_BAR_IDS = {
     "mode-bar.view", "mode-bar.view-dark", "mode-bar.measure", "mode-bar.measure-dark",

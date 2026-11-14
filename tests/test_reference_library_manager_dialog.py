@@ -1154,13 +1154,7 @@ def test_main_window_refuses_attach_when_observation_drifted(libs, qapp):
     stub.tr = MethodType(stub.tr, stub)
 
     warnings: list[tuple[str, ...]] = []
-
-    class _FakeMessageBox:
-        @staticmethod
-        def warning(*args, **kwargs):
-            warnings.append(("warning", args, kwargs))
-
-    monkey_qmb = _FakeMessageBox
+    stub._show_reference_notice = lambda text, tone="error", details=None: warnings.append((tone, text))
 
     # Also stub the shared attach helper to assert it is NOT called.
     attach_calls: list[tuple] = []
@@ -1176,13 +1170,7 @@ def test_main_window_refuses_attach_when_observation_drifted(libs, qapp):
         stub,
     )
 
-    # Patch QMessageBox in the module namespace.
-    original_qmb = main_window_module.QMessageBox
-    main_window_module.QMessageBox = monkey_qmb
-    try:
-        stub._attach_normalized_reference_from_manager(ms.id, "compared", int(a))
-    finally:
-        main_window_module.QMessageBox = original_qmb
+    stub._attach_normalized_reference_from_manager(ms.id, "compared", int(a))
 
     # The mismatched observation must NOT have triggered the shared helper.
     assert attach_calls == []

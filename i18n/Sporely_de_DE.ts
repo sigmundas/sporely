@@ -6253,13 +6253,13 @@ sitzung starten</translation>
         <translation>Kalibrierung</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="17015"/>
+        <location filename="../ui/main_window.py" line="17007"/>
         <source>Spores</source>
         <translation>Sporen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="15526"/>
-        <location filename="../ui/main_window.py" line="17122"/>
+        <location filename="../ui/main_window.py" line="15518"/>
+        <location filename="../ui/main_window.py" line="17114"/>
         <source>No measurements</source>
         <translation>Keine Messungen</translation>
     </message>
@@ -6333,8 +6333,8 @@ Neueste Version: {latest}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="6147"/>
-        <location filename="../ui/main_window.py" line="10372"/>
-        <location filename="../ui/main_window.py" line="10395"/>
+        <location filename="../ui/main_window.py" line="10364"/>
+        <location filename="../ui/main_window.py" line="10387"/>
         <source>Calibration: --</source>
         <translation>Kalibrierung: --</translation>
     </message>
@@ -6364,48 +6364,48 @@ Neueste Version: {latest}</translation>
         <translation>Details einbeziehen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="7491"/>
-        <location filename="../ui/main_window.py" line="7495"/>
+        <location filename="../ui/main_window.py" line="7507"/>
+        <location filename="../ui/main_window.py" line="7511"/>
         <source>Click to filter image gallery</source>
         <translation>Klicken zum Filtern der Bildergalerie</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="9612"/>
+        <location filename="../ui/main_window.py" line="9628"/>
         <source>The active observation changed while this dialog was open. No normalized library entry was created. Reopen the observation and try again.</source>
         <translation>Die aktive Beobachtung wurde geändert, während dieses Dialogfeld geöffnet war. Es wurde kein normalisierter Bibliothekseintrag erstellt. Öffne die Beobachtung erneut und versuche es noch einmal.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="9643"/>
+        <location filename="../ui/main_window.py" line="9658"/>
         <source>The observation&apos;s taxon changed while this dialog was open. No normalized library entry was created. Reopen the observation and try again.</source>
         <translation>Das Taxon der Beobachtung wurde geändert, während dieses Dialogfeld geöffnet war. Es wurde kein normalisierter Bibliothekseintrag erstellt. Öffne die Beobachtung erneut und versuche es noch einmal.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="9746"/>
+        <location filename="../ui/main_window.py" line="9757"/>
         <source>The species entered in the panel ({panel}) differs from the observation&apos;s taxon record ({observation}). If you want to record the published name as a synonym or historical name, click Yes. If this is an accidental edit, click No — the normalized library will remain unchanged.</source>
         <translation>Die im Bedienfeld eingegebene Art ({panel}) unterscheidet sich vom Taxoneintrag der Beobachtung ({observation}). Wenn du den veröffentlichten Namen als Synonym oder historischen Namen erfassen möchtest, klicke auf Ja. Wenn dies eine unbeabsichtigte Änderung ist, klicke auf Nein — die normalisierte Bibliothek bleibt unverändert.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8424"/>
+        <location filename="../ui/main_window.py" line="8440"/>
         <source>Edit selected reference data</source>
         <translation>Ausgewahlte Referenzdaten bearbeiten</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="10286"/>
+        <location filename="../ui/main_window.py" line="10278"/>
         <source>Not set</source>
         <translation>Nicht gesetzt</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="10392"/>
+        <location filename="../ui/main_window.py" line="10384"/>
         <source>Calibration: &lt;a href=&quot;calibration&quot;&gt;{date}&lt;/a&gt;</source>
         <translation>Kalibrierung: &lt;a href=&quot;calibration&quot;&gt;{date}&lt;/a&gt;</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="10405"/>
+        <location filename="../ui/main_window.py" line="10397"/>
         <source>Scale: {scale:.1f} nm/px</source>
         <translation>Skala: {scale:.1f} nm/px</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="10407"/>
+        <location filename="../ui/main_window.py" line="10399"/>
         <source>Scale: -- nm/px</source>
         <translation>Skala: -- nm/px</translation>
     </message>
@@ -6455,31 +6455,31 @@ Neueste Version: {latest}</translation>
         <translation>Ausrichten</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="12288"/>
+        <location filename="../ui/main_window.py" line="12280"/>
         <source>Stopped - Start measuring</source>
         <translation>Angehalten - Messung starten</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="15592"/>
-        <location filename="../ui/main_window.py" line="16699"/>
+        <location filename="../ui/main_window.py" line="15584"/>
+        <location filename="../ui/main_window.py" line="16691"/>
         <source>Length (μm)</source>
         <translation>Länge (µm)</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="15593"/>
-        <location filename="../ui/main_window.py" line="16701"/>
+        <location filename="../ui/main_window.py" line="15585"/>
+        <location filename="../ui/main_window.py" line="16693"/>
         <source>Width (μm)</source>
         <translation>Breite (µm)</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7163"/>
-        <location filename="../ui/main_window.py" line="16977"/>
+        <location filename="../ui/main_window.py" line="16969"/>
         <source>Length</source>
         <translation>Länge</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7162"/>
-        <location filename="../ui/main_window.py" line="16977"/>
+        <location filename="../ui/main_window.py" line="16969"/>
         <source>Width</source>
         <translation>Breite</translation>
     </message>
@@ -6512,45 +6512,45 @@ Neueste Version: {latest}</translation>
         <translation>Info</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="10904"/>
-        <location filename="../ui/main_window.py" line="10906"/>
+        <location filename="../ui/main_window.py" line="10896"/>
+        <location filename="../ui/main_window.py" line="10898"/>
         <source>Field photo - no scale set</source>
         <translation>Feldfoto – keine Skala gesetzt</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="12385"/>
+        <location filename="../ui/main_window.py" line="12377"/>
         <source>Aborted - Start measuring</source>
         <translation>Abgebrochen – Messung starten</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="12395"/>
+        <location filename="../ui/main_window.py" line="12387"/>
         <source>Start measuring to begin</source>
         <translation>Zum Starten Messung beginnen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="12399"/>
+        <location filename="../ui/main_window.py" line="12391"/>
         <source>Rectangle: Click point 1</source>
         <translation>Rechteck: Punkt 1 anklicken</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="12681"/>
+        <location filename="../ui/main_window.py" line="12673"/>
         <source>Rectangle: Click point 2</source>
         <translation>Rechteck: Punkt 2 anklicken</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="12704"/>
+        <location filename="../ui/main_window.py" line="12696"/>
         <source>Rectangle: Set width, click point 3</source>
         <translation>Rechteck: Breite festlegen, Punkt 3 anklicken</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="12729"/>
+        <location filename="../ui/main_window.py" line="12721"/>
         <source>Rectangle: Adjust start line, click point 4</source>
         <translation>Rechteck: Startlinie anpassen, Punkt 4 anklicken</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="12552"/>
-        <location filename="../ui/main_window.py" line="12655"/>
-        <location filename="../ui/main_window.py" line="13673"/>
+        <location filename="../ui/main_window.py" line="12544"/>
+        <location filename="../ui/main_window.py" line="12647"/>
+        <location filename="../ui/main_window.py" line="13665"/>
         <source>Click to measure next</source>
         <translation>Klicken, um die nächste Messung zu machen</translation>
     </message>
@@ -6560,7 +6560,7 @@ Neueste Version: {latest}</translation>
         <translation>Galerie exportieren</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="17197"/>
+        <location filename="../ui/main_window.py" line="17189"/>
         <source>Save stats</source>
         <translation>Statistik speichern</translation>
     </message>
@@ -6575,34 +6575,34 @@ Neueste Version: {latest}</translation>
         <translation>Plot</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="10570"/>
-        <location filename="../ui/main_window.py" line="10610"/>
+        <location filename="../ui/main_window.py" line="10562"/>
+        <location filename="../ui/main_window.py" line="10602"/>
         <source>Warning: Older calibration standard used.</source>
         <translation>Warnung: älterer Kalibrierungsstandard verwendet.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="11840"/>
+        <location filename="../ui/main_window.py" line="11832"/>
         <source>Delete image?</source>
         <translation>Bild löschen?</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="11840"/>
+        <location filename="../ui/main_window.py" line="11832"/>
         <source>Confirm Delete</source>
         <translation>Löschen bestätigen</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="5537"/>
-        <location filename="../ui/main_window.py" line="9414"/>
-        <location filename="../ui/main_window.py" line="9417"/>
-        <location filename="../ui/main_window.py" line="9429"/>
-        <location filename="../ui/main_window.py" line="17098"/>
+        <location filename="../ui/main_window.py" line="9432"/>
+        <location filename="../ui/main_window.py" line="9435"/>
+        <location filename="../ui/main_window.py" line="9447"/>
+        <location filename="../ui/main_window.py" line="17090"/>
         <source>Observation</source>
         <translation>Beobachtung</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="7948"/>
-        <location filename="../ui/main_window.py" line="7963"/>
-        <location filename="../ui/main_window.py" line="8838"/>
+        <location filename="../ui/main_window.py" line="7964"/>
+        <location filename="../ui/main_window.py" line="7979"/>
+        <location filename="../ui/main_window.py" line="8835"/>
         <source>Reference</source>
         <translation>Referenz</translation>
     </message>
@@ -6619,7 +6619,7 @@ Neueste Version: {latest}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="6192"/>
-        <location filename="../ui/main_window.py" line="12302"/>
+        <location filename="../ui/main_window.py" line="12294"/>
         <source>Start measuring (M)</source>
         <translation>Messung starten (M)</translation>
     </message>
@@ -6635,7 +6635,7 @@ Neueste Version: {latest}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="6359"/>
-        <location filename="../ui/main_window.py" line="11077"/>
+        <location filename="../ui/main_window.py" line="11069"/>
         <source>Length of the displayed scale bar in micrometers.</source>
         <translation>Länge des angezeigten Skalabalkens in Mikrometern.</translation>
     </message>
@@ -6646,7 +6646,7 @@ Neueste Version: {latest}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="6379"/>
-        <location filename="../ui/main_window.py" line="13118"/>
+        <location filename="../ui/main_window.py" line="13110"/>
         <source>No image loaded</source>
         <translation>Kein Bild geladen</translation>
     </message>
@@ -7087,347 +7087,245 @@ Neueste Version: {latest}</translation>
         <translation>Quadrat</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="7842"/>
+        <location filename="../ui/main_window.py" line="7858"/>
         <source>Manage reference library…</source>
         <translation>Referenzbibliothek verwalten…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="7846"/>
+        <location filename="../ui/main_window.py" line="7862"/>
         <source>Browse and edit reference works, treatments, and measurement sets</source>
         <translation>Referenzwerke, Behandlungen und Messsätze durchsuchen und bearbeiten</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8045"/>
+        <location filename="../ui/main_window.py" line="8061"/>
         <source>A</source>
         <translation>A</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8049"/>
+        <location filename="../ui/main_window.py" line="8065"/>
         <source>Auto ({color})</source>
         <translation>Auto ({color})</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8087"/>
+        <location filename="../ui/main_window.py" line="8103"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8097"/>
-        <location filename="../ui/main_window.py" line="8140"/>
+        <location filename="../ui/main_window.py" line="8113"/>
+        <location filename="../ui/main_window.py" line="8156"/>
         <source>Darker</source>
         <translation>Darker</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8098"/>
-        <location filename="../ui/main_window.py" line="8141"/>
+        <location filename="../ui/main_window.py" line="8114"/>
+        <location filename="../ui/main_window.py" line="8157"/>
         <source>Medium</source>
         <translation>Medium</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8099"/>
-        <location filename="../ui/main_window.py" line="8142"/>
+        <location filename="../ui/main_window.py" line="8115"/>
+        <location filename="../ui/main_window.py" line="8158"/>
         <source>Lighter</source>
         <translation>Lighter</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8354"/>
-        <location filename="../ui/main_window.py" line="8360"/>
-        <location filename="../ui/main_window.py" line="8999"/>
+        <location filename="../ui/main_window.py" line="8370"/>
+        <location filename="../ui/main_window.py" line="8376"/>
+        <location filename="../ui/main_window.py" line="9000"/>
         <source>Could not detach library reference: {error}</source>
         <translation>Die Bibliotheksreferenz konnte nicht gelöst werden: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8573"/>
+        <location filename="../ui/main_window.py" line="8586"/>
         <source>This attachment&apos;s persisted snapshot cannot be plotted. Detach it to remove the row.</source>
         <translation>Der gespeicherte Snapshot dieses Anhangs kann nicht dargestellt werden. Trenne ihn, um die Zeile zu entfernen.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8579"/>
+        <location filename="../ui/main_window.py" line="8592"/>
         <source>Raw: {raw}</source>
         <translation>Roh: {raw}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8582"/>
+        <location filename="../ui/main_window.py" line="8595"/>
         <source>Role: {role}</source>
         <translation>Rolle: {role}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8590"/>
+        <location filename="../ui/main_window.py" line="8603"/>
         <source>Revision: {revision}</source>
         <translation>Revision: {revision}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8594"/>
+        <location filename="../ui/main_window.py" line="8607"/>
         <source>Library update available</source>
         <translation>Bibliotheksaktualisierung verfügbar</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8598"/>
+        <location filename="../ui/main_window.py" line="8611"/>
         <source>Library source unavailable; the saved historical snapshot is still in use.</source>
         <translation>Die Bibliotheksquelle ist nicht verfügbar; der gespeicherte historische Schnappschuss wird weiterhin verwendet.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8765"/>
-        <location filename="../ui/main_window.py" line="8779"/>
-        <source>Update library reference</source>
-        <translation>Bibliotheksreferenz aktualisieren</translation>
-    </message>
-    <message>
-        <location filename="../ui/main_window.py" line="8696"/>
+        <location filename="../ui/main_window.py" line="8707"/>
         <location filename="../ui/main_window.py" line="8767"/>
         <source>The active observation changed. Reopen the reference and try again.</source>
         <translation>Die aktive Beobachtung hat sich geändert. Öffne die Referenz erneut und versuche es noch einmal.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8604"/>
+        <location filename="../ui/main_window.py" line="8617"/>
         <source>A newer successor measurement set is available.</source>
         <translation>Ein neuerer nachfolgender Messdatensatz ist verfügbar.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8608"/>
+        <location filename="../ui/main_window.py" line="8621"/>
         <source>Multiple successor measurement sets exist; none can be selected automatically.</source>
         <translation>Es gibt mehrere nachfolgende Messdatensätze; keiner kann automatisch ausgewählt werden.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8615"/>
+        <location filename="../ui/main_window.py" line="8628"/>
         <source>The successor chain is cyclic; the historical attachment is unchanged.</source>
         <translation>Die Nachfolgerkette ist zyklisch; die historische Verknüpfung bleibt unverändert.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8622"/>
+        <location filename="../ui/main_window.py" line="8635"/>
         <source>The successor source is incomplete; the historical attachment is unchanged.</source>
         <translation>Die Nachfolgerquelle ist unvollständig; die historische Verknüpfung bleibt unverändert.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8629"/>
+        <location filename="../ui/main_window.py" line="8642"/>
         <source>The successor cannot be plotted safely; the historical attachment is unchanged.</source>
         <translation>Der Nachfolger kann nicht sicher dargestellt werden; die historische Verknüpfung bleibt unverändert.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8668"/>
+        <location filename="../ui/main_window.py" line="8681"/>
         <source>Review successor measurement set</source>
         <translation>Nachfolgenden Messdatensatz prüfen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8671"/>
+        <location filename="../ui/main_window.py" line="8684"/>
         <source>Adopting the successor replaces this observation&apos;s frozen reference snapshot.</source>
         <translation>Wenn du den Nachfolger übernimmst, wird der eingefrorene Referenz-Schnappschuss dieser Beobachtung ersetzt.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8659"/>
+        <location filename="../ui/main_window.py" line="8672"/>
         <source>Currently attached:</source>
         <translation>Derzeit verknüpft:</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8661"/>
+        <location filename="../ui/main_window.py" line="8674"/>
         <source>Proposed successor:</source>
         <translation>Vorgeschlagener Nachfolger:</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8677"/>
-        <location filename="../ui/main_window.py" line="8694"/>
-        <location filename="../ui/main_window.py" line="8707"/>
-        <location filename="../ui/main_window.py" line="8716"/>
-        <location filename="../ui/main_window.py" line="8736"/>
+        <location filename="../ui/main_window.py" line="8690"/>
         <source>Adopt successor</source>
         <translation>Nachfolger übernehmen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8708"/>
-        <source>Could not review the successor: {error}</source>
-        <translation>Der Nachfolger konnte nicht geprüft werden: {error}</translation>
-    </message>
-    <message>
-        <location filename="../ui/main_window.py" line="8718"/>
+        <location filename="../ui/main_window.py" line="8724"/>
         <source>This successor is no longer available. The historical attachment was not changed.</source>
         <translation>Dieser Nachfolger ist nicht mehr verfügbar. Die historische Verknüpfung wurde nicht geändert.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8737"/>
-        <source>Could not adopt the successor: {error}</source>
-        <translation>Der Nachfolger konnte nicht übernommen werden: {error}</translation>
-    </message>
-    <message>
-        <location filename="../ui/main_window.py" line="8752"/>
+        <location filename="../ui/main_window.py" line="8754"/>
         <source>Successor measurement set adopted.</source>
         <translation>Der nachfolgende Messdatensatz wurde übernommen.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8780"/>
-        <source>Could not update from the library: {error}</source>
-        <translation>Aktualisierung aus der Bibliothek fehlgeschlagen: {error}</translation>
-    </message>
-    <message>
-        <location filename="../ui/main_window.py" line="8791"/>
+        <location filename="../ui/main_window.py" line="8788"/>
         <source>Reference snapshot updated from the library.</source>
         <translation>Der Referenz-Schnappschuss wurde aus der Bibliothek aktualisiert.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8839"/>
+        <location filename="../ui/main_window.py" line="8836"/>
         <source>[!] Unplottable snapshot: {label}</source>
         <translation>[!] Nicht plottbarer Schnappschuss: {label}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8863"/>
+        <location filename="../ui/main_window.py" line="8860"/>
         <source>Could not load library references: {error}</source>
         <translation>Bibliotheksreferenzen konnten nicht geladen werden: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8904"/>
+        <location filename="../ui/main_window.py" line="8901"/>
         <source>Skipped {count} malformed reference attachment(s).</source>
         <translation>{count} fehlerhafte Referenzanhänge übersprungen.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="9249"/>
-        <location filename="../ui/main_window.py" line="9276"/>
-        <location filename="../ui/main_window.py" line="9289"/>
-        <source>Attach library reference</source>
-        <translation>Bibliotheksreferenz anhängen</translation>
-    </message>
-    <message>
-        <location filename="../ui/main_window.py" line="9277"/>
+        <location filename="../ui/main_window.py" line="9294"/>
         <source>Select an observation first before attaching a reference.</source>
         <translation>Wähle zuerst eine Beobachtung aus, bevor du eine Referenz anhängst.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="9251"/>
+        <location filename="../ui/main_window.py" line="9269"/>
         <source>The active observation changed while the reference library was open, so the attachment was cancelled. Re-open the library from the intended observation to try again.</source>
         <translation>Die aktive Beobachtung hat sich geändert, während die Referenzbibliothek geöffnet war; der Anhang wurde daher abgebrochen. Öffne die Bibliothek erneut von der gewünschten Beobachtung aus.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8973"/>
-        <location filename="../ui/main_window.py" line="9336"/>
+        <location filename="../ui/main_window.py" line="8972"/>
         <source>Could not attach reference: {error}</source>
         <translation>Die Referenz konnte nicht angehängt werden: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="9354"/>
-        <source>Attachment could not be plotted and the rollback of the persisted row failed: {error}. The row with id {use_id} may still be present; please detach it manually.</source>
-        <translation>Der Anhang konnte nicht dargestellt werden und das Zurücksetzen der gespeicherten Zeile ist fehlgeschlagen: {error}. Die Zeile mit der ID {use_id} ist möglicherweise noch vorhanden; bitte trenne sie manuell.</translation>
-    </message>
-    <message>
-        <location filename="../ui/main_window.py" line="9363"/>
+        <location filename="../ui/main_window.py" line="9379"/>
         <source>The attachment snapshot could not be translated for the plot.</source>
         <translation>Der Referenz-Snapshot konnte nicht in das Diagramm übertragen werden.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="9376"/>
+        <location filename="../ui/main_window.py" line="9393"/>
         <source>This reference is already attached but its stored snapshot cannot be plotted. It is shown as a warning row so you can detach it.</source>
         <translation>Diese Referenz ist bereits angehängt, ihr gespeicherter Snapshot kann jedoch nicht dargestellt werden. Sie wird als Warnzeile angezeigt, damit du sie trennen kannst.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8467"/>
-        <location filename="../ui/main_window.py" line="9610"/>
-        <location filename="../ui/main_window.py" line="9641"/>
-        <location filename="../ui/main_window.py" line="9680"/>
-        <location filename="../ui/main_window.py" line="9698"/>
-        <location filename="../ui/main_window.py" line="9744"/>
-        <location filename="../ui/main_window.py" line="9810"/>
-        <location filename="../ui/main_window.py" line="9846"/>
-        <location filename="../ui/main_window.py" line="9865"/>
-        <location filename="../ui/main_window.py" line="9888"/>
-        <location filename="../ui/main_window.py" line="9919"/>
-        <location filename="../ui/main_window.py" line="9934"/>
-        <location filename="../ui/main_window.py" line="9977"/>
-        <location filename="../ui/main_window.py" line="10115"/>
-        <location filename="../ui/main_window.py" line="10134"/>
+        <location filename="../ui/main_window.py" line="9755"/>
         <source>Reference library</source>
         <translation>Referenzbibliothek</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="9681"/>
-        <source>Could not build the normalized measurement set: {error}</source>
-        <translation>Der normalisierte Messsatz konnte nicht erstellt werden: {error}</translation>
-    </message>
-    <message>
-        <location filename="../ui/main_window.py" line="9811"/>
-        <location filename="../ui/main_window.py" line="10116"/>
-        <source>Could not add the library reference: {error}</source>
-        <translation>Bibliotheksreferenz konnte nicht hinzugefügt werden: {error}</translation>
-    </message>
-    <message>
-        <location filename="../ui/main_window.py" line="9847"/>
-        <source>Could not read treatments: {error}</source>
-        <translation>Behandlungen konnten nicht gelesen werden: {error}</translation>
-    </message>
-    <message>
-        <location filename="../ui/main_window.py" line="9867"/>
+        <location filename="../ui/main_window.py" line="9870"/>
         <source>This publication already has more than one treatment matching the observation&apos;s taxon. Open the reference library manager to pick one and attach it manually.</source>
         <translation>Diese Veröffentlichung enthält mehrere Behandlungen, die zum Taxon der Beobachtung passen. Öffne die Referenzbibliothek, wähle eine aus und hänge sie manuell an.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="9840"/>
+        <location filename="../ui/main_window.py" line="9847"/>
         <source>Unspecified taxon</source>
         <translation>Nicht spezifiziertes Taxon</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="7829"/>
+        <location filename="../ui/main_window.py" line="7845"/>
         <source>Add reference…</source>
         <translation>Referenz hinzufügen…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="7837"/>
+        <location filename="../ui/main_window.py" line="7853"/>
         <source>Search the reference library, community data, or your own observations for a reference to plot</source>
         <translation>Durchsuche die Referenzbibliothek, Community-Daten oder deine eigenen Beobachtungen nach einer Referenz für das Diagramm</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8300"/>
+        <location filename="../ui/main_window.py" line="8316"/>
         <source>This observation</source>
         <translation>Diese Beobachtung</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7326"/>
-        <location filename="../ui/main_window.py" line="9086"/>
-        <location filename="../ui/main_window.py" line="9098"/>
-        <location filename="../ui/main_window.py" line="9111"/>
-        <location filename="../ui/main_window.py" line="9181"/>
         <source>Add reference</source>
         <translation>Referenz hinzufügen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="9087"/>
+        <location filename="../ui/main_window.py" line="9086"/>
         <source>Select an observation first before adding a reference.</source>
         <translation>Wähle zuerst eine Beobachtung aus, bevor du eine Referenz hinzufügst.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="9100"/>
+        <location filename="../ui/main_window.py" line="9097"/>
         <source>The active observation changed while the picker was open. Reopen the observation and try again — no reference was attached.</source>
         <translation>Die aktive Beobachtung hat sich geändert, während die Auswahl geöffnet war. Öffne die Beobachtung erneut und versuche es noch einmal – es wurde keine Referenz angehängt.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="9182"/>
+        <location filename="../ui/main_window.py" line="9202"/>
         <source>This observation has no usable spore measurements.</source>
         <translation>Diese Beobachtung hat keine brauchbaren Sporenmessungen.</translation>
-    </message>
-    <message>
-        <location filename="../ui/main_window.py" line="9889"/>
-        <source>Could not create treatment: {error}</source>
-        <translation>Die Behandlung konnte nicht erstellt werden: {error}</translation>
-    </message>
-    <message>
-        <location filename="../ui/main_window.py" line="9921"/>
-        <source>Could not create measurement set ({error}); the compensating cleanup of taxon_treatment {tid} also failed ({rollback}). Please review the reference library manager.</source>
-        <translation>Der Messsatz konnte nicht erstellt werden ({error}); auch die ausgleichende Bereinigung von taxon_treatment {tid} ist fehlgeschlagen ({rollback}). Bitte prüfe die Referenzbibliothek.</translation>
-    </message>
-    <message>
-        <location filename="../ui/main_window.py" line="9935"/>
-        <source>Could not create measurement set: {error}</source>
-        <translation>Der Messsatz konnte nicht erstellt werden: {error}</translation>
-    </message>
-    <message>
-        <location filename="../ui/main_window.py" line="9979"/>
-        <source>Attachment failed and the compensating cleanup could not fully roll back. The following rows may still be present and should be reviewed in the reference library manager:
-
-{errors}</source>
-        <translation>Der Anhang ist fehlgeschlagen und die kompensierende Bereinigung konnte nicht vollständig zurückgesetzt werden. Die folgenden Zeilen sind möglicherweise noch vorhanden und sollten im Referenzbibliotheksmanager überprüft werden:
-
-{errors}</translation>
-    </message>
-    <message>
-        <location filename="../ui/main_window.py" line="8468"/>
-        <location filename="../ui/main_window.py" line="10135"/>
-        <source>Reference stored locally, but library sync failed: {error}</source>
-        <translation>Referenz lokal gespeichert, aber die Bibliothekssynchronisierung ist fehlgeschlagen: {error}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="4878"/>
@@ -7481,97 +7379,164 @@ Neueste Version: {latest}</translation>
         <translation>Referenzform:</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="8929"/>
+        <location filename="../ui/main_window.py" line="8482"/>
+        <location filename="../ui/main_window.py" line="10128"/>
+        <source>The reference was saved, but adding it to the reference library failed.</source>
+        <translation>Die Referenz wurde gespeichert, konnte aber nicht zur Referenzbibliothek hinzugefügt werden.</translation>
+    </message>
+    <message>
+        <location filename="../ui/main_window.py" line="8718"/>
+        <source>Could not review the successor.</source>
+        <translation>Der Nachfolger konnte nicht geprüft werden.</translation>
+    </message>
+    <message>
+        <location filename="../ui/main_window.py" line="8742"/>
+        <source>Could not adopt the successor.</source>
+        <translation>Der Nachfolger konnte nicht übernommen werden.</translation>
+    </message>
+    <message>
+        <location filename="../ui/main_window.py" line="8779"/>
+        <source>Could not update from the library.</source>
+        <translation>Die Aktualisierung aus der Bibliothek ist fehlgeschlagen.</translation>
+    </message>
+    <message>
+        <location filename="../ui/main_window.py" line="8926"/>
         <source>The active observation changed. Nothing was changed; the list now shows the current observation.</source>
         <translation>Die aktive Beobachtung hat sich geändert. Es wurde nichts geändert; die Liste zeigt jetzt die aktuelle Beobachtung.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="9001"/>
+        <location filename="../ui/main_window.py" line="9002"/>
         <source>The reference could not be detached.</source>
         <translation>Die Referenz konnte nicht gelöst werden.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="9010"/>
+        <location filename="../ui/main_window.py" line="9011"/>
         <source>The role could not be changed.</source>
         <translation>Die Rolle konnte nicht geändert werden.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="9015"/>
+        <location filename="../ui/main_window.py" line="9016"/>
         <source>The role could not be changed: {error}</source>
         <translation>Die Rolle konnte nicht geändert werden: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="9113"/>
+        <location filename="../ui/main_window.py" line="9109"/>
         <source>The observation&apos;s taxon changed while the dialog was open. Close it and try again — no reference was saved.</source>
         <translation>Das Taxon der Beobachtung wurde geändert, während der Dialog offen war. Schließe ihn und versuche es erneut – es wurde keine Referenz gespeichert.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="9700"/>
+        <location filename="../ui/main_window.py" line="9354"/>
+        <source>Could not attach the reference.</source>
+        <translation>Die Referenz konnte nicht hinzugefügt werden.</translation>
+    </message>
+    <message>
+        <location filename="../ui/main_window.py" line="9370"/>
+        <source>The attachment could not be plotted, and removing it again failed. It may still be listed; detach it by hand.</source>
+        <translation>Die Referenz konnte nicht im Diagramm gezeichnet werden, und das Entfernen ist fehlgeschlagen. Sie steht womöglich noch in der Liste; entferne sie von Hand.</translation>
+    </message>
+    <message>
+        <location filename="../ui/main_window.py" line="9695"/>
+        <source>Could not build the normalized measurement set.</source>
+        <translation>Der normalisierte Messsatz konnte nicht erstellt werden.</translation>
+    </message>
+    <message>
+        <location filename="../ui/main_window.py" line="9710"/>
         <source>This entry has no measurement range and no individual spore measurements, so there is nothing for the reference library to store. Nothing was saved.</source>
         <translation>Dieser Eintrag hat weder einen Messbereich noch einzelne Sporenmessungen, also gibt es für die Referenzbibliothek nichts zu speichern. Es wurde nichts gespeichert.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="10165"/>
+        <location filename="../ui/main_window.py" line="9820"/>
+        <location filename="../ui/main_window.py" line="10113"/>
+        <source>Could not add the library reference.</source>
+        <translation>Die Bibliotheksreferenz konnte nicht hinzugefügt werden.</translation>
+    </message>
+    <message>
+        <location filename="../ui/main_window.py" line="9852"/>
+        <source>Could not read the publication&apos;s treatments.</source>
+        <translation>Die Behandlungen der Publikation konnten nicht gelesen werden.</translation>
+    </message>
+    <message>
+        <location filename="../ui/main_window.py" line="9891"/>
+        <source>Could not create the treatment.</source>
+        <translation>Die Behandlung konnte nicht erstellt werden.</translation>
+    </message>
+    <message>
+        <location filename="../ui/main_window.py" line="9921"/>
+        <source>Could not create the measurement set, and the treatment made for it could not be removed. Review it in the reference library manager.</source>
+        <translation>Der Messsatz konnte nicht erstellt werden, und die dafür angelegte Behandlung ließ sich nicht entfernen. Prüfe sie in der Referenzbibliothek.</translation>
+    </message>
+    <message>
+        <location filename="../ui/main_window.py" line="9930"/>
+        <source>Could not create the measurement set.</source>
+        <translation>Der Messsatz konnte nicht erstellt werden.</translation>
+    </message>
+    <message>
+        <location filename="../ui/main_window.py" line="9973"/>
+        <source>The reference could not be attached, and what was created for it could not all be removed. Review the rows under Details in the reference library manager.</source>
+        <translation>Die Referenz konnte nicht hinzugefügt werden, und nicht alles, was dafür angelegt wurde, ließ sich entfernen. Prüfe die Zeilen unter Details in der Referenzbibliothek.</translation>
+    </message>
+    <message>
+        <location filename="../ui/main_window.py" line="10157"/>
         <source>Measurement Fine tune</source>
         <translation>Messungs-Feinabstimmung</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="10184"/>
+        <location filename="../ui/main_window.py" line="10176"/>
         <source>Measurements</source>
         <translation>Messungen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="10287"/>
+        <location filename="../ui/main_window.py" line="10279"/>
         <source>From scalebar</source>
         <translation>Vom Maßstab</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="10666"/>
+        <location filename="../ui/main_window.py" line="10658"/>
         <source>No stain</source>
         <translation>Keine Färbung</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="10683"/>
+        <location filename="../ui/main_window.py" line="10675"/>
         <source>Objective</source>
         <translation>Objektiv</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="10689"/>
+        <location filename="../ui/main_window.py" line="10681"/>
         <source>Contrast</source>
         <translation>Kontrast</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="10848"/>
+        <location filename="../ui/main_window.py" line="10840"/>
         <source>Warning: Image resolution mismatch!</source>
         <translation>Warnung: Bildauflösung stimmt nicht überein!</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="10851"/>
+        <location filename="../ui/main_window.py" line="10843"/>
         <source>Calibration image: {cal}MP. This image: {img}MP. This is ok if you are working on a cropped image.</source>
         <translation>Kalibrierungsbild: {cal}MP. Dieses Bild: {img}MP. Das ist ok, wenn Sie mit einem zugeschnittenen Bild arbeiten.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="10929"/>
+        <location filename="../ui/main_window.py" line="10921"/>
         <source>Scale: {scale:.3f} mm/px</source>
         <translation>Skala: {scale:.3f} mm/px</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="10931"/>
+        <location filename="../ui/main_window.py" line="10923"/>
         <source>Scale: -- mm/px</source>
         <translation>Skala: -- mm/px</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="11069"/>
+        <location filename="../ui/main_window.py" line="11061"/>
         <source>Length of the displayed scale bar in millimeters.</source>
         <translation>Länge des angezeigten Maßstabs in Millimetern.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="11781"/>
+        <location filename="../ui/main_window.py" line="11773"/>
         <source>Selected images will be edited</source>
         <translation>Ausgewählte Bilder werden bearbeitet</translation>
     </message>
     <message numerus="yes">
-        <location filename="../ui/main_window.py" line="11805"/>
+        <location filename="../ui/main_window.py" line="11797"/>
         <source>Changed %n image(s).</source>
         <translation>
             <numerusform>%n Bild geändert.</numerusform>
@@ -7579,7 +7544,7 @@ Neueste Version: {latest}</translation>
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../ui/main_window.py" line="11807"/>
+        <location filename="../ui/main_window.py" line="11799"/>
         <source>%n measurement(s) recalculated.</source>
         <translation>
             <numerusform>%n Messung neu berechnet.</numerusform>
@@ -7587,464 +7552,464 @@ Neueste Version: {latest}</translation>
         </translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="11859"/>
+        <location filename="../ui/main_window.py" line="11851"/>
         <source>Delete failed</source>
         <translation>Delete failed</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="11860"/>
+        <location filename="../ui/main_window.py" line="11852"/>
         <source>Could not delete image: {error}</source>
         <translation>Could not delete image: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="11959"/>
+        <location filename="../ui/main_window.py" line="11951"/>
         <source>New observation</source>
         <translation>Neue Beobachtung</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="11964"/>
+        <location filename="../ui/main_window.py" line="11956"/>
         <source>{name} · Sporely Cloud</source>
         <translation>{name} · Sporely Cloud</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="11996"/>
+        <location filename="../ui/main_window.py" line="11988"/>
         <source>{n} observations selected</source>
         <translation>{n} Beobachtungen ausgewählt</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="12297"/>
+        <location filename="../ui/main_window.py" line="12289"/>
         <source>Stop measuring (M)</source>
         <translation>Messung stoppen (M)</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="12332"/>
+        <location filename="../ui/main_window.py" line="12324"/>
         <source>Set scale first using &apos;Set from scalebar&apos;.</source>
         <translation>Setzen Sie zuerst den Maßstab über &apos;Vom Maßstab setzen&apos;.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="12336"/>
+        <location filename="../ui/main_window.py" line="12328"/>
         <source>Set scale first (objective or &apos;Set from scalebar&apos;).</source>
         <translation>Setzen Sie zuerst den Maßstab (Objektiv oder &apos;Vom Maßstab setzen&apos;).</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="12402"/>
+        <location filename="../ui/main_window.py" line="12394"/>
         <source>Multi-line: Click start point</source>
         <translation>Mehrfachlinie: Startpunkt klicken</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="12405"/>
-        <location filename="../ui/main_window.py" line="12471"/>
+        <location filename="../ui/main_window.py" line="12397"/>
+        <location filename="../ui/main_window.py" line="12463"/>
         <source>Line: Click start point</source>
         <translation>Linie: Startpunkt klicken</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="12457"/>
+        <location filename="../ui/main_window.py" line="12449"/>
         <source>Multi-line: Click next point, Right-click to finish</source>
         <translation>Mehrfachlinie: Nächsten Punkt klicken, Rechtsklick zum Abschließen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="12481"/>
+        <location filename="../ui/main_window.py" line="12473"/>
         <source>Line: Click end point</source>
         <translation>Linie: Endpunkt klicken</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="13716"/>
+        <location filename="../ui/main_window.py" line="13708"/>
         <source>Changing calibration</source>
         <translation>Kalibrierung ändern</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="13718"/>
+        <location filename="../ui/main_window.py" line="13710"/>
         <source>You changed the calibration measurement. Do you want to rescale all other measurements for this image to match the new scale?</source>
         <translation>Sie haben die Kalibriermessung geändert. Möchten Sie alle anderen Messungen dieses Bildes neu skalieren, damit sie zur neuen Skala passen?</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="13721"/>
+        <location filename="../ui/main_window.py" line="13713"/>
         <source>Rescale</source>
         <translation>Neu skalieren</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="13722"/>
+        <location filename="../ui/main_window.py" line="13714"/>
         <source>Keep as-is</source>
         <translation>Unverändert lassen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="13933"/>
-        <location filename="../ui/main_window.py" line="13961"/>
+        <location filename="../ui/main_window.py" line="13925"/>
+        <location filename="../ui/main_window.py" line="13953"/>
         <source>All except spores</source>
         <translation>Alle außer Sporen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="14078"/>
+        <location filename="../ui/main_window.py" line="14070"/>
         <source>Unsaved images</source>
         <translation>Nicht gespeicherte Bilder</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="14079"/>
+        <location filename="../ui/main_window.py" line="14071"/>
         <source>Images › Files and SD card has images that are not saved. Quit and discard them?</source>
         <translation>Bilder › Dateien und SD-Karte enthält nicht gespeicherte Bilder. Beenden und verwerfen?</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="14256"/>
+        <location filename="../ui/main_window.py" line="14248"/>
         <source>Live session running</source>
         <translation>Live-Sitzung läuft</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="14258"/>
+        <location filename="../ui/main_window.py" line="14250"/>
         <source>Images shows the Live session&apos;s observation while the session runs. End the session to edit this photo.</source>
         <translation>Bilder zeigt die Beobachtung der Live-Sitzung, solange die Sitzung läuft. Beende die Sitzung, um dieses Foto zu bearbeiten.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="14579"/>
-        <location filename="../ui/main_window.py" line="18381"/>
+        <location filename="../ui/main_window.py" line="14571"/>
+        <location filename="../ui/main_window.py" line="18373"/>
         <source>Refreshing spore plot and gallery...</source>
         <translation>Sporenplot und Galerie werden aktualisiert...</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="14717"/>
+        <location filename="../ui/main_window.py" line="14709"/>
         <source>Rendering spore thumbnails {done}/{total}...</source>
         <translation>Sporen-Miniaturbilder werden gerendert {done}/{total}...</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="15102"/>
+        <location filename="../ui/main_window.py" line="15094"/>
         <source>Rotate 180</source>
         <translation>Um 180 drehen</translation>
     </message>
     <message>
+        <location filename="../ui/main_window.py" line="17169"/>
         <location filename="../ui/main_window.py" line="17177"/>
-        <location filename="../ui/main_window.py" line="17185"/>
         <source>No Observation</source>
         <translation>Keine Beobachtung</translation>
     </message>
     <message>
+        <location filename="../ui/main_window.py" line="17169"/>
         <location filename="../ui/main_window.py" line="17177"/>
-        <location filename="../ui/main_window.py" line="17185"/>
         <source>Select an observation first.</source>
         <translation>Bitte zuerst eine Beobachtung auswählen.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="17209"/>
+        <location filename="../ui/main_window.py" line="17201"/>
         <source>Save Failed</source>
         <translation>Speichern fehlgeschlagen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="17266"/>
+        <location filename="../ui/main_window.py" line="17258"/>
         <source>Edit photo</source>
         <translation>Foto bearbeiten</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="17621"/>
+        <location filename="../ui/main_window.py" line="17613"/>
         <source>Parmasto specimen: Lm={lm}, Wm={wm}, Qm={qm}</source>
         <translation>Parmasto specimen: Lm={lm}, Wm={wm}, Qm={qm}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="17628"/>
+        <location filename="../ui/main_window.py" line="17620"/>
         <source>Parmasto variation: VindL={vindl}%, VindW={vindw}%, VindE={vinde}%</source>
         <translation>Parmasto variation: VindL={vindl}%, VindW={vindw}%, VindE={vinde}%</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="17650"/>
+        <location filename="../ui/main_window.py" line="17642"/>
         <source>Outlier</source>
         <translation>Outlier</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="17663"/>
+        <location filename="../ui/main_window.py" line="17655"/>
         <source>Parmasto warning: specimen spore shape is more variable than typical (VindE {specimen}% &gt; reference {reference}%).</source>
         <translation>Parmasto warning: specimen spore shape is more variable than typical (VindE {specimen}% &gt; reference {reference}%).</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18383"/>
+        <location filename="../ui/main_window.py" line="18375"/>
         <source>Resorting spore thumbnails...</source>
         <translation>Sporen-Miniaturbilder werden neu sortiert...</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18385"/>
+        <location filename="../ui/main_window.py" line="18377"/>
         <source>Rotating spore thumbnails...</source>
         <translation>Sporen-Miniaturbilder werden gedreht...</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18387"/>
+        <location filename="../ui/main_window.py" line="18379"/>
         <source>Filtering measurements and refreshing gallery...</source>
         <translation>Messungen werden gefiltert und die Galerie wird aktualisiert...</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18394"/>
-        <location filename="../ui/main_window.py" line="18897"/>
+        <location filename="../ui/main_window.py" line="18386"/>
+        <location filename="../ui/main_window.py" line="18889"/>
         <source>Updating spore plot...</source>
         <translation>Sporenplot wird aktualisiert...</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18428"/>
+        <location filename="../ui/main_window.py" line="18420"/>
         <source>Updating reference overlays...</source>
         <translation>Referenz-Overlays werden aktualisiert...</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18916"/>
+        <location filename="../ui/main_window.py" line="18908"/>
         <source>A Sporely backup is already running.</source>
         <translation>Eine Sporely-Sicherung wird bereits erstellt.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18923"/>
+        <location filename="../ui/main_window.py" line="18915"/>
         <source>Back Up Sporely</source>
         <translation>Sporely sichern</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18925"/>
-        <location filename="../ui/main_window.py" line="19230"/>
+        <location filename="../ui/main_window.py" line="18917"/>
+        <location filename="../ui/main_window.py" line="19222"/>
         <source>Sporely Backups (*.sporely)</source>
         <translation>Sporely-Sicherungen (*.sporely)</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18933"/>
-        <location filename="../ui/main_window.py" line="18961"/>
+        <location filename="../ui/main_window.py" line="18925"/>
+        <location filename="../ui/main_window.py" line="18953"/>
         <source>Creating Sporely backup…</source>
         <translation>Sporely-Sicherung wird erstellt…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18948"/>
+        <location filename="../ui/main_window.py" line="18940"/>
         <source>Preparing backup…</source>
         <translation>Sicherung wird vorbereitet…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18949"/>
+        <location filename="../ui/main_window.py" line="18941"/>
         <source>Checking backup size and free space…</source>
         <translation>Größe der Sicherung und freier Speicherplatz werden geprüft…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18950"/>
+        <location filename="../ui/main_window.py" line="18942"/>
         <source>Checking backup files…</source>
         <translation>Sicherungsdateien werden geprüft…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18951"/>
+        <location filename="../ui/main_window.py" line="18943"/>
         <source>Writing backup…</source>
         <translation>Sicherung wird geschrieben…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18952"/>
+        <location filename="../ui/main_window.py" line="18944"/>
         <source>Verifying backup…</source>
         <translation>Sicherung wird überprüft…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18953"/>
+        <location filename="../ui/main_window.py" line="18945"/>
         <source>Backup complete.</source>
         <translation>Sicherung abgeschlossen.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18977"/>
+        <location filename="../ui/main_window.py" line="18969"/>
         <source>Backup created: {name}. {count} referenced files were missing.</source>
         <translation>Sicherung erstellt: {name}. {count} referenzierte Dateien fehlten.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18981"/>
+        <location filename="../ui/main_window.py" line="18973"/>
         <source>Backup created: {name}.</source>
         <translation>Sicherung erstellt: {name}.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18988"/>
+        <location filename="../ui/main_window.py" line="18980"/>
         <source>Backup failed: {error}</source>
         <translation>Sicherung fehlgeschlagen: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19010"/>
+        <location filename="../ui/main_window.py" line="19002"/>
         <source>An observation export is already running.</source>
         <translation>Ein Beobachtungsexport wird bereits ausgeführt.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19016"/>
+        <location filename="../ui/main_window.py" line="19008"/>
         <source>Export Selected Observations</source>
         <translation>Ausgewählte Beobachtungen exportieren</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19018"/>
+        <location filename="../ui/main_window.py" line="19010"/>
         <source>Sporely Archives (*.sporely)</source>
         <translation>Sporely-Archive (*.sporely)</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19026"/>
-        <location filename="../ui/main_window.py" line="19054"/>
+        <location filename="../ui/main_window.py" line="19018"/>
+        <location filename="../ui/main_window.py" line="19046"/>
         <source>Exporting selected observations…</source>
         <translation>Ausgewählte Beobachtungen werden exportiert…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19041"/>
+        <location filename="../ui/main_window.py" line="19033"/>
         <source>Preparing observation export…</source>
         <translation>Beobachtungsexport wird vorbereitet…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19042"/>
+        <location filename="../ui/main_window.py" line="19034"/>
         <source>Checking export size and free space…</source>
         <translation>Exportgröße und freier Speicherplatz werden geprüft…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19043"/>
+        <location filename="../ui/main_window.py" line="19035"/>
         <source>Checking export files…</source>
         <translation>Exportdateien werden geprüft…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19044"/>
+        <location filename="../ui/main_window.py" line="19036"/>
         <source>Writing observation export…</source>
         <translation>Beobachtungsexport wird geschrieben…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19045"/>
+        <location filename="../ui/main_window.py" line="19037"/>
         <source>Verifying observation export…</source>
         <translation>Beobachtungsexport wird überprüft…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19046"/>
+        <location filename="../ui/main_window.py" line="19038"/>
         <source>Observation export complete.</source>
         <translation>Beobachtungsexport abgeschlossen.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19067"/>
+        <location filename="../ui/main_window.py" line="19059"/>
         <source>Observation export created: {name}.</source>
         <translation>Beobachtungsexport erstellt: {name}.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19076"/>
+        <location filename="../ui/main_window.py" line="19068"/>
         <source>Observation export failed: {error}</source>
         <translation>Beobachtungsexport fehlgeschlagen: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19093"/>
+        <location filename="../ui/main_window.py" line="19085"/>
         <source>Import Observations</source>
         <translation>Beobachtungen importieren</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19096"/>
+        <location filename="../ui/main_window.py" line="19088"/>
         <source>Sporely Archives (*.sporely);;Legacy Sporely Data Packages (*.zip)</source>
         <translation>Sporely-Archive (*.sporely);;Ältere Sporely-Datenpakete (*.zip)</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19107"/>
+        <location filename="../ui/main_window.py" line="19099"/>
         <source>The archive could not be identified safely: {error}</source>
         <translation>Das Archiv konnte nicht sicher identifiziert werden: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19118"/>
-        <location filename="../ui/main_window.py" line="19255"/>
+        <location filename="../ui/main_window.py" line="19110"/>
+        <location filename="../ui/main_window.py" line="19247"/>
         <source>Wrong Archive Type</source>
         <translation>Falscher Archivtyp</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19120"/>
+        <location filename="../ui/main_window.py" line="19112"/>
         <source>This is a full Sporely backup. Use Restore Sporely Backup instead.</source>
         <translation>Dies ist eine vollständige Sporely-Sicherung. Verwende stattdessen Sporely-Sicherung wiederherstellen.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19128"/>
+        <location filename="../ui/main_window.py" line="19120"/>
         <source>Validating observation archive…</source>
         <translation>Beobachtungsarchiv wird validiert…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19106"/>
-        <location filename="../ui/main_window.py" line="19147"/>
-        <location filename="../ui/main_window.py" line="19172"/>
+        <location filename="../ui/main_window.py" line="19098"/>
+        <location filename="../ui/main_window.py" line="19139"/>
+        <location filename="../ui/main_window.py" line="19164"/>
         <source>Invalid Sporely Archive</source>
         <translation>Ungültiges Sporely-Archiv</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19148"/>
-        <location filename="../ui/main_window.py" line="19173"/>
+        <location filename="../ui/main_window.py" line="19140"/>
+        <location filename="../ui/main_window.py" line="19165"/>
         <source>The archive could not be validated: {error}</source>
         <translation>Das Archiv konnte nicht validiert werden: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19157"/>
+        <location filename="../ui/main_window.py" line="19149"/>
         <source>Importing observations…</source>
         <translation>Beobachtungen werden importiert…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19201"/>
+        <location filename="../ui/main_window.py" line="19193"/>
         <source>Import Failed</source>
         <translation>Import fehlgeschlagen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19202"/>
+        <location filename="../ui/main_window.py" line="19194"/>
         <source>The observations could not be imported: {error}</source>
         <translation>Die Beobachtungen konnten nicht importiert werden: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19191"/>
+        <location filename="../ui/main_window.py" line="19183"/>
         <source>Observation import complete: {imported} new, {reused} already imported.</source>
         <translation>Beobachtungsimport abgeschlossen: {imported} neu, {reused} bereits importiert.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19063"/>
+        <location filename="../ui/main_window.py" line="19055"/>
         <source>Observation export created: {name}. Missing referenced source files: {count}.</source>
         <translation>Beobachtungsexport erstellt: {name}. Fehlende referenzierte Quelldateien: {count}.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19217"/>
-        <location filename="../ui/main_window.py" line="19222"/>
-        <location filename="../ui/main_window.py" line="19228"/>
-        <location filename="../ui/main_window.py" line="19259"/>
-        <location filename="../ui/main_window.py" line="19392"/>
+        <location filename="../ui/main_window.py" line="19209"/>
+        <location filename="../ui/main_window.py" line="19214"/>
+        <location filename="../ui/main_window.py" line="19220"/>
+        <location filename="../ui/main_window.py" line="19251"/>
+        <location filename="../ui/main_window.py" line="19384"/>
         <source>Restore Sporely Backup</source>
         <translation>Sporely-Sicherung wiederherstellen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19217"/>
+        <location filename="../ui/main_window.py" line="19209"/>
         <source>Wait for the current backup to finish before restoring.</source>
         <translation>Warte, bis die aktuelle Sicherung abgeschlossen ist, bevor du sie wiederherstellst.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19223"/>
+        <location filename="../ui/main_window.py" line="19215"/>
         <source>A Sporely restore is already being prepared.</source>
         <translation>Eine Sporely-Wiederherstellung wird bereits vorbereitet.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19239"/>
+        <location filename="../ui/main_window.py" line="19231"/>
         <source>Invalid Sporely Backup</source>
         <translation>Ungültige Sporely-Sicherung</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19240"/>
+        <location filename="../ui/main_window.py" line="19232"/>
         <source>The backup could not be identified safely: {error}</source>
         <translation>Die Sicherung konnte nicht sicher identifiziert werden: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19248"/>
+        <location filename="../ui/main_window.py" line="19240"/>
         <source>Legacy Sporely data packages are not full backups and cannot be restored here.</source>
         <translation>Ältere Sporely-Datenpakete sind keine vollständigen Sicherungen und können hier nicht wiederhergestellt werden.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19252"/>
+        <location filename="../ui/main_window.py" line="19244"/>
         <source>Observation archives are not full backups and cannot be restored here.</source>
         <translation>Beobachtungsarchive sind keine vollständigen Sicherungen und können hier nicht wiederhergestellt werden.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19259"/>
+        <location filename="../ui/main_window.py" line="19251"/>
         <source>Wait for background work to finish before restoring.</source>
         <translation>Warte, bis die Hintergrundarbeiten abgeschlossen sind, bevor du die Sicherung wiederherstellst.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19265"/>
+        <location filename="../ui/main_window.py" line="19257"/>
         <source>Preparing and validating Sporely backup…</source>
         <translation>Sporely-Sicherung wird vorbereitet und geprüft…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19467"/>
+        <location filename="../ui/main_window.py" line="19459"/>
         <source>Restore preparation failed.</source>
         <translation>Die Vorbereitung der Wiederherstellung ist fehlgeschlagen.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19510"/>
+        <location filename="../ui/main_window.py" line="19502"/>
         <source>The restore could not be rolled back safely. Recovery copies were preserved. Restart Sporely before continuing: {error}</source>
         <translation>Die Wiederherstellung konnte nicht sicher zurückgesetzt werden. Die Wiederherstellungskopien wurden aufbewahrt. Starte Sporely neu, bevor du fortfährst: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19536"/>
+        <location filename="../ui/main_window.py" line="19528"/>
         <source>Sporely backup restored.</source>
         <translation>Sporely-Sicherung wurde wiederhergestellt.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19539"/>
+        <location filename="../ui/main_window.py" line="19531"/>
         <source>Restore Complete</source>
         <translation>Wiederherstellung abgeschlossen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19540"/>
+        <location filename="../ui/main_window.py" line="19532"/>
         <source>The backup was restored successfully. Restart Sporely to load the restored installation.
 
 Safety backup: {path}</source>
@@ -8053,90 +8018,90 @@ Safety backup: {path}</source>
 Sicherheitssicherung: {path}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19508"/>
-        <location filename="../ui/main_window.py" line="19547"/>
+        <location filename="../ui/main_window.py" line="19500"/>
+        <location filename="../ui/main_window.py" line="19539"/>
         <source>Restore Failed</source>
         <translation>Wiederherstellung fehlgeschlagen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19547"/>
+        <location filename="../ui/main_window.py" line="19539"/>
         <source>The backup was not restored: {error}</source>
         <translation>Die Sicherung wurde nicht wiederhergestellt: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19548"/>
+        <location filename="../ui/main_window.py" line="19540"/>
         <source>Restore failed.</source>
         <translation>Wiederherstellung fehlgeschlagen.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19591"/>
+        <location filename="../ui/main_window.py" line="19583"/>
         <source>Updated DB.</source>
         <translation>Datenbank aktualisiert.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19598"/>
+        <location filename="../ui/main_window.py" line="19590"/>
         <source>; and {count} more</source>
         <translation>; und {count} weitere</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19599"/>
+        <location filename="../ui/main_window.py" line="19591"/>
         <source>Warnings: {text}</source>
         <translation>Warnungen: {text}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19617"/>
+        <location filename="../ui/main_window.py" line="19609"/>
         <source>Import failed: {error}</source>
         <translation>Import fehlgeschlagen: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19669"/>
+        <location filename="../ui/main_window.py" line="19661"/>
         <source>Measurement deleted</source>
         <translation>Messung gelöscht</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19832"/>
+        <location filename="../ui/main_window.py" line="19824"/>
         <source>Changing image scale</source>
         <translation>Bildskala wird geändert</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19833"/>
+        <location filename="../ui/main_window.py" line="19825"/>
         <source>Changing image scale: This will update previous measurements to match the new scale.</source>
         <translation>Änderung der Bildskala: Dadurch werden frühere Messungen an die neue Skala angepasst.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20071"/>
+        <location filename="../ui/main_window.py" line="20063"/>
         <source>Calibration failed: zero-length line. Try again.</source>
         <translation>Kalibrierung fehlgeschlagen: Linie mit Nulllänge. Bitte erneut versuchen.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20117"/>
+        <location filename="../ui/main_window.py" line="20109"/>
         <source>Scale set: {scale:.4f} mm/px</source>
         <translation>Maßstab gesetzt: {scale:.4f} mm/px</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20119"/>
+        <location filename="../ui/main_window.py" line="20111"/>
         <source>Scale set: {scale:.2f} nm/px</source>
         <translation>Maßstab gesetzt: {scale:.2f} nm/px</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="17650"/>
-        <location filename="../ui/main_window.py" line="19834"/>
+        <location filename="../ui/main_window.py" line="17642"/>
+        <location filename="../ui/main_window.py" line="19826"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19835"/>
+        <location filename="../ui/main_window.py" line="19827"/>
         <source>Cancel</source>
         <translation>Abbrechen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="11102"/>
-        <location filename="../ui/main_window.py" line="20025"/>
+        <location filename="../ui/main_window.py" line="11094"/>
+        <location filename="../ui/main_window.py" line="20017"/>
         <source>Load an image first to calibrate</source>
         <translation>Zum Kalibrieren zuerst ein Bild laden</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19382"/>
+        <location filename="../ui/main_window.py" line="19374"/>
         <source>Created: {created}
 App version: {version}
 Observations: {observations}
@@ -8146,33 +8111,33 @@ The backup is validated. A fresh safety backup will be created before replacemen
         <translation>Die Sicherung wurde validiert. Vor dem Ersetzen wird eine aktuelle Sicherheitskopie erstellt. Jetzt wiederherstellen?</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19400"/>
+        <location filename="../ui/main_window.py" line="19392"/>
         <source>Creating safety backup and restoring Sporely…</source>
         <translation>Sicherheitskopie wird erstellt und Sporely wird wiederhergestellt…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19477"/>
+        <location filename="../ui/main_window.py" line="19469"/>
         <source>Restore rollback completed.</source>
         <translation>Das Zurücksetzen der Wiederherstellung ist abgeschlossen.</translation>
     </message>
     <message>
+        <location filename="../ui/main_window.py" line="19547"/>
         <location filename="../ui/main_window.py" line="19555"/>
-        <location filename="../ui/main_window.py" line="19563"/>
         <source>Import Legacy Sporely Data Package</source>
         <translation>Älteres Sporely-Datenpaket importieren</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19557"/>
+        <location filename="../ui/main_window.py" line="19549"/>
         <source>Legacy Sporely Data Packages (*.zip)</source>
         <translation>Ältere Sporely-Datenpakete (*.zip)</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20038"/>
+        <location filename="../ui/main_window.py" line="20030"/>
         <source>CALIBRATION: Click first point on scale bar</source>
         <translation>KALIBRIERUNG: Ersten Punkt auf dem Maßstabsbalken anklicken</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20052"/>
+        <location filename="../ui/main_window.py" line="20044"/>
         <source>CALIBRATION: Click second point on scale bar</source>
         <translation>KALIBRIERUNG: Zweiten Punkt auf dem Maßstabsbalken anklicken</translation>
     </message>
@@ -11760,318 +11725,323 @@ Dadurch werden auch alle zugehörigen Bilder und Messungen gelöscht.</translati
 <context>
     <name>ReferenceAddDialog</name>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="287"/>
+        <location filename="../ui/reference_entry_editor.py" line="291"/>
         <source>Paste from Excel/csv or type values</source>
         <translation>Aus Excel/csv einfugen oder Werte eingeben</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="307"/>
+        <location filename="../ui/reference_entry_editor.py" line="311"/>
         <source>Extreme min: outermost observed value (parenthesised in literature).</source>
         <translation>Extrem min: äußerster beobachteter Wert (in der Literatur in Klammern).</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="308"/>
+        <location filename="../ui/reference_entry_editor.py" line="312"/>
         <source>Typical min: lower end of the typical range, e.g. the unparenthesised left value.</source>
         <translation>Typisch min: unteres Ende des typischen Bereichs, z. B. der linke Wert ohne Klammern.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="309"/>
+        <location filename="../ui/reference_entry_editor.py" line="313"/>
         <source>Mean/central value when explicitly supplied by the source. Not calculated automatically. A source that reports the mean as an interval may be entered as 9.2-11.7.</source>
         <translation>Mittelwert/zentraler Wert, wenn die Quelle ihn ausdrücklich angibt. Wird nicht automatisch berechnet. Gibt eine Quelle den Mittelwert als Intervall an, kannst du ihn als 9.2-11.7 eingeben.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="310"/>
+        <location filename="../ui/reference_entry_editor.py" line="314"/>
         <source>Typical max: upper end of the typical range, e.g. the unparenthesised right value.</source>
         <translation>Typisch max: oberes Ende des typischen Bereichs, z. B. der rechte Wert ohne Klammern.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="311"/>
+        <location filename="../ui/reference_entry_editor.py" line="315"/>
         <source>Extreme max: outermost observed value (parenthesised in literature).</source>
         <translation>Extrem max: äußerster beobachteter Wert (in der Literatur in Klammern).</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="366"/>
+        <location filename="../ui/reference_entry_editor.py" line="370"/>
         <source>e.g. (9.5–)9.8–11.3(–11.7) × (7.3–)8.0–9.4(–9.4) µm, Q = 1.2–1.3, Qm = 1.25, n = 36</source>
         <translation>z. B. (9.5–)9.8–11.3(–11.7) × (7.3–)8.0–9.4(–9.4) µm, Q = 1.2–1.3, Qm = 1.25, n = 36</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="374"/>
+        <location filename="../ui/reference_entry_editor.py" line="378"/>
         <source>Parse</source>
         <translation>Einlesen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="377"/>
+        <location filename="../ui/reference_entry_editor.py" line="381"/>
         <source>Swap L↔W</source>
         <translation>L↔B tauschen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="378"/>
+        <location filename="../ui/reference_entry_editor.py" line="382"/>
         <source>Swap the Length and Width rows (in case the source lists width first).</source>
         <translation>Die Zeilen Länge und Breite tauschen (falls die Quelle Breite zuerst auflistet).</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="480"/>
+        <location filename="../ui/reference_entry_editor.py" line="484"/>
         <source>Length</source>
         <translation>Länge</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="481"/>
+        <location filename="../ui/reference_entry_editor.py" line="485"/>
         <source>Width</source>
         <translation>Breite</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="482"/>
+        <location filename="../ui/reference_entry_editor.py" line="486"/>
         <source>Q</source>
         <translation>Q</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="560"/>
+        <location filename="../ui/reference_entry_editor.py" line="568"/>
         <source>Correct interpretation</source>
         <translation>Auslegung korrigieren</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="563"/>
+        <location filename="../ui/reference_entry_editor.py" line="571"/>
         <source>Drop a range interpretation this source does not actually state, or discard the reported statistics altogether. The measured values in the table are left untouched.</source>
         <translation>Entferne eine Bereichsauslegung, die diese Quelle gar nicht angibt, oder verwirf die angegebenen Statistiken ganz. Die gemessenen Werte in der Tabelle bleiben unberührt.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="609"/>
+        <location filename="../ui/reference_entry_editor.py" line="621"/>
         <source>Species mean length</source>
         <translation>Species mean length</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="610"/>
+        <location filename="../ui/reference_entry_editor.py" line="622"/>
         <source>Species mean width</source>
         <translation>Species mean width</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="611"/>
+        <location filename="../ui/reference_entry_editor.py" line="623"/>
         <source>Species mean quotient</source>
         <translation>Species mean quotient</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="612"/>
+        <location filename="../ui/reference_entry_editor.py" line="624"/>
         <source>Inter-specimen CV for length means (%)</source>
         <translation>Inter-specimen CV for length means (%)</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="613"/>
+        <location filename="../ui/reference_entry_editor.py" line="625"/>
         <source>Inter-specimen CV for width means (%)</source>
         <translation>Inter-specimen CV for width means (%)</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="614"/>
+        <location filename="../ui/reference_entry_editor.py" line="626"/>
         <source>Inter-specimen CV for quotient means (%)</source>
         <translation>Inter-specimen CV for quotient means (%)</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="615"/>
+        <location filename="../ui/reference_entry_editor.py" line="627"/>
         <source>Average intra-specimen variation for length (%)</source>
         <translation>Average intra-specimen variation for length (%)</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="616"/>
+        <location filename="../ui/reference_entry_editor.py" line="628"/>
         <source>Average intra-specimen variation for width (%)</source>
         <translation>Average intra-specimen variation for width (%)</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="617"/>
+        <location filename="../ui/reference_entry_editor.py" line="629"/>
         <source>Average intra-specimen variation for quotient (Parmasto VindE) (%)</source>
         <translation>Average intra-specimen variation for quotient (Parmasto VindE) (%)</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="594"/>
+        <location filename="../ui/reference_entry_editor.py" line="606"/>
         <source>Parmasto Biometrics</source>
         <translation>Parmasto Biometrics</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="346"/>
+        <location filename="../ui/reference_entry_editor.py" line="350"/>
         <source>Measurements</source>
         <translation>Messungen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="354"/>
+        <location filename="../ui/reference_entry_editor.py" line="358"/>
         <source>Paste the measurement string from the literature — it fills the grid below and keeps the notation&apos;s statistical meaning.</source>
         <translation>Füge die Messangabe aus der Literatur ein – sie füllt das Raster unten und behält die statistische Bedeutung der Notation.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="375"/>
+        <location filename="../ui/reference_entry_editor.py" line="379"/>
         <source>Parse the pasted string into the grid below.</source>
         <translation>Die eingefügte Angabe in das Raster unten einlesen.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="384"/>
+        <location filename="../ui/reference_entry_editor.py" line="388"/>
         <source>Fill in manually</source>
         <translation>Manuell ausfüllen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="473"/>
+        <location filename="../ui/reference_entry_editor.py" line="477"/>
         <source>extreme min</source>
         <translation>extrem min</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="474"/>
+        <location filename="../ui/reference_entry_editor.py" line="478"/>
         <source>typical min</source>
         <translation>typisch min</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="475"/>
+        <location filename="../ui/reference_entry_editor.py" line="479"/>
         <source>mean</source>
         <translation>Mittelwert</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="476"/>
+        <location filename="../ui/reference_entry_editor.py" line="480"/>
         <source>typical max</source>
         <translation>typisch max</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="477"/>
+        <location filename="../ui/reference_entry_editor.py" line="481"/>
         <source>extreme max</source>
         <translation>extrem max</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="508"/>
+        <location filename="../ui/reference_entry_editor.py" line="512"/>
         <source>if reported</source>
         <translation>falls angegeben</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="539"/>
+        <location filename="../ui/reference_entry_editor.py" line="543"/>
         <source>Typical min/max is not a 5–95% percentile range. Leave the mean empty unless the source states one — a range midpoint is not a mean.</source>
         <translation>Typisch min/max ist kein 5–95%-Perzentilintervall. Lass den Mittelwert leer, sofern die Quelle keinen angibt – die Mitte eines Bereichs ist kein Mittelwert.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="582"/>
+        <location filename="../ui/reference_entry_editor.py" line="590"/>
         <source>Individual spore measurements (paste a block from Excel/CSV)</source>
         <translation>Einzelne Sporenmessungen (Block aus Excel/CSV einfügen)</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="629"/>
+        <location filename="../ui/reference_entry_editor.py" line="641"/>
         <source>Publication</source>
         <translation>Publikation</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="638"/>
+        <location filename="../ui/reference_entry_editor.py" line="650"/>
         <source>Search existing publications by title, authors, or citation key</source>
         <translation>Vorhandene Publikationen nach Titel, Autor oder Zitatschlüssel durchsuchen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="648"/>
+        <location filename="../ui/reference_entry_editor.py" line="660"/>
         <source>New publication…</source>
         <translation>Neue Publikation…</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="650"/>
+        <location filename="../ui/reference_entry_editor.py" line="662"/>
         <source>Create a new publication in the reference library.</source>
         <translation>Neue Publikation in der Referenzbibliothek anlegen.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="672"/>
+        <location filename="../ui/reference_entry_editor.py" line="688"/>
         <source>Name exactly as published (e.g., as written in the publication)</source>
         <translation>Name genau wie veröffentlicht (z.&#x202f;B. wie in der Publikation geschrieben)</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="681"/>
+        <location filename="../ui/reference_entry_editor.py" line="697"/>
         <source>Name as published:</source>
         <translation>Name wie veröffentlicht:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="685"/>
+        <location filename="../ui/reference_entry_editor.py" line="701"/>
         <source>Page, figure, table, plate, or section</source>
         <translation>Seite, Abbildung, Tabelle, Tafel oder Abschnitt</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="687"/>
+        <location filename="../ui/reference_entry_editor.py" line="703"/>
         <source>Locator:</source>
         <translation>Fundstelle:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="699"/>
+        <location filename="../ui/reference_entry_editor.py" line="715"/>
         <source>The observation&apos;s taxon is not linked to a species in the database, so this reference is saved under the name as published only. Link the taxon in Edit to connect it.</source>
         <translation>Das Taxon der Beobachtung ist nicht mit einer Art in der Datenbank verknüpft, daher wird diese Referenz nur unter dem veröffentlichten Namen gespeichert. Verknüpfe das Taxon unter Bearbeiten, um sie der Art zuzuordnen.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="732"/>
+        <location filename="../ui/reference_entry_editor.py" line="748"/>
         <source>Data</source>
         <translation>Daten</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="738"/>
+        <location filename="../ui/reference_entry_editor.py" line="754"/>
         <source>Use existing measurement set</source>
         <translation>Vorhandenen Messsatz verwenden</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="740"/>
+        <location filename="../ui/reference_entry_editor.py" line="756"/>
         <source>Enter new data</source>
         <translation>Neue Daten eingeben</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="750"/>
+        <location filename="../ui/reference_entry_editor.py" line="766"/>
         <source>Filter existing sets by locator, kind, or raw expression…</source>
         <translation>Vorhandene Sätze nach Ort, Art oder Rohausdruck filtern…</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="759"/>
+        <location filename="../ui/reference_entry_editor.py" line="775"/>
         <source>Locator</source>
         <translation>Fundstelle</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="759"/>
+        <location filename="../ui/reference_entry_editor.py" line="775"/>
         <source>Kind</source>
         <translation>Art</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="759"/>
+        <location filename="../ui/reference_entry_editor.py" line="775"/>
         <source>Raw expression</source>
         <translation>Originalangabe</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1114"/>
+        <location filename="../ui/reference_entry_editor.py" line="1237"/>
         <source>This version cannot store these reported statistics, so this entry cannot be saved as it stands:</source>
         <translation>Diese Version kann diese angegebenen Statistiken nicht speichern, deshalb lässt sich der Eintrag so nicht speichern:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1132"/>
+        <location filename="../ui/reference_entry_editor.py" line="1255"/>
         <source>Saving changes one thing:</source>
         <translation>Das Speichern ändert eine Sache:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="675"/>
+        <location filename="../ui/reference_entry_editor.py" line="2106"/>
+        <source>Could not open the publication editor.</source>
+        <translation>Der Publikationseditor konnte nicht geöffnet werden.</translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_entry_editor.py" line="691"/>
         <source>The exact name used in the publication. This can be an old synonym, spelling variant, or historical combination — separate from the reference taxon.</source>
         <translation>Der genaue Name, der in der Publikation verwendet wird. Das kann ein altes Synonym, eine Schreibvariante oder eine historische Kombination sein – unabhängig vom Referenztaxon.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="691"/>
+        <location filename="../ui/reference_entry_editor.py" line="707"/>
         <source>This reference is not linked to a species in the database. Choose a reference taxon above to link it; otherwise it is saved under the name as published only.</source>
         <translation>Diese Referenz ist mit keiner Art in der Datenbank verknüpft. Wähle oben ein Referenztaxon, um sie zu verknüpfen; sonst wird sie nur unter dem veröffentlichten Namen gespeichert.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1090"/>
+        <location filename="../ui/reference_entry_editor.py" line="1213"/>
         <source>Also reported:</source>
         <extracomment>Grid columns, left to right: extreme min, typical min, mean, typical max, extreme max. Rows come from ``_MINMAX_ROW_BY_DIMENSION``.</extracomment>
         <translation>Ebenfalls angegeben:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1160"/>
+        <location filename="../ui/reference_entry_editor.py" line="1283"/>
         <source>{metric}: drop the range interpretation</source>
         <translation>{metric}: Bereichsauslegung entfernen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1165"/>
+        <location filename="../ui/reference_entry_editor.py" line="1288"/>
         <source>The source does not actually state what this range means. Removes the tag and keeps the numbers.</source>
         <translation>Die Quelle gibt gar nicht an, was dieser Bereich bedeutet. Entfernt das Tag und behält die Zahlen.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1177"/>
+        <location filename="../ui/reference_entry_editor.py" line="1300"/>
         <source>Discard all reported statistics</source>
         <translation>Alle angegebenen Statistiken verwerfen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1192"/>
+        <location filename="../ui/reference_entry_editor.py" line="1315"/>
         <source>{metric} range interpretation dropped. The measured values are unchanged.</source>
         <translation>{metric}-Bereichsauslegung entfernt. Die gemessenen Werte sind unverändert.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1211"/>
+        <location filename="../ui/reference_entry_editor.py" line="1334"/>
         <source>Reported statistics discarded. The measured values are unchanged.</source>
         <translation>Angegebene Statistiken verworfen. Die gemessenen Werte sind unverändert.</translation>
     </message>
@@ -12091,110 +12061,82 @@ Dadurch werden auch alle zugehörigen Bilder und Messungen gelöscht.</translati
         <translation>Abbrechen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1333"/>
+        <location filename="../ui/reference_entry_editor.py" line="1456"/>
         <source>Nothing parsed.</source>
         <translation>Nichts eingelesen.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1349"/>
+        <location filename="../ui/reference_entry_editor.py" line="1472"/>
         <source>Parsed:</source>
         <translation>Eingelesen:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1361"/>
+        <location filename="../ui/reference_entry_editor.py" line="1484"/>
         <source>Paste a measurement string first.</source>
         <translation>Fügen Sie zuerst einen Messstring ein.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1368"/>
+        <location filename="../ui/reference_entry_editor.py" line="1491"/>
         <source>Parsing failed — manual entry preserved.</source>
         <translation>Einlesen fehlgeschlagen — manuelle Eingabe beibehalten.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1373"/>
+        <location filename="../ui/reference_entry_editor.py" line="1496"/>
         <source>Parsed — review and edit before saving.</source>
         <translation>Eingelesen — vor dem Speichern prüfen und bearbeiten.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1435"/>
+        <location filename="../ui/reference_entry_editor.py" line="1558"/>
         <source>Measurement sets for this taxon already in this publication: {count}. To use one, tick it in the Add reference list.</source>
         <translation>Messsätze für dieses Taxon, die diese Publikation bereits enthält: {count}. Um einen davon zu verwenden, hake ihn unter Referenz hinzufügen an.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1468"/>
+        <location filename="../ui/reference_entry_editor.py" line="1591"/>
         <source>Length and width swapped.</source>
         <translation>Länge und Breite vertauscht.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1562"/>
+        <location filename="../ui/reference_entry_editor.py" line="1685"/>
         <source>Reference points</source>
         <translation>Referenzpunkte</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1636"/>
-        <location filename="../ui/reference_create_dialog.py" line="141"/>
+        <location filename="../ui/reference_entry_editor.py" line="1032"/>
         <source>Several publications match this name — choose one from the list.</source>
         <translation>Mehrere Publikationen passen zu diesem Namen — wähle eine aus der Liste.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1642"/>
-        <source>Choose a publication</source>
-        <translation>Publikation wählen</translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_entry_editor.py" line="1650"/>
-        <location filename="../ui/reference_entry_editor.py" line="1669"/>
-        <location filename="../ui/reference_entry_editor.py" line="1710"/>
-        <source>Missing Data</source>
-        <translation>Fehlende Daten</translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_entry_editor.py" line="1651"/>
+        <location filename="../ui/reference_entry_editor.py" line="1767"/>
         <source>Select an existing measurement set or switch to &quot;Enter new data&quot;.</source>
         <translation>Wähle einen vorhandenen Messsatz aus oder wechsle zu „Neue Daten eingeben“.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1683"/>
-        <source>Reported statistics cannot be saved yet</source>
-        <translation>Angegebene Statistiken können noch nicht gespeichert werden</translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_entry_editor.py" line="1686"/>
+        <location filename="../ui/reference_entry_editor.py" line="1800"/>
         <source>This version cannot store everything this source reports, and saving it would change what the entry claims:</source>
         <translation>Diese Version kann nicht alles speichern, was diese Quelle angibt, und das Speichern würde ändern, was der Eintrag aussagt:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1695"/>
+        <location filename="../ui/reference_entry_editor.py" line="1809"/>
         <source>Remove what this entry cannot carry and save the measured values on their own: “Correct interpretation” drops a range interpretation, a median and a standard deviation, and a mean reported as an interval is cleared by emptying its Mean field.</source>
         <translation>Entferne, was dieser Eintrag nicht tragen kann, und speichere die gemessenen Werte allein: „Auslegung korrigieren“ verwirft eine Bereichsauslegung, einen Median und eine Standardabweichung; ein als Intervall angegebener Mittelwert wird gelöscht, indem du sein Feld „Mittelwert“ leerst.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1711"/>
+        <location filename="../ui/reference_entry_editor.py" line="1827"/>
         <source>Enter at least one reference or Parmasto value.</source>
-        <translation>Enter at least one reference or Parmasto value.</translation>
+        <translation>Gib mindestens einen Referenz- oder Parmasto-Wert ein.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1727"/>
+        <location filename="../ui/reference_entry_editor.py" line="1843"/>
         <source>No publication selected</source>
         <translation>Keine Publikation ausgewählt</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1728"/>
+        <location filename="../ui/reference_entry_editor.py" line="1844"/>
         <source>No publication is selected. Save as a legacy-only reference (no library entry, no observation attachment)?</source>
         <translation>Es ist keine Veröffentlichung ausgewählt. Als reine Legacy-Referenz speichern (kein Bibliothekseintrag, kein Beobachtungsanhang)?</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1991"/>
-        <source>New publication</source>
-        <translation>Neue Publikation</translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_entry_editor.py" line="1992"/>
-        <source>Reference library editor is unavailable: {error}</source>
-        <translation>Referenzbibliothek-Editor ist nicht verfügbar: {error}</translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_entry_editor.py" line="2003"/>
+        <location filename="../ui/reference_entry_editor.py" line="2119"/>
         <source>Untitled reference</source>
         <translation>Unbenannte Referenz</translation>
     </message>
@@ -12209,7 +12151,7 @@ Dadurch werden auch alle zugehörigen Bilder und Messungen gelöscht.</translati
         <translation>Delete the selected stored reference?</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1670"/>
+        <location filename="../ui/reference_entry_editor.py" line="1786"/>
         <source>Enter at least one length and width value.</source>
         <translation>Bitte mindestens einen Längen- und Breitenwert eingeben.</translation>
     </message>
@@ -12257,22 +12199,22 @@ Dadurch werden auch alle zugehörigen Bilder und Messungen gelöscht.</translati
         <translation>Zum Diagramm hinzufügen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_create_dialog.py" line="154"/>
+        <location filename="../ui/reference_create_dialog.py" line="148"/>
         <source>Step 1 of 2: Source</source>
         <translation>Schritt 1 von 2: Quelle</translation>
     </message>
     <message>
-        <location filename="../ui/reference_create_dialog.py" line="154"/>
+        <location filename="../ui/reference_create_dialog.py" line="148"/>
         <source>Step 2 of 2: Measurements</source>
         <translation>Schritt 2 von 2: Messungen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_create_dialog.py" line="167"/>
+        <location filename="../ui/reference_create_dialog.py" line="161"/>
         <source>Choose the publication the measurements come from, or add a new one.</source>
         <translation>Wähle die Publikation, aus der die Messungen stammen, oder füge eine neue hinzu.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_create_dialog.py" line="196"/>
+        <location filename="../ui/reference_create_dialog.py" line="193"/>
         <source>Not saved — nothing was stored in the reference library.</source>
         <translation>Nicht gespeichert – in der Referenzbibliothek wurde nichts abgelegt.</translation>
     </message>
@@ -12371,98 +12313,98 @@ Dadurch werden auch alle zugehörigen Bilder und Messungen gelöscht.</translati
         <translation>Zur aktiven Beobachtung hinzufügen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2452"/>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2577"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2454"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2579"/>
         <source>Select a publication to see its treatments.</source>
         <translation>Wähle eine Veröffentlichung aus, um ihre Behandlungen anzuzeigen.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2464"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2466"/>
         <source>No treatments yet — use &quot;New treatment…&quot; to add one.</source>
         <translation>Noch keine Behandlungen – füge mit „Neue Behandlung…“ eine hinzu.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2471"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2473"/>
         <source>(unnamed treatment)</source>
         <translation>(unbenannte Behandlung)</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2599"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2601"/>
         <source>Type: {type}</source>
         <translation>Typ: {type}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2600"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2602"/>
         <source>Title: {title}</source>
         <translation>Titel: {title}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2603"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2605"/>
         <source>Year: {year}</source>
         <translation>Jahr: {year}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2631"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2633"/>
         <source>Citation key: {value}</source>
         <translation>Zitierschlüssel: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2605"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2607"/>
         <source>Container: {value}</source>
         <translation>Behälter: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2607"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2609"/>
         <source>Edition: {value}</source>
         <translation>Ausgabe: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2609"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2611"/>
         <source>Volume: {value}</source>
         <translation>Band: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2611"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2613"/>
         <source>Issue: {value}</source>
         <translation>Problem: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2613"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2615"/>
         <source>Pages: {value}</source>
         <translation>Seiten: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2615"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2617"/>
         <source>Publisher: {value}</source>
         <translation>Herausgeber: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2617"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2619"/>
         <source>Place: {value}</source>
         <translation>Ort: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2619"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2621"/>
         <source>DOI: {value}</source>
         <translation>DOI: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2621"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2623"/>
         <source>ISBN: {value}</source>
         <translation>ISBN: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2623"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2625"/>
         <source>URL: {value}</source>
         <translation>URL: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2625"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2627"/>
         <source>Language: {value}</source>
         <translation>Sprache: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2627"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2629"/>
         <source>Citation override: {value}</source>
         <translation>Zitatüberschreibung: {value}</translation>
     </message>
@@ -12487,36 +12429,36 @@ Dadurch werden auch alle zugehörigen Bilder und Messungen gelöscht.</translati
         <translation>Meine geteilten Referenzen…</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2422"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2424"/>
         <source>Missing bibliographic fields (derived).</source>
         <translation>Fehlende bibliografische Felder (abgeleitet).</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2632"/>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2670"/>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2770"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2634"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2672"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2772"/>
         <source>Revision: {value}</source>
         <translation>Revision: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2633"/>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2671"/>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2771"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2635"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2673"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2773"/>
         <source>UUID: {value}</source>
         <translation>UUID: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2653"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2655"/>
         <source>Name as published: {value}</source>
         <translation>Name wie veröffentlicht: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2669"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2671"/>
         <source>Taxon id: {value}</source>
         <translation>Taxon-ID: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2657"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2659"/>
         <source>Pages: {a}-{b}</source>
         <translation>Seiten: {a}-{b}</translation>
     </message>
@@ -12526,194 +12468,194 @@ Dadurch werden auch alle zugehörigen Bilder und Messungen gelöscht.</translati
         <translation>Technische Details</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2398"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2400"/>
         <source>Could not load the publications.</source>
         <translation>Die Veröffentlichungen konnten nicht geladen werden.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2460"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2462"/>
         <source>Could not load the treatments.</source>
         <translation>Die Behandlungen konnten nicht geladen werden.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2663"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2665"/>
         <source>Locator: {value}</source>
         <translation>Standort: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2665"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2667"/>
         <source>Notes: {value}</source>
         <translation>Hinweise: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2686"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2688"/>
         <source>Reported statistics: unreadable ({error})</source>
         <translation>Angegebene Statistiken: nicht lesbar ({error})</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2695"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2697"/>
         <source>Reported meaning: {tags}</source>
         <translation>Angegebene Bedeutung: {tags}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2703"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2705"/>
         <source>Also reported: {values}</source>
         <translation>Ebenfalls angegeben: {values}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2720"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2722"/>
         <source>Measurement set — {kind}</source>
         <translation>Messsatz – {kind}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2731"/>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2764"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2733"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2766"/>
         <source>Data kind: {value}</source>
         <translation>Datenart: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2734"/>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2766"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2736"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2768"/>
         <source>Raw expression: {value}</source>
         <translation>Rohausdruck: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2737"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2739"/>
         <source>Length min</source>
         <translation>Länge min</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2738"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2740"/>
         <source>Length core min</source>
         <translation>Länge Kern min</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2739"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2741"/>
         <source>Length core max</source>
         <translation>Länge Kern max</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2740"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2742"/>
         <source>Length max</source>
         <translation>Länge max</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2741"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2743"/>
         <source>Length mean</source>
         <translation>Länge Mittelwert</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2742"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2744"/>
         <source>Width min</source>
         <translation>Breite min</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2743"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2745"/>
         <source>Width core min</source>
         <translation>Breite Kern min</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2744"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2746"/>
         <source>Width core max</source>
         <translation>Breite Kern max</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2745"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2747"/>
         <source>Width max</source>
         <translation>Breite max</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2746"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2748"/>
         <source>Width mean</source>
         <translation>Breite Mittelwert</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2747"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2749"/>
         <source>Q min</source>
         <translation>Q min</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2748"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2750"/>
         <source>Q core min</source>
         <translation>Q Kern min</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2749"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2751"/>
         <source>Q core max</source>
         <translation>Q Kern max</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2750"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2752"/>
         <source>Q mean</source>
         <translation>Q Mittelwert</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2751"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2753"/>
         <source>Q max</source>
         <translation>Q max</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2752"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2754"/>
         <source>Sample size</source>
         <translation>Probengröße</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2753"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2755"/>
         <source>Specimen count</source>
         <translation>Probenanzahl</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2761"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2763"/>
         <source>Raw points: {count} entries</source>
         <translation>Rohpunkte: {count}-Einträge</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2779"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2781"/>
         <source>This measurement set is not plottable yet: it lacks a drawable length/width rectangle, a complete mean pair, or valid raw points.</source>
         <translation>Dieser Maßsatz ist noch nicht plottbar: Es fehlen ein zeichnbares Längen-/Breitenrechteck, ein vollständiges Mittelwertpaar oder gültige Rohpunkte.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2854"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2856"/>
         <source>measurement set</source>
         <translation>Messdatensatz</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2860"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2862"/>
         <source>taxon treatment</source>
         <translation>Taxonbehandlung</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2866"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2868"/>
         <source>reference work</source>
         <translation>Referenzwerk</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2874"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2876"/>
         <source>Delete library item</source>
         <translation>Bibliothekseintrag löschen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2876"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2878"/>
         <source>Delete this {item}? This also deletes any unreferenced items nested beneath it.</source>
         <translation>Diese {item} löschen? Dadurch werden auch alle darunterliegenden, nicht verwendeten Einträge gelöscht.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2888"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2890"/>
         <source>Could not delete this library item. It may be attached to an observation.</source>
         <translation>Der Bibliothekseintrag konnte nicht gelöscht werden. Er ist möglicherweise mit einer Beobachtung verknüpft.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2905"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2907"/>
         <source>Compared</source>
         <translation>Verglichen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2906"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2908"/>
         <source>Supports identification</source>
         <translation>Stützt die Bestimmung</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="2907"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2909"/>
         <source>Contradicts</source>
         <translation>Widerspricht</translation>
     </message>
@@ -13952,12 +13894,12 @@ Kopien, die andere Nutzer bereits erstellt haben, und was andere bereits herunte
 <context>
     <name>SporeDataTable</name>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="117"/>
+        <location filename="../ui/reference_entry_editor.py" line="119"/>
         <source>Length (μm)</source>
         <translation>Länge (μm)</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="117"/>
+        <location filename="../ui/reference_entry_editor.py" line="119"/>
         <source>Width (μm)</source>
         <translation>Breite (μm)</translation>
     </message>
