@@ -155,7 +155,8 @@ PREFERENCES_IDS = {
     "preferences.profile-not-synced-de",
     "preferences.publishing-login-failed", "preferences.publishing-login-failed-dark",
     "preferences.cloud-login-failed", "preferences.credential-prompt-missing-nb",
-    "preferences.credential-prompt-missing-de",
+    "preferences.credential-prompt-missing-de", "preferences.profile-not-loaded-nb",
+    "preferences.profile-not-loaded-de",
 }
 ALL_IDS = (
     REFERENCE_IDS

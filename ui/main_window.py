@@ -93,6 +93,55 @@ def _has_active_or_reloadable_cloud_session(settings, cloud_client) -> bool:
     return bool((access_token and user_id) or refresh_token)
 
 
+# The Sporely Cloud account the profile's username, display name and bio
+# belong to: set when that account's profile loads or is saved to it. Signing
+# in to another account replaces them with its profile, blanks included; until
+# its profile loads, Save keeps them on this computer. Empty: typed before any
+# sign-in, kept where the first account has none and sent to it. While the
+# text changes hands it is "pending", which is no account's: a failure between
+# writing the text and its account leaves text that is replaced on the next
+# load and never sent.
+PROFILE_CLOUD_USER_ID_SETTING = "profile_cloud_user_id"
+_PROFILE_OWNER_PENDING = "pending"
+
+
+def _profile_text_owner(hub) -> str:
+    """Whose text Preferanser's profile fields hold.
+
+    Read when the fields are filled and then kept with them, so switching
+    databases while Preferanser is open does not change whose text it is.
+    """
+    owner = getattr(hub, "_profile_text_owner", None)
+    if owner is None:
+        owner = str(SettingsDB.get_setting(PROFILE_CLOUD_USER_ID_SETTING, "") or "").strip()
+        hub._profile_text_owner = owner
+    return owner
+
+
+def _set_profile_text_owner(hub, user_id: str) -> None:
+    hub._profile_text_owner = user_id
+    SettingsDB.set_setting(PROFILE_CLOUD_USER_ID_SETTING, user_id)
+
+
+def _store_profile_with_owner(hub, owner: str, store_profile) -> None:
+    """Write the profile's text and whose it is so that a failure is safe.
+
+    "pending" first, then the text, then the account: interrupted anywhere,
+    the stored text belongs to no account (replaced on the next load, never
+    sent). Written to the current database, which may not be the one the
+    fields came from (Preferanser › Database switches it).
+    """
+    SettingsDB.set_setting(PROFILE_CLOUD_USER_ID_SETTING, _PROFILE_OWNER_PENDING)
+    store_profile()
+    _set_profile_text_owner(hub, owner)
+
+
+def _profile_text_belongs_to_another_account(hub, user_id: str) -> bool:
+    owner = _profile_text_owner(hub)
+    user_id = str(user_id or "").strip()
+    return bool(owner and user_id and owner != user_id)
+
+
 def _clear_cached_cloud_avatar(owner) -> None:
     """Prevent a signed-out corner from being repainted with an old avatar."""
     if hasattr(owner, "_avatar_pixmap_cached"):
@@ -1096,6 +1145,8 @@ class SettingsHubDialog(QDialog):
         self._profile_bio.setPlaceholderText(self.tr("Short bio"))
         self._profile_bio.setFixedHeight(90)
         self._profile_avatar_url = str(profile.get("avatar_url") or "").strip()
+        self._profile_text_owner = None
+        _profile_text_owner(self)  # whose text the fields now hold
         form.addRow(self.tr("Username"), self._profile_username)
         form.addRow(self.tr("Display name"), self._profile_name)
         form.addRow(self.tr("Email"), self._profile_email)
@@ -2105,9 +2156,18 @@ class SettingsHubDialog(QDialog):
         display_name = str(cloud_profile.get("display_name") or "").strip()
         bio = str(cloud_profile.get("bio") or "").strip()
         avatar_url = str(cloud_profile.get("avatar_url") or "").strip()
-        if username:
+        # The fields follow the account: another account's give way to this
+        # one's profile, blanks included. The account's own (or text typed
+        # before any sign-in) stay where its profile has none.
+        replace_all = cloud_profile_loaded and _profile_text_belongs_to_another_account(self, user_id)
+        new_owner = user_id if (cloud_profile_loaded and user_id) else _profile_text_owner(self)
+        if new_owner != _profile_text_owner(self):
+            # The fields change hands below: until the new account is
+            # recorded they are no account's, here as in the database.
+            self._profile_text_owner = _PROFILE_OWNER_PENDING
+        if username or replace_all:
             self._profile_username.setText(username)
-        if display_name:
+        if display_name or replace_all:
             self._profile_name.setText(display_name)
         if account_email:
             self._profile_email.setText(account_email)
@@ -2117,7 +2177,7 @@ class SettingsHubDialog(QDialog):
         if profile_error:
             profile_tooltip = f"{profile_tooltip}\n\n{profile_error}"
         self._profile_email.setToolTip(profile_tooltip)
-        if bio:
+        if bio or replace_all:
             self._profile_bio.setPlainText(bio)
         if avatar_url or cloud_profile_loaded:
             # The signed-in account's photo, or none: the previous account's
@@ -2126,14 +2186,21 @@ class SettingsHubDialog(QDialog):
         elif user_id and f"/avatars/{user_id}/" not in str(self._profile_avatar_url or ""):
             # Not loaded: keep the photo only if it is this account's.
             self._profile_avatar_url = ""
-        SettingsDB.set_profile(
-            self._profile_name.text().strip(),
-            self._profile_email.text().strip(),
-            self._profile_bio.toPlainText().strip(),
-            self._profile_username.text().strip().lstrip("@"),
-            self._profile_avatar_url,
+        _store_profile_with_owner(
+            self,
+            new_owner,
+            lambda: SettingsDB.set_profile(
+                self._profile_name.text().strip(),
+                self._profile_email.text().strip(),
+                self._profile_bio.toPlainText().strip(),
+                self._profile_username.text().strip().lstrip("@"),
+                self._profile_avatar_url,
+            ),
         )
-        self._cloud_profile_loaded_user_id = user_id
+        if cloud_profile_loaded and user_id:
+            # Only a profile that loaded counts: after a failure, the next
+            # refresh tries again.
+            self._cloud_profile_loaded_user_id = user_id
         self._render_profile_avatar()
         if cloud_dialog is not None and hasattr(cloud_dialog, "_update_cloud_account_summary_labels"):
             cloud_dialog._update_cloud_account_summary_labels()
@@ -2434,7 +2501,11 @@ class SettingsHubDialog(QDialog):
         email = self._profile_email_for_save()
         bio = self._profile_bio.toPlainText().strip()
         avatar_url = str(getattr(self, "_profile_avatar_url", "") or "").strip()
-        SettingsDB.set_profile(name, email, bio, username, avatar_url)
+        _store_profile_with_owner(
+            self,
+            _profile_text_owner(self),
+            lambda: SettingsDB.set_profile(name, email, bio, username, avatar_url),
+        )
         self._profile_changed = True
         parent = self.parent()
         if parent and hasattr(parent, "_update_measure_copyright_overlay"):
@@ -2443,13 +2514,27 @@ class SettingsHubDialog(QDialog):
             parent._update_corner_ui()
         client = self._get_cloud_client()
         if client is not None:
+            client_user_id = str(getattr(client, "user_id", "") or "").strip()
+            if _profile_text_belongs_to_another_account(self, client_user_id):
+                # Still another account's text: this account's profile has not
+                # loaded (it replaces them when it does).
+                self._show_profile_notice(
+                    self.tr(
+                        "Saved on this computer only: your Sporely Cloud profile has not "
+                        "loaded yet, so nothing was sent. Reopen Preferences to load it."
+                    ),
+                    "warning",
+                )
+                return False
             try:
                 client.update_profile(
                     username=username,
                     display_name=name,
                     bio=bio,
                 )
-                self._cloud_profile_loaded_user_id = str(getattr(client, "user_id", "") or "").strip()
+                self._cloud_profile_loaded_user_id = client_user_id
+                if client_user_id:  # the fields are now this account's
+                    _set_profile_text_owner(self, client_user_id)
             except Exception as exc:
                 if is_cloud_reauth_required_error(exc) or is_cloud_auth_error(exc):
                     self._mark_cloud_session_needs_reauth(exc)

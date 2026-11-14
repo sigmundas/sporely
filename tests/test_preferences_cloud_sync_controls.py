@@ -779,6 +779,8 @@ def test_cloud_profile_refresh_temporary_refresh_failure_does_not_wipe_or_flag(m
 
     monkeypatch.setattr(cloud_sync.SporelyCloudClient, "clear_session", lambda: clear_calls.append("clear_session"))
     monkeypatch.setattr(main_window.SettingsDB, "set_profile", lambda *args, **kwargs: None)
+    monkeypatch.setattr(main_window.SettingsDB, "get_setting", lambda key, default=None: default)
+    monkeypatch.setattr(main_window.SettingsDB, "set_setting", lambda *args, **kwargs: None)
     monkeypatch.setattr(main_window, "get_app_settings", lambda: {"cloud_user_email": "sigmund.as@gmail.com"})
     monkeypatch.setattr(
         main_window, "update_app_settings", lambda payload: settings_payload.update(payload)

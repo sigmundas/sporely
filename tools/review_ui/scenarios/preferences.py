@@ -72,6 +72,30 @@ def _cloud_login_failed(context: ReviewContext) -> QWidget:
     return hub
 
 
+def _profile_not_loaded_yet(context: ReviewContext) -> QWidget:
+    """Save while the fields are still the previous account's (owner's choice, 10d2).
+
+    The real Save: the profile's text belongs to another account than the one
+    signed in (a stand-in client that never reaches the network), so it is
+    kept on this computer and the notice says why.
+    """
+    from types import SimpleNamespace
+
+    _isolate(context)
+    from database.models import SettingsDB
+    from ui.main_window import PROFILE_CLOUD_USER_ID_SETTING, SettingsHubDialog
+
+    SettingsDB.set_setting(PROFILE_CLOUD_USER_ID_SETTING, "review-account-a")
+    hub = SettingsHubDialog(context.host, start_page=SettingsHubDialog.PAGE_PROFILE)
+    hub.show()
+    _settle(0.3)
+    hub._get_cloud_client = lambda: SimpleNamespace(user_id="review-account-b")
+    hub._profile_name.setText("Anna Andersen")
+    hub._save_profile()
+    _settle(0.2)
+    return hub
+
+
 def _credential_prompt_missing(context: ReviewContext) -> QWidget:
     """The Artportalen credential prompt after OK with nothing filled in (stage 10d2).
 
@@ -129,6 +153,18 @@ def register_preferences_scenarios(registry: ScenarioRegistry) -> None:
             locale="nb_NO",
         )
     )
+    for locale, viewport in (("nb_NO", (960, 680)), ("de_DE", (720, 600))):
+        registry.register(
+            ReviewScenario(
+                id=f"preferences.profile-not-loaded-{locale[:2]}",
+                group="preferences",
+                title=f"Preferanser › Profile: Save before the account's profile loaded ({locale[:2]})",
+                description="The text is still the previous account's: kept on this computer, not sent (10d2 follow-up).",
+                build=_profile_not_loaded_yet,
+                viewport=viewport,
+                locale=locale,
+            )
+        )
     for locale in ("nb_NO", "de_DE"):
         registry.register(
             ReviewScenario(
