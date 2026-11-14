@@ -2913,6 +2913,7 @@ class ObservationsTab(QWidget):
         status_progress_layout.addWidget(self.status_progress_text)
         self.status_progress_widget.setVisible(False)
         layout.addWidget(self.status_progress_widget)
+        self._status_progress_home = layout  # Rediger borrows the panel while it shows
 
         left_panel_layout.addStretch()
 
@@ -3735,6 +3736,31 @@ class ObservationsTab(QWidget):
             self.status_progress_widget.setVisible(visible)
         if not visible:
             self._set_status_progress_cancel_visible(False)
+
+    @staticmethod
+    def _move_status_progress(widget, layout, index: int) -> None:
+        hidden = widget.isHidden()
+        layout.insertWidget(index, widget)
+        widget.setHidden(hidden)  # a new parent hides it: a running sync keeps showing
+
+    def lend_status_progress(self, layout, index: int) -> None:
+        """Rediger shows the cloud sync progress (and its Cancel) while it is on screen.
+
+        It is a tab of its own, so a sync started from Preferanser while it
+        shows would otherwise run with nothing on screen.
+        """
+        widget = getattr(self, "status_progress_widget", None)
+        if widget is None or layout.indexOf(widget) >= 0:
+            return
+        self._move_status_progress(widget, layout, index)
+
+    def reclaim_status_progress(self) -> None:
+        widget = getattr(self, "status_progress_widget", None)
+        home = getattr(self, "_status_progress_home", None)
+        if widget is None or home is None or home.indexOf(widget) >= 0:
+            return
+        # Back below the bottom bar whose place it takes.
+        self._move_status_progress(widget, home, home.indexOf(self.status_label) + 1)
 
     def _set_status_progress_cancel_visible(self, visible: bool) -> None:
         if hasattr(self, "status_progress_cancel_btn"):

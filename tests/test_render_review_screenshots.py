@@ -138,6 +138,7 @@ MODE_BAR_IDS = {
     "images.files-microscope", "images.files-info",
     "images.preferences-image-import", "images.preferences-image-import-de",
     "edit.rediger", "edit.rediger-dark", "edit.rediger-small-de",
+    "edit.sync-progress", "edit.sync-progress-dark", "edit.sync-progress-small-de",
     "images.new", "images.new-dark", "images.new-empty", "images.new-small-de",
     "edit.cloud", "edit.cloud-dark", "edit.cloud-small-de",
 }

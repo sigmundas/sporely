@@ -588,6 +588,12 @@ class EditObservationPage(QWidget):
             lambda paths: self._to_editor("_on_details_dialog_gallery_selection_changed", paths)
         )
 
+    def claim_sync_progress(self) -> None:
+        """The cloud sync progress shows here, above the form's bottom bar, while Rediger shows."""
+        lend = getattr(self._observations_tab, "lend_status_progress", None)
+        if callable(lend):
+            lend(self._layout, self._layout.indexOf(self.strip_splitter) + 1)
+
     def holds_shared_strip(self) -> bool:
         return self._holds_strip
 

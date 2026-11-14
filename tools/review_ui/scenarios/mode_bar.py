@@ -218,10 +218,14 @@ def _images_new(context: ReviewContext, *, size: tuple[int, int] = (1500, 950), 
     return host
 
 
-def _edit_mode(context: ReviewContext, *, size: tuple[int, int] = (1500, 950), typed: bool = False) -> QWidget:
+def _edit_mode(
+    context: ReviewContext, *, size: tuple[int, int] = (1500, 950), typed: bool = False, syncing: bool = False,
+) -> QWidget:
     """Rediger in place (stage 9g2): Edit in the mode bar shows the form as a mode.
 
     ``typed``: a change was made and saved (the status reads “Saved”).
+    ``syncing``: a cloud download runs (started from Preferanser); its
+    progress shows above the form's bottom bar. No sync runs: the panel is set.
     """
     from database.models import ImageDB
     from ui.main_window import MainWindow
@@ -250,6 +254,11 @@ def _edit_mode(context: ReviewContext, *, size: tuple[int, int] = (1500, 950), t
         page = window.edit_page
         page.editor().location_input.setText("Lade, Trondheim")
         page.save_now()
+    if syncing:
+        tab._set_status_progress_visible(True)
+        tab._set_status_progress_cancel_visible(True)
+        tab.status_progress_cancel_btn.setEnabled(True)
+        tab._set_status_progress(tab.tr("Preparing Download from Cloud..."), 3, 10)
     _settle(0.4)
     return host
 
@@ -490,6 +499,31 @@ def register_mode_bar_scenarios(registry: ScenarioRegistry) -> None:
             title="Rediger, a cloud-only row, small window (de)",
             description="German strings in a 1100 × 720 window (stage 9g4c).",
             build=lambda context: _edit_cloud(context, size=(1100, 720)),
+            viewport=(1100, 720),
+            locale="de_DE",
+        )
+    )
+    for theme in ("light", "dark"):
+        suffix = "" if theme == "light" else "-dark"
+        registry.register(
+            ReviewScenario(
+                id=f"edit.sync-progress{suffix}",
+                group="mode-bar",
+                title=f"Rediger during a cloud download (nb{', dark' if theme == 'dark' else ''})",
+                description="The cloud sync progress shows in Rediger, above the form's bottom bar.",
+                build=lambda context: _edit_mode(context, syncing=True),
+                viewport=(1500, 950),
+                locale="nb_NO",
+                theme=theme,
+            )
+        )
+    registry.register(
+        ReviewScenario(
+            id="edit.sync-progress-small-de",
+            group="mode-bar",
+            title="Rediger during a cloud download, small window (de)",
+            description="German strings in a 1100 × 720 window.",
+            build=lambda context: _edit_mode(context, size=(1100, 720), syncing=True),
             viewport=(1100, 720),
             locale="de_DE",
         )

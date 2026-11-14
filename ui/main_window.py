@@ -14299,6 +14299,17 @@ class MainWindow(GeometryMixin, QMainWindow):
             if len(sizes) == 2 and position == 1 and sum(sizes) > height:
                 splitter.setSizes([sum(sizes) - height, height])
 
+    def _place_sync_progress(self, index: int) -> None:
+        """Rediger is a tab of its own: the cloud sync progress goes with it."""
+        edit_page = getattr(self, "edit_page", None)
+        tab = getattr(self, "observations_tab", None)
+        if edit_page is None or tab is None:
+            return
+        if index == self.EDIT_PAGE:
+            edit_page.claim_sync_progress()
+        elif hasattr(tab, "reclaim_status_progress"):
+            tab.reclaim_status_progress()
+
     def _resync_measure_strip(self) -> None:
         """Mål took the strip: show the active observation if it shows another."""
         gallery = self.measure_gallery
@@ -14311,6 +14322,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Handle tab changes for analysis/measure."""
         _t0 = time.perf_counter()
         self._place_shared_strip(index)
+        self._place_sync_progress(index)
         self._refresh_new_observation_header()
         if index == 0 and hasattr(self, "_sync_observations_tab_publish_state"):
             self._sync_observations_tab_publish_state(self.active_observation_id)
