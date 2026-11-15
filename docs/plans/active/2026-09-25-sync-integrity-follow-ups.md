@@ -1,8 +1,18 @@
 # Sync and privacy integrity follow-ups (from the taxonomy-v2 closeout)
 
-Status: planned, not started. Each item is its own stage with its own
-reproduction, fix, review and (where it touches auth/RLS/visibility/deletion)
-security review.
+Status (checked against both repositories' `main` on 2026-11-15): items 1, 3
+and 4 have landed; items 2 and 5 are open.
+
+- 1: sporely-web migration `20260925160000_enforce_spore_child_image_ownership.sql`.
+- 3: `feature/sync-persist-remote-only-fields`, merged at `53f94b2`.
+- 4: `feature/stage-c-identity-clear-v2`, merged. The round-1 branch
+  `feature/stage-c-identity-clear` is superseded and was never merged.
+- 2: still open. It is the contract's "Known limitation" for single-measurement
+  deletion and is listed in `INBOX.md` among the 1.0.0 review findings.
+- 5: not re-verified against the latest function definitions.
+
+Each item is its own stage with its own reproduction, fix, review and (where it
+touches auth/RLS/visibility/deletion) security review.
 
 Found while auditing and fixing observation 917 during the taxonomy-v2
 closeout (sporely-py `feature/taxonomy-v2-identity-reconciliation` at

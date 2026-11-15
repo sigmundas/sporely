@@ -1,6 +1,6 @@
 # Desktop UI redesign
 
-Status: **direction approved; stage 0 in review (sigmundas/sporely#65).** Rewritten 2026-11-08
+Status: **direction approved; stage 0 and P1 merged and released in desktop 1.0.0; P2 is next.** Rewritten 2026-11-08
 against `main` @ `a6d2376` to follow the owner's plan doc, then updated with
 the owner's answers the same day.
 
@@ -660,8 +660,8 @@ test status.
 
 | Stage | PR | Merge | Status |
 | --- | --- | --- | --- |
-| 0 | sigmundas/sporely#65 | — | Agent-verified (tests, inspected renderer screenshots); owner tested it 2026-11-08 and said to go on; merge not yet done |
-| P1 | sigmundas/sporely#67 | — | Agent-verified (tests, inspected renderer screenshots); no production code; based on the stage 0 branch |
+| 0 | sigmundas/sporely#65 | `a682f6c` (2026-11-09) | Agent-verified (tests, inspected renderer screenshots); owner tested it 2026-11-08 and said to go on; released in desktop 1.0.0 |
+| P1 | sigmundas/sporely#67 | `3162501` (2026-11-09) | Agent-verified (tests, inspected renderer screenshots); no production code |
 
 Found during stage 0, not fixed there (rule 1):
 
