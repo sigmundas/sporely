@@ -820,6 +820,21 @@ happens to use. If the ownership lookup fails, the desktop does not link. To
 move a database to a new account, use Reset Cloud Sync, which clears the link
 and every local `cloud_id`.
 
+Because the link belongs to the profile, switching the profile to another
+database folder clears it (`forget_linked_cloud_user_id`), and the next sync
+applies the first-link check to the newly opened database. Moving the same
+database file to a new folder keeps the link.
+
+A token refresh never overwrites a session written while its request was in
+flight. Every session write (sign-in, a saved refresh, sign-out) starts a new
+session generation, and a refresh saves its rotated tokens only if the
+generation has not changed since it read the stored session. After a sign-out
+or a sign-in to another account the refreshing client stops; a newer session of
+the same account is adopted instead of overwritten. A client loaded from the
+stored session before a sign-out never refreshes afterwards: with no stored
+session, the profile is signed out. A fresh sign-in whose credentials are not
+saved yet may still refresh.
+
 ## Keep image decisions explicit
 
 The Observations and Measure gallery checkbox represents the desired Sporely Cloud state only:

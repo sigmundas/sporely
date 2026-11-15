@@ -5,6 +5,21 @@ Items here are not approved implementation plans.
 Add a note under the nearest heading, or use “Unsorted / needs review” when its home is unclear.
 
 ## Cloud sync / recovery
+- Open findings from the pre-release Codex review of desktop 1.0.0 (2026-11-15), verified against the code; the owner chose to release with them open:
+  - An edit committed while a push is in flight can lose its dirty flag: the push marks the observation synced by id only (`cloud_sync.py` mark-synced after `push_observation`, `models.update_observation_sync_state`). A reliable guard needs a local revision column, which is a SQLite schema change.
+  - Observation PATCHes have no version precondition, so a web/Android edit between the conflict read and the PATCH is overwritten (already listed in `docs/verification/2026-10-desktop-metadata-known-risks.md`).
+  - Deleting a single synced measurement records no cloud deletion intent; the next pull brings it back (contract "Known limitation").
+  - Deep measurement verification can clear `deleted_at` on a microscope image deleted on the web before the pull records the deletion (`measurement_reconcile.py` restore loop; contradicts `cloud-sync-architecture.md` "never un-deleted").
+  - Pull passes cloud NULL scale/objective/stain to `ImageDB.update_image`, where None means "unchanged", while the baseline stores the NULL; a later push restores the stale value (known-risks doc).
+  - Reset Cloud Sync clears observation links but leaves reference-library rows owned by the old account, so reference sync stays blocked after signing in to another account (fails closed).
+  - Reference reconciliation commits across two ATTACHed WAL databases, which SQLite does not make crash-atomic.
+  - Hard cloud observation deletion removes media before the database rows, the reverse of contract rule 6; the durable delete intent makes it retryable, but the order disagrees with the contract.
+  - Bundle import: calibration metadata paths other than `images[].path` (`working_path`, `auto_images`, asset metadata) keep the exporter's paths.
+  - A database-folder switch does not pause a running sync; a worker verified against the old database can open the new one.
+  - Switching back to a database re-runs the first-link check, which refuses the owner if every sampled synced observation was deleted in the cloud.
+  - Whole-snapshot `save_app_settings(settings)` callers can still write back settings read before a sign-out (`update_app_settings` is serialized).
+  - Legacy `database_path` move in Database settings replaces an existing `mushrooms.db` in the target folder (`Path.replace`).
+  - Two strict xfails from the Live Lab tests: the last objective is lost on restart unless it sorts first, and Live Lab captures carry no `session_id`.
 - Value-identical image metadata PATCHes: syncs of the identity backfill logged "metadata patch … source bytes unchanged" on observations whose stored image baselines did not change (456, 460, 462, 502, 505, 442), followed by a child-change pull. The contract forbids no-op cloud writes (they advance the child-change cursor). Find which field the PATCH sends and skip it when the cloud already matches.
 - The two copies of `docs/supabase-sync-contract.md` (sporely-py and sporely-web `main`) differ by about 600 lines that predate 2026-10-19 (for example the personal-copy provenance paragraph and the pulled-identity paragraph). Reconcile them in one docs change.
 - Sync summary counters mislead: "touched N dirty observation(s) with no real change" ignores identity RPCs, and `measurement push … pushed=N` counts unchanged rows.

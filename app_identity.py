@@ -205,7 +205,10 @@ def migrate_app_settings_file() -> None:
             settings[key] = new_value
             updated = True
     if updated:
-        settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+        # Owner-only: the settings may hold cloud tokens.
+        from utils.private_files import write_private_json
+
+        write_private_json(settings_path, settings, indent=2)
 
 
 def migrate_database_paths() -> None:

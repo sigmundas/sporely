@@ -1,7 +1,6 @@
 """Database migration script to update schema."""
 import json
 import sqlite3
-import shutil
 from database.schema import (
     ensure_calibration_assets_table,
     ensure_calibration_uuid_column,
@@ -34,12 +33,29 @@ _DEFAULT_CONTRAST_METHODS = [
 ]
 
 
+def snapshot_sqlite_database(source_path, backup_path) -> None:
+    """Copy a SQLite database with the backup API.
+
+    The database runs in WAL mode, so committed changes can still sit in the
+    ``-wal`` sidecar; copying only the main file would leave them out.
+    """
+    source = sqlite3.connect(source_path, timeout=10)
+    destination = sqlite3.connect(backup_path)
+    try:
+        source.backup(destination)
+        # The copy is one standalone file, without sidecars.
+        destination.execute("PRAGMA journal_mode=DELETE")
+    finally:
+        destination.close()
+        source.close()
+
+
 def backup_database():
     """Create a backup of the database."""
     database_path = get_database_path()
     if database_path.exists():
         backup_path = database_path.with_suffix('.db.backup')
-        shutil.copy2(database_path, backup_path)
+        snapshot_sqlite_database(database_path, backup_path)
         print(f"Backup created at: {backup_path}")
         return True
     return False

@@ -14,6 +14,7 @@ from urllib.parse import urlencode
 import requests
 
 from utils.oauth_loopback import LoopbackCallbackServer, OAuthCallbackPayload
+from utils.private_files import write_private_json
 
 __all__ = ["INatOAuthClient", "OAuthCallbackPayload"]
 
@@ -57,8 +58,8 @@ class INatOAuthClient:
     def _save_tokens(self) -> None:
         self.token_file.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = self.token_file.with_suffix(self.token_file.suffix + ".tmp")
-        with open(tmp_path, "w", encoding="utf-8") as handle:
-            json.dump(self._tokens, handle, indent=2)
+        # Owner-only from creation, not only after the rename.
+        write_private_json(tmp_path, self._tokens, indent=2)
         os.replace(tmp_path, self.token_file)
         try:
             os.chmod(self.token_file, 0o600)

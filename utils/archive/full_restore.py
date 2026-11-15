@@ -18,6 +18,7 @@ from typing import Callable
 from zipfile import BadZipFile, ZipFile
 
 from utils.archive.full_backup import BackupResult, create_full_backup
+from utils.private_files import write_private_text
 from utils.archive.inventory import MAIN_DATABASE_TABLES, REFERENCE_DATABASE_TABLES, SettingPolicy, app_setting_policy, database_setting_policy, qsettings_policy
 from utils.archive.manifest import ArchiveManifest
 from utils.archive.paths import safe_staging_destination, validate_zip_entries
@@ -565,9 +566,11 @@ def prepare_full_restore(
         verify_sqlite_integrity(main_db)
         verify_sqlite_integrity(ref_db)
         payload.mkdir()
-        (payload / "app_settings.json").write_text(
+        # Owner-only: the merged settings carry the cloud tokens, and the
+        # swap copy keeps this mode on the installed file.
+        write_private_text(
+            payload / "app_settings.json",
             json.dumps(merged_settings, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-            encoding="utf-8",
         )
         shutil.copy2(main_db, payload / "mushrooms.db")
         shutil.copy2(ref_db, payload / "reference_values.db")

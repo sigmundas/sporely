@@ -236,7 +236,8 @@ def _app_setting_literal_writes(path: Path) -> set[str]:
         if not isinstance(node, ast.Call) or not node.args or not isinstance(node.args[0], ast.Dict):
             continue
         name = getattr(node.func, "attr", None) or getattr(node.func, "id", None)
-        if name not in {"update_app_settings", "save_app_settings"}:
+        # _write_cloud_session_settings: cloud_sync's session-generation writer.
+        if name not in {"update_app_settings", "save_app_settings", "_write_cloud_session_settings"}:
             continue
         for key in node.args[0].keys:
             if isinstance(key, ast.Constant) and isinstance(key.value, str):
