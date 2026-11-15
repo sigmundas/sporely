@@ -168,14 +168,6 @@ def test_objective_choice_is_saved(qtbot, profile):
     assert SettingsDB.get_setting(tab.SETTING_LAST_OBJECTIVE) == "100X"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Open question (P1): filling the objective list selects the first "
-        "objective and saves it over the stored choice before reading it, so "
-        "only an objective that sorts first survives a restart."
-    ),
-)
 def test_objective_choice_survives_a_restart(qtbot, profile):
     tab = _make_tab(qtbot)
     _choose(qtbot, tab.objective_combo, "100X")

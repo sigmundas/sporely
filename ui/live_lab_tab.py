@@ -7237,6 +7237,9 @@ class LiveLabTab(QWidget):
             return current_path == str(image_path)
 
     def _populate_objective_combo(self) -> None:
+        # Read the stored choice first: adding the first item emits
+        # currentIndexChanged, which saves that item over the stored choice.
+        saved = str(SettingsDB.get_setting(self.SETTING_LAST_OBJECTIVE, "") or "").strip()
         self.objective_combo.clear()
         adder = getattr(self, "_add_choice_item", None)
         objectives = load_objectives()
@@ -7259,7 +7262,6 @@ class LiveLabTab(QWidget):
                 )
             else:
                 self.objective_combo.addItem(label, key)
-        saved = str(SettingsDB.get_setting(self.SETTING_LAST_OBJECTIVE, "") or "").strip()
         if saved:
             index = self.objective_combo.findData(saved)
             if index >= 0:
