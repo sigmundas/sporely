@@ -5,6 +5,8 @@ import json
 import hashlib
 import os
 import sqlite3
+import stat
+import sys
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -163,6 +165,9 @@ def test_restore_keeps_this_machines_auth_method_with_its_tokens(installation, t
     assert restored["cloud_auth_method"] == "oauth"
     assert restored["reference_client_device_id"] == "22222222-2222-4222-8222-222222222222"
     assert restored["ui_theme"] == "dark"
+    if sys.platform != "win32":
+        # The installed settings carry the tokens: owner-only, like save_app_settings.
+        assert stat.S_IMODE(os.stat(schema.SETTINGS_PATH).st_mode) == 0o600
 
 
 def test_restore_clears_orf_original_excluded_by_backup_policy(installation, tmp_path):
