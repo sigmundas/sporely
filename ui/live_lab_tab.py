@@ -7237,6 +7237,9 @@ class LiveLabTab(QWidget):
             return current_path == str(image_path)
 
     def _populate_objective_combo(self) -> None:
+        # Read the stored choice first: adding the first item emits
+        # currentIndexChanged, which saves that item over the stored choice.
+        saved = str(SettingsDB.get_setting(self.SETTING_LAST_OBJECTIVE, "") or "").strip()
         self.objective_combo.clear()
         adder = getattr(self, "_add_choice_item", None)
         objectives = load_objectives()
@@ -7259,7 +7262,6 @@ class LiveLabTab(QWidget):
                 )
             else:
                 self.objective_combo.addItem(label, key)
-        saved = str(SettingsDB.get_setting(self.SETTING_LAST_OBJECTIVE, "") or "").strip()
         if saved:
             index = self.objective_combo.findData(saved)
             if index >= 0:
@@ -7775,11 +7777,12 @@ class LiveLabTab(QWidget):
         # Seed the microscope-state shadow from the current sidebar; every
         # subsequent capture will refresh it. Sidebar starts unbound.
         self._sidebar_binds_to_selection = False
+        # Assign the id before the snapshot so captures inherit it.
+        self._session_id = uuid4().hex
         try:
             self._session_microscope_state = dict(self._current_lab_metadata() or {})
         except Exception:
             self._session_microscope_state = {}
-        self._session_id = uuid4().hex
         self._active_session_mode = selected_mode
         self._session_stop_pending = False
         self._session_stop_processed_raw_capture_ids.clear()
