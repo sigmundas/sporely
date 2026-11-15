@@ -129,3 +129,72 @@ def test_a_failed_retry_keeps_the_intent_for_the_next_sync(two_desktops, tmp_pat
 
 def test_pending_delete_retry_is_a_pull_only_blocked_write(two_desktops):
     assert "delete_cloud_observation" in cloud_sync._PULL_ONLY_BLOCKED_CLIENT_METHODS
+
+
+def _observations_tab_delete_cloud_row(client, monkeypatch, tmp_path, cloud_id: str) -> list[str]:
+    """Run the Observations tab's production delete of a cloud-only row.
+
+    Only the widget plumbing the delete does not depend on is stubbed (tr,
+    the cache folder); the client is the shared fake cloud's real client.
+    """
+    from functools import partial
+
+    from ui.observations_tab import ObservationsTab
+
+    monkeypatch.setattr(
+        cloud_sync.SporelyCloudClient, "from_stored_credentials", classmethod(lambda cls: client)
+    )
+    tab = SimpleNamespace(
+        tr=lambda text: text,
+        _cloud_observation_cache_dir=lambda cid: tmp_path / "cloud-cache" / str(cid),
+    )
+    tab._delete_cloud_copy_for_local_observation_cloud_id = partial(
+        ObservationsTab._delete_cloud_copy_for_local_observation_cloud_id, tab
+    )
+    return ObservationsTab._delete_cloud_observation_row(tab, {"cloud_id": cloud_id})
+
+
+def _cloud_only_observation(cloud: ChildCloud, tmp_path) -> str:
+    """An observation in the cloud that this desktop holds no row for."""
+    obs_id, cloud_id = _uploaded_observation(cloud, tmp_path)
+    ObservationDB.delete_observation(obs_id)
+    cloud.requests.clear()
+    return cloud_id
+
+
+def test_a_failed_cloud_only_delete_keeps_its_intent_and_finishes_on_the_next_sync(
+    two_desktops, tmp_path, monkeypatch
+):
+    cloud = ChildCloud()
+    cloud_id = _cloud_only_observation(cloud, tmp_path)
+    client = cloud.client()
+
+    def cut_off(_cloud_id):
+        raise cloud_sync.CloudSyncError("observation row delete failed after media removal")
+    monkeypatch.setattr(client, "delete_cloud_observation", cut_off)
+
+    failures = _observations_tab_delete_cloud_row(client, monkeypatch, tmp_path, cloud_id)
+
+    assert failures and cloud_id in failures[0]
+    assert cloud_sync.pending_observation_deletes() == {cloud_id: client.user_id}
+    assert [str(r["id"]) for r in cloud.rows("observations")] == [cloud_id]
+
+    cloud_sync.sync_all(cloud.client(), pull_only=True, materialize_remote_images=False)
+    assert _local_rows_for(cloud_id) == [], "Download from Cloud does not import it meanwhile"
+
+    cloud_sync.sync_all(cloud.client(), materialize_remote_images=False, full_pull=False)
+
+    assert cloud.rows("observations") == [], "the next sync finished the delete"
+    assert cloud_sync.pending_observation_deletes() == {}
+    assert _local_rows_for(cloud_id) == []
+
+
+def test_a_completed_cloud_only_delete_leaves_no_intent(two_desktops, tmp_path, monkeypatch):
+    cloud = ChildCloud()
+    cloud_id = _cloud_only_observation(cloud, tmp_path)
+
+    failures = _observations_tab_delete_cloud_row(cloud.client(), monkeypatch, tmp_path, cloud_id)
+
+    assert failures == []
+    assert cloud.rows("observations") == []
+    assert cloud_sync.pending_observation_deletes() == {}
