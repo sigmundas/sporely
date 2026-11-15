@@ -54,7 +54,8 @@ $files = @(
     "ui\\export_image_dialog.py",
     "ui\\dialog_helpers.py",
     "ui\\observation_list.py",
-    "ui\\cloud_sync_dialog.py"
+    "ui\\cloud_sync_dialog.py",
+    "ui\\qt_standard_texts.py"
 )
 
 & $lupdateCmd $files -no-obsolete -ts i18n\\Sporely_nb_NO.ts i18n\\Sporely_sv_SE.ts i18n\\Sporely_de_DE.ts
