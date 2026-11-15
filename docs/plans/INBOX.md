@@ -128,8 +128,8 @@ Source: former `PLAN.md`.
 The reference-library plan is complete (`docs/plans/completed/2026-08-05-reference-library-and-public-plots.md`); revisit its deferred items before planning new reference work.
 
 ## Testing / infrastructure
-- `tests/test_render_review_screenshots.py::test_default_renderer_emits_central_manifest_and_all_established_states` times out at its 120 s limit (the full renderer takes several minutes) and the file is excluded from CI. Tracked as redesign prep P3. The other failures noted 2026-10-19 (registry tests, the Live Lab keyboard test, taxonomy probes) pass as of 2026-11-08; one probe is an expected failure.
-- `pytest-qt` (4.5.0) is pinned in CI but in no requirements file; a fresh `.venv` errors on the missing `qapp` fixture. Tracked as redesign prep P6.
+- `tests/test_render_review_screenshots.py::test_default_renderer_emits_central_manifest_and_all_established_states` times out at its 120 s limit: the renderer's `reference-library` group alone takes about 180 s. CI skips the file. Noted in the UI redesign plan's P1 findings; no stage owns it. The other failures noted 2026-10-19 (registry tests, the Live Lab keyboard test, taxonomy probes) pass as of 2026-11-08; one probe is an expected failure.
+- `pytest-qt` (4.5.0) and `pytest` (9.1.1) are pinned only in `.github/workflows/ci.yml`, in no requirements file; a fresh `.venv` errors on the missing `qapp` fixture. No stage owns this.
 
 - Add export coverage for observations, images, measurements, calibrations, reference data, and image files; verify `app_settings.json` and full profile state are excluded.
 - Introduce Ruff.
@@ -166,7 +166,7 @@ Source: former `PLAN.md`.
 - Re-check whether old Phase 7 SQL notes are obsolete after the Supabase baseline reset.
 - Verify whether the earlier AI crop backlog has already been completed before promoting any item.
 
-- Desktop 1.0.0 published 2026-11-15: built by `build-release` on the release PR #71 merge, `60762c2`, which the `v1.0.0` tag points at; published with the CHANGELOG notes as the latest release. It includes the pre-release review fixes (#70) and the stage 0 UI fixes (#65). All four installers were built, the workflow's macOS bundle-version and draft checks passed, and the published checksums equal the draft's. No installer was installed or smoke-tested by hand. The contract mirror sporely-web #55 (docs only) was still open at publication.
+- Desktop 1.0.0 published 2026-11-15: built by `build-release` on the release PR #71 merge, `60762c2`, which the `v1.0.0` tag points at; published with the CHANGELOG notes as the latest release. It includes the pre-release review fixes (#70) and the stage 0 UI fixes (#65). All four installers were built, the workflow's macOS bundle-version and draft checks passed, and the published checksums equal the draft's. No installer was installed or smoke-tested by hand. The contract mirror, sporely-web #55 (docs only), was merged after publication on 2026-11-15.
 - Desktop 0.9.30 published 2026-11-05: the draft was rebuilt from `main` after PR #57 (Sporely app icon; release PR #55, compatibility review #56, name associations #53) and published with the CHANGELOG notes as the latest release. The `v0.9.30` tag points at the PR #57 merge, `260d826`. All four installers built, and the published checksums equal the tested draft's.
   - Verification of the macOS Apple Silicon installer, run in a test profile copied from real data with cloud sign-in blocked:
     - the app reports 0.9.30, bundles `tax-2026.10.31-01` and installs it byte-identical (`sqlite_sha256` `ec19acac…`);
@@ -177,7 +177,7 @@ Source: former `PLAN.md`.
     - the rollback artifacts (the `releases/` frozen sets, the `-11` bundle in `0c54c47`);
     - the `sporely-worktrees/py-name-assoc-smoke` worktree;
     - the test profiles `name-assoc-smoke`, `release-0930-smoke` and `release-0930-smoke2`.
-- Housekeeping: merged branches `fix/backup-dynamic-setting-keys`, `fix/backup-cloud-auth-method` and `ci/release-draft-retarget` (local and remote) can be deleted. The `sporely-worktrees/py-taxonomy-audit` worktree holds uncommitted audit outputs (`relationship-pass/author-standards/`, `decision-package-e/`, `v3/NorTaxa-COL-avvik.xlsx` with an Excel lock file); commit or move them before removing it.
+- Housekeeping: the `sporely-worktrees/py-taxonomy-audit` worktree holds uncommitted audit outputs (`relationship-pass/author-standards/`, `decision-package-e/`, `v3/NorTaxa-COL-avvik.xlsx` with an Excel lock file); commit or move them before removing it.
 - sporely-landing PR #9 (the public "why COL XR" explainer) is still unmerged. R2 has shipped, so it only needs the owner's go-ahead.
 - Free disk space on the development Mac dropped from 53 GB to 27 GB during 2026-10-25. No leftover backup or build files were found; cause unknown.
 
