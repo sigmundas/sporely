@@ -3,6 +3,7 @@ import json
 import re
 import sqlite3
 import shutil
+import threading
 import uuid
 from pathlib import Path
 
@@ -336,15 +337,23 @@ def _load_app_settings() -> dict:
 def get_app_settings() -> dict:
     return _load_app_settings()
 
+# Serializes read-modify-write updates of app_settings.json across threads,
+# so a worker's update cannot write back a snapshot taken before another
+# thread's sign-out (and restore the cleared tokens).
+_APP_SETTINGS_LOCK = threading.RLock()
+
+
 def save_app_settings(settings: dict) -> None:
     # The settings hold the cloud access and refresh tokens.
-    write_private_json(SETTINGS_PATH, settings, indent=2)
+    with _APP_SETTINGS_LOCK:
+        write_private_json(SETTINGS_PATH, settings, indent=2)
 
 def update_app_settings(updates: dict) -> dict:
-    settings = _load_app_settings()
-    settings.update(updates)
-    save_app_settings(settings)
-    return settings
+    with _APP_SETTINGS_LOCK:
+        settings = _load_app_settings()
+        settings.update(updates)
+        save_app_settings(settings)
+        return settings
 
 def get_database_path() -> Path:
     settings = _load_app_settings()
