@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from database.models import SettingsDB
 from database.schema import (
+    DATABASE_PATH,
     get_app_settings,
     save_app_settings,
     get_database_path,
@@ -29,6 +30,13 @@ from database.schema import (
 )
 from database.database_tags import DatabaseTerms
 from .hint_status import HintBar, HintStatusController
+
+
+def _same_file_path(first: Path, second: Path) -> bool:
+    try:
+        return first.resolve(strict=False) == second.resolve(strict=False)
+    except OSError:
+        return first == second
 
 
 class DatabaseSettingsDialog(QDialog):
@@ -350,6 +358,7 @@ class DatabaseSettingsDialog(QDialog):
         settings = get_app_settings()
         db_folder = self.db_path_input.text().strip()
         images_dir = self.images_dir_input.text().strip()
+        previous_db = get_database_path()
 
         old_db_path = settings.get("database_path")
         old_ref_path = settings.get("reference_database_path")
@@ -365,6 +374,21 @@ class DatabaseSettingsDialog(QDialog):
         else:
             settings.pop("images_dir", None)
 
+        if db_folder:
+            new_db_path = Path(db_folder) / "mushrooms.db"
+        elif settings.get("database_path"):
+            new_db_path = Path(settings["database_path"])
+        else:
+            new_db_path = DATABASE_PATH
+        will_move_db = bool(
+            db_folder and old_db_path and Path(old_db_path).exists() and Path(old_db_path) != new_db_path
+        )
+        if not will_move_db and not _same_file_path(previous_db, new_db_path):
+            # Another database: its owner must be checked again before sync.
+            from utils.cloud_sync import drop_linked_cloud_user_id
+
+            drop_linked_cloud_user_id(settings)
+
         save_app_settings(settings)
 
         if db_folder:
@@ -378,6 +402,11 @@ class DatabaseSettingsDialog(QDialog):
                 if old_ref_path and Path(old_ref_path).exists() and Path(old_ref_path) != new_ref:
                     Path(old_ref_path).replace(new_ref)
             except Exception as exc:
+                if will_move_db:
+                    # The database did not move: the new folder holds another one.
+                    from utils.cloud_sync import forget_linked_cloud_user_id
+
+                    forget_linked_cloud_user_id()
                 QMessageBox.warning(self, self.tr("Database Move Failed"), str(exc))
 
         init_database()

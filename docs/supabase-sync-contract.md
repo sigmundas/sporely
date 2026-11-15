@@ -820,6 +820,11 @@ happens to use. If the ownership lookup fails, the desktop does not link. To
 move a database to a new account, use Reset Cloud Sync, which clears the link
 and every local `cloud_id`.
 
+Because the link belongs to the profile, switching the profile to another
+database folder clears it (`forget_linked_cloud_user_id`), and the next sync
+applies the first-link check to the newly opened database. Moving the same
+database file to a new folder keeps the link.
+
 ## Keep image decisions explicit
 
 The Observations and Measure gallery checkbox represents the desired Sporely Cloud state only:

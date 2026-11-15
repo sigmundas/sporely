@@ -37,7 +37,13 @@ from dataclasses import dataclass, field
 import time
 
 from app_identity import app_data_dir, runtime_profile_scope, using_isolated_profile
-from database.schema import get_connection, get_app_settings, get_images_dir, update_app_settings
+from database.schema import (
+    get_app_settings,
+    get_connection,
+    get_images_dir,
+    save_app_settings,
+    update_app_settings,
+)
 from database.models import (
     CLOUD_IMAGE_STATE_DELETED,
     CLOUD_IMAGE_STATE_DELETE_PENDING,
@@ -2015,6 +2021,27 @@ def _save_linked_cloud_user_id(user_id: str) -> None:
     normalized = _normalize_cloud_user_id(user_id)
     if normalized:
         update_app_settings({_SETTING_LINKED_CLOUD_USER_ID: normalized})
+
+
+def drop_linked_cloud_user_id(settings: dict) -> None:
+    """Remove the account link from a settings dict the caller will save.
+
+    The link lives in profile settings, not in the database, so it would
+    otherwise carry over to whatever database the profile opens next and
+    skip the first-link ownership check. Without it, the next sync runs
+    ``_verify_unlinked_database_owner`` against the new database. Dropping
+    it in the same write that switches the database leaves no moment in
+    which the new database is linked to the old account.
+    """
+    settings.pop(_SETTING_LINKED_CLOUD_USER_ID, None)
+
+
+def forget_linked_cloud_user_id() -> None:
+    """Drop the stored account link (see :func:`drop_linked_cloud_user_id`)."""
+    settings = get_app_settings()
+    if _SETTING_LINKED_CLOUD_USER_ID in settings:
+        drop_linked_cloud_user_id(settings)
+        save_app_settings(settings)
 
 
 _FIRST_LINK_OWNERSHIP_SAMPLE = 50
