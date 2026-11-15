@@ -6,7 +6,7 @@ import tempfile
 import zipfile
 import uuid
 from collections.abc import Callable
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from app_identity import app_data_dir, legacy_app_data_dir
 from database.schema import (
@@ -181,13 +181,6 @@ def _upsert_library_row_by_revision(
     return "skipped_stale"
 
 
-def _safe_copy(src: Path, dest: Path) -> Path:
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    if src.exists():
-        shutil.copy2(src, dest)
-    return dest
-
-
 def _relativize_path(path_value: str | None, base_dir: Path) -> str | None:
     if not path_value:
         return path_value
@@ -202,15 +195,6 @@ def _relativize_path(path_value: str | None, base_dir: Path) -> str | None:
         except ValueError:
             return str(path)
     return str(path)
-
-
-def _resolve_archive_path(path_value: str | None, base_dir: Path) -> Path | None:
-    if not path_value:
-        return None
-    path = Path(path_value)
-    if path.is_absolute():
-        return path
-    return base_dir / path
 
 
 def _remap_known_local_path(path: Path) -> Path:
@@ -303,23 +287,96 @@ def _restore_archive_asset(
     copy_file: bool,
     warnings: list[str],
     warning_label: str,
+    copied: dict[Path, Path] | None = None,
 ) -> str | None:
+    """The destination path for a bundle row's asset, copying it when asked.
+
+    The result never points outside ``dest_base_dir``: a refused or missing
+    asset gets an unused placeholder path inside it, which resolves to no
+    file, never to one on the importing computer or to another
+    observation's file of the same name.
+    """
     if not path_value:
         return path_value
-    src_path = _resolve_archive_path(path_value, src_base_dir)
-    if src_path is None:
-        return path_value
-    if src_base_dir in src_path.parents:
-        rel = src_path.relative_to(src_base_dir)
-        dest_path = dest_base_dir / rel
-    else:
-        dest_path = dest_base_dir / src_path.name
-    if not src_path.exists():
+    rel = _bundle_relative_asset_path(path_value)
+    src_path = src_base_dir / rel if rel is not None else None
+    try:
+        inside = src_path is not None and src_path.resolve(strict=False).is_relative_to(
+            src_base_dir.resolve(strict=False)
+        )
+    except OSError:
+        inside = False
+    if not inside:
+        # Keep no path that points outside the images folder: the row keeps
+        # only the bare file name, like a row whose bundled file is missing.
+        warnings.append(f"Skipped unsafe bundled {warning_label} path: {path_value}")
+        return _missing_asset_placeholder(dest_base_dir, path_value)
+    if not src_path.is_file():
         warnings.append(f"Missing bundled {warning_label}: {path_value}")
-        return None
+        return _missing_asset_placeholder(dest_base_dir, path_value)
+    dest_path = dest_base_dir / rel
     if copy_file:
-        _safe_copy(src_path, dest_path)
+        dest_path = _copy_without_overwrite(src_path, dest_path, copied)
     return str(dest_path)
+
+
+def _missing_asset_placeholder(dest_base_dir: Path, path_value: str) -> str:
+    """An absolute path inside the images folder that no file will ever have.
+
+    Rows keep a path (``images.filepath`` is NOT NULL) and the original file
+    name for the owner, while a relative or bare name could resolve to an
+    unrelated file already in the images folder.
+    """
+    name = PureWindowsPath(str(path_value)).name
+    if name in {"", ".", ".."}:
+        name = "missing"
+    return str(dest_base_dir / f".missing-import-{uuid.uuid4().hex}" / name)
+
+
+def _bundle_relative_asset_path(path_value: str) -> Path | None:
+    """Where a bundle row's asset path lives inside the bundle, or None if unsafe.
+
+    A relative path is taken as written and must not climb out with ``..``.
+    An absolute path (older exports kept paths outside the images folder
+    absolute) names a file the export archived as ``images/<name>``; it never
+    names a file on the importing computer.
+    """
+    text = str(path_value)
+    if PureWindowsPath(text).is_absolute() or Path(text).is_absolute():
+        name = PureWindowsPath(text).name
+        if not name or name in {".", ".."}:
+            return None
+        return Path(name)
+    # A Windows export stores relative paths with backslashes, while its zip
+    # members use "/": read both separators on every platform.
+    parts = PureWindowsPath(text).parts
+    if not parts or any(part in {"..", ""} for part in parts):
+        return None
+    return Path(*parts)
+
+
+def _copy_without_overwrite(src: Path, dest: Path, copied: dict[Path, Path] | None = None) -> Path:
+    """Copy src to dest, or to a free sibling name when dest is taken.
+
+    Existing files belong to observations already in this database; an import
+    never replaces or shares them (deleting either observation would remove
+    the other's file, and on a case-insensitive disk two spellings of one
+    name would hide that they share it). Within one import, the same bundled
+    file referenced twice is copied once (``copied``).
+    """
+    if copied is not None and src in copied:
+        return copied[src]
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    candidate = dest
+    counter = 1
+    # is_symlink: a dangling link "does not exist" but copy2 would follow it.
+    while candidate.exists() or candidate.is_symlink():
+        candidate = dest.with_name(f"{dest.stem}_import{counter}{dest.suffix}")
+        counter += 1
+    shutil.copy2(src, candidate)
+    if copied is not None:
+        copied[src] = candidate
+    return candidate
 
 
 def _backfill_imported_image_provenance(
@@ -710,6 +767,8 @@ def import_database_bundle(
         if include_images or include_calibrations:
             dest_images_dir.mkdir(parents=True, exist_ok=True)
         warnings: list[str] = []
+        # One copy per bundled file, however many rows reference it.
+        copied_assets: dict[Path, Path] = {}
 
         src_conn = None
         src_cur = None
@@ -905,6 +964,7 @@ def import_database_bundle(
                     copy_file=include_images,
                     warnings=warnings,
                     warning_label="image file",
+                    copied=copied_assets,
                 )
                 if restored_path is not None:
                     data["filepath"] = restored_path
@@ -916,6 +976,7 @@ def import_database_bundle(
                     copy_file=include_images,
                     warnings=warnings,
                     warning_label="original image file",
+                    copied=copied_assets,
                 )
                 if restored_original is not None:
                     data["original_filepath"] = restored_original
@@ -1017,6 +1078,7 @@ def import_database_bundle(
                     copy_file=True,
                     warnings=warnings,
                     warning_label="calibration image",
+                    copied=copied_assets,
                 )
                 if restored_image is not None:
                     data["image_filepath"] = restored_image
@@ -1037,6 +1099,7 @@ def import_database_bundle(
                                     copy_file=True,
                                     warnings=warnings,
                                     warning_label="calibration auxiliary image",
+                                    copied=copied_assets,
                                 )
                                 if restored_entry is not None:
                                     entry["path"] = restored_entry
@@ -1129,6 +1192,7 @@ def import_database_bundle(
                             copy_file=include_calibrations,
                             warnings=warnings,
                             warning_label="calibration asset file",
+                            copied=copied_assets,
                         )
                         data["original_path"] = _restore_archive_asset(
                             data.get("original_path"),
@@ -1137,6 +1201,7 @@ def import_database_bundle(
                             copy_file=include_calibrations,
                             warnings=warnings,
                             warning_label="calibration asset original file",
+                            copied=copied_assets,
                         )
                         asset_uuid = str(data.get("asset_uuid") or "").strip()
                         if not asset_uuid:
