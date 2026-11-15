@@ -6145,6 +6145,44 @@ loggsession</translation>
     </message>
 </context>
 <context>
+    <name>MAC_APPLICATION_MENU</name>
+    <message>
+        <location filename="../ui/qt_strings.py" line="70"/>
+        <source>Services</source>
+        <translation>Tjänster</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="71"/>
+        <source>Hide %1</source>
+        <translation>Dölj %1</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="72"/>
+        <source>Hide Others</source>
+        <translation>Dölj övriga</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="73"/>
+        <source>Show All</source>
+        <translation>Visa alla</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="74"/>
+        <source>Preferences...</source>
+        <translation>Inställningar…</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="75"/>
+        <source>Quit %1</source>
+        <translation>Avsluta %1</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="76"/>
+        <source>About %1</source>
+        <translation>Om %1</translation>
+    </message>
+</context>
+<context>
     <name>MainWindow</name>
     <message>
         <location filename="../ui/main_window.py" line="5023"/>
@@ -11649,6 +11687,219 @@ Detta kommer också att ta bort alla tillhörande bilder och mätningar.</transl
         <location filename="../ui/publish_notice.py" line="233"/>
         <source>Don&apos;t show this again</source>
         <translation>Visa inte detta igen</translation>
+    </message>
+</context>
+<context>
+    <name>QAbstractSpinBox</name>
+    <message>
+        <location filename="../ui/qt_strings.py" line="66"/>
+        <source>&amp;Select All</source>
+        <translation>Markera &amp;allt</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="67"/>
+        <source>&amp;Step up</source>
+        <translation>&amp;Stega uppåt</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="68"/>
+        <source>Step &amp;down</source>
+        <translation>Stega &amp;nedåt</translation>
+    </message>
+</context>
+<context>
+    <name>QCocoaTheme</name>
+    <message>
+        <location filename="../ui/qt_strings.py" line="44"/>
+        <source>Don&apos;t Save</source>
+        <translation>Spara inte</translation>
+    </message>
+</context>
+<context>
+    <name>QLineEdit</name>
+    <message>
+        <location filename="../ui/qt_strings.py" line="49"/>
+        <source>&amp;Undo</source>
+        <translation>&amp;Ångra</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="50"/>
+        <source>&amp;Redo</source>
+        <translation>&amp;Gör om</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="51"/>
+        <source>Cu&amp;t</source>
+        <translation>Klipp &amp;ut</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="52"/>
+        <source>&amp;Copy</source>
+        <translation>&amp;Kopiera</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="53"/>
+        <source>&amp;Paste</source>
+        <translation>Klistra &amp;in</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="54"/>
+        <source>Delete</source>
+        <translation>Ta bort</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="55"/>
+        <source>Select All</source>
+        <translation>Markera alla</translation>
+    </message>
+</context>
+<context>
+    <name>QMessageBox</name>
+    <message>
+        <location filename="../ui/qt_strings.py" line="46"/>
+        <source>Show Details...</source>
+        <translation>Visa detaljer...</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="47"/>
+        <source>Hide Details...</source>
+        <translation>Dölj detaljer...</translation>
+    </message>
+</context>
+<context>
+    <name>QPlatformTheme</name>
+    <message>
+        <location filename="../ui/qt_strings.py" line="25"/>
+        <source>OK</source>
+        <translation>Ok</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="26"/>
+        <source>Save</source>
+        <translation>Spara</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="27"/>
+        <source>Save All</source>
+        <translation>Spara allt</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="28"/>
+        <source>Open</source>
+        <translation>Öppna</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="29"/>
+        <source>&amp;Yes</source>
+        <translation>&amp;Ja</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="30"/>
+        <source>Yes to &amp;All</source>
+        <translation>Ja till &amp;allt</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="31"/>
+        <source>&amp;No</source>
+        <translation>&amp;Nej</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="32"/>
+        <source>N&amp;o to All</source>
+        <translation>N&amp;ej till allt</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="33"/>
+        <source>Abort</source>
+        <translation>Avbryt</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="34"/>
+        <source>Retry</source>
+        <translation>Försök igen</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="35"/>
+        <source>Ignore</source>
+        <translation>Ignorera</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="36"/>
+        <source>Close</source>
+        <translation>Stäng</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="37"/>
+        <source>Cancel</source>
+        <translation>Avbryt</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="38"/>
+        <source>Discard</source>
+        <translation>Förkasta</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="39"/>
+        <source>Help</source>
+        <translation>Hjälp</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="40"/>
+        <source>Apply</source>
+        <translation>Verkställ</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="41"/>
+        <source>Reset</source>
+        <translation>Nollställ</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="42"/>
+        <source>Restore Defaults</source>
+        <translation>Nollställ till standard</translation>
+    </message>
+</context>
+<context>
+    <name>QWidgetTextControl</name>
+    <message>
+        <location filename="../ui/qt_strings.py" line="57"/>
+        <source>&amp;Undo</source>
+        <translation>&amp;Ångra</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="58"/>
+        <source>&amp;Redo</source>
+        <translation>&amp;Gör om</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="59"/>
+        <source>Cu&amp;t</source>
+        <translation>Klipp &amp;ut</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="60"/>
+        <source>&amp;Copy</source>
+        <translation>&amp;Kopiera</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="61"/>
+        <source>Copy &amp;Link Location</source>
+        <translation>Kopiera &amp;länkplats</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="62"/>
+        <source>&amp;Paste</source>
+        <translation>Klistra &amp;in</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="63"/>
+        <source>Delete</source>
+        <translation>Ta bort</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="64"/>
+        <source>Select All</source>
+        <translation>Markera alla</translation>
     </message>
 </context>
 <context>

@@ -49,6 +49,7 @@ files=(
   "ui/image_gallery_widget.py"
   "ui/export_image_dialog.py"
   "ui/dialog_helpers.py"
+  "ui/qt_strings.py"
 )
 
 if [[ -x ".venv/bin/pyside6-lupdate" ]]; then

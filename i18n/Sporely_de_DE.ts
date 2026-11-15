@@ -6145,6 +6145,44 @@ sitzung starten</translation>
     </message>
 </context>
 <context>
+    <name>MAC_APPLICATION_MENU</name>
+    <message>
+        <location filename="../ui/qt_strings.py" line="70"/>
+        <source>Services</source>
+        <translation>Dienste</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="71"/>
+        <source>Hide %1</source>
+        <translation>%1 ausblenden</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="72"/>
+        <source>Hide Others</source>
+        <translation>Andere ausblenden</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="73"/>
+        <source>Show All</source>
+        <translation>Alle anzeigen</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="74"/>
+        <source>Preferences...</source>
+        <translation>Einstellungen...</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="75"/>
+        <source>Quit %1</source>
+        <translation>%1 beenden</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="76"/>
+        <source>About %1</source>
+        <translation>Über %1</translation>
+    </message>
+</context>
+<context>
     <name>MainWindow</name>
     <message>
         <location filename="../ui/main_window.py" line="5228"/>
@@ -11649,6 +11687,219 @@ Dadurch werden auch alle zugehörigen Bilder und Messungen gelöscht.</translati
         <location filename="../ui/publish_notice.py" line="233"/>
         <source>Don&apos;t show this again</source>
         <translation>Nicht mehr anzeigen</translation>
+    </message>
+</context>
+<context>
+    <name>QAbstractSpinBox</name>
+    <message>
+        <location filename="../ui/qt_strings.py" line="66"/>
+        <source>&amp;Select All</source>
+        <translation>Alles a&amp;uswählen</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="67"/>
+        <source>&amp;Step up</source>
+        <translation>&amp;Inkrementieren</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="68"/>
+        <source>Step &amp;down</source>
+        <translation>&amp;Dekrementieren</translation>
+    </message>
+</context>
+<context>
+    <name>QCocoaTheme</name>
+    <message>
+        <location filename="../ui/qt_strings.py" line="44"/>
+        <source>Don&apos;t Save</source>
+        <translation>Nicht speichern</translation>
+    </message>
+</context>
+<context>
+    <name>QLineEdit</name>
+    <message>
+        <location filename="../ui/qt_strings.py" line="49"/>
+        <source>&amp;Undo</source>
+        <translation>&amp;Rückgängig</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="50"/>
+        <source>&amp;Redo</source>
+        <translation>Wieder&amp;herstellen</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="51"/>
+        <source>Cu&amp;t</source>
+        <translation>&amp;Ausschneiden</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="52"/>
+        <source>&amp;Copy</source>
+        <translation>&amp;Kopieren</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="53"/>
+        <source>&amp;Paste</source>
+        <translation>Einf&amp;ügen</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="54"/>
+        <source>Delete</source>
+        <translation>Löschen</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="55"/>
+        <source>Select All</source>
+        <translation>Alles auswählen</translation>
+    </message>
+</context>
+<context>
+    <name>QMessageBox</name>
+    <message>
+        <location filename="../ui/qt_strings.py" line="46"/>
+        <source>Show Details...</source>
+        <translation>Details einblenden...</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="47"/>
+        <source>Hide Details...</source>
+        <translation>Details ausblenden...</translation>
+    </message>
+</context>
+<context>
+    <name>QPlatformTheme</name>
+    <message>
+        <location filename="../ui/qt_strings.py" line="25"/>
+        <source>OK</source>
+        <translation>OK</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="26"/>
+        <source>Save</source>
+        <translation>Speichern</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="27"/>
+        <source>Save All</source>
+        <translation>Alles speichern</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="28"/>
+        <source>Open</source>
+        <translation>Öffnen</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="29"/>
+        <source>&amp;Yes</source>
+        <translation>&amp;Ja</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="30"/>
+        <source>Yes to &amp;All</source>
+        <translation>Ja, &amp;alle</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="31"/>
+        <source>&amp;No</source>
+        <translation>&amp;Nein</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="32"/>
+        <source>N&amp;o to All</source>
+        <translation>N&amp;ein, keine</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="33"/>
+        <source>Abort</source>
+        <translation>Abbrechen</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="34"/>
+        <source>Retry</source>
+        <translation>Wiederholen</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="35"/>
+        <source>Ignore</source>
+        <translation>Ignorieren</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="36"/>
+        <source>Close</source>
+        <translation>Schließen</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="37"/>
+        <source>Cancel</source>
+        <translation>Abbrechen</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="38"/>
+        <source>Discard</source>
+        <translation>Verwerfen</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="39"/>
+        <source>Help</source>
+        <translation>Hilfe</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="40"/>
+        <source>Apply</source>
+        <translation>Anwenden</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="41"/>
+        <source>Reset</source>
+        <translation>Zurücksetzen</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="42"/>
+        <source>Restore Defaults</source>
+        <translation>Voreinstellungen</translation>
+    </message>
+</context>
+<context>
+    <name>QWidgetTextControl</name>
+    <message>
+        <location filename="../ui/qt_strings.py" line="57"/>
+        <source>&amp;Undo</source>
+        <translation>&amp;Rückgängig</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="58"/>
+        <source>&amp;Redo</source>
+        <translation>Wieder&amp;herstellen</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="59"/>
+        <source>Cu&amp;t</source>
+        <translation>&amp;Ausschneiden</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="60"/>
+        <source>&amp;Copy</source>
+        <translation>&amp;Kopieren</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="61"/>
+        <source>Copy &amp;Link Location</source>
+        <translation>&amp;Link-Adresse kopieren</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="62"/>
+        <source>&amp;Paste</source>
+        <translation>Einf&amp;ügen</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="63"/>
+        <source>Delete</source>
+        <translation>Löschen</translation>
+    </message>
+    <message>
+        <location filename="../ui/qt_strings.py" line="64"/>
+        <source>Select All</source>
+        <translation>Alles auswählen</translation>
     </message>
 </context>
 <context>
