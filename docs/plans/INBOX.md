@@ -19,7 +19,6 @@ Add a note under the nearest heading, or use “Unsorted / needs review” when 
   - Switching back to a database re-runs the first-link check, which refuses the owner if every sampled synced observation was deleted in the cloud.
   - Whole-snapshot `save_app_settings(settings)` callers can still write back settings read before a sign-out (`update_app_settings` is serialized).
   - Legacy `database_path` move in Database settings replaces an existing `mushrooms.db` in the target folder (`Path.replace`).
-  - Two strict xfails from the Live Lab tests: the last objective is lost on restart unless it sorts first, and Live Lab captures carry no `session_id`.
 - Value-identical image metadata PATCHes: syncs of the identity backfill logged "metadata patch … source bytes unchanged" on observations whose stored image baselines did not change (456, 460, 462, 502, 505, 442), followed by a child-change pull. The contract forbids no-op cloud writes (they advance the child-change cursor). Find which field the PATCH sends and skip it when the cloud already matches.
 - The two copies of `docs/supabase-sync-contract.md` (sporely-py and sporely-web `main`) differ by about 600 lines that predate 2026-10-19 (for example the personal-copy provenance paragraph and the pulled-identity paragraph). Reconcile them in one docs change.
 - Sync summary counters mislead: "touched N dirty observation(s) with no real change" ignores identity RPCs, and `measurement push … pushed=N` counts unchanged rows.
