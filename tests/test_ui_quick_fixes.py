@@ -98,6 +98,15 @@ def test_every_ui_module_with_tr_calls_is_scanned_by_lupdate():
     )
 
 
+def test_windows_translation_script_scans_the_same_modules():
+    # Both scripts run lupdate with -no-obsolete, so a module missing from
+    # one of them would have its translations deleted when that script runs.
+    script = (ROOT / "tools" / "update_translations.ps1").read_text(encoding="utf-8")
+    listed = re.search(r"\$files = @\((.*?)\n\)", script, re.S).group(1)
+    windows = {path.replace("\\\\", "/") for path in re.findall(r'"([\w\\]+\.py)"', listed)}
+    assert windows == _scanned_modules()
+
+
 @pytest.mark.parametrize("locale", LANGUAGES)
 def test_translation_catalogue_has_no_unfinished_entries(locale):
     root = ET.parse(ROOT / "i18n" / f"Sporely_{locale}.ts").getroot()
