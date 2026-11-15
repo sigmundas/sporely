@@ -3188,6 +3188,15 @@ def test_checked_metadata_only_anchor_uploads_bytes_and_clears_anchor_state(
         conn.execute(
             "DELETE FROM settings WHERE key = 'artsobs_publish_excluded_image_ids_1'"
         )
+        # The user checked image 11 (no microscope image is checked by
+        # default since 2026-11-15).
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            ("sporely_cloud_image_storage_intent_ids_1", "[11]"),
+        )
+        conn.execute(
+            "DELETE FROM settings WHERE key = 'sporely_cloud_image_storage_excluded_ids_1'"
+        )
         conn.commit()
     anchor = next(row for row in ctx.client.remote_images if row["id"] == "cloud-image-11")
     anchor["storage_path"] = None

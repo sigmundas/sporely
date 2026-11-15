@@ -50,7 +50,6 @@ _PREVIEW_SCALE = 0.40
 _TEXT_SCALE_DEFAULT = 1.0
 _BG_SLOTS_MAX = 3
 _EMPTY_SLOT_ID = "__empty__"
-_PUBLISH_EXCLUDED_SETTING_PREFIX = "artsobs_publish_excluded_image_ids_"
 
 _SLOT_KEYS = ["TL", "TC", "TR", "BL", "BR"]
 _OVERLAY_SLOT_KEYS = ["TL", "TC", "BR"]   # slots used by the 3_overlay layout
@@ -1878,13 +1877,13 @@ class SpeciesPlateDialog(QDialog):
         # ── Load ALL images (no exclusion) ─────────────────────────────────
         # The plate is an observation-level summary, so its panels, its
         # gallery and its spore statistics start from every image of the
-        # observation.  Do not narrow this list with the publication
-        # exclusion set: `artsobs_publish_excluded_image_ids_<obs>` decides
-        # which source image *files* are uploaded to Artsobservasjoner or
-        # iNaturalist, and feeding it in here also dropped those images'
-        # measurements out of `_build_spore_stats()` — an analytical summary
-        # silently narrowed by an upload choice.  A plate that should show
-        # fewer panels needs its own explicit plate state.
+        # observation.  Do not narrow this list with the strip's photo
+        # selection: it decides which source image *files* are kept in
+        # Sporely Cloud and uploaded to Artsobservasjoner or iNaturalist, and
+        # an older publication exclusion fed in here also dropped those
+        # images' measurements out of `_build_spore_stats()` — an analytical
+        # summary silently narrowed by an upload choice.  A plate that should
+        # show fewer panels needs its own explicit plate state.
         all_imgs = list(ImageDB.get_images_for_observation(self._obs_id))
         self._all_images: list[dict] = all_imgs
         self._field_images = [i for i in all_imgs if i.get("image_type") == "field"]
@@ -2473,12 +2472,12 @@ class SpeciesPlateDialog(QDialog):
             self,
             show_delete=False,
             show_badges=True,
-            show_publish_checkbox=True,
-            publish_checkbox_hint=self.tr("Select image for external publishing"),
+            # Which photos are shared is chosen under the observation's
+            # image strip (Vis, Mål); the plate only composes.
+            show_publish_checkbox=False,
         )
         self._gallery.setMaximumHeight(190)
         self._gallery.imageClicked.connect(self._on_gallery_image_clicked)
-        self._gallery.publishSelectionChanged.connect(self._on_gallery_publish_selection_changed)
         right_layout.addWidget(self._gallery)
 
         main_row.addLayout(right_layout, 1)
@@ -2839,7 +2838,6 @@ class SpeciesPlateDialog(QDialog):
         """Rebuild gallery with reuse enabled and used/selected highlights."""
         from ui.image_gallery_widget import ImageGalleryWidget as _IGW
         in_use = self._in_use_image_ids()
-        publish_selected = self._publish_selected_image_ids()
         items = []
         for img in self._all_images:
             if not img.get("filepath"):
@@ -2880,52 +2878,9 @@ class SpeciesPlateDialog(QDialog):
                 # users can tell what's synced without leaving Species Plate.
                 "cloud_id": cloud_id or None,
                 "cloud_uploaded": bool(cloud_id),
-                "publish_selected": bool(img_id is not None and int(img_id) in publish_selected),
-                "publish_selected_default": image_type != "microscope",
             })
         self._gallery.set_items(items)
         self._sync_gallery_selection()
-
-    def _publish_excluded_image_ids(self) -> set[int]:
-        if not self._obs_id:
-            return set()
-        raw = SettingsDB.get_setting(f"{_PUBLISH_EXCLUDED_SETTING_PREFIX}{self._obs_id}", "[]")
-        try:
-            loaded = json.loads(raw or "[]")
-            if isinstance(loaded, list):
-                return {int(value) for value in loaded}
-        except Exception:
-            pass
-        return set()
-
-    def _set_publish_excluded_image_ids(self, excluded_ids: set[int]) -> None:
-        if not self._obs_id:
-            return
-        normalized = sorted({int(value) for value in (excluded_ids or set())})
-        SettingsDB.set_setting(
-            f"{_PUBLISH_EXCLUDED_SETTING_PREFIX}{self._obs_id}",
-            json.dumps(normalized),
-        )
-
-    def _publish_selected_image_ids(self) -> set[int]:
-        all_ids = {
-            int(img.get("id"))
-            for img in self._all_images
-            if img.get("id") is not None
-        }
-        return all_ids - self._publish_excluded_image_ids()
-
-    def _on_gallery_publish_selection_changed(self, selected_ids) -> None:
-        all_ids = {
-            int(img.get("id"))
-            for img in self._all_images
-            if img.get("id") is not None
-        }
-        try:
-            selected = {int(value) for value in (selected_ids or set())}
-        except Exception:
-            selected = set()
-        self._set_publish_excluded_image_ids(all_ids - selected)
 
     # ── Rendering ─────────────────────────────────────────────────────────────
 

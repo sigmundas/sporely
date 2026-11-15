@@ -389,52 +389,6 @@ def sharing_scope_location_public(value: str | None) -> bool:
     return normalize_sharing_scope(value) != SHARING_SCOPE_PRIVATE
 
 
-def _image_microscope_publish_group_key(image: dict | None, objectives: dict | None = None) -> str:
-    if not isinstance(image, dict):
-        return "__unknown__"
-    objective_name = str(image.get("objective_name") or "").strip()
-    if not objective_name:
-        lab_metadata = image.get("lab_metadata")
-        if isinstance(lab_metadata, dict):
-            objective_name = str(lab_metadata.get("objective_name") or "").strip()
-            if not objective_name:
-                microscope_metadata = lab_metadata.get("microscope")
-                if isinstance(microscope_metadata, dict):
-                    objective_name = str(microscope_metadata.get("objective_name") or "").strip()
-    if not objective_name:
-        return "__unknown__"
-    objectives = objectives or load_objectives()
-    objective_key = resolve_objective_key(objective_name, objectives) or objective_name
-    objective = objectives.get(objective_key) if objective_key in objectives else None
-    if objective:
-        label = objective_short_label(objective, objective_key)
-        if label:
-            return label.casefold()
-    match = re.search(r"(\d+(?:\.\d+)?)\s*[xX]", objective_name)
-    if match:
-        return f"{match.group(1)}x".casefold()
-    match = re.search(r"(\d+(?:\.\d+)?)", objective_name)
-    if match:
-        return f"{match.group(1)}x".casefold()
-    return objective_name.casefold() or "__unknown__"
-
-
-def _default_publish_selected_for_new_image(
-    image_type: str | None,
-    microscope_group_key: str | None,
-    selected_microscope_group_keys: set[str],
-) -> tuple[bool, set[str]]:
-    normalized_type = (image_type or "field").strip().lower()
-    if normalized_type == "microscope":
-        normalized_key = str(microscope_group_key or "__unknown__").strip().casefold() or "__unknown__"
-        updated_group_keys = set(selected_microscope_group_keys or set())
-        if normalized_key in updated_group_keys:
-            return False, updated_group_keys
-        updated_group_keys.add(normalized_key)
-        return True, updated_group_keys
-    return True, set(selected_microscope_group_keys or set())
-
-
 _OBSERVATION_STATUS_LABELS = {
     "draft": "Draft",
     "private": "Private",
@@ -4624,6 +4578,28 @@ class ObservationsTab(QWidget):
             )
             return "failed"
 
+        # Only photos checked under the strip go (and are counted); an
+        # unchecked one keeps its pending flag and goes once it is checked.
+        pending_ids_by_observation: dict[int, list[int]] = {}
+        for row in pending_rows or []:
+            try:
+                pending_ids_by_observation.setdefault(
+                    int(row.get("observation_id")), []
+                ).append(int(row.get("image_id")))
+            except (TypeError, ValueError):
+                continue
+        shared_ids: set[int] = set()
+        for pending_obs_id, pending_ids in pending_ids_by_observation.items():
+            shared_ids |= self._shared_image_ids(pending_obs_id, pending_ids)
+
+        def _is_shared(row: dict) -> bool:
+            try:
+                return int(row.get("image_id")) in shared_ids
+            except (TypeError, ValueError):
+                return False
+
+        pending_rows = [row for row in pending_rows or [] if _is_shared(row)]
+
         if not pending_rows:
             return "none"
 
@@ -4753,7 +4729,12 @@ class ObservationsTab(QWidget):
     def _pending_published_image_upload_notice_for_observation(self, observation_id: int) -> tuple[str, str] | None:
         """Return a reminder message for pending Artsobservasjoner web image uploads."""
         try:
-            pending_count = int(ImageDB.get_pending_artsobs_web_upload_count_for_observation(observation_id))
+            pending_count = len(
+                self._shared_image_ids(
+                    observation_id,
+                    ImageDB.get_pending_artsobs_web_upload_image_ids_for_observation(observation_id),
+                )
+            )
         except Exception:
             pending_count = 0
         if pending_count <= 0:
@@ -7940,7 +7921,8 @@ class ObservationsTab(QWidget):
         if not image_id or not obs_id:
             browser.set_publish_state(False, enabled=bool(image_id))
             return
-        excluded = self._publish_excluded_image_ids(int(obs_id))
+        # The strip's checkbox state (what Sporely Cloud keeps and publishing sends).
+        excluded = self._cloud_image_storage_excluded_image_ids(int(obs_id))
         try:
             checked = int(image_id) not in excluded
         except (TypeError, ValueError):
@@ -8420,6 +8402,12 @@ class ObservationsTab(QWidget):
             return
 
         try:
+            requested_ids = {int(image_id) for image_id in image_ids}
+            at_source_ids = {
+                int(image["id"])
+                for image in ImageDB.get_images_for_observation(int(source_observation_id))
+                if image.get("id") is not None and int(image["id"]) in requested_ids
+            }
             moved_count = ImageDB.move_images_to_observation(
                 image_ids,
                 int(source_observation_id),
@@ -8433,12 +8421,42 @@ class ObservationsTab(QWidget):
                 auto_clear_ms=8000,
             )
             return
+        selection_kept = True
+        if moved_count:
+            # The strip's checkbox state goes with the photos (it is kept
+            # per observation), so a checked photo stays checked. Only the
+            # photos that actually moved.
+            try:
+                from utils import cloud_sync as cloud_sync_module
+
+                moved_ids = {
+                    image_id for image_id in at_source_ids
+                    if int((ImageDB.get_image(image_id) or {}).get("observation_id") or 0)
+                    == int(target_observation_id)
+                }
+                cloud_sync_module.carry_cloud_image_storage_intent(
+                    int(source_observation_id),
+                    int(target_observation_id),
+                    moved_ids,
+                )
+            except Exception:
+                selection_kept = False
         self._clear_pending_gallery_move(restore_hint=False)
         self.refresh_observations(restore_selection=False)
         target_row = self._find_table_row_for_observation(int(target_observation_id))
         if target_row >= 0:
             self.table.selectRow(target_row)
         self.set_status_message(self.tr("Ready."), level="info", auto_clear_ms=0)
+        if not selection_kept:
+            self.set_status_message(
+                self.tr(
+                    "Moved {count} images to observation {obs_id}, but could not keep "
+                    "which ones are checked. Check them again under the image strip."
+                ).format(count=moved_count, obs_id=int(target_observation_id)),
+                level="warning",
+                auto_clear_ms=0,
+            )
+            return
         self.set_status_message(
             self.tr("Moved {count} images to observation {obs_id}.").format(
                 count=moved_count,
@@ -8589,8 +8607,6 @@ class ObservationsTab(QWidget):
         if not observation_id or not hasattr(self, "gallery_widget"):
             return
         images = ImageDB.get_images_for_observation(int(observation_id))
-        # Microscope images are unchecked by default; the user opts in per image.
-        self._ensure_microscope_publish_defaults(observation_id, images)
         # Stage 1: seed the cloud-storage-desired excluded set on first load.
         # Idempotent — the sentinel prevents re-initialization.
         try:
@@ -8617,11 +8633,6 @@ class ObservationsTab(QWidget):
         if not self.selected_observation_id:
             return
         images = ImageDB.get_images_for_observation(int(self.selected_observation_id))
-        image_by_id = {
-            int(img.get("id")): dict(img)
-            for img in images
-            if img.get("id") is not None
-        }
         all_ids = {
             int(img.get("id"))
             for img in images
@@ -8655,19 +8666,6 @@ class ObservationsTab(QWidget):
             gallery = getattr(self, "gallery_widget", None)
             if gallery is not None and hasattr(gallery, "refresh_cloud_states"):
                 gallery.refresh_cloud_states(changed_ids)
-        # Once the user has interacted with a microscope image's publish state,
-        # record it as "seeded" so the default (unchecked) is not re-applied
-        # on subsequent gallery loads. This is publication-only bookkeeping —
-        # do not couple it to the cloud-storage desired state.
-        touched_ids = changed_ids
-        touched_microscope_ids = {
-            img_id for img_id in touched_ids
-            if (image_by_id.get(img_id) or {}).get("image_type", "").strip().lower() == "microscope"
-        }
-        if touched_microscope_ids:
-            seeded = self._publish_seeded_microscope_ids(obs_id)
-            seeded.update(touched_microscope_ids)
-            self._set_publish_seeded_microscope_ids(obs_id, seeded)
         if hasattr(self, "_sync_image_browser_publish_state"):
             self._sync_image_browser_publish_state()
         host = self.window()
@@ -8855,19 +8853,44 @@ class ObservationsTab(QWidget):
         display_name = f"{genus} {species} {date}"
         return obs_id, display_name
 
+    @staticmethod
+    def _shared_image_ids(observation_id: int, image_ids) -> set[int]:
+        """The photos checked under the image strip, among ``image_ids``.
+
+        One selection decides both what Sporely Cloud keeps and what
+        publishing sends (owner, 2026-11-15): the checkbox's cloud-storage
+        state, read through the canonical ``cloud_image_bytes_desired`` after
+        the per-image intent ledger is initialized (it is absence-based).
+        """
+        from utils import cloud_sync as cloud_sync_module
+
+        obs_id = int(observation_id)
+        cloud_sync_module._ensure_cloud_image_storage_intent_initialized(obs_id)
+        shared: set[int] = set()
+        for value in image_ids or ():
+            try:
+                image_id = int(value)
+            except (TypeError, ValueError):
+                continue
+            if cloud_sync_module.cloud_image_bytes_desired(obs_id, image_id):
+                shared.add(image_id)
+        return shared
+
     def _collect_artsobs_image_paths(self, observation_id: int) -> list[str]:
         images = ImageDB.get_images_for_observation(observation_id)
-        excluded_ids = self._publish_excluded_image_ids(observation_id)
+        shared_ids = self._shared_image_ids(
+            observation_id,
+            [image.get("id") for image in images if image.get("id") is not None],
+        )
         ordered = []
         seen_paths: set[str] = set()
         for image in images:
             image_id = image.get("id")
-            if image_id is not None:
-                try:
-                    if int(image_id) in excluded_ids:
-                        continue
-                except Exception:
-                    pass
+            try:
+                if image_id is None or int(image_id) not in shared_ids:
+                    continue
+            except (TypeError, ValueError):
+                continue
             # Legacy rows may have NULL image_type.  The galleries and import
             # flow consistently treat those as field images, so external
             # publishing must do the same.
@@ -9313,41 +9336,9 @@ class ObservationsTab(QWidget):
             warnings,
         )
 
-    @staticmethod
-    def _publish_excluded_images_setting_key(observation_id: int | None) -> str:
-        return f"artsobs_publish_excluded_image_ids_{int(observation_id or 0)}"
-
-    @classmethod
-    def _publish_excluded_image_ids(cls, observation_id: int | None) -> set[int]:
-        if not observation_id:
-            return set()
-        key = cls._publish_excluded_images_setting_key(observation_id)
-        raw = SettingsDB.get_setting(key, "[]")
-        try:
-            loaded = json.loads(raw or "[]")
-            if isinstance(loaded, list):
-                return {int(v) for v in loaded}
-        except Exception:
-            pass
-        return set()
-
-    @classmethod
-    def _set_publish_excluded_image_ids(cls, observation_id: int | None, excluded_ids: set[int]) -> None:
-        if not observation_id:
-            return
-        normalized = sorted({int(v) for v in (excluded_ids or set())})
-        key = cls._publish_excluded_images_setting_key(observation_id)
-        try:
-            SettingsDB.set_setting(
-                key,
-                json.dumps(normalized),
-            )
-        except Exception:
-            pass
-
-    # Stage 1: Sporely Cloud image-storage desired state. Separate from the
-    # publication-exclusion key above so the gallery "Keep image in Sporely
-    # Cloud" checkbox no longer overloads Artsobs/iNat publication selection.
+    # Sporely Cloud image-storage desired state: the strip's checkbox. Since
+    # 2026-11-15 publishing reads the same selection (`_shared_image_ids`);
+    # the older `artsobs_publish_excluded_image_ids_<obs>` key is no longer read.
     @staticmethod
     def _cloud_image_storage_excluded_setting_key(observation_id: int | None) -> str:
         from utils.cloud_sync import CLOUD_IMAGE_STORAGE_EXCLUDED_SETTING_PREFIX
@@ -9381,107 +9372,6 @@ class ObservationsTab(QWidget):
             SettingsDB.set_setting(key, json.dumps(normalized))
         except Exception:
             pass
-
-    @staticmethod
-    def _publish_seeded_microscope_ids_key(observation_id: int | None) -> str:
-        return f"artsobs_publish_micro_seeded_ids_{int(observation_id or 0)}"
-
-    @classmethod
-    def _publish_seeded_microscope_ids(cls, observation_id: int | None) -> set[int]:
-        if not observation_id:
-            return set()
-        key = cls._publish_seeded_microscope_ids_key(observation_id)
-        raw = SettingsDB.get_setting(key, "[]")
-        try:
-            loaded = json.loads(raw or "[]")
-            if isinstance(loaded, list):
-                return {int(v) for v in loaded}
-        except Exception:
-            pass
-        return set()
-
-    @classmethod
-    def _set_publish_seeded_microscope_ids(cls, observation_id: int | None, seeded_ids: set[int]) -> None:
-        if not observation_id:
-            return
-        normalized = sorted({int(v) for v in (seeded_ids or set())})
-        key = cls._publish_seeded_microscope_ids_key(observation_id)
-        try:
-            SettingsDB.set_setting(key, json.dumps(normalized))
-        except Exception:
-            pass
-
-    @classmethod
-    def _ensure_microscope_publish_defaults(
-        cls,
-        observation_id: int | None,
-        images: list[dict],
-    ) -> None:
-        """Auto-select one microscope image per magnification group.
-
-        Microscope images default to checked for one image in each magnification
-        group and unchecked for the rest. A per-observation "seeded" set records
-        which microscope IDs the default has already been applied to so a user's
-        later manual changes are not overwritten on the next gallery load.
-        """
-        if not observation_id or not images:
-            return
-        objectives = load_objectives()
-        seeded = cls._publish_seeded_microscope_ids(observation_id)
-        excluded = cls._publish_excluded_image_ids(observation_id)
-        selected_microscope_group_keys: set[str] = set()
-        for img in images:
-            if not isinstance(img, dict):
-                continue
-            image_id = img.get("id")
-            if image_id is None:
-                continue
-            try:
-                img_id = int(image_id)
-            except (TypeError, ValueError):
-                continue
-            image_type = str(img.get("image_type") or "").strip().lower()
-            if image_type != "microscope":
-                continue
-            if img_id in seeded and img_id not in excluded:
-                selected_microscope_group_keys.add(_image_microscope_publish_group_key(img, objectives))
-                continue
-            if img_id in excluded:
-                continue
-        seeded_changed = False
-        excluded_changed = False
-        for img in images:
-            image_id = img.get("id") if isinstance(img, dict) else None
-            if image_id is None:
-                continue
-            try:
-                img_id = int(image_id)
-            except (TypeError, ValueError):
-                continue
-            image_type = (img.get("image_type") or "").strip().lower() if isinstance(img, dict) else ""
-            if image_type != "microscope":
-                continue
-            if img_id in seeded:
-                continue
-            seeded.add(img_id)
-            seeded_changed = True
-            group_key = _image_microscope_publish_group_key(img, objectives)
-            publish_selected, selected_microscope_group_keys = _default_publish_selected_for_new_image(
-                image_type,
-                group_key,
-                selected_microscope_group_keys,
-            )
-            if publish_selected:
-                if img_id in excluded:
-                    excluded.discard(img_id)
-                    excluded_changed = True
-            elif img_id not in excluded:
-                excluded.add(img_id)
-                excluded_changed = True
-        if excluded_changed:
-            cls._set_publish_excluded_image_ids(observation_id, excluded)
-        if seeded_changed:
-            cls._set_publish_seeded_microscope_ids(observation_id, seeded)
 
     @staticmethod
     def _publish_option_enabled(key: str, default: bool = False) -> bool:
@@ -10628,9 +10518,9 @@ class ObservationsTab(QWidget):
             for row in image_rows_list
             if row.get("id") is not None
         }
-        # Do not filter these measurements with _publish_excluded_image_ids().
-        # `artsobs_publish_excluded_image_ids_<obs>` decides which source image
-        # *files* are uploaded to an external target.  The spore mosaic is an
+        # Do not filter these measurements with the strip's photo selection
+        # (`_shared_image_ids()`): it decides which source image *files* are
+        # kept in Sporely Cloud and uploaded to an external target.  The spore mosaic is an
         # observation-level analytical summary: it must be built from every
         # eligible measurement of the observation, whether or not the
         # microscope image a spore happens to sit on was ticked for upload.
@@ -13889,9 +13779,6 @@ class ObservationsTab(QWidget):
         existing_ids = {img.get("id") for img in (existing_images or []) if img.get("id")}
         result_ids = {res.image_id for res in results if res.image_id}
         removed_ids = existing_ids - result_ids
-        existing_publish_excluded_ids = self._publish_excluded_image_ids(obs_id)
-        seed_publish_excluded_ids: set[int] = set(existing_publish_excluded_ids)
-        selected_microscope_group_keys: set[str] = set()
         for image_id in removed_ids:
             ImageDB.delete_image(image_id)
 
@@ -14329,20 +14216,6 @@ class ObservationsTab(QWidget):
                 ),
             )
             result.image_id = image_id
-            if image_id and image_id not in existing_ids:
-                publish_selected, selected_microscope_group_keys = _default_publish_selected_for_new_image(
-                    image_type,
-                    _image_microscope_publish_group_key(
-                        {
-                            "objective_name": objective_name,
-                            "lab_metadata": image_lab_metadata,
-                        },
-                        objectives,
-                    ),
-                    selected_microscope_group_keys,
-                )
-                if not publish_selected:
-                    seed_publish_excluded_ids.add(int(image_id))
             stored_scale_bar_selection = self._scale_scale_bar_selection(
                 getattr(result, "scale_bar_selection", None),
                 resample_factor
@@ -14376,8 +14249,6 @@ class ObservationsTab(QWidget):
             if resampled_path and resampled_path != final_path:
                 cleanup_import_temp_file(filepath, resampled_path, stored_path, output_dir)
 
-        if seed_publish_excluded_ids != existing_publish_excluded_ids:
-            self._set_publish_excluded_image_ids(obs_id, seed_publish_excluded_ids)
 
 
 # Redesign stage 9g1: the dialog lives in its own module; re-exported here for

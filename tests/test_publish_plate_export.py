@@ -28,9 +28,6 @@ class _FakePublishContext:
     def tr(self, text: str) -> str:
         return text
 
-    def _publish_excluded_image_ids(self, observation_id: int) -> set[int]:
-        return set()
-
     def _quantize_png8(self, path) -> None:
         raise AssertionError("Plate exports should stay full-color PNGs.")
 
@@ -189,40 +186,6 @@ def test_publish_plate_export_keeps_full_color_png(monkeypatch, tmp_path):
         assert exported.mode != "P"
 
 
-def test_species_plate_publish_selection_does_not_mutate_cloud_state(monkeypatch):
-    def _unexpected_cloud_mutation(*_args, **_kwargs):
-        raise AssertionError("external selection must not mutate cloud state")
-
-    for method_name in (
-        "queue_image_tombstone_for_local_image",
-        "clear_image_tombstone_by_deleted_cloud_id",
-        "clear_image_cloud_sync_state",
-    ):
-        monkeypatch.setattr(
-            species_plate_dialog.ImageDB,
-            method_name,
-            _unexpected_cloud_mutation,
-        )
-
-    excluded_calls = []
-    dialog = SimpleNamespace(
-        _all_images=[
-            {"id": 1, "cloud_id": "cloud-1"},
-            {"id": 2, "cloud_id": "cloud-2"},
-        ],
-        _set_publish_excluded_image_ids=lambda excluded: excluded_calls.append(
-            set(excluded)
-        ),
-    )
-
-    species_plate_dialog.SpeciesPlateDialog._on_gallery_publish_selection_changed(
-        dialog,
-        {2},
-    )
-
-    assert excluded_calls == [{1}]
-
-
 def test_species_plate_saved_empty_slot_stays_empty_on_reopen(monkeypatch, tmp_path):
     _qapp()
     org = "SporelyTestPlateEmptySlot"
@@ -254,7 +217,7 @@ def test_species_plate_saved_empty_slot_stays_empty_on_reopen(monkeypatch, tmp_p
     monkeypatch.setattr(
         species_plate_dialog.SettingsDB,
         "get_setting",
-        lambda key, default=None: "[2]" if key == "artsobs_publish_excluded_image_ids_91" else default,
+        lambda key, default=None: default,
     )
 
     obs = {"id": 91, "genus": "Agaricus", "species": "campestris"}
@@ -262,7 +225,6 @@ def test_species_plate_saved_empty_slot_stays_empty_on_reopen(monkeypatch, tmp_p
     try:
         gallery_by_id = {item["id"]: item for item in dialog._gallery._items}
         assert set(gallery_by_id) == {1, 2, 3}
-        assert gallery_by_id[2]["publish_selected"] is False
         dialog._slot_images["BR"] = None
         dialog.reject()
     finally:
@@ -281,11 +243,9 @@ def test_species_plate_spore_stats_ignore_publication_exclusion(monkeypatch, tmp
     """Stage 3 audit regression.
 
     The plate's spore statistics line is an observation-level analytical
-    summary.  Selecting only some source images for upload to
-    Artsobservasjoner / iNaturalist must not change it, while the gallery's
-    publish checkboxes must still reflect that selection.  Both sides are
-    asserted here so the exclusion set cannot be routed back into the plate's
-    image list to "fix" one of them.
+    summary.  An older publication exclusion (still in some databases) must
+    not change it, and the plate has no photo selection of its own: which
+    photos are shared is chosen under the observation's image strip.
     """
     _qapp()
     org = "SporelyTestPlateSporeStats"
@@ -359,10 +319,8 @@ def test_species_plate_spore_stats_ignore_publication_exclusion(monkeypatch, tmp
         # the five on the image left out of the upload; calibration excluded.
         assert "n = 12" in dialog._stats_text
         assert {int(img["id"]) for img in dialog._all_images} == {1, 2}
-        # The publication selection itself is still honoured in the gallery.
-        gallery_by_id = {item["id"]: item for item in dialog._gallery._items}
-        assert gallery_by_id[1]["publish_selected"] is True
-        assert gallery_by_id[2]["publish_selected"] is False
+        # No publish checkbox of its own (it would edit nothing that is read).
+        assert dialog._gallery.publish_checkbox_widgets() == []
     finally:
         dialog.reject()
         dialog.deleteLater()

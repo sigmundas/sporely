@@ -649,7 +649,6 @@ def test_prepare_cloud_sync_image_uploads_respects_gallery_checkmarks(tmp_path, 
         tr=lambda text: text,
         _is_main_gui_thread=lambda: True,
         _cloud_sync_upload_policy=lambda: {"uploadMode": "full"},
-        _publish_excluded_image_ids=lambda observation_id: {2},
         _publish_path_key=observations_tab.ObservationsTab._publish_path_key,
         _prepare_clean_cloud_image_file=_fake_prepare_clean_cloud_image_file,
         _cleanup_publish_temp_dir=lambda temp_dir: None,
@@ -701,7 +700,7 @@ def test_cloud_sync_collector_includes_persisted_checked_unmeasured_microscope(t
         lambda observation_id: {},
     )
 
-    fake_tab = SimpleNamespace(_publish_excluded_image_ids=lambda observation_id: set())
+    fake_tab = SimpleNamespace()
     rows = observations_tab.ObservationsTab._collect_cloud_sync_image_rows(fake_tab, 631)
 
     assert [row["id"] for row in rows] == [2]
@@ -741,7 +740,6 @@ def test_prepare_cloud_sync_image_uploads_prefixes_progress_messages(tmp_path, m
         tr=lambda text: text,
         _is_main_gui_thread=lambda: True,
         _cloud_sync_upload_policy=lambda: {"uploadMode": "full"},
-        _publish_excluded_image_ids=lambda observation_id: set(),
         _publish_path_key=observations_tab.ObservationsTab._publish_path_key,
         _prepare_clean_cloud_image_file=_fake_prepare_clean_cloud_image_file,
         _cleanup_publish_temp_dir=lambda temp_dir: None,
@@ -965,8 +963,6 @@ def test_gallery_publish_uncheck_routes_through_cloud_lifecycle(monkeypatch, ima
         _set_cloud_image_storage_excluded_image_ids=lambda obs_id, excluded: calls[
             "excluded"
         ].append((int(obs_id), tuple(sorted(int(v) for v in excluded)))),
-        _publish_seeded_microscope_ids=lambda observation_id: set(),
-        _set_publish_seeded_microscope_ids=lambda observation_id, image_ids: None,
         window=lambda: None,
         parent=lambda: None,
     )
@@ -1023,8 +1019,6 @@ def test_gallery_publish_uncheck_does_not_touch_public_spore_anchor(monkeypatch)
         _set_cloud_image_storage_excluded_image_ids=lambda obs_id, excluded: calls[
             "excluded"
         ].append((int(obs_id), tuple(sorted(int(v) for v in excluded)))),
-        _publish_seeded_microscope_ids=lambda observation_id: set(),
-        _set_publish_seeded_microscope_ids=lambda observation_id, image_ids: None,
         window=lambda: None,
         parent=lambda: None,
     )
@@ -1104,8 +1098,6 @@ def test_gallery_publish_recheck_detaches_tombstoned_cloud_state_and_marks_dirty
         _set_cloud_image_storage_excluded_image_ids=lambda obs_id, excluded: calls[
             "excluded"
         ].append((int(obs_id), tuple(sorted(int(v) for v in excluded)))),
-        _publish_seeded_microscope_ids=lambda observation_id: set(),
-        _set_publish_seeded_microscope_ids=lambda observation_id, image_ids: None,
         window=lambda: None,
         parent=lambda: None,
     )
@@ -1152,8 +1144,6 @@ def test_gallery_publish_recheck_never_uploaded_image_routes_through_cloud_lifec
         _set_cloud_image_storage_excluded_image_ids=lambda obs_id, excluded: calls[
             "excluded"
         ].append((int(obs_id), tuple(sorted(int(v) for v in excluded)))),
-        _publish_seeded_microscope_ids=lambda observation_id: set(),
-        _set_publish_seeded_microscope_ids=lambda observation_id, image_ids: None,
         window=lambda: None,
         parent=lambda: None,
     )
@@ -1192,74 +1182,6 @@ def test_context_menu_cloud_delete_uses_same_selection_transition(monkeypatch):
     assert calls["transition"] == [(1, False)]
     assert calls["pending"] == [(1,)]
     assert calls["status"]
-
-
-def test_default_publish_selection_selects_one_microscope_image_per_magnification():
-    selected_groups: set[str] = set()
-
-    selected0, selected_groups = observations_tab._default_publish_selected_for_new_image(
-        "microscope",
-        "40x",
-        selected_groups,
-    )
-    selected1, selected_groups = observations_tab._default_publish_selected_for_new_image(
-        "microscope",
-        "40x",
-        selected_groups,
-    )
-    selected2, selected_groups = observations_tab._default_publish_selected_for_new_image(
-        "microscope",
-        "63x",
-        selected_groups,
-    )
-    selected3, selected_groups = observations_tab._default_publish_selected_for_new_image(
-        "field",
-        None,
-        selected_groups,
-    )
-
-    assert selected0 is True
-    assert selected1 is False
-    assert selected2 is True
-    assert selected3 is True
-    assert selected_groups == {"40x", "63x"}
-
-
-def test_ensure_microscope_publish_defaults_selects_first_image_in_each_magnification_group(monkeypatch):
-    state = {
-        "excluded": set(),
-        "seeded": set(),
-    }
-
-    def _publish_excluded_image_ids(_observation_id):
-        return set(state["excluded"])
-
-    def _set_publish_excluded_image_ids(_observation_id, excluded_ids):
-        state["excluded"] = {int(v) for v in excluded_ids}
-
-    def _publish_seeded_microscope_ids(_observation_id):
-        return set(state["seeded"])
-
-    def _set_publish_seeded_microscope_ids(_observation_id, seeded_ids):
-        state["seeded"] = {int(v) for v in seeded_ids}
-
-    monkeypatch.setattr(observations_tab.ObservationsTab, "_publish_excluded_image_ids", _publish_excluded_image_ids)
-    monkeypatch.setattr(observations_tab.ObservationsTab, "_set_publish_excluded_image_ids", _set_publish_excluded_image_ids)
-    monkeypatch.setattr(observations_tab.ObservationsTab, "_publish_seeded_microscope_ids", _publish_seeded_microscope_ids)
-    monkeypatch.setattr(observations_tab.ObservationsTab, "_set_publish_seeded_microscope_ids", _set_publish_seeded_microscope_ids)
-
-    images = [
-        {"id": 1, "image_type": "microscope", "objective_name": "40x Plan"},
-        {"id": 2, "image_type": "microscope", "objective_name": "40x Plan"},
-        {"id": 3, "image_type": "microscope", "objective_name": "63x Plan"},
-        {"id": 4, "image_type": "microscope", "objective_name": "63x Plan"},
-        {"id": 5, "image_type": "microscope", "objective_name": "100x Plan"},
-    ]
-
-    observations_tab.ObservationsTab._ensure_microscope_publish_defaults(91, images)
-
-    assert state["excluded"] == {2, 4}
-    assert state["seeded"] == {1, 2, 3, 4, 5}
 
 
 def test_refresh_image_gallery_summary_marks_microscope_items_unchecked_by_default(monkeypatch):
@@ -1460,6 +1382,7 @@ def test_pending_artsobs_upload_status_auto_clears(monkeypatch, tmp_path):
         set_status_message=lambda message, level="info", auto_clear_ms=8000: calls.append(
             (str(message), str(level), int(auto_clear_ms))
         ),
+        _shared_image_ids=lambda observation_id, image_ids: {int(v) for v in image_ids},
     )
 
     result = observations_tab.ObservationsTab._upload_pending_artsobs_web_images(fake_tab)

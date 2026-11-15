@@ -164,10 +164,8 @@ from .observations_tab import (
     _cloud_media_materialization_should_launch,
     _current_utc_timestamp_text,
     _debug_import_flow,
-    _default_publish_selected_for_new_image,
     _extract_coords_from_osm_url,
     _extract_location_name_from_map_url,
-    _image_microscope_publish_group_key,
     _normalize_ai_prediction_taxon,
     _normalize_ai_selected_service,
     _parse_observation_datetime,
@@ -5078,7 +5076,6 @@ class ObservationDetailsDialog(QDialog):
             return
         start_time = time.perf_counter()
         items = []
-        selected_microscope_group_keys: set[str] = set()
         cloud_state_cache: dict[int, tuple[str | None, bool, bool, str]] = {}
 
         def _cloud_state_for_image_id(image_id: int | None) -> tuple[str | None, bool, bool, str]:
@@ -5120,19 +5117,9 @@ class ObservationDetailsDialog(QDialog):
                     item.objective,
                 ) or item.objective
             objective_short = ImageGalleryWidget._short_objective_label(objective_label, self.tr) or objective_label
+            # No default pick per objective: an unsaved photo shows the
+            # type's default (field checked, microscope not).
             publish_selected = None
-            if item.image_id is None:
-                publish_selected, selected_microscope_group_keys = _default_publish_selected_for_new_image(
-                    item.image_type,
-                    _image_microscope_publish_group_key(
-                        {
-                            "objective_name": item.objective,
-                            "lab_metadata": item.lab_metadata,
-                        },
-                        getattr(self, "objectives", None),
-                    ),
-                    selected_microscope_group_keys,
-                )
             badges = ImageGalleryWidget.build_gallery_badges(
                 image_type=item.image_type,
                 objective_name=objective_short,

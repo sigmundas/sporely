@@ -193,6 +193,48 @@ def _mark_cloud_image_storage_intent_initialized(
     _set_cloud_image_storage_intent_initialized_ids(obs_id, ledger | normalized)
 
 
+def carry_cloud_image_storage_intent(
+    source_observation_id: int | str,
+    target_observation_id: int | str,
+    image_ids,
+) -> None:
+    """Move images' recorded storage decisions with the images.
+
+    The decisions are kept per observation, so an image moved to another
+    observation (``ImageDB.move_images_to_observation``) would otherwise
+    arrive undecided there and take the default — unchecked for a
+    microscope photo. A recorded decision (checked or unchecked) moves to
+    the target; an image with none stays undecided (its target state is
+    left alone). Pass only images that actually moved. Local settings only.
+    """
+    source_id = _safe_int(source_observation_id)
+    target_id = _safe_int(target_observation_id)
+    ids = {_safe_int(value) for value in (image_ids or ()) if _safe_int(value) > 0}
+    if source_id <= 0 or target_id <= 0 or source_id == target_id or not ids:
+        return
+    source_ledger = _cloud_image_storage_intent_initialized_ids(source_id)
+    source_excluded = _cloud_image_storage_excluded_image_ids(source_id)
+    target_ledger = _cloud_image_storage_intent_initialized_ids(target_id)
+    target_excluded = _cloud_image_storage_excluded_image_ids(target_id)
+    new_target_ledger = set(target_ledger)
+    new_target_excluded = set(target_excluded)
+    for image_id in ids:
+        if image_id in source_ledger:
+            new_target_ledger.add(image_id)
+        if image_id in source_excluded:
+            new_target_excluded.add(image_id)
+        elif image_id in source_ledger:
+            new_target_excluded.discard(image_id)
+    if new_target_excluded != target_excluded:
+        _set_cloud_image_storage_excluded_image_ids(target_id, new_target_excluded)
+    if new_target_ledger != target_ledger:
+        _set_cloud_image_storage_intent_initialized_ids(target_id, new_target_ledger)
+    if source_excluded & ids:
+        _set_cloud_image_storage_excluded_image_ids(source_id, source_excluded - ids)
+    if source_ledger & ids:
+        _set_cloud_image_storage_intent_initialized_ids(source_id, source_ledger - ids)
+
+
 def cloud_image_storage_intent_initialized(
     observation_id: int | str,
     image_id: int | str,
@@ -252,40 +294,6 @@ def _cloud_image_storage_initialized(observation_id: int | str) -> bool:
     return image_ids <= _cloud_image_storage_intent_initialized_ids(obs_id)
 
 
-def _microscope_group_key_from_row(row: dict) -> str:
-    """Coarse magnification-group key used by the storage-desired initializer.
-
-    Kept local so ``utils.cloud_sync`` does not import Qt UI code. The heuristic
-    mirrors :func:`ui.observations_tab._image_microscope_publish_group_key` for
-    the fields available on ImageDB rows: use ``objective_name`` and fall back
-    to a magnification number scraped from it. This is only used for the
-    initializer's sparse-default rule; UI still uses its own resolver.
-    """
-    if not isinstance(row, dict):
-        return "__unknown__"
-    objective_name = str(row.get('objective_name') or '').strip()
-    if not objective_name:
-        lab_metadata = row.get('lab_metadata')
-        if isinstance(lab_metadata, dict):
-            objective_name = str(lab_metadata.get('objective_name') or '').strip()
-            if not objective_name:
-                microscope_metadata = lab_metadata.get('microscope')
-                if isinstance(microscope_metadata, dict):
-                    objective_name = str(
-                        microscope_metadata.get('objective_name') or ''
-                    ).strip()
-    if not objective_name:
-        return "__unknown__"
-    import re as _re
-    match = _re.search(r"(\d+(?:\.\d+)?)\s*[xX]", objective_name)
-    if match:
-        return f"{match.group(1)}x".casefold()
-    match = _re.search(r"(\d+(?:\.\d+)?)", objective_name)
-    if match:
-        return f"{match.group(1)}x".casefold()
-    return objective_name.casefold() or "__unknown__"
-
-
 def _ensure_cloud_image_storage_intent_initialized(
     observation_id: int | str,
 ) -> dict:
@@ -307,27 +315,17 @@ def _ensure_cloud_image_storage_intent_initialized(
     * Field (and any non-microscope) image → desired by default (left out of
       the excluded set) + initialized. A pre-existing explicit exclusion is
       preserved.
-    * Microscope image whose magnification group already contains ANY
-      initialized member → excluded + initialized. No replacement keeper is
-      chosen: the user may have deliberately unchecked every member of that
-      group, and a silent re-enable is exactly the failure being fixed.
-    * Microscope image in a group with NO initialized member (a genuinely
-      new group, or legacy pre-ledger rows):
-        - Legacy inference (explicit "checked" history was never stored
-          before the ledger existed): a member that is cloud-identified,
-          NOT a registered metadata-only anchor, and NOT tombstoned is
-          treated as byte-backed / previously selected — it stays desired.
-        - If no such member exists, one deterministic keeper is chosen: the
-          first member by (sort_order NULLS LAST, id) that is neither
-          explicitly excluded nor tombstoned.
-        - Every other uninitialized member is excluded.
-      Registered metadata-only anchors are never inferred as byte-backed;
-      unless chosen as the deterministic keeper they default local-only,
-      and their anchor identity/measurements are untouched either way.
-    * In every branch, a cloud-identified non-anchor member without a
-      tombstone is never defaulted into the excluded set — its bytes (or
+    * Microscope image → excluded + initialized: the user checks the ones
+      to keep (and publish). No image is picked per magnification group
+      (the retired one-per-objective keeper, owner 2026-11-15).
+    * Legacy inference (explicit "checked" history was never stored before
+      the ledger existed): a microscope image that is cloud-identified, NOT
+      a registered metadata-only anchor, and NOT tombstoned is treated as
+      byte-backed / previously selected — it stays desired. Its bytes (or
       its explicit selection) already exist; only an explicit user action
-      may exclude it.
+      may exclude it. Registered metadata-only anchors are never inferred as
+      byte-backed; they default local-only, and their anchor
+      identity/measurements are untouched either way.
 
     Idempotent, mutates local settings only (never cloud I/O, never image
     rows, never tombstones). Returns a small summary dict for diagnostics:
@@ -412,65 +410,22 @@ def _ensure_cloud_image_storage_intent_initialized(
             and not _has_active_tombstone(row)
         )
 
-    microscope_groups: dict[str, list[dict]] = {}
     for row in rows:
         image_id = _safe_int(row.get("id"))
-        if image_id <= 0:
+        if image_id <= 0 or image_id not in uninitialized_ids:
             continue
-        image_type = str(row.get("image_type") or '').strip().lower()
-        if image_type == "microscope":
-            microscope_groups.setdefault(
-                _microscope_group_key_from_row(row), []
-            ).append(row)
-            continue
-        if image_id not in uninitialized_ids:
-            continue
+        new_ledger.add(image_id)
         if _has_active_tombstone(row):
             new_excluded.add(image_id)
-        new_ledger.add(image_id)
-
-    for group_rows in microscope_groups.values():
-        pending_members = [
-            row for row in group_rows
-            if _safe_int(row.get("id")) in uninitialized_ids
-        ]
-        if not pending_members:
             continue
-        group_has_initialized_member = any(
-            _safe_int(row.get("id")) in ledger for row in group_rows
-        )
-        keeper_ids: set[int] = set()
-        if not group_has_initialized_member:
-            keeper_ids = {
-                _safe_int(row.get("id"))
-                for row in group_rows
-                if _inferred_byte_backed(row)
-                and _safe_int(row.get("id")) not in excluded
-            }
-            if not keeper_ids:
-                for row in group_rows:
-                    image_id = _safe_int(row.get("id"))
-                    if image_id <= 0 or image_id in excluded:
-                        continue
-                    if _has_active_tombstone(row):
-                        continue
-                    keeper_ids = {image_id}
-                    break
-        for row in pending_members:
-            image_id = _safe_int(row.get("id"))
-            if image_id <= 0:
-                continue
-            new_ledger.add(image_id)
-            if image_id in keeper_ids:
-                continue
-            if _has_active_tombstone(row):
-                new_excluded.add(image_id)
-                continue
-            if _inferred_byte_backed(row):
-                # Bytes/selection already exist on cloud — never default an
-                # uploaded image into the excluded set.
-                continue
-            new_excluded.add(image_id)
+        image_type = str(row.get("image_type") or '').strip().lower()
+        if image_type != "microscope":
+            continue
+        if _inferred_byte_backed(row):
+            # Bytes/selection already exist on cloud — never default an
+            # uploaded image into the excluded set.
+            continue
+        new_excluded.add(image_id)
 
     if new_excluded != excluded:
         _set_cloud_image_storage_excluded_image_ids(obs_id, new_excluded)

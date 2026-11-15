@@ -8,9 +8,9 @@ Pins the incremental initialization model in
     excluded set alone never proves a decision.
   * Images imported after a previous initialization (stale observation
     sentinel — mechanism B) still receive a default.
-  * A magnification group with any initialized member defaults new members
-    to excluded and never silently selects a replacement keeper
-    (mechanism A / group freeze replacement).
+  * A local-only microscope image with no decision defaults to excluded,
+    whatever its magnification group: no keeper is picked per objective
+    (2026-11-15; before that a genuinely new group got one keeper).
   * Explicit checkbox interaction marks the image initialized so seeding
     can never override it.
   * The pending-media dirty scan seeds intent first and only evaluates
@@ -175,12 +175,12 @@ def _seed_ledger(db_path: Path, obs_id: int, image_ids) -> None:
 
 # ---------------------------------------------------------------------------
 # 1. STALE SENTINEL: observation initialized while it had field images only;
-#    20 microscope images imported later in one new group still get the
-#    sparse default, and the pending scan does not dirty for all 20.
+#    20 microscope images imported later still get a default (unchecked),
+#    and the pending scan does not dirty for any of them.
 # ---------------------------------------------------------------------------
 
 
-def test_stale_sentinel_late_microscope_import_gets_sparse_default(
+def test_stale_sentinel_late_microscope_import_gets_unchecked_default(
     monkeypatch, tmp_path
 ):
     db_path = _init_db(tmp_path)
@@ -207,24 +207,21 @@ def test_stale_sentinel_late_microscope_import_gets_sparse_default(
     cloud_sync._ensure_cloud_image_storage_intent_initialized(800)
 
     excluded = _excluded(800)
-    desired_micro = set(micro_ids) - excluded
-    # Exactly one keeper; the other 19 default excluded.
-    assert desired_micro == {10}
-    assert excluded == set(micro_ids) - {10}
+    # No keeper: all 20 default excluded (the user checks the ones to keep).
+    assert excluded == set(micro_ids)
     assert _ledger(800) == {1, *micro_ids}
 
-    # Pending dirty scan must not re-dirty over the 19 excluded frames: only
-    # the keeper is pending.
+    # Pending dirty scan must not re-dirty over the excluded frames.
     pending = cloud_sync._pending_cloud_pushable_image_ids(800)
-    assert pending == [10]
+    assert pending == []
 
 
 # ---------------------------------------------------------------------------
-# 2. MULTIPLE NEW GROUPS: one keeper per genuinely new group.
+# 2. MULTIPLE NEW GROUPS: no keeper in any group.
 # ---------------------------------------------------------------------------
 
 
-def test_multiple_new_groups_get_one_keeper_each(monkeypatch, tmp_path):
+def test_multiple_new_groups_get_no_keeper(monkeypatch, tmp_path):
     db_path = _init_db(tmp_path)
     _patch(monkeypatch, db_path)
     _seed_obs(db_path, 801, cloud_id="cloud-801")
@@ -245,7 +242,7 @@ def test_multiple_new_groups_get_one_keeper_each(monkeypatch, tmp_path):
 
     cloud_sync._ensure_cloud_image_storage_intent_initialized(801)
 
-    assert _excluded(801) == {12, 22, 23}
+    assert _excluded(801) == {11, 12, 21, 22, 23}
     assert _ledger(801) == {1, 11, 12, 21, 22, 23}
 
 
@@ -430,11 +427,11 @@ def test_legacy_group_with_byte_backed_member_excludes_pending_siblings(
 
 
 # ---------------------------------------------------------------------------
-# 8. LEGACY GROUP WITHOUT BYTE-BACKED MEMBER: exactly one desired, 14 excluded.
+# 8. LEGACY GROUP WITHOUT BYTE-BACKED MEMBER: all 15 excluded (no keeper).
 # ---------------------------------------------------------------------------
 
 
-def test_legacy_group_without_byte_backed_member_gets_single_keeper(
+def test_legacy_group_without_byte_backed_member_gets_no_keeper(
     monkeypatch, tmp_path
 ):
     db_path = _init_db(tmp_path)
@@ -451,9 +448,7 @@ def test_legacy_group_without_byte_backed_member_gets_single_keeper(
     cloud_sync._ensure_cloud_image_storage_intent_initialized(807)
 
     excluded = _excluded(807)
-    desired = set(image_ids) - excluded
-    assert desired == {110}
-    assert len(excluded) == 14
+    assert excluded == set(image_ids)
     assert _ledger(807) == set(image_ids)
 
 
@@ -639,13 +634,15 @@ def test_pending_dirty_scan_dirties_only_for_desired_pending_rows(
     db_path = _init_db(tmp_path)
     _patch(monkeypatch, db_path)
     _seed_obs(db_path, 812, cloud_id="cloud-812", sync_status="synced")
-    # Genuinely new group: keeper is desired and pending → obs must dirty.
+    # The user checked 170 (a recorded desired decision); 171 and 172 have
+    # none yet and default excluded. 170 is desired and pending → dirty.
     for image_id in (170, 171, 172):
         _seed_image(
             db_path, image_id=image_id, obs_id=812,
             filepath=_write_file(tmp_path, f"m-{image_id}.jpg"),
             image_type="microscope", objective_name="100X",
         )
+    _seed_ledger(db_path, 812, [170])
 
     completed = cloud_sync._mark_cloud_observations_dirty_for_pending_local_images(
         include_pending_local_media_uploads=True,
@@ -695,5 +692,5 @@ def test_intent_initialization_performs_zero_cloud_io(monkeypatch, tmp_path):
         include_pending_local_media_uploads=True,
     )
 
-    assert _excluded(813) == {181}
+    assert _excluded(813) == {180, 181}
     assert _ledger(813) == {180, 181}

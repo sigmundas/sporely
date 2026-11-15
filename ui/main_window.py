@@ -4825,7 +4825,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._gallery_pan_xlim = None
         self._gallery_pan_ylim = None
         self._gallery_pan_recently_dragged = False
-        self._publish_excluded_image_ids_by_observation: dict[int, set[int]] = {}
         self.loading_dialog = None
         self.reference_values = {}
         self.reference_series = []
@@ -11578,9 +11577,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         if hasattr(self, "is_analysis_visible") and self.is_analysis_visible():
             self.schedule_gallery_refresh()
 
-    def _publish_excluded_images_setting_key(self, observation_id: int | None) -> str:
-        return f"artsobs_publish_excluded_image_ids_{int(observation_id or 0)}"
-
 
     # Stage 1: cloud-storage-desired excluded set. Split out of the Artsobs
     # publication-exclusion key so the Measure gallery checkbox no longer
@@ -12198,13 +12194,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             cleanup_import_temp_file(path, ingest.working_path, stored_path, output_dir)
 
         if last_image_data:
-            try:
-                ObservationsTab._ensure_microscope_publish_defaults(
-                    self.active_observation_id,
-                    ImageDB.get_images_for_observation(int(self.active_observation_id or 0)),
-                )
-            except Exception:
-                pass
             self.load_image_record(last_image_data, refresh_table=True)
             self.refresh_observation_images(select_image_id=last_image_data['id'])
 
