@@ -2,6 +2,21 @@
 
 All notable changes to Sporely are documented here.
 
+## 2026-11-15 (desktop 1.0.0)
+
+No server migration is required. The bundled taxonomy is still `tax-2026.10.31-01`, the release active on the server.
+
+### Changed
+- **The Norwegian, Swedish and German app is translated throughout.** About 370 texts in Live Lab, Camera import, image export, the image gallery, Sync Shot, cloud sync and several dialogs were shown in English; they are now translated. "Ingestion Hub" is now called "Camera import".
+- **Layout fixes.** Prepare Images no longer shows two Close buttons. The Analysis buttons "Add reference…" and "Manage reference library…" are stacked so neither label is cut off. "+ New (N)" is now "New (N)", since the icon already shows the plus. Preferences › Online publishing scrolls instead of letting a checkbox overlap the watermark row. The reference library keeps its Year and Missing columns aligned.
+
+### Fixed
+- **Importing a database bundle could change files outside the images folder or replace images in use.** A bundle can no longer write outside the images folder, read a file elsewhere on your computer, or replace an image file that existing observations use. A file whose name is taken is imported under a new name. Bundles exported on Windows now import on macOS and Linux with their images.
+- **Switching to another database folder now re-checks the Sporely Cloud account.** Before, the profile's account link carried over to the new database, so a database holding another account's observations could sync into yours. The next sync now checks who owns the database, as for a first sign-in. Moving the same database to a new folder keeps the link.
+- **Signing out while a background sync refreshed its sign-in could leave you signed in.** A refresh in progress no longer restores the session after you sign out, and no longer replaces a sign-in to another account.
+- **Sign-in tokens and the Artsobservasjoner and Artportalen sessions are stored readable only by your user account.** This mattered on shared Linux computers.
+- **An interrupted deletion of a cloud-only observation is now finished by the next sync.** Before, a failure partway left a partial observation in Sporely Cloud.
+
 ## 2026-11-04 (desktop 0.9.30)
 
 Requires server migration `20261031120000` (sporely-web, national names from name associations), applied on 2026-11-04. The server's active taxonomy is already `tax-2026.10.31-01` (imported 2026-11-04); this version bundles the same release.
