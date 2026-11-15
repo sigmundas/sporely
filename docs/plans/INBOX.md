@@ -166,6 +166,7 @@ Source: former `PLAN.md`.
 - Re-check whether old Phase 7 SQL notes are obsolete after the Supabase baseline reset.
 - Verify whether the earlier AI crop backlog has already been completed before promoting any item.
 
+- Desktop 1.0.0 published 2026-11-15: built by `build-release` on the release PR #71 merge, `60762c2`, which the `v1.0.0` tag points at; published with the CHANGELOG notes as the latest release. It includes the pre-release review fixes (#70) and the stage 0 UI fixes (#65). All four installers were built, the workflow's macOS bundle-version and draft checks passed, and the published checksums equal the draft's. No installer was installed or smoke-tested by hand. The contract mirror sporely-web #55 (docs only) was still open at publication.
 - Desktop 0.9.30 published 2026-11-05: the draft was rebuilt from `main` after PR #57 (Sporely app icon; release PR #55, compatibility review #56, name associations #53) and published with the CHANGELOG notes as the latest release. The `v0.9.30` tag points at the PR #57 merge, `260d826`. All four installers built, and the published checksums equal the tested draft's.
   - Verification of the macOS Apple Silicon installer, run in a test profile copied from real data with cloud sign-in blocked:
     - the app reports 0.9.30, bundles `tax-2026.10.31-01` and installs it byte-identical (`sqlite_sha256` `ec19acac…`);
