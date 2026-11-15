@@ -256,7 +256,9 @@ from utils.cloud_sync_impl.sync_state import (  # noqa: F401  (facade re-export)
     remember_explicit_image_restore_source,
 )
 from utils.cloud_sync_impl.image_policy import (  # noqa: F401  (facade re-export)
+    _STORAGE_INTENT_LOCK,
     _add_cloud_image_storage_excluded_image_id,
+    _carry_cloud_image_storage_intent_locked,
     _cloud_explicit_media_upload_selection,
     _cloud_image_storage_excluded_image_ids,
     _cloud_image_storage_initialized,

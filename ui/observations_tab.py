@@ -7933,21 +7933,26 @@ class ObservationsTab(QWidget):
         obs_id = self.selected_observation_id
         if not obs_id or not image_id:
             return
-        gallery = getattr(self, "gallery_widget", None)
-        if gallery is None:
-            return
-        try:
-            current_ids = {int(v) for v in (gallery.publish_selected_ids() or set())}
-        except Exception:
-            current_ids = set()
         target_id = int(image_id)
-        if checked:
-            current_ids.add(target_id)
-        else:
-            current_ids.discard(target_id)
-        # Route the change through the gallery so external-publish selection
-        # persistence and the other gallery view stay in sync.
-        gallery.set_publish_selected_ids(current_ids, emit_signal=True)
+        # Record the viewer's own photo directly: it may not be in the strip
+        # yet (the strip loads asynchronously).
+        self._apply_strip_checkbox_change(int(obs_id), {target_id: bool(checked)})
+        gallery = getattr(self, "gallery_widget", None)
+        if gallery is not None:
+            try:
+                current_ids = {int(v) for v in (gallery.publish_selected_ids() or set())}
+            except Exception:
+                current_ids = set()
+            if checked:
+                current_ids.add(target_id)
+            else:
+                current_ids.discard(target_id)
+            # Display only: the state is already stored.
+            gallery.set_publish_selected_ids(current_ids, emit_signal=False)
+            if hasattr(gallery, "refresh_cloud_states"):
+                gallery.refresh_cloud_states({target_id})
+        if hasattr(self, "_sync_image_browser_publish_state"):
+            self._sync_image_browser_publish_state()
 
     def _on_view_splitter_moved(self, _pos: int, _index: int) -> None:
         # Only remember the ratio when the image pane is actually visible;
@@ -8629,53 +8634,50 @@ class ObservationsTab(QWidget):
         if hasattr(self, "_sync_image_browser_publish_state"):
             self._sync_image_browser_publish_state()
 
+    @staticmethod
+    def _apply_strip_checkbox_change(observation_id: int, changes) -> set[int]:
+        """Record the photos whose checkbox the user changed (image id ->
+        checked, from the strip's ``last_publish_change`` or the image
+        viewer), each through ``set_image_cloud_selected`` (one locked step
+        per photo) and only where the stored state differs. Nothing is
+        inferred from the strip's view of other photos, so a photo it shows
+        wrongly, does not show, or that sync decided meanwhile is untouched.
+        Returns the changed ids.
+        """
+        from utils import cloud_sync as cloud_sync_module
+
+        obs_id = int(observation_id)
+        try:
+            wanted = {int(k): bool(v) for k, v in dict(changes or {}).items()}
+        except (TypeError, ValueError):
+            return set()
+        stored_excluded = cloud_sync_module._cloud_image_storage_excluded_image_ids(obs_id)
+        changed = {
+            image_id for image_id, checked in wanted.items()
+            if checked != (image_id not in stored_excluded)
+        }
+        for image_id in sorted(changed):
+            cloud_sync_module.set_image_cloud_selected(image_id, wanted[image_id])
+        return changed
+
     def _on_gallery_publish_selection_changed(self, selected_ids) -> None:
         if not self.selected_observation_id:
             return
-        images = ImageDB.get_images_for_observation(int(self.selected_observation_id))
-        all_ids = {
-            int(img.get("id"))
-            for img in images
-            if img.get("id") is not None
-        }
-        # Stage 1: the gallery checkbox is now the cloud-storage-desired
-        # state. The publication-exclusion key (Artsobs/iNat) is a separate
-        # decision surface; see docs/supabase-sync-contract.md Phase 2.
-        previous_excluded = self._cloud_image_storage_excluded_image_ids(
-            int(self.selected_observation_id)
-        )
-        previous_excluded = {img_id for img_id in previous_excluded if img_id in all_ids}
-        previous_selected = all_ids - previous_excluded
-        try:
-            selected_set = {int(v) for v in (selected_ids or set())}
-        except Exception:
-            selected_set = set()
-        excluded = all_ids - selected_set
         obs_id = int(self.selected_observation_id)
-        unchecked_ids = previous_selected - selected_set
-        rechecked_ids = selected_set - previous_selected
-        self._set_cloud_image_storage_excluded_image_ids(obs_id, excluded)
-        changed_ids = unchecked_ids | rechecked_ids
-        if changed_ids:
-            from utils import cloud_sync as cloud_sync_module
-            for image_id in sorted(changed_ids):
-                cloud_sync_module.set_image_cloud_selected(
-                    image_id,
-                    image_id in selected_set,
-                )
-            gallery = getattr(self, "gallery_widget", None)
-            if gallery is not None and hasattr(gallery, "refresh_cloud_states"):
-                gallery.refresh_cloud_states(changed_ids)
+        gallery = getattr(self, "gallery_widget", None)
+        changes = (
+            gallery.last_publish_change()
+            if gallery is not None and hasattr(gallery, "last_publish_change")
+            else {}
+        )
+        changed_ids = self._apply_strip_checkbox_change(obs_id, changes)
+        if changed_ids and gallery is not None and hasattr(gallery, "refresh_cloud_states"):
+            gallery.refresh_cloud_states(changed_ids)
         if hasattr(self, "_sync_image_browser_publish_state"):
             self._sync_image_browser_publish_state()
         host = self.window()
         if host is None:
             host = self.parent()
-        if host is not None and hasattr(host, "_set_cloud_image_storage_excluded_ids_for_observation"):
-            try:
-                host._set_cloud_image_storage_excluded_ids_for_observation(obs_id, excluded)
-            except Exception:
-                pass
         if (
             host is not None
             and hasattr(host, "active_observation_id")
@@ -9359,19 +9361,6 @@ class ObservationsTab(QWidget):
         except Exception:
             pass
         return set()
-
-    @classmethod
-    def _set_cloud_image_storage_excluded_image_ids(
-        cls, observation_id: int | None, excluded_ids: set[int]
-    ) -> None:
-        if not observation_id:
-            return
-        normalized = sorted({int(v) for v in (excluded_ids or set())})
-        key = cls._cloud_image_storage_excluded_setting_key(observation_id)
-        try:
-            SettingsDB.set_setting(key, json.dumps(normalized))
-        except Exception:
-            pass
 
     @staticmethod
     def _publish_option_enabled(key: str, default: bool = False) -> bool:

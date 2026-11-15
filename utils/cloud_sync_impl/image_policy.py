@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 
 from database.models import (
     CLOUD_IMAGE_STATE_DELETED,
@@ -32,6 +33,14 @@ from utils.cloud_sync_impl.sync_state import (
     mark_observation_media_dirty,
     remember_explicit_image_restore_source,
 )
+
+
+# Serializes every read-modify-write of the per-observation storage settings
+# (the excluded set and the intent ledger). The GUI thread (checkboxes,
+# moves, publishing) and the sync thread (default seeding) both write them;
+# without this a stale whole-set write could undo a just-made check.
+# Re-entrant: a writer may call another writer. In-process only.
+_STORAGE_INTENT_LOCK = threading.RLock()
 
 
 def _is_generated_cloud_image(image_row: dict | None) -> bool:
@@ -103,10 +112,11 @@ def _set_cloud_image_storage_excluded_image_ids(
     normalized = sorted({
         _safe_int(value) for value in (excluded_ids or set()) if _safe_int(value) > 0
     })
-    SettingsDB.set_setting(
-        _cloud_image_storage_excluded_ids_key(obs_id),
-        json.dumps(normalized),
-    )
+    with _STORAGE_INTENT_LOCK:
+        SettingsDB.set_setting(
+            _cloud_image_storage_excluded_ids_key(obs_id),
+            json.dumps(normalized),
+        )
 
 
 def _add_cloud_image_storage_excluded_image_id(
@@ -117,11 +127,12 @@ def _add_cloud_image_storage_excluded_image_id(
     local_image_id = _safe_int(image_id)
     if obs_id <= 0 or local_image_id <= 0:
         return
-    excluded = _cloud_image_storage_excluded_image_ids(obs_id)
-    if local_image_id in excluded:
-        return
-    excluded.add(local_image_id)
-    _set_cloud_image_storage_excluded_image_ids(obs_id, excluded)
+    with _STORAGE_INTENT_LOCK:
+        excluded = _cloud_image_storage_excluded_image_ids(obs_id)
+        if local_image_id in excluded:
+            return
+        excluded.add(local_image_id)
+        _set_cloud_image_storage_excluded_image_ids(obs_id, excluded)
 
 
 def _remove_cloud_image_storage_excluded_image_id(
@@ -132,11 +143,12 @@ def _remove_cloud_image_storage_excluded_image_id(
     local_image_id = _safe_int(image_id)
     if obs_id <= 0 or local_image_id <= 0:
         return
-    excluded = _cloud_image_storage_excluded_image_ids(obs_id)
-    if local_image_id not in excluded:
-        return
-    excluded.discard(local_image_id)
-    _set_cloud_image_storage_excluded_image_ids(obs_id, excluded)
+    with _STORAGE_INTENT_LOCK:
+        excluded = _cloud_image_storage_excluded_image_ids(obs_id)
+        if local_image_id not in excluded:
+            return
+        excluded.discard(local_image_id)
+        _set_cloud_image_storage_excluded_image_ids(obs_id, excluded)
 
 
 def _cloud_image_storage_intent_initialized_ids(observation_id: int | str) -> set[int]:
@@ -168,10 +180,11 @@ def _set_cloud_image_storage_intent_initialized_ids(
     normalized = sorted({
         _safe_int(value) for value in (image_ids or set()) if _safe_int(value) > 0
     })
-    SettingsDB.set_setting(
-        _cloud_image_storage_intent_ledger_key(obs_id),
-        json.dumps(normalized),
-    )
+    with _STORAGE_INTENT_LOCK:
+        SettingsDB.set_setting(
+            _cloud_image_storage_intent_ledger_key(obs_id),
+            json.dumps(normalized),
+        )
 
 
 def _mark_cloud_image_storage_intent_initialized(
@@ -187,10 +200,11 @@ def _mark_cloud_image_storage_intent_initialized(
     normalized = {_safe_int(value) for value in (image_ids or ()) if _safe_int(value) > 0}
     if obs_id <= 0 or not normalized:
         return
-    ledger = _cloud_image_storage_intent_initialized_ids(obs_id)
-    if normalized <= ledger:
-        return
-    _set_cloud_image_storage_intent_initialized_ids(obs_id, ledger | normalized)
+    with _STORAGE_INTENT_LOCK:
+        ledger = _cloud_image_storage_intent_initialized_ids(obs_id)
+        if normalized <= ledger:
+            return
+        _set_cloud_image_storage_intent_initialized_ids(obs_id, ledger | normalized)
 
 
 def carry_cloud_image_storage_intent(
@@ -212,6 +226,11 @@ def carry_cloud_image_storage_intent(
     ids = {_safe_int(value) for value in (image_ids or ()) if _safe_int(value) > 0}
     if source_id <= 0 or target_id <= 0 or source_id == target_id or not ids:
         return
+    with _STORAGE_INTENT_LOCK:
+        _carry_cloud_image_storage_intent_locked(source_id, target_id, ids)
+
+
+def _carry_cloud_image_storage_intent_locked(source_id: int, target_id: int, ids: set[int]) -> None:
     source_ledger = _cloud_image_storage_intent_initialized_ids(source_id)
     source_excluded = _cloud_image_storage_excluded_image_ids(source_id)
     target_ledger = _cloud_image_storage_intent_initialized_ids(target_id)
@@ -427,13 +446,28 @@ def _ensure_cloud_image_storage_intent_initialized(
             continue
         new_excluded.add(image_id)
 
-    if new_excluded != excluded:
-        _set_cloud_image_storage_excluded_image_ids(obs_id, new_excluded)
-    if new_ledger != ledger:
-        _set_cloud_image_storage_intent_initialized_ids(obs_id, new_ledger)
+    # Apply only the defaults, and only to images still undecided now: a
+    # checkbox (or another seeding) may have recorded a decision since the
+    # reads above, and a whole-set write would undo it.
+    default_excluded = new_excluded - excluded
+    with _STORAGE_INTENT_LOCK:
+        current_ledger = _cloud_image_storage_intent_initialized_ids(obs_id)
+        current_excluded = _cloud_image_storage_excluded_image_ids(obs_id)
+        seeded = (new_ledger - ledger) - current_ledger
+        seeded_excluded = seeded & default_excluded
+        if seeded_excluded - current_excluded:
+            _set_cloud_image_storage_excluded_image_ids(
+                obs_id, current_excluded | seeded_excluded
+            )
+        if seeded:
+            _set_cloud_image_storage_intent_initialized_ids(
+                obs_id, current_ledger | seeded
+            )
+        # Classified by the resulting set: an image already excluded before
+        # its first decision counts as seeded excluded.
+        seeded_excluded = seeded & (current_excluded | seeded_excluded)
 
-    seeded = new_ledger - ledger
-    summary["seeded_excluded"] = len([i for i in seeded if i in new_excluded])
+    summary["seeded_excluded"] = len(seeded_excluded)
     summary["seeded_desired"] = len(seeded) - summary["seeded_excluded"]
     return summary
 
@@ -512,13 +546,16 @@ def set_image_cloud_selected(image_id: int, selected: bool) -> dict | None:
     # checkbox. Only mutate when the observation is known; a checkbox without
     # an observation cannot affect the byte gate anyway.
     if observation_id > 0:
-        if selected:
-            _remove_cloud_image_storage_excluded_image_id(observation_id, image_id)
-        else:
-            _add_cloud_image_storage_excluded_image_id(observation_id, image_id)
-        # An explicit user decision IS storage intent — record it in the
-        # per-image ledger so default seeding can never override it.
-        _mark_cloud_image_storage_intent_initialized(observation_id, [image_id])
+        # One lock for both steps, so default seeding cannot slip in between
+        # and re-exclude a photo the user just checked.
+        with _STORAGE_INTENT_LOCK:
+            if selected:
+                _remove_cloud_image_storage_excluded_image_id(observation_id, image_id)
+            else:
+                _add_cloud_image_storage_excluded_image_id(observation_id, image_id)
+            # An explicit user decision IS storage intent — record it in the
+            # per-image ledger so default seeding can never override it.
+            _mark_cloud_image_storage_intent_initialized(observation_id, [image_id])
 
     return {
         "image_id": image_id,

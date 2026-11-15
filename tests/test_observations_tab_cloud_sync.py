@@ -957,12 +957,20 @@ def test_gallery_publish_uncheck_routes_through_cloud_lifecycle(monkeypatch, ima
         "set_image_cloud_selected",
         lambda image_id, selected: calls["transition"].append((int(image_id), bool(selected))),
     )
+    # The handler reads the stored set and records only the changed photo
+    # (set_image_cloud_selected); it never rewrites the set from its view.
+    monkeypatch.setattr(cloud_sync, "_cloud_image_storage_excluded_image_ids", lambda observation_id: set())
+    monkeypatch.setattr(
+        cloud_sync,
+        "_set_cloud_image_storage_excluded_image_ids",
+        lambda obs_id, excluded: calls["excluded"].append(
+            (int(obs_id), tuple(sorted(int(v) for v in excluded)))
+        ),
+    )
     tab = SimpleNamespace(
         selected_observation_id=7,
-        _cloud_image_storage_excluded_image_ids=lambda observation_id: set(),
-        _set_cloud_image_storage_excluded_image_ids=lambda obs_id, excluded: calls[
-            "excluded"
-        ].append((int(obs_id), tuple(sorted(int(v) for v in excluded)))),
+        _apply_strip_checkbox_change=observations_tab.ObservationsTab._apply_strip_checkbox_change,
+        gallery_widget=SimpleNamespace(last_publish_change=lambda: {1: False}, refresh_cloud_states=lambda ids: 0),
         window=lambda: None,
         parent=lambda: None,
     )
@@ -972,7 +980,7 @@ def test_gallery_publish_uncheck_routes_through_cloud_lifecycle(monkeypatch, ima
     assert calls["queue"] == []
     assert calls["clear"] == []
     assert calls["cloud"] == []
-    assert calls["excluded"] == [(7, (1,))]
+    assert calls["excluded"] == []
     assert calls["dirty"] == []
     assert calls["transition"] == [(1, False)]
 
@@ -1013,12 +1021,20 @@ def test_gallery_publish_uncheck_does_not_touch_public_spore_anchor(monkeypatch)
         "set_image_cloud_selected",
         lambda image_id, selected: calls["transition"].append((int(image_id), bool(selected))),
     )
+    # The handler reads the stored set and records only the changed photo
+    # (set_image_cloud_selected); it never rewrites the set from its view.
+    monkeypatch.setattr(cloud_sync, "_cloud_image_storage_excluded_image_ids", lambda observation_id: set())
+    monkeypatch.setattr(
+        cloud_sync,
+        "_set_cloud_image_storage_excluded_image_ids",
+        lambda obs_id, excluded: calls["excluded"].append(
+            (int(obs_id), tuple(sorted(int(v) for v in excluded)))
+        ),
+    )
     tab = SimpleNamespace(
         selected_observation_id=7,
-        _cloud_image_storage_excluded_image_ids=lambda observation_id: set(),
-        _set_cloud_image_storage_excluded_image_ids=lambda obs_id, excluded: calls[
-            "excluded"
-        ].append((int(obs_id), tuple(sorted(int(v) for v in excluded)))),
+        _apply_strip_checkbox_change=observations_tab.ObservationsTab._apply_strip_checkbox_change,
+        gallery_widget=SimpleNamespace(last_publish_change=lambda: {1: False}, refresh_cloud_states=lambda ids: 0),
         window=lambda: None,
         parent=lambda: None,
     )
@@ -1027,7 +1043,7 @@ def test_gallery_publish_uncheck_does_not_touch_public_spore_anchor(monkeypatch)
 
     assert calls["queue"] == []
     assert calls["clear"] == []
-    assert calls["excluded"] == [(7, (1,))]
+    assert calls["excluded"] == []
     assert calls["dirty"] == []
     assert calls["transition"] == [(1, False)]
 
@@ -1092,12 +1108,20 @@ def test_gallery_publish_recheck_detaches_tombstoned_cloud_state_and_marks_dirty
         lambda image_id, selected: calls["transition"].append((int(image_id), bool(selected))),
     )
 
+    # The handler reads the stored set and records only the changed photo
+    # (set_image_cloud_selected); it never rewrites the set from its view.
+    monkeypatch.setattr(cloud_sync, "_cloud_image_storage_excluded_image_ids", lambda observation_id: {1})
+    monkeypatch.setattr(
+        cloud_sync,
+        "_set_cloud_image_storage_excluded_image_ids",
+        lambda obs_id, excluded: calls["excluded"].append(
+            (int(obs_id), tuple(sorted(int(v) for v in excluded)))
+        ),
+    )
     tab = SimpleNamespace(
         selected_observation_id=7,
-        _cloud_image_storage_excluded_image_ids=lambda observation_id: {1},
-        _set_cloud_image_storage_excluded_image_ids=lambda obs_id, excluded: calls[
-            "excluded"
-        ].append((int(obs_id), tuple(sorted(int(v) for v in excluded)))),
+        _apply_strip_checkbox_change=observations_tab.ObservationsTab._apply_strip_checkbox_change,
+        gallery_widget=SimpleNamespace(last_publish_change=lambda: {1: True}, refresh_cloud_states=lambda ids: 0),
         window=lambda: None,
         parent=lambda: None,
     )
@@ -1108,7 +1132,7 @@ def test_gallery_publish_recheck_detaches_tombstoned_cloud_state_and_marks_dirty
     assert calls["clear"] == []
     assert calls["cloud"] == []
     assert calls["restore"] == []
-    assert calls["excluded"] == [(7, ())]
+    assert calls["excluded"] == []
     assert calls["dirty"] == []
     assert calls["transition"] == [(1, True)]
 
@@ -1138,12 +1162,20 @@ def test_gallery_publish_recheck_never_uploaded_image_routes_through_cloud_lifec
         "set_image_cloud_selected",
         lambda image_id, selected: calls["transition"].append((int(image_id), bool(selected))),
     )
+    # The handler reads the stored set and records only the changed photo
+    # (set_image_cloud_selected); it never rewrites the set from its view.
+    monkeypatch.setattr(cloud_sync, "_cloud_image_storage_excluded_image_ids", lambda observation_id: {1})
+    monkeypatch.setattr(
+        cloud_sync,
+        "_set_cloud_image_storage_excluded_image_ids",
+        lambda obs_id, excluded: calls["excluded"].append(
+            (int(obs_id), tuple(sorted(int(v) for v in excluded)))
+        ),
+    )
     tab = SimpleNamespace(
         selected_observation_id=7,
-        _cloud_image_storage_excluded_image_ids=lambda observation_id: {1},
-        _set_cloud_image_storage_excluded_image_ids=lambda obs_id, excluded: calls[
-            "excluded"
-        ].append((int(obs_id), tuple(sorted(int(v) for v in excluded)))),
+        _apply_strip_checkbox_change=observations_tab.ObservationsTab._apply_strip_checkbox_change,
+        gallery_widget=SimpleNamespace(last_publish_change=lambda: {1: True}, refresh_cloud_states=lambda ids: 0),
         window=lambda: None,
         parent=lambda: None,
     )
@@ -1151,7 +1183,7 @@ def test_gallery_publish_recheck_never_uploaded_image_routes_through_cloud_lifec
     observations_tab.ObservationsTab._on_gallery_publish_selection_changed(tab, {1, 2})
 
     assert calls["cloud"] == []
-    assert calls["excluded"] == [(7, ())]
+    assert calls["excluded"] == []
     assert calls["dirty"] == []
     assert calls["transition"] == [(1, True)]
 

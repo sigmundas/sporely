@@ -11602,19 +11602,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             parsed = set()
         return parsed
 
-    def _set_cloud_image_storage_excluded_ids_for_observation(
-        self, observation_id: int | None, excluded_ids: set[int]
-    ) -> None:
-        if not observation_id:
-            return
-        obs_id = int(observation_id)
-        normalized = {int(v) for v in (excluded_ids or set())}
-        key = self._cloud_image_storage_excluded_setting_key(obs_id)
-        try:
-            SettingsDB.set_setting(key, json.dumps(sorted(normalized)))
-        except Exception:
-            pass
-
     def _apply_measure_gallery_publish_selection(self) -> None:
         if not hasattr(self, "measure_gallery") or not self._strip_on_measure():
             return
@@ -11647,56 +11634,29 @@ class MainWindow(GeometryMixin, QMainWindow):
         if not self.active_observation_id:
             return
         obs_id = int(self.active_observation_id)
-        all_image_ids = {
-            int(image.get("id"))
-            for image in (self.observation_images or [])
-            if image.get("id") is not None
-        }
-        previous_excluded = self._get_cloud_image_storage_excluded_ids_for_observation(obs_id)
-        previous_selected = all_image_ids - {
-            int(image_id) for image_id in previous_excluded if int(image_id) in all_image_ids
-        }
-        try:
-            selected_set = {int(v) for v in (selected_ids or set())}
-        except Exception:
-            selected_set = set()
-        excluded = set(all_image_ids) - set(selected_set)
-        unchecked_ids = previous_selected - selected_set
-        rechecked_ids = selected_set - previous_selected
-        # Stage 1: write to the cloud-storage-desired key. Publication key
-        # (artsobs_publish_excluded_image_ids_*) is intentionally left alone.
-        self._set_cloud_image_storage_excluded_ids_for_observation(obs_id, excluded)
-        changed_ids = unchecked_ids | rechecked_ids
-        if changed_ids:
-            from utils import cloud_sync as cloud_sync_module
-            for image_id in sorted(changed_ids):
-                cloud_sync_module.set_image_cloud_selected(
-                    image_id,
-                    image_id in selected_set,
-                )
-            gallery = getattr(self, "measure_gallery", None)
-            if gallery is not None and hasattr(gallery, "refresh_cloud_states"):
-                gallery.refresh_cloud_states(changed_ids)
+        gallery = getattr(self, "measure_gallery", None)
+        changes = (
+            gallery.last_publish_change()
+            if gallery is not None and hasattr(gallery, "last_publish_change")
+            else {}
+        )
+        # Only the photos the user changed, each through the canonical locked
+        # step (the stored set is never rewritten from this strip's view).
+        changed_ids = ObservationsTab._apply_strip_checkbox_change(obs_id, changes)
+        if changed_ids and gallery is not None and hasattr(gallery, "refresh_cloud_states"):
+            gallery.refresh_cloud_states(changed_ids)
         if hasattr(self, "_sync_observations_tab_publish_state"):
-            self._sync_observations_tab_publish_state(obs_id, excluded)
+            self._sync_observations_tab_publish_state(obs_id)
 
-    def _sync_observations_tab_publish_state(self, observation_id: int | None, excluded_ids: set[int] | None = None) -> None:
+    def _sync_observations_tab_publish_state(self, observation_id: int | None) -> None:
         """Keep Observations tab cloud-storage checkboxes in sync with Measure tab edits."""
         if not observation_id or not hasattr(self, "observations_tab"):
             return
         obs_id = int(observation_id)
         tab = self.observations_tab
 
-        # Stage 1: mirror the cloud-storage-desired excluded set (not the
-        # publication key). Publication state has its own decision surface.
-        if excluded_ids is not None and hasattr(
-            tab, "_set_cloud_image_storage_excluded_image_ids"
-        ):
-            try:
-                tab._set_cloud_image_storage_excluded_image_ids(obs_id, set(excluded_ids))
-            except Exception:
-                pass
-
+        # The stored state is already written (one locked step per changed
+        # photo); this only refreshes the other strip's checkboxes.
         if not hasattr(tab, "table") or not hasattr(tab, "_find_table_row_for_observation"):
             if hasattr(tab, "refresh_publish_checkbox_state"):
                 tab.refresh_publish_checkbox_state(obs_id)

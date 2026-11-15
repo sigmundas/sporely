@@ -615,6 +615,9 @@ class ImageGalleryWidget(QGroupBox):
         self._objectives_cache: dict | None = None
         self._publish_checked_by_key: dict[str | int, bool] = {}
         self._suppress_publish_signal = False
+        # The photos whose checkbox the last publishSelectionChanged changed
+        # (image id -> checked): hosts persist only these.
+        self._last_publish_change: dict[int, bool] = {}
         self._pixmap_cache: dict[str, QPixmap] = {}
         self._pixmap_cache_max = 512
         self._render_batch_size = 8
@@ -1721,6 +1724,41 @@ class ImageGalleryWidget(QGroupBox):
         if image_id is not None and center:
             self._queue_center_on_key(image_id)
 
+    def last_publish_change(self) -> dict[int, bool]:
+        """What the last ``publishSelectionChanged`` changed: image id ->
+        checked, for the saved photos whose checkbox it actually flipped (a
+        click, a multi-selection click, a cloud-copy delete, or a host's
+        ``set_publish_selected_ids(..., emit_signal=True)``)."""
+        return dict(self._last_publish_change)
+
+    def _emit_publish_change(self, before: dict) -> None:
+        change: dict[int, bool] = {}
+        for item in self._items:
+            item_id = item.get("id")
+            if item_id is None or item.get("staged"):
+                continue
+            try:
+                image_id = int(item_id)
+            except (TypeError, ValueError):
+                continue
+            now = bool(self._resolve_publish_checked_state(item))
+            if before.get(image_id) != now:
+                change[image_id] = now
+        self._last_publish_change = change
+        self.publishSelectionChanged.emit(self.publish_selected_ids())
+
+    def _publish_state_snapshot(self) -> dict[int, bool]:
+        snapshot: dict[int, bool] = {}
+        for item in self._items:
+            item_id = item.get("id")
+            if item_id is None:
+                continue
+            try:
+                snapshot[int(item_id)] = bool(self._resolve_publish_checked_state(item))
+            except (TypeError, ValueError):
+                continue
+        return snapshot
+
     def publish_selected_ids(self) -> set[int]:
         selected: set[int] = set()
         for item in self._items:
@@ -1738,6 +1776,7 @@ class ImageGalleryWidget(QGroupBox):
         if not self._show_publish_checkbox:
             return
         normalized_ids = {int(i) for i in (selected_ids or set())}
+        before = self._publish_state_snapshot() if emit_signal else {}
         self._suppress_publish_signal = True
         try:
             for item in self._items:
@@ -1762,7 +1801,7 @@ class ImageGalleryWidget(QGroupBox):
         finally:
             self._suppress_publish_signal = False
         if emit_signal:
-            self.publishSelectionChanged.emit(self.publish_selected_ids())
+            self._emit_publish_change(before)
 
     def publish_checkbox_widgets(self) -> list[_PublishToggle]:
         widgets: list[_PublishToggle] = []
@@ -2418,6 +2457,7 @@ class ImageGalleryWidget(QGroupBox):
             return 0
         updated = 0
         publish_changed = False
+        before = self._publish_state_snapshot()
         for item in self._items:
             item_id = item.get("id")
             try:
@@ -2436,7 +2476,7 @@ class ImageGalleryWidget(QGroupBox):
         if updated:
             self._render()
         if publish_changed:
-            self.publishSelectionChanged.emit(self.publish_selected_ids())
+            self._emit_publish_change(before)
         return updated
 
     def refresh_cloud_states(self, image_ids=None) -> int:
@@ -2735,6 +2775,7 @@ class ImageGalleryWidget(QGroupBox):
         keys_to_update: list[str | int] = [key]
         if key in self._selected_keys and len(self._selected_keys) > 1:
             keys_to_update = [k for k in self._selected_keys]
+        before = self._publish_state_snapshot()
         self._suppress_publish_signal = True
         try:
             for update_key in keys_to_update:
@@ -2747,7 +2788,7 @@ class ImageGalleryWidget(QGroupBox):
                     checkbox.blockSignals(False)
         finally:
             self._suppress_publish_signal = False
-        self.publishSelectionChanged.emit(self.publish_selected_ids())
+        self._emit_publish_change(before)
 
     def _target_thumb_size(self) -> int:
         if self._fixed_thumbnail_size:
