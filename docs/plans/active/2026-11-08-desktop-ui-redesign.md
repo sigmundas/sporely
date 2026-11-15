@@ -670,10 +670,13 @@ Found during stage 0, not fixed there (rule 1):
   scans and ran lupdate with `-no-obsolete`, so running it on Windows would
   have deleted translations. It now lists the same modules, and
   `tests/test_ui_quick_fixes.py` keeps the two lists equal.
-- The app loads no Qt base translations (`main.py` installs only
-  `Sporely_<lang>.qm`), so standard dialog and message-box buttons (OK,
-  Cancel, Yes, No, Close) stay English in every language; 15
-  `QDialogButtonBox` standard-button uses in `ui/`.
+- Fixed 2026-11-15 (sigmundas/sporely#75): standard dialog and message-box
+  buttons (OK, Cancel, Yes, No, Close) stayed English in every language,
+  because `main.py` installs only `Sporely_<lang>.qm` and Qt ships no
+  Norwegian catalogue. `ui/qt_standard_texts.py` now lists Qt's button texts
+  for lupdate, and Sporely's own catalogues translate them in Qt's
+  `QPlatformTheme`/`QCocoaTheme` contexts. Other Qt-owned texts (for
+  example the text-field context menu) remain English.
 - 168 `nb_NO` entries are identical to their English source. Many are
   legitimate (product names, Latin terms, format strings); real gaps are
   mostly Analysis plot settings, Parmasto texts and the duplicate-observation
