@@ -125,6 +125,8 @@ OTHER_UI_IDS = {
     "raw-processing.methods",
     "portable-import.all-selected",
     "portable-import.subset",
+    "portable-import.nb",
+    "portable-import.de",
 }
 TAXON_PICKER_IDS = {
     "taxon-picker.search-genus",
