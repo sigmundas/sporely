@@ -39,6 +39,7 @@ files=(
   "ui/dialog_helpers.py"
   "ui/observation_list.py"
   "ui/cloud_sync_dialog.py"
+  "ui/qt_standard_texts.py"
 )
 
 if [[ -x ".venv/bin/pyside6-lupdate" ]]; then

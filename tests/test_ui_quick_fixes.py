@@ -98,6 +98,36 @@ def test_every_ui_module_with_tr_calls_is_scanned_by_lupdate():
     )
 
 
+@pytest.mark.parametrize(
+    ("locale", "expected"),
+    [
+        ("nb_NO", ("OK", "Avbryt", "Lukk", "Ja", "Nei")),
+        ("sv_SE", ("OK", "Avbryt", "Stäng", "Ja", "Nej")),
+        ("de_DE", ("OK", "Abbrechen", "Schließen", "Ja", "Nein")),
+    ],
+)
+def test_qt_standard_buttons_are_translated(qapp, locale, expected):
+    from PySide6.QtWidgets import QMessageBox
+
+    buttons = QDialogButtonBox.StandardButton
+    with _translator(qapp, locale):
+        box = QDialogButtonBox(buttons.Ok | buttons.Cancel | buttons.Close)
+        message = QMessageBox(
+            QMessageBox.Icon.Question,
+            "",
+            "",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        texts = (
+            box.button(buttons.Ok).text(),
+            box.button(buttons.Cancel).text(),
+            box.button(buttons.Close).text(),
+            message.button(QMessageBox.StandardButton.Yes).text(),
+            message.button(QMessageBox.StandardButton.No).text(),
+        )
+    assert tuple(text.replace("&", "") for text in texts) == expected
+
+
 def test_windows_translation_script_scans_the_same_modules():
     # Both scripts run lupdate with -no-obsolete, so a module missing from
     # one of them would have its translations deleted when that script runs.
