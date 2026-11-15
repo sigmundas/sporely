@@ -665,9 +665,11 @@ test status.
 
 Found during stage 0, not fixed there (rule 1):
 
-- `tools/update_translations.ps1` lists 14 of the 37 modules the bash script
-  scans and runs lupdate with `-no-obsolete`, so running it on Windows would
-  delete translations.
+- Fixed 2026-11-15 (sigmundas/sporely#74):
+  `tools/update_translations.ps1` listed 14 of the 37 modules the bash script
+  scans and ran lupdate with `-no-obsolete`, so running it on Windows would
+  have deleted translations. It now lists the same modules, and
+  `tests/test_ui_quick_fixes.py` keeps the two lists equal.
 - The app loads no Qt base translations (`main.py` installs only
   `Sporely_<lang>.qm`), so standard dialog and message-box buttons (OK,
   Cancel, Yes, No, Close) stay English in every language; 15
@@ -688,19 +690,18 @@ Found during stage 0, not fixed there (rule 1):
   group that builds widgets reading them must isolate them itself (the
   `quick-fixes` and `live-lab` groups use `tools/review_ui/live_lab_harness.py`).
 
-Found during P1, not fixed there (rule 1); the first two are pinned as
-`xfail(strict=True)` tests in `tests/test_live_lab_behaviour.py`:
+Found during P1, not fixed there (rule 1). The first two were fixed on
+2026-11-15 (sigmundas/sporely#74), and their strict xfail tests in
+`tests/test_live_lab_behaviour.py` now pass as ordinary tests:
 
-- Live Lab forgets the last objective on restart unless it sorts first:
-  `_populate_objective_combo` fills the list while
-  `currentIndexChanged → _save_objective_selection` is connected, so the
-  first objective is saved over the stored choice before it is read back.
-  Stage 2 (capture-state bar) touches this code; fix it there or before.
-- Live Lab captures store no `session_id` in `lab_metadata`:
-  `start_session` snapshots `_session_microscope_state` before it assigns
-  `_session_id`, and later captures inherit the snapshot. Session logs and
-  Kameraimport matches do carry it; only the portable archive reads it from
-  images today.
+- Fixed: Live Lab forgot the last objective on restart unless it sorted first.
+  Filling the list emitted `currentIndexChanged → _save_objective_selection`,
+  which saved the first objective over the stored choice before it was read
+  back. `_populate_objective_combo` now reads the stored choice first.
+- Fixed: Live Lab captures stored no `session_id` in `lab_metadata`.
+  `start_session` snapshotted `_session_microscope_state` before it assigned
+  `_session_id`, and later captures inherit the snapshot. The id is now
+  assigned first.
 - Kameraimport in the dark theme at 1440×900: the side panel gets a vertical
   scrollbar that covers the right edge of its fields; the light theme has
   none at the same size (baseline renders `live-lab.camera-import-*`).
