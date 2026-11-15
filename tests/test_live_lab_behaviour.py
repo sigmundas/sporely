@@ -215,14 +215,6 @@ def test_new_capture_stores_the_lab_state_chosen_before_it(qtbot, profile):
     _stop_session(qtbot, tab)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Open question (P1): the microscope-state snapshot is taken before "
-        "start_session assigns the session id, and later captures inherit it, "
-        "so Live Lab images carry no session_id in lab_metadata."
-    ),
-)
 def test_captured_image_records_its_session_id(qtbot, profile):
     obs = create_observation(profile)
     tab = _make_tab(qtbot)
