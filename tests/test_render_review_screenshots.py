@@ -83,6 +83,8 @@ OTHER_UI_IDS = {
     "archive-messages.import-failed", "archive-messages.import-failed-de",
     "archive-messages.full-backup-for-import", "archive-messages.full-backup-for-import-de",
     "archive-messages.import-failed-details", "archive-messages.restore-complete",
+    "portable-import.nb",
+    "portable-import.de",
 }
 TAXON_PICKER_IDS = {
     "taxon-picker.search-genus",

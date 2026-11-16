@@ -4,12 +4,12 @@ import os
 import re
 import sqlite3
 import shutil
-import stat
 import threading
 import uuid
 from pathlib import Path
 
 from app_identity import app_data_dir
+from utils.private_files import PRIVATE_FILE_MODE, write_private_json
 from database.database_tags import DatabaseTerms
 from database.reference_data_paths import BUNDLED_REFERENCE_DATABASE_PATH
 from database.reference_library_schema import (
@@ -350,34 +350,36 @@ def get_app_settings() -> dict:
     return _load_app_settings()
 
 def save_app_settings(settings: dict) -> None:
-    """Write the settings file whole.
+    """Write the settings file whole, readable by the owner only.
 
-    Written to a temporary file and moved into place, so a reader on another
-    thread never sees a half-written file (which reads as no settings).
+    The settings hold the cloud access and refresh tokens. Written to an
+    owner-only temporary file and moved into place, so a reader on another
+    thread never sees a half-written file (which reads as no settings) and
+    the tokens are never readable by other accounts, not even mid-write.
     """
     with APP_SETTINGS_LOCK:
         SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
         target = Path(os.path.realpath(SETTINGS_PATH))  # a symlink's file, not the link
         temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
-        # The file holds tokens: the copy is never readable by more users than
-        # the file is, not even while it is being written.
-        mode = stat.S_IMODE(target.stat().st_mode) if target.exists() else 0o666
         try:
             if temporary.exists():  # left by a crash, possibly with looser permissions
                 temporary.unlink()
-            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
+            # O_BINARY: on Windows a raw descriptor is text mode by default.
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+            descriptor = os.open(temporary, flags, PRIVATE_FILE_MODE)
+            try:
+                os.chmod(temporary, PRIVATE_FILE_MODE)  # whatever the umask
+            except OSError:
+                pass
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
                 json.dump(settings, handle, indent=2)
-            if target.exists():
-                shutil.copymode(target, temporary)
             try:
                 os.replace(temporary, target)
             except PermissionError:
                 # Windows, when another program has the file open: write it
                 # in place, as before (the copy goes first, to free its space).
                 temporary.unlink()
-                with open(target, "w", encoding="utf-8") as handle:
-                    json.dump(settings, handle, indent=2)
+                write_private_json(target, settings, indent=2)
         finally:
             if temporary.exists():
                 temporary.unlink()

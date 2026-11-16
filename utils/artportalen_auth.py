@@ -8,7 +8,8 @@ from typing import Callable, Dict, Optional
 from urllib.parse import urljoin, urlparse
 
 import requests
-from app_identity import app_data_dir
+from app_identity import APP_NAME, app_data_dir
+from utils.private_files import write_private_json
 
 _ARTPORTALEN_USERNAME_KEY = "artportalen_username"
 _ARTPORTALEN_KEYRING_SERVICE = "Sporely.Artportalen"
@@ -530,8 +531,7 @@ class ArtportalenAuth:
         return data if isinstance(data, dict) else None
 
     def save_cookies(self, cookies: Dict[str, str]) -> None:
-        with self.cookies_file.open("w", encoding="utf-8") as handle:
-            json.dump(cookies, handle, indent=2)
+        write_private_json(self.cookies_file, cookies, indent=2)
 
     def clear_cookies(self) -> None:
         try:

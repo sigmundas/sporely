@@ -13133,14 +13133,15 @@ class ObservationsTab(QWidget):
                 level="success",
             )
 
-    def _delete_cloud_copy_for_local_observation_cloud_id(self, cloud_id: str) -> list[str]:
+    def _delete_cloud_copy_for_local_observation_cloud_id(self, cloud_id: str, client=None) -> list[str]:
         cloud_id = str(cloud_id or "").strip()
         if not cloud_id:
             return []
         try:
-            from utils.cloud_sync import SporelyCloudClient
+            if client is None:
+                from utils.cloud_sync import SporelyCloudClient
 
-            client = SporelyCloudClient.from_stored_credentials()
+                client = SporelyCloudClient.from_stored_credentials()
             if client is None:
                 return [self.tr("cloud {id}: not logged in to Sporely Cloud").format(id=cloud_id)]
             client.delete_cloud_observation(cloud_id)
@@ -13171,20 +13172,19 @@ class ObservationsTab(QWidget):
         if not cloud_id:
             return [self.tr("cloud observation: missing id")]
         try:
-            from utils.cloud_sync import SporelyCloudClient
+            from utils.cloud_sync import SporelyCloudClient, mark_observation_delete_pending
 
             client = SporelyCloudClient.from_stored_credentials()
             if client is None:
                 return [self.tr("cloud {id}: not logged in to Sporely Cloud").format(id=cloud_id)]
-            client.delete_cloud_observation(cloud_id)
+            # Durable intent before anything is removed, as for a local
+            # observation's cloud copy: a failed or interrupted delete is
+            # finished by the next sync, and pull never imports the
+            # observation meanwhile.
+            mark_observation_delete_pending(cloud_id, str(getattr(client, "user_id", "") or "").strip())
         except Exception as exc:
             return [self.tr("cloud {id}: {error}").format(id=cloud_id, error=exc)]
-        try:
-            cache_dir = self._cloud_observation_cache_dir(cloud_id)
-            shutil.rmtree(cache_dir, ignore_errors=True)
-        except Exception:
-            pass
-        return []
+        return self._delete_cloud_copy_for_local_observation_cloud_id(cloud_id, client=client)
 
     def _build_import_results_from_images(self, images: list[dict]) -> list[ImageImportResult]:
         objectives = load_objectives()

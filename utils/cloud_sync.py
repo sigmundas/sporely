@@ -42,6 +42,7 @@ from database.schema import (
     get_app_settings,
     get_connection,
     get_images_dir,
+    save_app_settings,
     update_app_settings,
 )
 from database.models import (
@@ -1950,11 +1951,7 @@ def _read_current_cloud_session_settings() -> tuple[str | None, str | None, str 
     a single helper keeps every call site symmetric with respect to
     ``get_app_settings()`` monkeypatches in tests.
     """
-    return _cloud_session_from_settings(get_app_settings())
-
-
-def _cloud_session_from_settings(settings: dict) -> tuple[str | None, str | None, str | None]:
-    """The ``(access_token, user_id, refresh_token)`` triple of ``settings``."""
+    settings = get_app_settings()
     access_raw = str(settings.get('cloud_access_token') or '').strip()
     user_raw = _normalize_cloud_user_id(settings.get('cloud_user_id'))
     refresh_raw = str(settings.get('cloud_refresh_token') or '').strip()
@@ -1975,37 +1972,50 @@ def _cloud_session_from_settings(settings: dict) -> tuple[str | None, str | None
 # already saved rotated tokens and simply adopts them.
 _CLOUD_REFRESH_LOCK = threading.RLock()
 
-# Guards the stored session (access token, user id, refresh token) against a
-# refresh that finishes after the user signed out or signed in again.  A
-# refresh saves its new tokens only if the stored session is still the one it
-# started from; the check and the write happen under this lock, and sign-in
-# and sign-out write under it too, so a sign-out cannot land between them.
-# It is the settings file's own lock, which every settings write takes, so no
-# other settings update can write back tokens it read before a sign-out.
-# Separate from _CLOUD_REFRESH_LOCK, which is held across the refresh's
-# network call: signing out must never wait on the network.
-_CLOUD_SESSION_WRITE_LOCK = APP_SETTINGS_LOCK
+# Every write of the stored session (sign-in, a saved refresh, sign-out)
+# bumps this generation under a short lock that is never held across a
+# network call. A refresh records the generation before its request and
+# persists the refreshed tokens only if no other session write happened
+# meanwhile, so a sign-out or a sign-in to another account during the
+# request is never undone by the old session's refresh response.
+_CLOUD_SESSION_WRITE_LOCK = threading.RLock()
+_cloud_session_generation = 0
 
 
-def _save_refreshed_session(
-    client: 'SporelyCloudClient',
-    started_from: tuple[str | None, str | None, str | None],
-) -> bool:
-    """Save a refreshed client's tokens if the stored session is unchanged.
+def _current_cloud_session_generation() -> int:
+    with _CLOUD_SESSION_WRITE_LOCK:
+        return _cloud_session_generation
 
-    ``started_from`` is the stored session the refresh began with.  Saves
-    nothing, and returns False, when nothing was stored then or the stored
-    session has changed since: the user signed out (saving would sign the
-    old account back in) or signed in again, possibly to another account
-    (saving would overwrite that session).
+
+def _write_cloud_session_settings(updates: dict) -> None:
+    """Write session settings and start a new session generation."""
+    global _cloud_session_generation
+    with _CLOUD_SESSION_WRITE_LOCK:
+        _cloud_session_generation += 1
+        update_app_settings(updates)
+
+
+def _persist_loaded_session(client, generation: int):
+    """Save a session refreshed from stored settings read in ``generation``.
+
+    When another session write happened while the refresh request was in
+    flight, nothing is saved: a newer valid session of the same account (a
+    concurrent loader's) is adopted, and after a sign-out or a sign-in to
+    another account the result is None.
     """
     with _CLOUD_SESSION_WRITE_LOCK:
-        if not any(started_from):
-            return False
-        if _read_current_cloud_session_settings() != started_from:
-            return False
-        client.save_credentials()
-        return True
+        if _current_cloud_session_generation() == generation:
+            client.save_credentials()
+            return client
+        access, user_id, refresh = _read_current_cloud_session_settings()
+        if (
+            access
+            and _settings_session_is_compatible(client.user_id, user_id, access)
+            and not _jwt_expires_soon(access)
+        ):
+            client._adopt_session_from_values(access, user_id, refresh)
+            return client
+        return None
 
 
 def _settings_session_is_compatible(
@@ -2059,6 +2069,28 @@ def _save_linked_cloud_user_id(user_id: str) -> None:
     normalized = _normalize_cloud_user_id(user_id)
     if normalized:
         update_app_settings({_SETTING_LINKED_CLOUD_USER_ID: normalized})
+
+
+def drop_linked_cloud_user_id(settings: dict) -> None:
+    """Remove the account link from a settings dict the caller will save.
+
+    The link lives in profile settings, not in the database, so it would
+    otherwise carry over to whatever database the profile opens next and
+    skip the first-link ownership check. Without it, the next sync runs
+    ``_verify_unlinked_database_owner`` against the new database. Dropping
+    it in the same write that switches the database leaves no moment in
+    which the new database is linked to the old account.
+    """
+    settings.pop(_SETTING_LINKED_CLOUD_USER_ID, None)
+
+
+def forget_linked_cloud_user_id() -> None:
+    """Drop the stored account link (see :func:`drop_linked_cloud_user_id`)."""
+    with APP_SETTINGS_LOCK:  # no other write may land between the read and the save
+        settings = get_app_settings()
+        if _SETTING_LINKED_CLOUD_USER_ID in settings:
+            drop_linked_cloud_user_id(settings)
+            save_app_settings(settings)
 
 
 _FIRST_LINK_OWNERSHIP_SAMPLE = 50
@@ -6494,6 +6526,7 @@ class SporelyCloudClient(
         # Serialize every refresh attempt so concurrent clients cannot
         # race Supabase into rotating the same refresh token twice.
         with _CLOUD_REFRESH_LOCK:
+            session_generation = _current_cloud_session_generation()
             settings_access, settings_user_id, settings_refresh = (
                 _read_current_cloud_session_settings()
             )
@@ -6511,6 +6544,18 @@ class SporelyCloudClient(
                     "Stored cloud session belongs to a different account "
                     "than this client instance; refusing to adopt or refresh."
                 )
+
+            # Signed out: the profile holds no session at all. A client
+            # loaded from the stored session before the sign-out must not
+            # bring its account back by refreshing (and saving) with its
+            # in-memory refresh token. A fresh sign-in whose credentials
+            # are not saved yet is not such a client.
+            if (
+                getattr(self, '_from_stored_session', False)
+                and not settings_access
+                and not settings_refresh
+            ):
+                return False
 
             # Fast path: another thread already rotated tokens while we
             # were waiting for the lock.  Adopt the newer access token
@@ -6535,7 +6580,6 @@ class SporelyCloudClient(
             )
             if not candidate_refresh:
                 return False
-            started_from = (settings_access, settings_user_id, settings_refresh)
 
             try:
                 refreshed = type(self).refresh_login(candidate_refresh)
@@ -6571,7 +6615,6 @@ class SporelyCloudClient(
                 if after_refresh and after_refresh != candidate_refresh:
                     # A newer refresh token appeared on disk after we
                     # snapshotted.  Retry once with it before giving up.
-                    started_from = (after_access, after_user_id, after_refresh)
                     try:
                         refreshed = type(self).refresh_login(after_refresh)
                     except CloudTemporarilyUnavailableError:
@@ -6588,14 +6631,35 @@ class SporelyCloudClient(
             except CloudSyncError:
                 return False
 
-            self._adopt_session_from_values(
-                refreshed.access_token, refreshed.user_id, refreshed.refresh_token
-            )
-            try:
-                # Not saved if the user signed out or in while this ran.
-                _save_refreshed_session(self, started_from)
-            except Exception:
-                pass
+            with _CLOUD_SESSION_WRITE_LOCK:
+                if _current_cloud_session_generation() != session_generation:
+                    # The stored session was written while the request was
+                    # in flight. Never save the refreshed tokens over it:
+                    # after a sign-out (no token) or a sign-in to another
+                    # account (incompatible) this client stops; a newer
+                    # session of the same account is adopted instead.
+                    after_access, after_user_id, after_refresh = (
+                        _read_current_cloud_session_settings()
+                    )
+                    if (
+                        after_access
+                        and _settings_session_is_compatible(
+                            self.user_id, after_user_id, after_access
+                        )
+                        and not _jwt_expires_soon(after_access)
+                    ):
+                        self._adopt_session_from_values(
+                            after_access, after_user_id, after_refresh
+                        )
+                        return True
+                    return False
+                self._adopt_session_from_values(
+                    refreshed.access_token, refreshed.user_id, refreshed.refresh_token
+                )
+                try:
+                    self.save_credentials()
+                except Exception:
+                    pass
             return True
 
     def _request_with_refresh(self, method: str, url: str, *, refresh_on_auth_error: bool = True, **kwargs):
@@ -6906,6 +6970,7 @@ class SporelyCloudClient(
 
     @classmethod
     def from_stored_credentials(cls) -> 'SporelyCloudClient | None':
+        session_generation = _current_cloud_session_generation()
         settings = get_app_settings()
         # Delegate to OAuthSporelyCloudClient when the stored session uses OAuth.
         if cls is SporelyCloudClient and str(settings.get('cloud_auth_method') or '').strip() == 'oauth':
@@ -6923,6 +6988,7 @@ class SporelyCloudClient(
                 user_id=token_user_id or user_id_text,
                 refresh_token=refresh_text,
             )
+            client._from_stored_session = True
             expiry_seconds = _decode_jwt_expiry(token_text)
             # Only refresh proactively when we can *prove* the token is
             # near expiry AND we have a refresh token to spend.  If the
@@ -6948,23 +7014,22 @@ class SporelyCloudClient(
                 return client
         if refresh_text:
             # Under the refresh lock, so two loaders never spend the same
-            # refresh token, and after re-reading what is stored.
+            # refresh token: one that waited finds the session written
+            # meanwhile and loads it instead.
             with _CLOUD_REFRESH_LOCK:
-                started_from = _cloud_session_from_settings(settings)
-                if _read_current_cloud_session_settings() != started_from:
-                    changed = True  # another loader refreshed, or the user signed in or out
-                else:
-                    changed = False
+                if _current_cloud_session_generation() == session_generation:
                     try:
-                        client = cls.refresh_login(str(refresh_text))
-                        changed = not _save_refreshed_session(client, started_from)
+                        client = _persist_loaded_session(
+                            cls.refresh_login(str(refresh_text)), session_generation
+                        )
+                        if client is not None:
+                            client._from_stored_session = True
+                        return client
                     except CloudTemporarilyUnavailableError:
                         raise
                     except CloudSyncError:
                         return None
-            if changed:
-                return cls.from_stored_credentials()  # load what is stored now
-            return client
+            return cls.from_stored_credentials()  # load what is stored now
         return None
 
     def fetch_current_user_id(self) -> str:
@@ -7080,8 +7145,9 @@ class SporelyCloudClient(
         _clear_session_scoped_caches()
         if email is not None:
             updates['cloud_user_email'] = str(email or '').strip()
-        with _CLOUD_SESSION_WRITE_LOCK:
-            update_app_settings(updates)
+        _write_cloud_session_settings(updates)
+        # From now on this client is the stored session: a sign-out ends it.
+        self._from_stored_session = True
         # Only change the saved password when the caller explicitly asked us to.
         # Auto-login/refresh paths should preserve whatever the user chose earlier.
         if remember_password is True and email and password:
@@ -7093,26 +7159,24 @@ class SporelyCloudClient(
     def clear_session() -> None:
         """Forget only the cloud tokens so the saved password can survive re-login."""
         _clear_session_scoped_caches()
-        with _CLOUD_SESSION_WRITE_LOCK:
-            update_app_settings({
-                'cloud_access_token': None,
-                'cloud_user_id': None,
-                'cloud_refresh_token': None,
-                'cloud_auth_method': None,
-            })
+        _write_cloud_session_settings({
+            'cloud_access_token': None,
+            'cloud_user_id': None,
+            'cloud_refresh_token': None,
+            'cloud_auth_method': None,
+        })
 
     @staticmethod
     def clear_credentials() -> None:
         _clear_session_scoped_caches()
         clear_saved_cloud_password()
-        with _CLOUD_SESSION_WRITE_LOCK:
-            update_app_settings({
-                'cloud_access_token': None,
-                'cloud_user_id': None,
-                'cloud_refresh_token': None,
-                'cloud_user_email': None,
-                'cloud_auth_method': None,
-            })
+        _write_cloud_session_settings({
+            'cloud_access_token': None,
+            'cloud_user_id': None,
+            'cloud_refresh_token': None,
+            'cloud_user_email': None,
+            'cloud_auth_method': None,
+        })
 
     # ── REST helpers ─────────────────────────────────────────────────────
 
@@ -9345,8 +9409,9 @@ class OAuthSporelyCloudClient(SporelyCloudClient):
         }
         if email is not None:
             updates['cloud_user_email'] = str(email or '').strip()
-        with _CLOUD_SESSION_WRITE_LOCK:
-            update_app_settings(updates)
+        _write_cloud_session_settings(updates)
+        # From now on this client is the stored session: a sign-out ends it.
+        self._from_stored_session = True
 
     @classmethod
     def from_stored_credentials(cls) -> 'OAuthSporelyCloudClient | None':
@@ -9356,6 +9421,7 @@ class OAuthSporelyCloudClient(SporelyCloudClient):
         CloudReauthRequiredError propagates so callers can surface the
         reauth_required status instead of silently returning None.
         """
+        session_generation = _current_cloud_session_generation()
         settings = get_app_settings()
         token = settings.get('cloud_access_token')
         user_id = settings.get('cloud_user_id')
@@ -9372,6 +9438,7 @@ class OAuthSporelyCloudClient(SporelyCloudClient):
                 refresh_token=refresh_text,
                 user_email=user_email,
             )
+            client._from_stored_session = True
             expiry_seconds = _decode_jwt_expiry(token_text)
             if (
                 expiry_seconds is not None
@@ -9389,25 +9456,24 @@ class OAuthSporelyCloudClient(SporelyCloudClient):
                 return client
         if refresh_text:
             # Under the refresh lock, so two loaders never spend the same
-            # refresh token, and after re-reading what is stored.
+            # refresh token: one that waited finds the session written
+            # meanwhile and loads it instead.
             with _CLOUD_REFRESH_LOCK:
-                started_from = _cloud_session_from_settings(settings)
-                if _read_current_cloud_session_settings() != started_from:
-                    changed = True  # another loader refreshed, or the user signed in or out
-                else:
-                    changed = False
+                if _current_cloud_session_generation() == session_generation:
                     try:
-                        client = cls.refresh_login(refresh_text)
-                        changed = not _save_refreshed_session(client, started_from)
+                        client = _persist_loaded_session(
+                            cls.refresh_login(refresh_text), session_generation
+                        )
+                        if client is not None:
+                            client._from_stored_session = True
+                        return client
                     except CloudTemporarilyUnavailableError:
                         raise
                     except CloudReauthRequiredError:
                         raise  # propagate; caller surfaces reauth_required status
                     except CloudSyncError:
                         return None
-            if changed:
-                return cls.from_stored_credentials()  # load what is stored now
-            return client
+            return cls.from_stored_credentials()  # load what is stored now
         return None
 
     @classmethod

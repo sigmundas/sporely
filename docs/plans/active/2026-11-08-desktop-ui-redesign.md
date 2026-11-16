@@ -1,6 +1,6 @@
 # Desktop UI redesign
 
-Status: **direction approved; stage 0 in review (sigmundas/sporely#65).** Rewritten 2026-11-08
+Status: **direction approved; stage 0 and P1 merged and released in desktop 1.0.0; P2 is next.** Rewritten 2026-11-08
 against `main` @ `a6d2376` to follow the owner's plan doc, then updated with
 the owner's answers the same day.
 
@@ -845,8 +845,8 @@ landed through PRs before the branch existed), the commit that brought it into
 
 | Stage | Commit or PR | On `main` | Status |
 | --- | --- | --- | --- |
-| 0 | sigmundas/sporely#65 | `a682f6c` | Agent-verified (tests, inspected renderer screenshots); owner tested it 2026-11-08 and said to go on; merged 2026-11-09 |
-| P1 | sigmundas/sporely#67 | `3162501` | Agent-verified (tests, inspected renderer screenshots); no production code; merged 2026-11-09 |
+| 0 | sigmundas/sporely#65 | `a682f6c` (2026-11-09) | Agent-verified (tests, inspected renderer screenshots); owner tested it 2026-11-08 and said to go on; released in desktop 1.0.0 |
+| P1 | sigmundas/sporely#67 | `3162501` (2026-11-09) | Agent-verified (tests, inspected renderer screenshots); no production code |
 | P2 | `adb561f` | — | Agent-verified: Live Lab, RAW and main-window tests green; `live-lab` renders pixel-identical to the P1 baseline in both themes; translations moved to the new contexts with none lost |
 | P3 | `e279277` | — | Agent-verified: the global stylesheet, design tokens and button icon colours are byte-identical in both themes; ring colour, outline and token tests; renders identical except the intended objective colour changes; Codex review: 3 findings fixed (Measure tag colour from the profile, NA-first names, outlined badge size). Owner's layout opinion 2026-11-09: looks good |
 | 1a | `c03845e` | — | Agent-verified: collapsible Preparation and Notes sections (summary line, warning for unset values, open state remembered); qtbot tests for mouse, keyboard, restart, summaries and layout; renders change only Live Lab's left panel; Codex review: 5 findings, 4 fixed, 1 not reproducible but guarded. |
@@ -1066,13 +1066,19 @@ Found during stage 6, not fixed there (rule 1):
 
 Found during stage 0, not fixed there (rule 1):
 
-- `tools/update_translations.ps1` lists 14 of the 37 modules the bash script
-  scans and runs lupdate with `-no-obsolete`, so running it on Windows would
-  delete translations.
-- The app loads no Qt base translations (`main.py` installs only
-  `Sporely_<lang>.qm`), so standard dialog and message-box buttons (OK,
-  Cancel, Yes, No, Close) stay English in every language; 15
-  `QDialogButtonBox` standard-button uses in `ui/`. Fixed after stage 10 (the “Qt's own strings” row in Progress).
+- Fixed 2026-11-15 (sigmundas/sporely#74):
+  `tools/update_translations.ps1` listed 14 of the 37 modules the bash script
+  scans and ran lupdate with `-no-obsolete`, so running it on Windows would
+  have deleted translations. It now lists the same modules, and
+  `tests/test_ui_quick_fixes.py` keeps the two lists equal.
+- Fixed: standard dialog and message-box buttons (OK, Cancel, Yes, No, Close)
+  stayed English in every language, because `main.py` installs only
+  `Sporely_<lang>.qm` and Qt ships no Norwegian catalogue. `main` fixed the
+  buttons in sigmundas/sporely#75 (`ui/qt_standard_texts.py`); this branch
+  fixed them and Qt's other own texts (the “Qt's own strings” row in
+  Progress, `ui/qt_strings.py`). The merge of `main` kept `ui/qt_strings.py`
+  and removed `ui/qt_standard_texts.py`; the Swedish buttons use `main`'s
+  “OK” and “Återställ”, as elsewhere in the app.
 - 168 `nb_NO` entries are identical to their English source. Many are
   legitimate (product names, Latin terms, format strings); real gaps are
   mostly Analysis plot settings, Parmasto texts and the duplicate-observation
@@ -1089,19 +1095,20 @@ Found during stage 0, not fixed there (rule 1):
   group that builds widgets reading them must isolate them itself (the
   `quick-fixes` and `live-lab` groups use `tools/review_ui/live_lab_harness.py`).
 
-Found during P1, not fixed there (rule 1); the first two are pinned as
-`xfail(strict=True)` tests in `tests/test_live_lab_behaviour.py`:
+Found during P1, not fixed there (rule 1). The first two were fixed on
+2026-11-15 (sigmundas/sporely#74), and their strict xfail tests in
+`tests/test_live_lab_behaviour.py` now pass as ordinary tests:
 
-- Fixed in stage 2: Live Lab forgot the last objective on restart unless it sorted first:
-  `_populate_objective_combo` fills the list while
-  `currentIndexChanged → _save_objective_selection` is connected, so the
-  first objective is saved over the stored choice before it is read back.
-  Stage 2 (capture-state bar) touches this code; fix it there or before.
-- Live Lab captures store no `session_id` in `lab_metadata`:
-  `start_session` snapshots `_session_microscope_state` before it assigns
-  `_session_id`, and later captures inherit the snapshot. Session logs and
-  Kameraimport matches do carry it; only the portable archive reads it from
-  images today.
+- Fixed: Live Lab forgot the last objective on restart unless it sorted first.
+  Filling the list emitted `currentIndexChanged → _save_objective_selection`,
+  which saved the first objective over the stored choice before it was read
+  back. Fixed on this branch in stage 2 (signals blocked while the list is
+  refilled, `LiveLabPrepPanel._populate_objective_combo`) and on `main` in
+  sigmundas/sporely#74; the merge of `main` kept stage 2's version.
+- Fixed: Live Lab captures stored no `session_id` in `lab_metadata`.
+  `start_session` snapshotted `_session_microscope_state` before it assigned
+  `_session_id`, and later captures inherit the snapshot. The id is now
+  assigned first (sigmundas/sporely#74).
 - Kameraimport in the dark theme at 1440×900: the side panel gets a vertical
   scrollbar that covers the right edge of its fields; the light theme has
   none at the same size (baseline renders `live-lab.camera-import-*`).

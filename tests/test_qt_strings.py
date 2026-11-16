@@ -66,9 +66,14 @@ def test_sources_match_qt_and_wording_follows_qt(lang, qt_lang):
 
 
 # Where Sporely departs from Qt's wording on purpose: Qt's German spin-box
-# menu gives "Alles auswählen" the A that "Ausschneiden" already has.
+# menu gives "Alles auswählen" the A that "Ausschneiden" already has, and
+# the Swedish buttons use the words the rest of Sporely's Swedish uses
+# ("OK", "Återställ") instead of Qt's "Ok" and "Nollställ".
 OUR_WORDING = {
     ("de_DE", "QAbstractSpinBox", "&Select All"): "Alles a&uswählen",
+    ("sv_SE", "QPlatformTheme", "OK"): "OK",
+    ("sv_SE", "QPlatformTheme", "Reset"): "Återställ",
+    ("sv_SE", "QPlatformTheme", "Restore Defaults"): "Återställ standardvärden",
 }
 
 # The menus Qt builds from these entries (QAbstractSpinBox reuses the line

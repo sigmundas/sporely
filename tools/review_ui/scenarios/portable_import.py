@@ -51,6 +51,20 @@ def register_portable_import_scenarios(registry: ScenarioRegistry) -> None:
         description="Changing checkboxes updates the selected dependency closure.",
         build=lambda context: _build(context, subset=True), viewport=(900, 650),
     ))
+    registry.register(ReviewScenario(
+        id="portable-import.nb", group="portable-import",
+        title="Portable import (nb)",
+        description="Norwegian: the dialog's own texts and Qt's standard Cancel button.",
+        build=lambda context: _build(context, subset=False), viewport=(900, 650),
+        locale="nb_NO",
+    ))
+    registry.register(ReviewScenario(
+        id="portable-import.de", group="portable-import",
+        title="Portable import (de)",
+        description="German, the long-string locale, including Qt's standard Cancel button.",
+        build=lambda context: _build(context, subset=False), viewport=(900, 650),
+        locale="de_DE",
+    ))
 
 
 def _archive_message(context: ReviewContext, method: str, *args, details_open: bool = False):

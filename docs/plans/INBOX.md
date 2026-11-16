@@ -5,6 +5,20 @@ Items here are not approved implementation plans.
 Add a note under the nearest heading, or use “Unsorted / needs review” when its home is unclear.
 
 ## Cloud sync / recovery
+- Open findings from the pre-release Codex review of desktop 1.0.0 (2026-11-15), verified against the code; the owner chose to release with them open:
+  - An edit committed while a push is in flight can lose its dirty flag: the push marks the observation synced by id only (`cloud_sync.py` mark-synced after `push_observation`, `models.update_observation_sync_state`). A reliable guard needs a local revision column, which is a SQLite schema change.
+  - Observation PATCHes have no version precondition, so a web/Android edit between the conflict read and the PATCH is overwritten (already listed in `docs/verification/2026-10-desktop-metadata-known-risks.md`).
+  - Deleting a single synced measurement records no cloud deletion intent; the next pull brings it back (contract "Known limitation").
+  - Deep measurement verification can clear `deleted_at` on a microscope image deleted on the web before the pull records the deletion (`measurement_reconcile.py` restore loop; contradicts `cloud-sync-architecture.md` "never un-deleted").
+  - Pull passes cloud NULL scale/objective/stain to `ImageDB.update_image`, where None means "unchanged", while the baseline stores the NULL; a later push restores the stale value (known-risks doc).
+  - Reset Cloud Sync clears observation links but leaves reference-library rows owned by the old account, so reference sync stays blocked after signing in to another account (fails closed).
+  - Reference reconciliation commits across two ATTACHed WAL databases, which SQLite does not make crash-atomic.
+  - Hard cloud observation deletion removes media before the database rows, the reverse of contract rule 6; the durable delete intent makes it retryable, but the order disagrees with the contract.
+  - Bundle import: calibration metadata paths other than `images[].path` (`working_path`, `auto_images`, asset metadata) keep the exporter's paths.
+  - A database-folder switch does not pause a running sync; a worker verified against the old database can open the new one.
+  - Switching back to a database re-runs the first-link check, which refuses the owner if every sampled synced observation was deleted in the cloud.
+  - Whole-snapshot `save_app_settings(settings)` callers can still write back settings read before a sign-out (`update_app_settings` is serialized).
+  - Legacy `database_path` move in Database settings replaces an existing `mushrooms.db` in the target folder (`Path.replace`).
 - Value-identical image metadata PATCHes: syncs of the identity backfill logged "metadata patch … source bytes unchanged" on observations whose stored image baselines did not change (456, 460, 462, 502, 505, 442), followed by a child-change pull. The contract forbids no-op cloud writes (they advance the child-change cursor). Find which field the PATCH sends and skip it when the cloud already matches.
 - The two copies of `docs/supabase-sync-contract.md` (sporely-py and sporely-web `main`) differ by about 600 lines that predate 2026-10-19 (for example the personal-copy provenance paragraph and the pulled-identity paragraph). Reconcile them in one docs change.
 - Sync summary counters mislead: "touched N dirty observation(s) with no real change" ignores identity RPCs, and `measurement push … pushed=N` counts unchanged rows.
@@ -113,8 +127,8 @@ Source: former `PLAN.md`.
 The reference-library plan is complete (`docs/plans/completed/2026-08-05-reference-library-and-public-plots.md`); revisit its deferred items before planning new reference work.
 
 ## Testing / infrastructure
-- `tests/test_render_review_screenshots.py::test_default_renderer_emits_central_manifest_and_all_established_states` times out at its 120 s limit (the full renderer takes several minutes) and the file is excluded from CI. Tracked as redesign prep P3. The other failures noted 2026-10-19 (registry tests, the Live Lab keyboard test, taxonomy probes) pass as of 2026-11-08; one probe is an expected failure.
-- `pytest-qt` (4.5.0) is pinned in CI but in no requirements file; a fresh `.venv` errors on the missing `qapp` fixture. Tracked as redesign prep P6.
+- `tests/test_render_review_screenshots.py::test_default_renderer_emits_central_manifest_and_all_established_states` times out at its 120 s limit: the renderer's `reference-library` group alone takes about 180 s. CI skips the file. Noted in the UI redesign plan's P1 findings; no stage owns it. The other failures noted 2026-10-19 (registry tests, the Live Lab keyboard test, taxonomy probes) pass as of 2026-11-08; one probe is an expected failure.
+- `pytest-qt` (4.5.0) and `pytest` (9.1.1) are pinned only in `.github/workflows/ci.yml`, in no requirements file; a fresh `.venv` errors on the missing `qapp` fixture. No stage owns this.
 
 - Add export coverage for observations, images, measurements, calibrations, reference data, and image files; verify `app_settings.json` and full profile state are excluded.
 - Introduce Ruff.
@@ -151,6 +165,7 @@ Source: former `PLAN.md`.
 - Re-check whether old Phase 7 SQL notes are obsolete after the Supabase baseline reset.
 - Verify whether the earlier AI crop backlog has already been completed before promoting any item.
 
+- Desktop 1.0.0 published 2026-11-15: built by `build-release` on the release PR #71 merge, `60762c2`, which the `v1.0.0` tag points at; published with the CHANGELOG notes as the latest release. It includes the pre-release review fixes (#70) and the stage 0 UI fixes (#65). All four installers were built, the workflow's macOS bundle-version and draft checks passed, and the published checksums equal the draft's. No installer was installed or smoke-tested by hand. The contract mirror, sporely-web #55 (docs only), was merged after publication on 2026-11-15.
 - Desktop 0.9.30 published 2026-11-05: the draft was rebuilt from `main` after PR #57 (Sporely app icon; release PR #55, compatibility review #56, name associations #53) and published with the CHANGELOG notes as the latest release. The `v0.9.30` tag points at the PR #57 merge, `260d826`. All four installers built, and the published checksums equal the tested draft's.
   - Verification of the macOS Apple Silicon installer, run in a test profile copied from real data with cloud sign-in blocked:
     - the app reports 0.9.30, bundles `tax-2026.10.31-01` and installs it byte-identical (`sqlite_sha256` `ec19acac…`);
@@ -161,7 +176,7 @@ Source: former `PLAN.md`.
     - the rollback artifacts (the `releases/` frozen sets, the `-11` bundle in `0c54c47`);
     - the `sporely-worktrees/py-name-assoc-smoke` worktree;
     - the test profiles `name-assoc-smoke`, `release-0930-smoke` and `release-0930-smoke2`.
-- Housekeeping: merged branches `fix/backup-dynamic-setting-keys`, `fix/backup-cloud-auth-method` and `ci/release-draft-retarget` (local and remote) can be deleted. The `sporely-worktrees/py-taxonomy-audit` worktree holds uncommitted audit outputs (`relationship-pass/author-standards/`, `decision-package-e/`, `v3/NorTaxa-COL-avvik.xlsx` with an Excel lock file); commit or move them before removing it.
+- Housekeeping: the `sporely-worktrees/py-taxonomy-audit` worktree holds uncommitted audit outputs (`relationship-pass/author-standards/`, `decision-package-e/`, `v3/NorTaxa-COL-avvik.xlsx` with an Excel lock file); commit or move them before removing it.
 - sporely-landing PR #9 (the public "why COL XR" explainer) is still unmerged. R2 has shipped, so it only needs the owner's go-ahead.
 - Free disk space on the development Mac dropped from 53 GB to 27 GB during 2026-10-25. No leftover backup or build files were found; cause unknown.
 

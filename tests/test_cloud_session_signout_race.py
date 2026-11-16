@@ -5,9 +5,10 @@ across the network call; signing out (or in) on the UI thread does not wait
 for it. The refresh used to save its new tokens regardless, so a sign-out
 during it was undone (the signed-out account's tokens came back) and a
 sign-in to another account during it was overwritten. A refresh now saves
-only if the stored session is still the one it started from, checked and
-written under ``_CLOUD_SESSION_WRITE_LOCK``, which sign-in and sign-out also
-take.
+only if no session write happened since it started (the session generation,
+checked and saved under ``_CLOUD_SESSION_WRITE_LOCK``, which sign-in and
+sign-out also take); after a sign-out the refreshing client stops
+(``docs/supabase-sync-contract.md``).
 
 The settings store is a real dict behind ``get_app_settings`` /
 ``update_app_settings``; the sign-out and sign-in are the real
@@ -100,7 +101,7 @@ def test_signing_out_during_a_refresh_stays_signed_out(store, monkeypatch):
     _refresh_returns(monkeypatch, cloud_sync.SporelyCloudClient, during=_sign_out)
     client = cloud_sync.SporelyCloudClient(A_STALE, "user-A", "RA1")
 
-    assert client._refresh_session_if_possible() is True  # this request may finish
+    assert client._refresh_session_if_possible() is False  # the client stops
     assert _session(store) == (None, None, None)
     assert cloud_sync.SporelyCloudClient.from_stored_credentials() is None
 
@@ -131,10 +132,15 @@ def test_signing_in_again_during_a_refresh_keeps_the_new_session(store, monkeypa
 
 
 def test_a_refresh_after_signing_out_saves_nothing(store, monkeypatch):
-    """The worker still holds the signed-out account's refresh token."""
+    """The worker still holds the signed-out account's refresh token.
+
+    Workers load their client from the stored session; a client built by a
+    sign-in whose credentials are not saved yet may still refresh.
+    """
     _sign_out()
     _refresh_returns(monkeypatch, cloud_sync.SporelyCloudClient)
     client = cloud_sync.SporelyCloudClient(A_STALE, "user-A", "RA1")
+    client._from_stored_session = True  # as from_stored_credentials marks it
 
     client._refresh_session_if_possible()
 
@@ -146,7 +152,7 @@ def test_signing_out_during_an_oauth_refresh_stays_signed_out(store, monkeypatch
     _refresh_returns(monkeypatch, cloud_sync.OAuthSporelyCloudClient, during=_sign_out)
     client = cloud_sync.OAuthSporelyCloudClient(A_STALE, "user-A", "RA1")
 
-    assert client._refresh_session_if_possible() is True
+    assert client._refresh_session_if_possible() is False  # the client stops
     assert _session(store) == (None, None, None)
     assert store["cloud_auth_method"] is None
 
@@ -173,7 +179,7 @@ def test_loading_from_a_stored_refresh_token_still_saves(store, monkeypatch, cls
 
 
 def test_a_sign_out_cannot_land_between_the_check_and_the_save(store, monkeypatch):
-    """The sign-out runs on another thread right after the refresh's check.
+    """The sign-out runs on another thread right at the save's generation check.
 
     It reaches the lock while the save holds it, must not finish until the
     save is done, and then clears what the save wrote.
@@ -191,21 +197,21 @@ def test_a_sign_out_cannot_land_between_the_check_and_the_save(store, monkeypatc
         return result
 
     monkeypatch.setattr(cloud_sync, "update_app_settings", update)
-    real_read = cloud_sync._read_current_cloud_session_settings
-    reads = []
+    real_generation = cloud_sync._current_cloud_session_generation
+    checks = []
     sign_out = threading.Thread(target=_sign_out)
     finished_during_the_save = []
 
-    def read_then_sign_out():
-        snapshot = real_read()
-        reads.append(snapshot)
-        if len(reads) == 2:  # the save's check (the first is the refresh's start)
+    def check_then_sign_out():
+        generation = real_generation()
+        checks.append(generation)
+        if len(checks) == 2:  # the save's check (the first is the refresh's start)
             sign_out.start()
             assert at_the_lock.wait(timeout=5)
             finished_during_the_save.append(cleared.wait(timeout=0.3))
-        return snapshot
+        return generation
 
-    monkeypatch.setattr(cloud_sync, "_read_current_cloud_session_settings", read_then_sign_out)
+    monkeypatch.setattr(cloud_sync, "_current_cloud_session_generation", check_then_sign_out)
     client = cloud_sync.SporelyCloudClient(A_STALE, "user-A", "RA1")
 
     client._refresh_session_if_possible()

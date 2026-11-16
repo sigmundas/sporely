@@ -6,6 +6,7 @@ from pathlib import Path
 import requests
 from typing import Dict, Optional, Callable
 from app_identity import app_data_dir
+from utils.private_files import write_private_json
 
 _ARTSOBS_WEB_USERNAME_KEY = "artsobs_web_username"
 _ARTSOBS_WEB_KEYRING_SERVICE = "Sporely.Artsobservasjoner"
@@ -526,9 +527,7 @@ class ArtsObservasjonerAuth:
         return data if isinstance(data, dict) else None
 
     def _write_json_cookies(self, path: Path, cookies: Dict[str, str]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w") as f:
-            json.dump(cookies, f, indent=2)
+        write_private_json(path, cookies, indent=2)
 
     def _migrate_legacy_cookies(self) -> None:
         self.cookies_file.parent.mkdir(parents=True, exist_ok=True)
@@ -576,9 +575,7 @@ class ArtsObservasjonerAuth:
     def save_cookies(self, cookies: Dict[str, str], target: str = "mobile"):
         """Save cookies to cache"""
         target_path = self._cookies_path(target)
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(target_path, "w") as f:
-            json.dump(cookies, f, indent=2)
+        write_private_json(target_path, cookies, indent=2)
         print(f"Saved {len(cookies)} cookies to {target_path}")
 
     def clear_cookies(self, target: Optional[str] = None) -> None:
