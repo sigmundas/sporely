@@ -836,6 +836,24 @@ screen unless it blocks daily use. Screenshot defects moved to stage 0.
   cocoa run (stage 2 shortcuts or the Preparat chips).
 - *later* Renderer speed: `test_default_renderer_emits_central_manifest_and_all_established_states`
   times out at 120 s and is excluded from CI.
+- *follow-up* Found by the Codex challenge review of the merge of `main`
+  (desktop 1.0.0) into this branch, 2026-11-16 (`627cf86`). Neither was
+  caused by the merge; both are in 1.0.0 too. Sign-in code, so each needs
+  the owner's go-ahead and a Codex challenge review:
+  - Two app instances on one profile share `app_settings.json` but not the
+    session generation or the settings lock, so a refresh in one instance
+    can undo a sign-out (or overwrite a sign-in to another account) in the
+    other. Nothing stops a second instance from starting. Smallest fix: one
+    instance per profile.
+  - `from_stored_credentials` (both clients) ignores the result of the
+    proactive refresh of a nearly expired token: after a sign-out during
+    that refresh it still returns the old client, which works until its
+    access token expires. Return None when the session was cleared or
+    replaced.
+  - Settings writes: the Windows fallback (`PermissionError` on replace)
+    writes in place, so a crash then can leave a truncated file, which
+    reads as no settings; nothing is flushed with `fsync` before the
+    replace; and the fallback's `chmod` to 0600 fails open.
 
 ## Progress
 
