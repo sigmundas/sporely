@@ -5351,56 +5351,6 @@ class CalibrationDB:
         return [dict(row) for row in rows]
 
     @staticmethod
-    def recalculate_measurements_for_objective(
-        objective_key: str,
-        old_scale: float,
-        new_scale: float
-    ) -> int:
-        """Recalculate all measurements for images using an objective.
-
-        Returns the number of measurements updated.
-        """
-        if old_scale <= 0 or new_scale <= 0:
-            return 0
-
-        scale_ratio = new_scale / old_scale
-
-        conn = get_connection()
-        cursor = conn.cursor()
-
-        # Get all image IDs using this objective
-        cursor.execute(
-            "SELECT id FROM images WHERE objective_name = ?",
-            (objective_key,)
-        )
-        image_ids = [row[0] for row in cursor.fetchall()]
-
-        if not image_ids:
-            conn.close()
-            return 0
-
-        # Update scale on images
-        cursor.execute(
-            "UPDATE images SET scale_microns_per_pixel = ? WHERE objective_name = ?",
-            (new_scale, objective_key)
-        )
-
-        # Update measurements
-        placeholders = ",".join("?" * len(image_ids))
-        cursor.execute(f'''
-            UPDATE spore_measurements
-            SET length_um = length_um * ?,
-                width_um = CASE WHEN width_um IS NOT NULL THEN width_um * ? ELSE NULL END
-            WHERE image_id IN ({placeholders})
-        ''', [scale_ratio, scale_ratio] + image_ids)
-
-        updated_count = cursor.rowcount
-        conn.commit()
-        conn.close()
-
-        return updated_count
-
-    @staticmethod
     def recalculate_measurements_for_calibration(
         calibration_id: int,
         new_calibration_id: int,

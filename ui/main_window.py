@@ -201,8 +201,7 @@ from references.reference_plotting import (
 from utils.annotation_capture import save_spore_annotation
 from utils.taxon_identity import proven_sporely_taxon_id
 from utils.image_metadata_merge import merge_image_lab_metadata
-from utils.thumbnail_generator import generate_all_sizes
-from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
+from utils.image_utils import load_oriented_pixmap
 from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
 from utils.cloud_sync import is_cloud_auth_error, is_cloud_reauth_required_error
 from utils.publish_media import prepare_ordered_mosaic_inputs
@@ -518,7 +517,6 @@ class AnalysisGalleryTile(QWidget):
         super().resizeEvent(event)
 from app_identity import APP_NAME, APP_REPOSITORY_URL, app_data_dir
 from config import (
-    LOCAL_IMPORT_IMAGE_FILTER,
     RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG,
     RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW,
     SETTING_RAW_COMPANION_SOURCE_PREFERENCE,
@@ -14377,96 +14375,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.update_display_lines()
         self._update_scale_mismatch_warning()
 
-    def load_image(self):
-        """Load a microscope image."""
-        paths, _ = QFileDialog.getOpenFileNames(
-            self, "Open Microscope Image", self._get_default_import_dir(),
-            self.tr(LOCAL_IMPORT_IMAGE_FILTER + ";;All Files (*)")
-        )
-
-        if not paths:
-            return
-        self._remember_import_dir(paths[0])
-
-        output_dir = get_images_dir() / "imports"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        last_image_data = None
-        for path in paths:
-            try:
-                ingest = prepare_local_ingest_image(
-                    path,
-                    lab_metadata=merge_image_lab_metadata({"image_type": "microscope"}),
-                    output_dir=output_dir,
-                )
-            except RawRenderingUnavailableError as exc:
-                QMessageBox.warning(
-                    self,
-                    "RAW Rendering Unavailable",
-                    f"Could not import {Path(path).name}: {exc}",
-                )
-                continue
-            except RuntimeError as exc:
-                QMessageBox.warning(
-                    self,
-                    "Image Preparation Failed",
-                    f"Could not prepare {Path(path).name}: {exc}",
-                )
-                continue
-
-            objective_name = self.get_objective_name_for_storage()
-            calibration_id = CalibrationDB.get_active_calibration_id(objective_name) if objective_name else None
-            contrast_fallback = SettingsDB.get_list_setting(
-                "contrast_options",
-                DatabaseTerms.CONTRAST_METHODS,
-            )
-            contrast_value = SettingsDB.get_setting(DatabaseTerms.last_used_key("contrast"), None)
-            if not contrast_value:
-                contrast_value = SettingsDB.get_setting(
-                    "contrast_default",
-                    contrast_fallback[0] if contrast_fallback else DatabaseTerms.CONTRAST_METHODS[0],
-                )
-            contrast_value = DatabaseTerms.canonicalize("contrast", contrast_value)
-            if not contrast_value:
-                contrast_value = contrast_fallback[0] if contrast_fallback else DatabaseTerms.CONTRAST_METHODS[0]
-            provenance_kwargs = ingest.provenance_kwargs()
-            original_filepath = path if ingest.working_path != path else None
-            image_id = ImageDB.add_image(
-                observation_id=self.active_observation_id,
-                filepath=ingest.working_path,
-                image_type='microscope',
-                scale=self.microns_per_pixel,
-                objective_name=objective_name,
-                contrast=contrast_value,
-                calibration_id=calibration_id,
-                resample_scale_factor=1.0,
-                original_filepath=original_filepath,
-                lab_metadata=merge_image_lab_metadata({"image_type": "microscope"}, getattr(ingest, "lab_metadata", None)),
-                **provenance_kwargs,
-            )
-
-            image_data = ImageDB.get_image(image_id)
-            stored_path = image_data.get("filepath") if image_data else ingest.working_path
-
-            # Generate thumbnails for ML training
-            try:
-                generate_all_sizes(stored_path, image_id)
-            except Exception as e:
-                print(f"Warning: Could not generate thumbnails: {e}")
-
-            last_image_data = ImageDB.get_image(image_id)
-            cleanup_import_temp_file(path, ingest.working_path, stored_path, output_dir)
-
-        if last_image_data:
-            try:
-                ObservationsTab._ensure_microscope_publish_defaults(
-                    self.active_observation_id,
-                    ImageDB.get_images_for_observation(int(self.active_observation_id or 0)),
-                )
-            except Exception:
-                pass
-            self.load_image_record(last_image_data, refresh_table=True)
-            self.refresh_observation_images(select_image_id=last_image_data['id'])
-
     def zoom_in(self):
         """Zoom in the image."""
         self.image_label.zoom_in()
@@ -22814,95 +22722,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         # Switch to the Measure tab
         if switch_tab:
             self.tab_widget.setCurrentIndex(1)
-
-    def load_image_for_observation(self):
-        """Load microscope images and link them to the active observation."""
-        paths, _ = QFileDialog.getOpenFileNames(
-            self, "Open Microscope Image", self._get_default_import_dir(),
-            self.tr(LOCAL_IMPORT_IMAGE_FILTER + ";;All Files (*)")
-        )
-
-        if not paths:
-            return
-        self._remember_import_dir(paths[0])
-
-        output_dir = get_images_dir() / "imports"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        last_image_data = None
-        for path in paths:
-            try:
-                ingest = prepare_local_ingest_image(
-                    path,
-                    lab_metadata=merge_image_lab_metadata({"image_type": "microscope"}),
-                    output_dir=output_dir,
-                )
-            except RawRenderingUnavailableError as exc:
-                QMessageBox.warning(
-                    self,
-                    "RAW Rendering Unavailable",
-                    f"Could not import {Path(path).name}: {exc}",
-                )
-                continue
-            except RuntimeError as exc:
-                QMessageBox.warning(
-                    self,
-                    "Image Preparation Failed",
-                    f"Could not prepare {Path(path).name}: {exc}",
-                )
-                continue
-
-            objective_name = self.get_objective_name_for_storage()
-            calibration_id = CalibrationDB.get_active_calibration_id(objective_name) if objective_name else None
-            contrast_fallback = SettingsDB.get_list_setting(
-                "contrast_options",
-                DatabaseTerms.CONTRAST_METHODS,
-            )
-            contrast_value = SettingsDB.get_setting(DatabaseTerms.last_used_key("contrast"), None)
-            if not contrast_value:
-                contrast_value = SettingsDB.get_setting(
-                    "contrast_default",
-                    contrast_fallback[0] if contrast_fallback else DatabaseTerms.CONTRAST_METHODS[0],
-                )
-            contrast_value = DatabaseTerms.canonicalize("contrast", contrast_value)
-            if not contrast_value:
-                contrast_value = contrast_fallback[0] if contrast_fallback else DatabaseTerms.CONTRAST_METHODS[0]
-            provenance_kwargs = ingest.provenance_kwargs()
-            original_filepath = path if ingest.working_path != path else None
-            image_id = ImageDB.add_image(
-                observation_id=self.active_observation_id,
-                filepath=ingest.working_path,
-                image_type='microscope',
-                scale=self.microns_per_pixel,
-                objective_name=objective_name,
-                contrast=contrast_value,
-                calibration_id=calibration_id,
-                resample_scale_factor=1.0,
-                original_filepath=original_filepath,
-                lab_metadata=merge_image_lab_metadata({"image_type": "microscope"}, getattr(ingest, "lab_metadata", None)),
-                **provenance_kwargs,
-            )
-
-            image_data = ImageDB.get_image(image_id)
-            stored_path = image_data.get("filepath") if image_data else ingest.working_path
-
-            try:
-                generate_all_sizes(stored_path, image_id)
-            except Exception as e:
-                print(f"Warning: Could not generate thumbnails: {e}")
-
-            last_image_data = ImageDB.get_image(image_id)
-            cleanup_import_temp_file(path, ingest.working_path, stored_path, output_dir)
-
-        if last_image_data:
-            try:
-                ObservationsTab._ensure_microscope_publish_defaults(
-                    self.active_observation_id,
-                    ImageDB.get_images_for_observation(int(self.active_observation_id or 0)),
-                )
-            except Exception:
-                pass
-            self.load_image_record(last_image_data, refresh_table=True)
-            self.refresh_observation_images(select_image_id=last_image_data['id'])
 
     def on_image_selected(self, image_id, observation_id, display_name):
         """Handle image selection from the Observations tab - load the image."""
