@@ -6462,17 +6462,6 @@ class CalibrationDialog(GeometryMixin, QDialog):
             self.history_table.scrollToItem(item)
         self._on_history_row_clicked(row, 0)
 
-    # Backward compatibility methods for in-place calibration
-    # The new dialog handles calibration internally, so these are stubs
-
-    def set_calibration_distance(self, distance_pixels: float):
-        """Backward compatibility stub. New dialog handles this internally."""
-        pass
-
-    def set_calibration_preview(self, pixmap: QPixmap, points: list):
-        """Backward compatibility stub. New dialog handles this internally."""
-        pass
-
     def get_last_used_objective(self):
         """Get the last used objective data, or the default objective if set."""
         # First check for a default objective

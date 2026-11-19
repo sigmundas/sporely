@@ -27,6 +27,11 @@ app; the payoff is clarity and removing foot-guns, not bundle size.
 
 ## Stage 1 — Delete dead code (one PR)
 
+Status (2026-11-19): done on `chore/stale-code-sweep`. It also removed
+`CalibrationDB.recalculate_measurements_for_objective` (`database/models.py`),
+which had no callers and was found while characterizing the rescale paths, and
+three imports in `ui/main_window.py` that only the deleted slots used.
+
 - Delete `database/userreset.py`, `database/add_point_columns.py`,
   `update_translations_final.py`, `ui/measurement_tool.py`.
 - Delete `MainWindow.load_image`, `MainWindow.load_image_for_observation`,

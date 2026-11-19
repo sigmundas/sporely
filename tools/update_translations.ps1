@@ -26,7 +26,6 @@ $files = @(
     "ui\\image_import_dialog.py",
     "ui\\raw_processing_controls.py",
     "ui\\observations_tab.py",
-    "ui\\measurement_tool.py",
     "ui\\calibration_dialog.py",
     "ui\\cloud_conflict_dialog.py",
     "ui\\species_plate_dialog.py",

@@ -5,7 +5,9 @@ This folder is reserved for standalone local SQLite migration SQL.
 ## Status
 
 - No standalone SQL migrations have been moved here yet.
-- The current desktop database still uses the Python migration helpers in `schema.py`, `migrate.py`, and `add_point_columns.py`.
+- The desktop app migrates its database through the Python helpers in `schema.py`.
+  `migrate.py` holds an older parallel copy that only tests call; its future is
+  tracked in `docs/plans/active/2026-11-18-database-package-layout.md`.
 
 ## Guidance
 
