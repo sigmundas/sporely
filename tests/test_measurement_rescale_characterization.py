@@ -236,10 +236,12 @@ def test_main_window_rescale(real_db, monkeypatch):
     assert _measurement(real_db, seed.calibration_id) == pytest.approx(
         {"length_um": 40.0, "width_um": 4.0, "notes": "Q=10.0", "measurement_type": "calibration"}
     )
-    # Image scale and sync state are left to the caller (apply_objective /
-    # set_custom_scale call ImageDB.update_image afterwards).
+    # The image scale is left to the caller (apply_objective / set_custom_scale
+    # call ImageDB.update_image afterwards). Sync state is not asserted here:
+    # the stubbed update_statistics really persists the observation's spore
+    # summary via ObservationDB.update_spore_statistics, which marks it dirty
+    # when the summary changes, and the caller's update_image marks it dirty.
     assert _image_scale(real_db, seed.image_id) == pytest.approx(OLD_SCALE)
-    assert _sync_status(real_db, seed.obs_id) == "synced"
     assert stub.calls == ["lines", "table", "stats"]
 
 

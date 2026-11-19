@@ -71,8 +71,11 @@ Characterization tests: `tests/test_measurement_rescale_characterization.py`
 
 - **Dirty marking, normal flows: fine.** `ImageDB.update_image` and
   `MeasurementDB.add_measurement` both mark the observation dirty
-  (`_touch_observation`). The main_window rescale is always followed by
-  `update_image` in `apply_objective` / `set_custom_scale`; the
+  (`_touch_observation`). The main_window rescale calls `update_statistics`,
+  which persists the spore summary through
+  `ObservationDB.update_spore_statistics` (dirty when the summary changes),
+  and is always followed by `update_image` in `apply_objective` /
+  `set_custom_scale`; the
   observations_tab rescale is followed by `update_image(..., scale=...)` in
   `_apply_import_results_to_observation`; all three upserts go through
   `add_measurement`.
@@ -102,8 +105,9 @@ Characterization tests: `tests/test_measurement_rescale_characterization.py`
   replaces it.
 - **Two-transaction upsert confirmed:** a failing insert after the DELETE leaves
   the image with no calibration row.
-- `CalibrationDB.recalculate_measurements_for_objective` had no callers; it is
-  deleted by the stale-code sweep, so four rescale paths remain.
+- `CalibrationDB.recalculate_measurements_for_objective` has no callers. The
+  stale-code sweep (PR #77) deletes it; once that lands, four rescale paths
+  remain. If #77 has not landed when Stage 2 starts, delete it there.
 
 ## Stage 1 — One transactional calibration upsert
 
