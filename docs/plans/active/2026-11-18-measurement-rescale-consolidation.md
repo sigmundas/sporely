@@ -64,6 +64,51 @@ paths bypass it for every DELETE and UPDATE.
 5. If Stage 0 finds UI rescales not marked dirty: fix that here? (Sync-adjacent,
    so it needs your go-ahead under AGENTS.md.)
 
+### Stage 0 results (2026-11-19)
+
+Characterization tests: `tests/test_measurement_rescale_characterization.py`
+(real SQLite; UI methods called unbound with a minimal `self`).
+
+- **Dirty marking, normal flows: fine.** `ImageDB.update_image` and
+  `MeasurementDB.add_measurement` both mark the observation dirty
+  (`_touch_observation`). The main_window rescale calls `update_statistics`,
+  which persists the spore summary through
+  `ObservationDB.update_spore_statistics` (dirty when the summary changes),
+  and is always followed by `update_image` in `apply_objective` /
+  `set_custom_scale`; the
+  observations_tab rescale is followed by `update_image(..., scale=...)` in
+  `_apply_import_results_to_observation`; all three upserts go through
+  `add_measurement`.
+- **Dirty marking, one gap (suspected defect).** Changing the objective in
+  Prepare Images runs `_apply_settings_to_indices` →
+  `_rescale_measurements_for_image`, which commits rescaled measurements *and*
+  the new `images.scale_microns_per_pixel` immediately, without marking the
+  observation dirty. If the dialog is then closed without applying, the local
+  DB keeps the change and a cloud-linked observation does not push it until
+  something else dirties it. Pinned by
+  `test_image_import_dialog_rescale`; not yet reproduced through the real dialog.
+- **Notes overwrite (suspected defect).** The image_import and main_window
+  rescales set `notes = "Q=…"`, replacing any free text in the measurement's
+  notes and the calibration row's `Scale bar: … µm` note.
+- **Calibration rows.** image_import and main_window rescale them (main_window
+  recomputes from points, so a calibration row's length becomes
+  `pixels × new scale`); observations_tab skips them.
+- **Width-line drift is real but conditional.** It only differs when
+  `pixel_dist` ≠ the selection length. On the traced paths `pixel_dist` is the
+  distance between the selection's own two points (`image_import_dialog.py`
+  `_on_scale_bar_endpoint_moved` and the click handler near `:6572`;
+  `main_window.py` calibration click handler), so the copies agree there. The
+  other `_scale_bar_pixel_distance` assignments (`image_import_dialog.py:6485`,
+  `:6529`) are not traced.
+- **Case drift is real.** With a `Calibration` (capitalised) row, main_window and
+  image_import leave it and add a second calibration row; observations_tab
+  replaces it.
+- **Two-transaction upsert confirmed:** a failing insert after the DELETE leaves
+  the image with no calibration row.
+- `CalibrationDB.recalculate_measurements_for_objective` has no callers. The
+  stale-code sweep (PR #77) deletes it; once that lands, four rescale paths
+  remain. If #77 has not landed when Stage 2 starts, delete it there.
+
 ## Stage 1 — One transactional calibration upsert
 
 - Add `MeasurementDB.replace_calibration_measurement(...)` taking plain numbers
