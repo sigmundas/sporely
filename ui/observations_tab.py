@@ -14028,56 +14028,6 @@ class ObservationsTab(QWidget):
             length_value = None
         return selection, length_value
 
-    def _upsert_calibration_measurement_for_image(
-        self,
-        image_id: int,
-        scale_bar_selection: tuple | None,
-        total_um: float | None,
-        coordinate_scale: float = 1.0,
-    ) -> None:
-        if not image_id or not scale_bar_selection or len(scale_bar_selection) != 2:
-            return
-        if total_um is None or total_um <= 0:
-            return
-        (x1, y1), (x2, y2) = scale_bar_selection
-        factor = float(coordinate_scale) if coordinate_scale and coordinate_scale > 0 else 1.0
-        x1 *= factor
-        y1 *= factor
-        x2 *= factor
-        y2 *= factor
-        dx = x2 - x1
-        dy = y2 - y1
-        length_px = (dx * dx + dy * dy) ** 0.5
-        if length_px <= 0:
-            return
-        perp_x = -dy / length_px
-        perp_y = dx / length_px
-        half_width_px = length_px / 20.0  # 1:10 ratio
-        mx = (x1 + x2) / 2
-        my = (y1 + y2) / 2
-        p1 = QPointF(x1, y1)
-        p2 = QPointF(x2, y2)
-        p3 = QPointF(mx - perp_x * half_width_px, my - perp_y * half_width_px)
-        p4 = QPointF(mx + perp_x * half_width_px, my + perp_y * half_width_px)
-        width_um = float(total_um) / 10.0
-
-        conn = get_connection()
-        conn.execute(
-            "DELETE FROM spore_measurements WHERE image_id = ? AND COALESCE(LOWER(measurement_type), '') = 'calibration'",
-            (image_id,),
-        )
-        conn.commit()
-        conn.close()
-
-        MeasurementDB.add_measurement(
-            image_id=image_id,
-            length=float(total_um),
-            width=width_um,
-            measurement_type="calibration",
-            notes=f"Scale bar: {float(total_um):.1f} µm",
-            points=[p1, p2, p3, p4],
-        )
-
     def _scale_scale_bar_selection(
         self,
         selection: tuple | None,
@@ -14097,31 +14047,7 @@ class ObservationsTab(QWidget):
         old_scale: float | None,
         new_scale: float | None,
     ) -> None:
-        if (
-            not image_id
-            or not old_scale
-            or not new_scale
-            or old_scale <= 0
-            or new_scale <= 0
-        ):
-            return
-        ratio = float(new_scale) / float(old_scale)
-        if abs(ratio - 1.0) < 1e-6:
-            return
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            '''
-            UPDATE spore_measurements
-            SET length_um = length_um * ?,
-                width_um = CASE WHEN width_um IS NOT NULL THEN width_um * ? ELSE NULL END
-            WHERE image_id = ?
-              AND COALESCE(LOWER(measurement_type), '') != 'calibration'
-            ''',
-            (ratio, ratio, image_id)
-        )
-        conn.commit()
-        conn.close()
+        MeasurementDB.rescale_image_measurements(image_id, old_scale, new_scale)
 
     def _maybe_remove_image_file(
         self,
@@ -14707,11 +14633,10 @@ class ObservationsTab(QWidget):
                 )
                 result.scale_bar_selection = stored_scale_bar_selection
             scale_bar_length = getattr(result, "scale_bar_length_um", None)
-            self._upsert_calibration_measurement_for_image(
-                image_id=image_id,
-                scale_bar_selection=stored_scale_bar_selection,
-                total_um=scale_bar_length,
-                coordinate_scale=1.0,
+            MeasurementDB.replace_calibration_measurement(
+                image_id,
+                stored_scale_bar_selection,
+                scale_bar_length,
             )
 
             stored_path = resampled_path

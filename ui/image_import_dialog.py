@@ -2330,53 +2330,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 ImageDB.update_image(result.image_id, scale_bar_selection=result.scale_bar_selection)
             # Create / update calibration measurement (1:10 aspect ratio)
             if result.image_id and result.scale_bar_selection:
-                self._upsert_calibration_measurement(result.image_id, result.scale_bar_selection, total_um, pixel_dist)
+                MeasurementDB.replace_calibration_measurement(result.image_id, result.scale_bar_selection, total_um)
             # Re-apply overlay after scale updates, because scale application can refresh the preview widget.
             self._restore_scale_bar_overlay(result)
         self.set_hint(None)
-
-    def _upsert_calibration_measurement(
-        self,
-        image_id: int,
-        scale_bar_selection: tuple,
-        total_um: float,
-        pixel_dist: float,
-    ) -> None:
-        """Create or replace the calibration measurement for an image (1:10 aspect ratio)."""
-        (x1, y1), (x2, y2) = scale_bar_selection
-        dx = x2 - x1
-        dy = y2 - y1
-        length_px = (dx * dx + dy * dy) ** 0.5
-        if length_px <= 0:
-            return
-        perp_x = -dy / length_px
-        perp_y = dx / length_px
-        half_width_px = pixel_dist / 20.0  # 1:10 ratio: width = length/10, half = length/20
-        mx = (x1 + x2) / 2
-        my = (y1 + y2) / 2
-        p1 = QPointF(x1, y1)
-        p2 = QPointF(x2, y2)
-        p3 = QPointF(mx - perp_x * half_width_px, my - perp_y * half_width_px)
-        p4 = QPointF(mx + perp_x * half_width_px, my + perp_y * half_width_px)
-        width_um = total_um / 10.0
-
-        # Delete existing calibration measurement(s) for this image
-        conn = get_connection()
-        conn.execute(
-            "DELETE FROM spore_measurements WHERE image_id = ? AND measurement_type = 'calibration'",
-            (image_id,),
-        )
-        conn.commit()
-        conn.close()
-
-        MeasurementDB.add_measurement(
-            image_id=image_id,
-            length=total_um,
-            width=width_um,
-            measurement_type="calibration",
-            notes=f"Scale bar: {total_um:.1f} µm",
-            points=[p1, p2, p3, p4],
-        )
 
     def apply_scale_bar(self, scale_um: float) -> None:
         if not scale_um or scale_um <= 0:
@@ -5225,11 +5182,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             measurements = MeasurementDB.get_measurements_for_image(result.image_id)
             if not measurements:
                 continue
-            has_points = any(
-                all(m.get(f"p{i}_{axis}") is not None for i in range(1, 5) for axis in ("x", "y"))
-                for m in measurements
-            )
-            if not has_points:
+            if not MeasurementDB.has_rescalable_measurements(measurements):
                 continue
             targets.append(
                 (result.image_id, float(old_scale), float(effective_new_scale), measurements)
@@ -5278,9 +5231,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if abs(new_scale - old_scale) < 1e-6:
             return True
         measurements = MeasurementDB.get_measurements_for_image(image_id)
-        if not measurements:
-            return True
-        if not any(m.get("length_um") is not None for m in measurements):
+        if not MeasurementDB.has_rescalable_measurements(measurements):
             return True
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Question)
@@ -5300,37 +5251,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
         new_scale: float,
         measurements: list[dict] | None = None,
     ) -> bool:
-        if not image_id or not old_scale or not new_scale:
-            return True
-        if abs(new_scale - old_scale) < 1e-6:
-            return True
-        measurements = measurements or MeasurementDB.get_measurements_for_image(image_id)
-        if not measurements:
-            return True
-        if not any(m.get("length_um") is not None for m in measurements):
-            return True
-        ratio = float(new_scale) / float(old_scale)
-        conn = get_connection()
-        cursor = conn.cursor()
-        for m in measurements:
-            old_length = m.get("length_um")
-            if old_length is None:
-                continue
-            new_length_um = float(old_length) * ratio
-            old_width = m.get("width_um")
-            new_width_um = float(old_width) * ratio if old_width is not None else None
-            q_value = new_length_um / new_width_um if new_width_um and new_width_um > 0 else 0
-            cursor.execute(
-                "UPDATE spore_measurements SET length_um = ?, width_um = ?, notes = ? WHERE id = ?",
-                (new_length_um, new_width_um, f"Q={q_value:.1f}", m["id"]),
-            )
-        # Also update the image's scale so _apply_import_results_to_observation won't double-rescale
-        cursor.execute(
-            "UPDATE images SET scale_microns_per_pixel = ? WHERE id = ?",
-            (float(new_scale), image_id),
-        )
-        conn.commit()
-        conn.close()
+        # Also stores the new image scale, so _apply_import_results_to_observation
+        # does not rescale a second time, and marks the observation dirty,
+        # because this commits before (and independently of) that apply step.
+        MeasurementDB.rescale_image_measurements(image_id, old_scale, new_scale)
         return True
 
     def _apply_metadata_to_index(self, index: int) -> None:
