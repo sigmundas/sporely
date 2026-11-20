@@ -22442,11 +22442,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         measurements = MeasurementDB.get_measurements_for_image(self.current_image_id)
         if not measurements:
             return True
-        has_points = any(
-            all(m.get(f"p{i}_{axis}") is not None for i in range(1, 5) for axis in ("x", "y"))
-            for m in measurements
-        )
-        if not has_points:
+        if not MeasurementDB.has_rescalable_measurements(measurements):
             return True
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Question)
@@ -22458,26 +22454,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         if box.clickedButton() != ok_btn:
             return False
 
-        conn = get_connection()
-        cursor = conn.cursor()
-        for m in measurements:
-            if not all(m.get(f"p{i}_{axis}") is not None for i in range(1, 5) for axis in ("x", "y")):
-                continue
-            p1 = QPointF(m["p1_x"], m["p1_y"])
-            p2 = QPointF(m["p2_x"], m["p2_y"])
-            p3 = QPointF(m["p3_x"], m["p3_y"])
-            p4 = QPointF(m["p4_x"], m["p4_y"])
-            dist1 = math.hypot(p2.x() - p1.x(), p2.y() - p1.y()) * new_scale
-            dist2 = math.hypot(p4.x() - p3.x(), p4.y() - p3.y()) * new_scale
-            length_um = max(dist1, dist2)
-            width_um = min(dist1, dist2)
-            q_value = length_um / width_um if width_um > 0 else 0
-            cursor.execute(
-                'UPDATE spore_measurements SET length_um = ?, width_um = ?, notes = ? WHERE id = ?',
-                (length_um, width_um, f"Q={q_value:.1f}", m["id"])
-            )
-        conn.commit()
-        conn.close()
+        MeasurementDB.rescale_image_measurements(self.current_image_id, old_scale, new_scale)
 
         self.load_measurement_lines()
         self.update_measurements_table()
@@ -22850,11 +22827,10 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self.current_image_id,
                 scale_bar_selection=scale_bar_selection,
             )
-            self._upsert_calibration_measurement(
+            MeasurementDB.replace_calibration_measurement(
                 self.current_image_id,
                 scale_bar_selection,
                 total_um,
-                distance_pixels,
             )
             self.load_measurement_lines()
             self.update_measurements_table()
@@ -22871,47 +22847,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.temp_lines = []
         self._show_calibration_overlay_for_scalebar = False
         self.update_display_lines()
-
-    def _upsert_calibration_measurement(
-        self,
-        image_id: int,
-        scale_bar_selection: tuple[tuple[float, float], tuple[float, float]],
-        total_um: float,
-        pixel_dist: float,
-    ) -> None:
-        (x1, y1), (x2, y2) = scale_bar_selection
-        dx = x2 - x1
-        dy = y2 - y1
-        length_px = (dx * dx + dy * dy) ** 0.5
-        if length_px <= 0:
-            return
-        perp_x = -dy / length_px
-        perp_y = dx / length_px
-        half_width_px = pixel_dist / 20.0
-        mx = (x1 + x2) / 2
-        my = (y1 + y2) / 2
-        p1 = QPointF(x1, y1)
-        p2 = QPointF(x2, y2)
-        p3 = QPointF(mx - perp_x * half_width_px, my - perp_y * half_width_px)
-        p4 = QPointF(mx + perp_x * half_width_px, my + perp_y * half_width_px)
-        width_um = total_um / 10.0
-
-        conn = get_connection()
-        conn.execute(
-            "DELETE FROM spore_measurements WHERE image_id = ? AND measurement_type = 'calibration'",
-            (image_id,),
-        )
-        conn.commit()
-        conn.close()
-
-        MeasurementDB.add_measurement(
-            image_id=image_id,
-            length=total_um,
-            width=width_um,
-            measurement_type="calibration",
-            notes=f"Scale bar: {total_um:.1f} µm",
-            points=[p1, p2, p3, p4],
-        )
 
     def _should_show_calibration_overlay(self) -> bool:
         if self.calibration_mode or self._show_calibration_overlay_for_scalebar:

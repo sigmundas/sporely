@@ -67,6 +67,7 @@ paths bypass it for every DELETE and UPDATE.
 ### Stage 0 results (2026-11-19)
 
 Characterization tests: `tests/test_measurement_rescale_characterization.py`
+(renamed to `tests/test_measurement_rescale_rules.py` when the rules landed)
 (real SQLite; UI methods called unbound with a minimal `self`).
 
 - **Dirty marking, normal flows: fine.** `ImageDB.update_image` and
@@ -109,26 +110,72 @@ Characterization tests: `tests/test_measurement_rescale_characterization.py`
   stale-code sweep (PR #77) deletes it; once that lands, four rescale paths
   remain. If #77 has not landed when Stage 2 starts, delete it there.
 
-## Stage 1 — One transactional calibration upsert
+## Decisions (owner, 2026-11-20)
 
-- Add `MeasurementDB.replace_calibration_measurement(...)` taking plain numbers
-  (no `QPointF`), doing DELETE + INSERT in one transaction, with the
-  case-insensitive predicate.
-- Switch all three callers; keep each caller's current geometry until decision 1
-  is made, via an explicit parameter.
-- Verification: Stage 0 tests still pass, plus a failure-injection test that
-  shows the old row survives a failed insert.
+1. Cross tick: keep today's look; size it from the selection (identical to
+   `pixel_dist` on every traced path).
+2. A rescale never touches the scale-bar calibration record.
+3. A rescale never rewrites notes. Q is unchanged when length and width scale
+   together, and notes also hold multiline paths.
+4. Rescale mechanics (image scale, transaction) are an implementation detail.
+5. Fix the Prepare Images sync gap.
 
-## Stage 2 — One rescale service with explicit options
+Found while explaining the questions, confirmed against a test database:
+the Prepare Images rescale replaced multiline paths with `Q=0.0` (data loss),
+and the Measure tab rescale skipped multiline measurements (length kept the old
+scale).
 
-- Add `MeasurementDB.rescale_image_measurements(image_id, ratio, *,
-  include_calibration, rewrite_q_notes, update_image_scale, mark_dirty)`.
-- Switch the three UI paths to it with options that reproduce today's
-  behaviour exactly. Stage 0 tests must pass unchanged.
+Still open, not part of this plan: when re-calibrating an objective, let the
+owner choose how far back to update (today: yes/no for every image on the old
+calibration, `CalibrationDialog._prompt_recalculate_measurements`).
 
-## Stage 3 — Unify semantics (only what the owner decided)
+## Stages 1–3 — landed together (2026-11-20)
 
-- Each changed default is its own commit with an updated test.
+The decisions came before Stage 1, so the "reproduce today's behaviour, then
+unify" split no longer applied; the three stages landed as one change on
+`fix/measurement-rescale-consolidation`.
+
+- `MeasurementDB.replace_calibration_measurement`: one transaction,
+  case-insensitive delete, tick from the selection. Replaces the three UI copies.
+- `MeasurementDB.rescale_image_measurements` (and `_rescale_measurements_on_cursor`):
+  ratio rescale whose denominator is the image's *stored* scale (the caller's
+  scale only when none is stored), skips calibration rows, keeps notes,
+  includes multiline, stores the new image scale in the same transaction, and
+  marks the observation dirty only when a value changed. Used by the Measure
+  tab and Prepare Images (objective change and apply);
+  `CalibrationDB.recalculate_measurements_for_calibration` uses the same
+  row rule.
+- The Measure tab now rescales by ratio instead of recomputing from the four
+  points; that is what makes multiline measurements rescale.
+- `MeasurementDB.has_rescalable_measurements` decides whether to ask
+  "update previous measurements?" on all paths: an image with only multiline
+  measurements now asks; one with only a calibration record does not.
+- The Prepare Images objective change still commits before apply, and closing
+  the dialog without applying keeps the rescale and the new image scale (the
+  objective name updates only on apply). It is now marked dirty, so it syncs.
+
+Codex challenge findings on this change (2026-11-20):
+
+- Fixed: with a ratio rescale, the Measure tab's cached scale could be stale
+  after Prepare Images rescaled the image and was closed (0.1 → 0.2, then 0.3
+  gave 60 µm instead of 30). The stored-scale denominator fixes it; regression
+  test `test_measure_tab_after_prepare_images_was_closed_without_applying`.
+- Fixed: the helper could mark an observation dirty when nothing changed.
+
+Pre-existing, not fixed here (follow-ups):
+
+1. Prepare Images divides a scale-bar custom scale by the image's earlier
+   resample factor, although a scale bar is measured on current pixels
+   (`ImageImportDialog._collect_rescale_targets` / `_apply_settings_to_index`).
+   Repeated custom scales on an already-downsampled image end with wrong
+   lengths. The stored-scale denominator removes the intermediate
+   double-count, not the factor question.
+2. "Only this image" in the rescale prompt limits the immediate rescale but not
+   the objective change: the other selected images still get the new objective
+   and are rescaled at apply (or, on a first resample, keep stale lengths).
+3. Resampling an image scales the stored point columns
+   (`ObservationsTab._scale_measurement_points`) but not the multiline JSON
+   path, so a multiline measurement draws at the old pixel positions.
 
 ## Sequencing
 
