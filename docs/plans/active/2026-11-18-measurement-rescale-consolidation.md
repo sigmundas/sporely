@@ -165,6 +165,19 @@ Existing offsets are kept, not repaired: which scale such an
 image should have is not knowable from the database. With no usable old
 calibration scale, images are only relinked.
 
+**Moving one image to the active calibration** (owner, 2026-11-21, PR #85).
+Opening an image keeps its scale and calibration link (PR #84), so choosing
+the image's own objective again — in the Measure scale combo or the image-tag
+Objective menu — now asks "Move this image from the <old> calibration to the
+active <new> calibration? Measurements change by +x%." (always asked, with
+specific text, the owner's choice over reusing the generic rescale prompt).
+Move rescales the measurements by new ÷ old and links the active calibration;
+an image already on the active calibration's scale and link is left alone.
+The target scale is the objective's (`objectives.json`), as for every other
+objective change. Pre-existing, not fixed: a portable import can leave
+`objectives.json` disagreeing with the active calibration row, and the spore
+preview keeps its cached scale after a measurement rescale.
+
 ## Stages 1–3 — landed together (2026-11-20)
 
 The decisions came before Stage 1, so the "reproduce today's behaviour, then

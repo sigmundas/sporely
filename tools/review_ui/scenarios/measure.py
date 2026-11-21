@@ -26,7 +26,55 @@ def _metadata_tags(_context: ReviewContext):
     return viewer
 
 
+def _active_calibration_prompt(context: ReviewContext, *, change: str | None = "+0.5%"):
+    """Re-choosing the shown objective for an image on an earlier calibration."""
+    from ui.main_window import build_active_calibration_prompt
+
+    box, _move = build_active_calibration_prompt(
+        context.host, old_label="2026-06-01", new_label="2026-11-21", change=change
+    )
+    return box
+
+
 def register_measure_scenarios(registry: ScenarioRegistry) -> None:
+    for scenario in (
+        ReviewScenario(
+            id="measure.active-calibration-prompt",
+            group="measure",
+            title="Move image to active calibration (en)",
+            description="Re-choosing the image's objective: both calibrations and the change to its measurements.",
+            viewport=(520, 200),
+            build=_active_calibration_prompt,
+        ),
+        ReviewScenario(
+            id="measure.active-calibration-prompt-nb",
+            group="measure",
+            title="Move image to active calibration (nb)",
+            description="The same question in Norwegian.",
+            viewport=(520, 200),
+            locale="nb_NO",
+            build=_active_calibration_prompt,
+        ),
+        ReviewScenario(
+            id="measure.active-calibration-prompt-de-dark",
+            group="measure",
+            title="Move image to active calibration, dark (de)",
+            description="German, dark theme.",
+            viewport=(520, 200),
+            locale="de_DE",
+            theme="dark",
+            build=_active_calibration_prompt,
+        ),
+        ReviewScenario(
+            id="measure.active-calibration-prompt-no-measurements",
+            group="measure",
+            title="Move image to active calibration, no measurements (en)",
+            description="An image without measurements: no change line.",
+            viewport=(520, 200),
+            build=lambda context: _active_calibration_prompt(context, change=None),
+        ),
+    ):
+        registry.register(scenario)
     registry.register(
         ReviewScenario(
             id="measure.metadata-tags",

@@ -116,6 +116,10 @@ CONFLICT_IDS = {
 }
 OTHER_UI_IDS = {
     "measure.metadata-tags",
+    "measure.active-calibration-prompt",
+    "measure.active-calibration-prompt-nb",
+    "measure.active-calibration-prompt-de-dark",
+    "measure.active-calibration-prompt-no-measurements",
     "observations.image-metadata-tags",
     "observations.taxon-link-offer",
     "observations.taxon-picker-search",
