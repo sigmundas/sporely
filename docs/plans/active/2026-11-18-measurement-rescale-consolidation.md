@@ -169,9 +169,11 @@ Pre-existing follow-ups, status (2026-11-21, `fix/rescale-follow-ups`):
    already per stored pixel; objective scales are still divided).
    `_stored_pixel_scale_for_result` follows the apply step's rule, and
    `_collect_rescale_targets` compares against the stored image scale.
-2. Separate change (visible dialog, awaits the owner's layout opinion): the
-   multi-image rescale prompt's middle option rescaled only one image while all
-   selected images got the new objective.
+2. Fixed on `fix/rescale-prompt-all-selected` (PR #81, a visible dialog change
+   that waits for the owner's opinion): the multi-image prompt is now the
+   single-image OK/Cancel prompt and OK rescales every affected image. Save also
+   reads the current stored scale instead of its pre-dialog snapshot when the
+   objective is unchanged, so it no longer overwrites a scale the dialog stored.
 3. Fixed: resampling or cropping now transforms multiline JSON paths with the
    point columns (`MeasurementDB.scale_measurement_points` /
    `translate_measurement_points`), each coordinate on its own, behind a write
@@ -207,6 +209,9 @@ Still open (Codex review, 2026-11-21; not reproduced in the app):
    not `images.scale_bar_x1..y2`, which Prepare Images restores; reapplying
    that older selection there reverts the scale. ("Set from scalebar" redraws
    instead and takes the length from its input, which may hold a default.)
+9. Cancelling the rescale prompt with a mixed-objective selection restores a
+   single objective in the selector, so the next unrelated edit can assign
+   that objective to every selected image.
 
 Also fixed after the second review: the Measure tab compares an objective
 change against the stored image scale (its cached scale could be stale); the
