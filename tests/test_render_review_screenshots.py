@@ -161,8 +161,22 @@ LIVE_LAB_IDS = {
     )
     for suffix in ("", "-dark")
 } | {"live-lab.idle-small"}
+RECALIBRATION_IDS = {
+    "recalibration.update-existing",
+    "recalibration.update-recent",
+    "recalibration.update-recent-dark",
+    "recalibration.new-only-dark",
+    "recalibration.update-recent-small",
+    "recalibration.update-recent-en",
+}
 ALL_IDS = (
-    REFERENCE_IDS | CONFLICT_IDS | OTHER_UI_IDS | TAXON_PICKER_IDS | QUICK_FIX_IDS | LIVE_LAB_IDS
+    REFERENCE_IDS
+    | CONFLICT_IDS
+    | OTHER_UI_IDS
+    | TAXON_PICKER_IDS
+    | QUICK_FIX_IDS
+    | LIVE_LAB_IDS
+    | RECALIBRATION_IDS
 )
 
 
@@ -186,7 +200,7 @@ def test_registry_has_unique_semantic_ids_and_expected_groups() -> None:
     assert len(ids) == len(set(ids))
     assert set(registry.groups()) == {
         "conflict", "live-lab", "measure", "observations", "portable-import",
-        "quick-fixes", "raw-processing", "reference-library", "taxon-picker",
+        "quick-fixes", "raw-processing", "recalibration", "reference-library", "taxon-picker",
     }
     assert {scenario.id for scenario in registry.all()} == ALL_IDS
 

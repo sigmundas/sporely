@@ -11,6 +11,7 @@ files=(
   "ui/raw_processing_controls.py"
   "ui/observations_tab.py"
   "ui/calibration_dialog.py"
+  "ui/recalibration_scope_dialog.py"
   "ui/cloud_conflict_dialog.py"
   "ui/species_plate_dialog.py"
   "ui/zoomable_image_widget.py"
