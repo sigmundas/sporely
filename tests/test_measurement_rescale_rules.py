@@ -481,3 +481,296 @@ def test_add_measurement_still_stores_points(real_db):
 
     assert (row["p1_x"], row["p2_x"], row["p3_y"], row["p4_y"]) == (0.0, 100.0, -20.0, 20.0)
     assert row["sync_key"]
+
+
+# --- Geometry after resample or crop ----------------------------------------
+
+
+def _points_and_path(db_path, measurement_id):
+    row = _sql(
+        db_path,
+        "SELECT p1_x, p1_y, p2_x, p2_y, p3_x, p3_y, p4_x, p4_y, notes, length_um "
+        "FROM spore_measurements WHERE id = ?",
+        (measurement_id,),
+    )[0]
+    return dict(row)
+
+
+def test_resample_scales_points_and_multiline_paths(real_db):
+    seed = _seed(real_db)
+
+    observations_tab.ObservationsTab._scale_measurement_points(SimpleNamespace(), seed.image_id, 0.5)
+
+    spore = _points_and_path(real_db, seed.spore_id)
+    assert (spore["p2_x"], spore["p3_y"], spore["p4_y"]) == pytest.approx((50.0, -10.0, 10.0))
+    assert spore["notes"] == "Q=2.5"
+    assert spore["length_um"] == pytest.approx(10.0)
+    multiline = _points_and_path(real_db, seed.multiline_id)
+    # Previously the stored points moved but the drawn path did not.
+    assert json.loads(multiline["notes"]) == {"multiline": [[0.0, 0.0], [25.0, 15.0], [50.0, 0.0]]}
+    assert (multiline["p2_x"], multiline["p2_y"]) == pytest.approx((25.0, 15.0))
+    assert multiline["p3_x"] is None
+
+
+def test_crop_shifts_points_and_multiline_paths(real_db):
+    seed = _seed(real_db)
+
+    observations_tab.ObservationsTab._translate_measurement_points(SimpleNamespace(), seed.image_id, 10.0, 5.0)
+
+    spore = _points_and_path(real_db, seed.spore_id)
+    assert (spore["p1_x"], spore["p1_y"], spore["p2_x"]) == pytest.approx((-10.0, -5.0, 90.0))
+    multiline = _points_and_path(real_db, seed.multiline_id)
+    assert json.loads(multiline["notes"]) == {"multiline": [[-10.0, -5.0], [40.0, 25.0], [90.0, -5.0]]}
+
+
+def test_geometry_transform_leaves_unreadable_multiline_notes_alone(real_db):
+    seed = _seed(real_db)
+    _sql(real_db, "UPDATE spore_measurements SET notes = ? WHERE id = ?", ('{"multiline": broken', seed.multiline_id))
+
+    models.MeasurementDB.scale_measurement_points(seed.image_id, 0.5)
+
+    assert _points_and_path(real_db, seed.multiline_id)["notes"] == '{"multiline": broken'
+
+
+@pytest.mark.parametrize("factor", [0, None, -1])
+def test_scale_measurement_points_ignores_unusable_factors(real_db, factor):
+    seed = _seed(real_db)
+
+    models.MeasurementDB.scale_measurement_points(seed.image_id, factor)
+
+    assert _points_and_path(real_db, seed.spore_id)["p2_x"] == pytest.approx(100.0)
+
+
+# --- Editing the scale bar in the Measure tab ---------------------------------
+
+
+def _calibration_edit_stub(seed):
+    stub = SimpleNamespace(
+        measurements_cache=[
+            {"id": seed.calibration_id, "image_id": seed.image_id, "measurement_type": "calibration"},
+            {"id": seed.spore_id, "image_id": seed.image_id, "measurement_type": "manual"},
+        ],
+        tr=lambda text: text,
+        microns_per_pixel=OLD_SCALE,
+        update_measurements_table=lambda: None,
+        update_statistics=lambda: None,
+        update_display_lines=lambda: None,
+        load_measurement_lines=lambda: None,
+        image_label=SimpleNamespace(scale=None),
+        _get_measurement_by_id=lambda _mid: None,
+    )
+    stub.image_label.set_microns_per_pixel = lambda value: setattr(stub.image_label, "scale", value)
+    return stub
+
+
+def test_editing_the_scale_bar_rescales_by_the_rule(real_db, monkeypatch):
+    """The scale bar (200 px) is edited to read 40 um: 0.1 -> 0.2 um/px."""
+    seed = _seed(real_db)
+    monkeypatch.setattr(main_window, "QMessageBox", _AcceptingMessageBox)
+    stub = _calibration_edit_stub(seed)
+    points = [QPointF(0, 0), QPointF(200, 0), QPointF(100, -10), QPointF(100, 10)]
+
+    main_window.MainWindow._on_calibration_measurement_edited(stub, seed.calibration_id, 40.0, points)
+
+    # Previously: notes rewritten to Q=..., multiline paths destroyed, not marked dirty.
+    _assert_rescaled_by_two(real_db, seed)
+    assert _image_scale(real_db, seed.image_id) == pytest.approx(NEW_SCALE)
+    assert _sync_status(real_db, seed.obs_id) == "dirty"
+    assert stub.microns_per_pixel == pytest.approx(NEW_SCALE)
+    # The image overlay follows, not just the table.
+    assert stub.image_label.scale == pytest.approx(NEW_SCALE)
+
+
+def _dimensions_stub(seed, monkeypatch, *, real_edit_handler):
+    stub = _calibration_edit_stub(seed)
+    stub._cached_measurement_type = lambda mid: main_window.MainWindow._cached_measurement_type(stub, mid)
+    stub.normalize_measurement_category = lambda c: main_window.MainWindow.normalize_measurement_category(stub, c)
+    stub._invalidate_gallery_thumbnail_cache = lambda _mid: None
+    stub.measurement_lines = {}
+    stub.measurement_labels = []
+    stub._build_measurement_label = lambda *a: {"id": a[0]}
+    stub._build_line_measurement_label = lambda *a: {"id": a[0]}
+    stub.measure_status_label = SimpleNamespace(setText=lambda *_a: None, setStyleSheet=lambda *_a: None)
+    stub.edit_calls = []
+    if real_edit_handler:
+        monkeypatch.setattr(main_window, "QMessageBox", _AcceptingMessageBox)
+
+        def _handler(*args):
+            stub.edit_calls.append(args)
+            return main_window.MainWindow._on_calibration_measurement_edited(stub, *args)
+
+        stub._on_calibration_measurement_edited = _handler
+    else:
+        stub._on_calibration_measurement_edited = lambda *a: stub.edit_calls.append(a)
+    return stub
+
+
+def test_moving_scale_bar_endpoints_keeps_its_label_and_changes_the_scale(real_db, monkeypatch):
+    """The 20 um bar is shortened from 200 to 160 px. The preview reports 16 um
+    (pixels x current scale); the bar is still 20 um, so the scale becomes
+    0.125 um/px and, after the prompt, the other measurements follow."""
+    seed = _seed(real_db)
+    stub = _dimensions_stub(seed, monkeypatch, real_edit_handler=True)
+    points = [QPointF(0, 0), QPointF(160, 0), QPointF(80, -8), QPointF(80, 8)]
+
+    main_window.MainWindow.on_dimensions_changed(stub, seed.calibration_id, 16.0, 1.6, points)
+
+    assert _measurement(real_db, seed.calibration_id) == pytest.approx(
+        {"length_um": 20.0, "width_um": 2.0, "notes": "Scale bar: 20.0 µm", "measurement_type": "calibration"}
+    )
+    assert stub.edit_calls[0][1] == pytest.approx(20.0)
+    # Previously new scale = 16 / 160 = 0.1 = old scale, so nothing was offered.
+    assert _image_scale(real_db, seed.image_id) == pytest.approx(0.125)
+    assert _measurement(real_db, seed.spore_id)["length_um"] == pytest.approx(12.5)
+    assert _sync_status(real_db, seed.obs_id) == "dirty"
+
+
+def test_editing_an_ordinary_measurement_still_records_its_q(real_db, monkeypatch):
+    seed = _seed(real_db)
+    stub = _dimensions_stub(seed, monkeypatch, real_edit_handler=False)
+    points = [QPointF(0, 0), QPointF(120, 0), QPointF(60, -20), QPointF(60, 20)]
+
+    main_window.MainWindow.on_dimensions_changed(stub, seed.spore_id, 12.0, 4.0, points)
+
+    assert _measurement(real_db, seed.spore_id) == pytest.approx(
+        {"length_um": 12.0, "width_um": 4.0, "notes": "Q=3.0", "measurement_type": "manual"}
+    )
+    assert stub.edit_calls == []
+
+
+# --- Prepare Images: which pixels a selected scale refers to ------------------
+
+
+def _dialog_stub(*, scale_bar):
+    stub = SimpleNamespace(
+        scale_bar_mode_checkbox=SimpleNamespace(isChecked=lambda: scale_bar),
+        _custom_scale=0.3 if scale_bar else None,
+    )
+    stub._selected_scale_is_scale_bar = lambda: image_import_dialog.ImageImportDialog._selected_scale_is_scale_bar(stub)
+    return stub
+
+
+@pytest.mark.parametrize(
+    "scale_bar, factor, expected",
+    [
+        # An objective's scale is per sensor pixel: divide by the import resample factor.
+        (False, 0.5, 0.6),
+        # A scale bar is drawn on the stored (already resampled) image: use as is.
+        (True, 0.5, 0.3),
+        (False, None, 0.3),
+        (False, 1.0, 0.3),
+    ],
+)
+def test_stored_pixel_scale_for_result(scale_bar, factor, expected):
+    stub = _dialog_stub(scale_bar=scale_bar)
+    result = SimpleNamespace(resample_scale_factor=factor)
+
+    value = image_import_dialog.ImageImportDialog._stored_pixel_scale_for_result(stub, result, 0.3)
+
+    assert value == pytest.approx(expected)
+
+
+def test_measure_tab_objective_uses_the_stored_pixel_scale(real_db):
+    """An objective's 0.3 um/px is per sensor pixel; the image was halved at import."""
+    seed = _seed(real_db)
+    _sql(real_db, "UPDATE images SET resample_scale_factor = 0.5 WHERE id = ?", (seed.image_id,))
+    stub = SimpleNamespace(current_image_id=seed.image_id)
+
+    value = main_window.MainWindow._stored_pixel_scale_for_current_image(stub, 0.3)
+
+    assert value == pytest.approx(0.6)
+
+
+@pytest.mark.parametrize("factor", [None, 1.0, 0])
+def test_measure_tab_objective_without_resample_is_unchanged(real_db, factor):
+    seed = _seed(real_db)
+    _sql(real_db, "UPDATE images SET resample_scale_factor = ? WHERE id = ?", (factor, seed.image_id))
+
+    value = main_window.MainWindow._stored_pixel_scale_for_current_image(
+        SimpleNamespace(current_image_id=seed.image_id), 0.3
+    )
+
+    assert value == pytest.approx(0.3)
+
+
+@pytest.mark.parametrize(
+    "notes",
+    [
+        '{"multiline": [{"x": 2, "y": 4}, {"x": 6, "y": 8}]}',
+        '{"multiline": [[2, 4, 12], [6, 8, 1]]}',
+        '{"multiline": [[2, "a"], [6, 8]]}',
+        '{"multiline": "not a list"}',
+    ],
+)
+def test_malformed_multiline_paths_are_kept_and_do_not_block_the_rest(real_db, notes):
+    seed = _seed(real_db)
+    _sql(real_db, "UPDATE spore_measurements SET notes = ? WHERE id = ?", (notes, seed.multiline_id))
+
+    models.MeasurementDB.scale_measurement_points(seed.image_id, 0.5)
+
+    assert _points_and_path(real_db, seed.multiline_id)["notes"] == notes
+    assert _points_and_path(real_db, seed.spore_id)["p2_x"] == pytest.approx(50.0)
+
+
+def test_multiline_json_keeps_other_keys(real_db):
+    seed = _seed(real_db)
+    _sql(
+        real_db,
+        "UPDATE spore_measurements SET notes = ? WHERE id = ?",
+        (json.dumps({"multiline": [[10, 20]], "tag": 1}), seed.multiline_id),
+    )
+
+    models.MeasurementDB.scale_measurement_points(seed.image_id, 0.5)
+
+    assert json.loads(_points_and_path(real_db, seed.multiline_id)["notes"]) == {"multiline": [[5.0, 10.0]], "tag": 1}
+
+
+def test_partially_filled_point_columns_are_each_transformed(real_db):
+    seed = _seed(real_db)
+    _sql(real_db, "UPDATE spore_measurements SET p2_y = NULL WHERE id = ?", (seed.spore_id,))
+
+    models.MeasurementDB.scale_measurement_points(seed.image_id, 0.5)
+
+    row = _points_and_path(real_db, seed.spore_id)
+    assert row["p2_x"] == pytest.approx(50.0)
+    assert row["p2_y"] is None
+
+
+def test_scale_bar_width_follows_its_tick_when_only_the_bar_is_shortened(real_db, monkeypatch):
+    seed = _seed(real_db)
+    stub = _dimensions_stub(seed, monkeypatch, real_edit_handler=False)
+    # Bar 200 -> 160 px; the 20 px cross tick is untouched.
+    points = [QPointF(0, 0), QPointF(160, 0), QPointF(100, -10), QPointF(100, 10)]
+
+    main_window.MainWindow.on_dimensions_changed(stub, seed.calibration_id, 16.0, 2.0, points)
+
+    row = _measurement(real_db, seed.calibration_id)
+    assert row["length_um"] == pytest.approx(20.0)
+    assert row["width_um"] == pytest.approx(2.5)
+
+
+def test_measure_tab_objective_change_after_a_stale_cache(real_db, monkeypatch):
+    """Prepare Images rescaled 0.1 -> 0.2 and was closed; the Measure tab still
+    caches 0.1. Choosing a 0.1 objective must rescale back, not be skipped."""
+    seed = _seed(real_db)
+    models.MeasurementDB.rescale_image_measurements(seed.image_id, OLD_SCALE, NEW_SCALE)
+    _AcceptingMessageBox.prompts = 0
+    monkeypatch.setattr(main_window, "QMessageBox", _AcceptingMessageBox)
+
+    ok = main_window.MainWindow._maybe_rescale_current_image(_main_window_stub(seed.image_id), OLD_SCALE, OLD_SCALE)
+
+    assert ok is True
+    assert _AcceptingMessageBox.prompts == 1
+    assert _measurement(real_db, seed.spore_id)["length_um"] == pytest.approx(10.0)
+    assert _image_scale(real_db, seed.image_id) == pytest.approx(OLD_SCALE)
+
+
+def test_out_of_range_multiline_coordinate_is_kept_and_does_not_block_the_rest(real_db):
+    seed = _seed(real_db)
+    notes = '{"multiline": [[' + "9" * 400 + ', 1], [2, 3]]}'
+    _sql(real_db, "UPDATE spore_measurements SET notes = ? WHERE id = ?", (notes, seed.multiline_id))
+
+    models.MeasurementDB.scale_measurement_points(seed.image_id, 0.5)
+
+    assert _points_and_path(real_db, seed.multiline_id)["notes"] == notes
+    assert _points_and_path(real_db, seed.spore_id)["p2_x"] == pytest.approx(50.0)

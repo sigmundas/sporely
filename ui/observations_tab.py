@@ -13869,60 +13869,10 @@ class ObservationsTab(QWidget):
             return None
 
     def _scale_measurement_points(self, image_id: int, scale_factor: float) -> None:
-        if not image_id or not scale_factor or scale_factor <= 0:
-            return
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            '''
-            UPDATE spore_measurements
-            SET p1_x = p1_x * ?, p1_y = p1_y * ?,
-                p2_x = p2_x * ?, p2_y = p2_y * ?,
-                p3_x = CASE WHEN p3_x IS NOT NULL THEN p3_x * ? ELSE NULL END,
-                p3_y = CASE WHEN p3_y IS NOT NULL THEN p3_y * ? ELSE NULL END,
-                p4_x = CASE WHEN p4_x IS NOT NULL THEN p4_x * ? ELSE NULL END,
-                p4_y = CASE WHEN p4_y IS NOT NULL THEN p4_y * ? ELSE NULL END
-            WHERE image_id = ?
-            ''',
-            [
-                scale_factor, scale_factor,
-                scale_factor, scale_factor,
-                scale_factor, scale_factor,
-                scale_factor, scale_factor,
-                image_id,
-            ]
-        )
-        conn.commit()
-        conn.close()
+        MeasurementDB.scale_measurement_points(image_id, scale_factor)
 
     def _translate_measurement_points(self, image_id: int, offset_x: float, offset_y: float) -> None:
-        if not image_id:
-            return
-        if not offset_x and not offset_y:
-            return
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            '''
-            UPDATE spore_measurements
-            SET p1_x = p1_x - ?, p1_y = p1_y - ?,
-                p2_x = p2_x - ?, p2_y = p2_y - ?,
-                p3_x = CASE WHEN p3_x IS NOT NULL THEN p3_x - ? ELSE NULL END,
-                p3_y = CASE WHEN p3_y IS NOT NULL THEN p3_y - ? ELSE NULL END,
-                p4_x = CASE WHEN p4_x IS NOT NULL THEN p4_x - ? ELSE NULL END,
-                p4_y = CASE WHEN p4_y IS NOT NULL THEN p4_y - ? ELSE NULL END
-            WHERE image_id = ?
-            ''',
-            [
-                offset_x, offset_y,
-                offset_x, offset_y,
-                offset_x, offset_y,
-                offset_x, offset_y,
-                image_id,
-            ],
-        )
-        conn.commit()
-        conn.close()
+        MeasurementDB.translate_measurement_points(image_id, offset_x, offset_y)
 
     def _replace_observation_image_file(
         self,

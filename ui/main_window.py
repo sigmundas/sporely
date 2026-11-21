@@ -12823,7 +12823,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Apply an objective's settings."""
         old_scale = self.microns_per_pixel
         previous_key = self.current_objective_name
-        new_scale = objective.get("microns_per_pixel", 0.5)
+        new_scale = self._stored_pixel_scale_for_current_image(objective.get("microns_per_pixel", 0.5))
         if not self._maybe_rescale_current_image(old_scale, new_scale):
             self._populate_scale_combo(previous_key)
             return False
@@ -12860,6 +12860,21 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._update_measure_view_option_states()
         self._update_scalebar_controls_visibility()
         return True
+
+    def _stored_pixel_scale_for_current_image(self, objective_scale):
+        """µm per pixel of the current image's stored file for an objective's scale.
+
+        An objective's scale is per sensor pixel; an image resampled at import
+        has fewer pixels, so its scale is divided by that factor, as
+        apply_image_scale and Prepare Images already do.
+        """
+        if not objective_scale or not self.current_image_id:
+            return objective_scale
+        image_data = ImageDB.get_image(self.current_image_id)
+        factor = image_data.get("resample_scale_factor") if image_data else None
+        if isinstance(factor, (int, float)) and 0 < factor < 0.999:
+            return float(objective_scale) / float(factor)
+        return objective_scale
 
     def load_objective_definitions(self):
         """Load objective definitions from the calibration database."""
@@ -16246,8 +16261,25 @@ class MainWindow(GeometryMixin, QMainWindow):
     def on_dimensions_changed(self, measurement_id, new_length_um, new_width_um, new_points):
         """Handle dimension changes from the preview widget."""
         is_line = len(new_points) == 2
+        measurement_type = self._cached_measurement_type(measurement_id)
+        is_calibration = self.normalize_measurement_category(measurement_type) == "calibration"
+        if is_calibration and not is_line:
+            # Moving a scale bar's endpoints corrects where the bar is, not how
+            # long it is: keep its labelled length (the preview computes one
+            # from the current scale) so the image scale can change instead.
+            labelled_um = MeasurementDB.get_measurement_length(measurement_id)
+            bar_px = math.hypot(new_points[1].x() - new_points[0].x(), new_points[1].y() - new_points[0].y())
+            tick_px = math.hypot(new_points[3].x() - new_points[2].x(), new_points[3].y() - new_points[2].y())
+            if labelled_um and labelled_um > 0 and bar_px > 0:
+                new_length_um = float(labelled_um)
+                new_width_um = new_length_um * tick_px / bar_px
         has_width = (not is_line) and (new_width_um is not None and new_width_um > 0)
         q_value = new_length_um / new_width_um if has_width else None
+        if is_calibration:
+            # The scale-bar record keeps its label, not a Q value.
+            measurement_notes = f"Scale bar: {float(new_length_um):.1f} µm"
+        else:
+            measurement_notes = f"Q={q_value:.1f}" if q_value is not None else None
 
         # Update the database
         conn = get_connection()
@@ -16277,7 +16309,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             ''', (
                 new_length_um,
                 new_width_um,
-                f"Q={q_value:.1f}" if q_value is not None else None,
+                measurement_notes,
                 new_points[0].x(), new_points[0].y(),
                 new_points[1].x(), new_points[1].y(),
                 new_points[2].x(), new_points[2].y(),
@@ -16301,16 +16333,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         else:
             line2 = [new_points[2].x(), new_points[2].y(), new_points[3].x(), new_points[3].y()]
             self.measurement_lines[measurement_id] = [line1, line2]
-        measurement_type = None
-        for cached in self.measurements_cache:
-            if cached.get("id") == measurement_id:
-                measurement_type = cached.get("measurement_type")
-                break
-        if measurement_type is None:
-            record = self._get_measurement_by_id(measurement_id)
-            if record:
-                measurement_type = record.get("measurement_type")
-
         for idx, label in enumerate(self.measurement_labels):
             if label.get("id") == measurement_id:
                 if is_line:
@@ -16341,8 +16363,15 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.measure_status_label.setStyleSheet(f"color: #27ae60; font-weight: bold; font-size: {pt(9)}pt;")
 
         # If calibration measurement was edited, offer to rescale all other measurements
-        if (not is_line) and self.normalize_measurement_category(measurement_type) == "calibration":
+        if (not is_line) and is_calibration:
             self._on_calibration_measurement_edited(measurement_id, new_length_um, new_points)
+
+    def _cached_measurement_type(self, measurement_id):
+        for cached in self.measurements_cache:
+            if cached.get("id") == measurement_id:
+                return cached.get("measurement_type")
+        record = self._get_measurement_by_id(measurement_id)
+        return record.get("measurement_type") if record else None
 
     def _on_calibration_measurement_edited(self, measurement_id, new_length_um, new_points):
         """Handle edit of a calibration measurement — offer to rescale others."""
@@ -16391,35 +16420,16 @@ class MainWindow(GeometryMixin, QMainWindow):
         if box.clickedButton() != ok_btn:
             return
 
-        ratio = new_scale_mpp / old_scale_mpp
-        conn = get_connection()
-        measurements = conn.execute(
-            "SELECT id, length_um, width_um FROM spore_measurements WHERE image_id = ? AND measurement_type != 'calibration'",
-            (image_id,),
-        ).fetchall()
-        for m in measurements:
-            m_id, length, width = m
-            if length is None:
-                continue
-            new_l = float(length) * ratio
-            new_w = float(width) * ratio if width is not None else None
-            q = new_l / new_w if new_w and new_w > 0 else 0
-            conn.execute(
-                "UPDATE spore_measurements SET length_um = ?, width_um = ?, notes = ? WHERE id = ?",
-                (new_l, new_w, f"Q={q:.1f}", m_id),
-            )
-        conn.execute(
-            "UPDATE images SET scale_microns_per_pixel = ? WHERE id = ?",
-            (new_scale_mpp, image_id),
-        )
-        conn.commit()
-        conn.close()
+        MeasurementDB.rescale_image_measurements(image_id, old_scale_mpp, new_scale_mpp)
 
         # Refresh UI
-        self.update_measurements_table()
-        self.update_statistics()
         if hasattr(self, "microns_per_pixel"):
             self.microns_per_pixel = new_scale_mpp
+        if hasattr(self, "image_label"):
+            self.image_label.set_microns_per_pixel(new_scale_mpp)
+        self.load_measurement_lines()
+        self.update_measurements_table()
+        self.update_statistics()
         self.update_display_lines()
 
     def show_measurement_preview(self, measurement):
@@ -22435,7 +22445,15 @@ class MainWindow(GeometryMixin, QMainWindow):
         """Prompt to rescale previous measurements for the current image."""
         if self.suppress_scale_prompt:
             return True
-        if not self.current_image_id or not old_scale or not new_scale:
+        if not self.current_image_id:
+            return True
+        # The stored scale is what the measurements were computed at; this
+        # tab's cached scale can be stale after Prepare Images rescaled the image.
+        image_data = ImageDB.get_image(self.current_image_id)
+        stored_scale = image_data.get("scale_microns_per_pixel") if image_data else None
+        if stored_scale and stored_scale > 0:
+            old_scale = stored_scale
+        if not old_scale or not new_scale:
             return True
         if abs(new_scale - old_scale) < 1e-6:
             return True

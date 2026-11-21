@@ -4980,15 +4980,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
             img = ImageDB.get_image(result.image_id)
             if img:
                 old_scale = img.get("scale_microns_per_pixel")
-            new_scale = self._resolve_selected_scale_value(selected_objective)
-            factor = getattr(result, "resample_scale_factor", None)
-            if (
-                new_scale is not None
-                and isinstance(factor, (int, float))
-                and factor > 0
-                and factor < 0.999
-            ):
-                new_scale = float(new_scale) / float(factor)
+            new_scale = self._stored_pixel_scale_for_result(
+                result, self._resolve_selected_scale_value(selected_objective)
+            )
             if (
                 old_scale is not None
                 and new_scale is not None
@@ -5124,9 +5118,29 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._update_set_from_image_button_state()
         self._update_ai_controls_state()
 
-    def _resolve_selected_scale_value(self, selected_objective) -> float | None:
+    def _selected_scale_is_scale_bar(self) -> bool:
         scale_bar_active = bool(getattr(self, "scale_bar_mode_checkbox", None) and self.scale_bar_mode_checkbox.isChecked())
-        if scale_bar_active and self._custom_scale:
+        return bool(scale_bar_active and self._custom_scale)
+
+    def _stored_pixel_scale_for_result(self, result, scale: float | None) -> float | None:
+        """The µm/px of ``result``'s stored image for a selected ``scale``.
+
+        An objective's scale is per sensor pixel, so for an image that was
+        resampled at import it is divided by that resample factor. A scale-bar
+        scale was measured on the stored image the preview shows, so it already
+        is per stored pixel. This matches _apply_import_results_to_observation.
+        """
+        if scale is None:
+            return None
+        if self._selected_scale_is_scale_bar():
+            return float(scale)
+        factor = getattr(result, "resample_scale_factor", None)
+        if isinstance(factor, (int, float)) and 0 < factor < 0.999:
+            return float(scale) / float(factor)
+        return float(scale)
+
+    def _resolve_selected_scale_value(self, selected_objective) -> float | None:
+        if self._selected_scale_is_scale_bar():
             return float(self._custom_scale)
         if selected_objective and selected_objective in self.objectives:
             return self.objectives[selected_objective].get("microns_per_pixel")
@@ -5162,19 +5176,14 @@ class ImageImportDialog(GeometryMixin, QDialog):
             img = ImageDB.get_image(result.image_id)
             if not img:
                 continue
-            # Prefer the in-memory value to avoid stale DB reads during repeated rescales in the same session
-            old_scale = result.custom_scale if result.custom_scale is not None else img.get("scale_microns_per_pixel")
+            # The stored scale is what the measurements were computed at; every
+            # rescale in this dialog writes it immediately, so it is never stale.
+            old_scale = img.get("scale_microns_per_pixel")
+            if old_scale is None:
+                old_scale = result.custom_scale
             if old_scale is None:
                 continue
-            factor = getattr(result, "resample_scale_factor", None)
-            effective_new_scale = new_scale
-            if (
-                effective_new_scale is not None
-                and isinstance(factor, (int, float))
-                and factor > 0
-                and factor < 0.999
-            ):
-                effective_new_scale = float(effective_new_scale) / float(factor)
+            effective_new_scale = self._stored_pixel_scale_for_result(result, new_scale)
             if effective_new_scale is None:
                 continue
             if abs(float(effective_new_scale) - float(old_scale)) <= 1e-6:

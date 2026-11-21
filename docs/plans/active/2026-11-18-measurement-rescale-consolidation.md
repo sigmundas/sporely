@@ -162,20 +162,57 @@ Codex challenge findings on this change (2026-11-20):
   test `test_measure_tab_after_prepare_images_was_closed_without_applying`.
 - Fixed: the helper could mark an observation dirty when nothing changed.
 
-Pre-existing, not fixed here (follow-ups):
+Pre-existing follow-ups, status (2026-11-21, `fix/rescale-follow-ups`):
 
-1. Prepare Images divides a scale-bar custom scale by the image's earlier
-   resample factor, although a scale bar is measured on current pixels
-   (`ImageImportDialog._collect_rescale_targets` / `_apply_settings_to_index`).
-   Repeated custom scales on an already-downsampled image end with wrong
-   lengths. The stored-scale denominator removes the intermediate
-   double-count, not the factor question.
-2. "Only this image" in the rescale prompt limits the immediate rescale but not
-   the objective change: the other selected images still get the new objective
-   and are rescaled at apply (or, on a first resample, keep stale lengths).
-3. Resampling an image scales the stored point columns
-   (`ObservationsTab._scale_measurement_points`) but not the multiline JSON
-   path, so a multiline measurement draws at the old pixel positions.
+1. Fixed: Prepare Images no longer divides a scale-bar scale by the image's
+   import resample factor (the preview shows the stored image, so a bar is
+   already per stored pixel; objective scales are still divided).
+   `_stored_pixel_scale_for_result` follows the apply step's rule, and
+   `_collect_rescale_targets` compares against the stored image scale.
+2. Separate change (visible dialog, awaits the owner's layout opinion): the
+   multi-image rescale prompt's middle option rescaled only one image while all
+   selected images got the new objective.
+3. Fixed: resampling or cropping now transforms multiline JSON paths with the
+   point columns (`MeasurementDB.scale_measurement_points` /
+   `translate_measurement_points`), each coordinate on its own, behind a write
+   lock; malformed paths are left unchanged.
+
+Also fixed on the same branch, found while fixing those:
+
+- Editing the scale bar in the Measure tab had its own rescale loop (notes
+  rewritten to `Q=…`, multiline paths destroyed, case-sensitive filter, not
+  marked dirty); it now uses `rescale_image_measurements`.
+- Moving a scale bar's endpoints in the Measure tab changed its labelled
+  length (the preview computes µm from the current scale), so the
+  "rescale other measurements?" prompt could never appear. The label is now
+  kept and the image scale changes.
+- Choosing an objective in the Measure tab ignored the image's import
+  resample factor (Prepare Images and image loading already applied it).
+
+Still open (Codex review, 2026-11-21; not reproduced in the app):
+
+4. A legacy image with no stored resample factor: Prepare Images may infer
+   one, apply an objective divided by it, and the apply step (which reads the
+   original row) rescales back. Switching away from and back to an objective
+   whose calibration changed mid-dialog can also be undone on Save.
+5. Some scale-bar interactions can record preview-pixel coordinates: a bar
+   drawn while a first resize is pending, an endpoint dragged on a cached
+   half-size preview of a stored image, or a processed RAW preview after a RAW
+   settings edit.
+6. `on_dimensions_changed` does not itself mark the observation dirty after an
+   edited measurement; it relies on the spore-summary update.
+7. After an objective change in the Measure tab, an open measurement preview
+   keeps its old µm/px, so dragging it again saves a length at the old scale.
+8. A scale-bar edit in the Measure tab updates the calibration measurement but
+   not `images.scale_bar_x1..y2`, which Prepare Images restores; reapplying
+   that older selection there reverts the scale. ("Set from scalebar" redraws
+   instead and takes the length from its input, which may hold a default.)
+
+Also fixed after the second review: the Measure tab compares an objective
+change against the stored image scale (its cached scale could be stale); the
+scale-bar rescale refreshes the image overlay; the saved scale-bar width
+follows its cross tick; an out-of-range path coordinate no longer aborts the
+transform.
 
 ## Sequencing
 
