@@ -125,9 +125,34 @@ the Prepare Images rescale replaced multiline paths with `Q=0.0` (data loss),
 and the Measure tab rescale skipped multiline measurements (length kept the old
 scale).
 
-Still open, not part of this plan: when re-calibrating an objective, let the
-owner choose how far back to update (today: yes/no for every image on the old
-calibration, `CalibrationDialog._prompt_recalculate_measurements`).
+Re-calibration scope (2026-11-21, `claude/recalibration-scope-031114`, waits
+for the owner's layout opinion): re-calibrating an objective now asks
+`RecalibrationScopeDialog` (`ui/recalibration_scope_dialog.py`) instead of a
+yes/no. Choices, as the owner specified: *new calibration only*; *update
+existing images* (every image on the previous calibration, the old "yes" and
+the default); *update recent images* (taken today or in the previous N days).
+The dialog lists the affected observations and images with counts, from the
+same query the update runs (`CalibrationDB._recalibration_image_rows`).
+Decisions made while building it:
+
+- **Which date.** The day the image was taken (`images.captured_at`, EXIF
+  local time), or the local day it was added (`created_at`, stored in UTC)
+  when it has no capture date; the list shows those dates in italics. Not the
+  observation date: in the owner's data, microscope photos are often taken one
+  to two weeks after the observation date, and ~90% of microscope images have
+  a capture date.
+- **Scope of "recent".** A subset of *update existing images*: only images on
+  the previous calibration, never images on older calibrations of the same
+  objective.
+- **Images left out** keep their `calibration_id` (the previous calibration)
+  and their scale: their measurements still were made with it.
+- Cancel changes nothing, like *new calibration only*.
+
+Not changed, found while checking the owner's data (follow-up): the update
+sets every chosen image's scale to the objective's new scale. Images on a
+calibration whose stored scale came from a scale bar or an import resample
+factor (several dozen in the owner's data) are then rescaled to the objective
+scale.
 
 ## Stages 1–3 — landed together (2026-11-20)
 

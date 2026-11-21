@@ -5629,15 +5629,81 @@ class CalibrationDB:
         return [dict(row) for row in rows]
 
     @staticmethod
+    def _recalibration_image_rows(cursor, calibration_id: int, since_date=None) -> list:
+        """Images linked to ``calibration_id``, optionally only those dated ``since_date`` or later.
+
+        The one place that decides which images a re-calibration touches; the
+        dialog's preview and the update both read it. An image's date is the
+        day it was taken (the date part of ``captured_at``, local camera time,
+        whatever offset follows it) or, when that is unknown, the local day it
+        was added (``created_at`` is stored in UTC). ``measurement_count`` is 0
+        for an image with no stored scale: the update only relinks it.
+        """
+        since_text = None
+        if since_date is not None:
+            since_text = since_date.isoformat() if hasattr(since_date, "isoformat") else str(since_date)
+        cursor.execute(
+            """
+            SELECT i.id AS image_id,
+                   i.observation_id,
+                   i.filepath,
+                   i.scale_microns_per_pixel,
+                   COALESCE(date(substr(i.captured_at, 1, 10)), date(i.created_at, 'localtime')) AS image_date,
+                   CASE WHEN date(substr(i.captured_at, 1, 10)) IS NOT NULL THEN 'captured' ELSE 'added' END
+                       AS image_date_source,
+                   o.genus, o.species, o.common_name, o.date AS observation_date,
+                   CASE WHEN COALESCE(i.scale_microns_per_pixel, 0) > 0 THEN (
+                       SELECT COUNT(*) FROM spore_measurements m
+                       WHERE m.image_id = i.id
+                         AND m.length_um IS NOT NULL
+                         AND COALESCE(LOWER(m.measurement_type), '') != 'calibration'
+                   ) ELSE 0 END AS measurement_count
+            FROM images i
+            LEFT JOIN observations o ON o.id = i.observation_id
+            WHERE i.calibration_id = ?
+              AND (
+                  ? IS NULL
+                  OR COALESCE(date(substr(i.captured_at, 1, 10)), date(i.created_at, 'localtime')) >= ?
+              )
+            ORDER BY image_date DESC, i.observation_id, i.id
+            """,
+            (calibration_id, since_text, since_text),
+        )
+        return cursor.fetchall()
+
+    @staticmethod
+    def get_recalibration_images(calibration_id: int, since_date=None) -> List[dict]:
+        """Images a re-calibration would update, with their observation and measurement count.
+
+        ``since_date`` (a ``date`` or ``YYYY-MM-DD``) limits the list to images
+        dated that day or later; ``None`` lists every image on the calibration.
+        ``measurement_count`` counts the rows a rescale changes (not the
+        scale-bar record).
+        """
+        conn = get_connection()
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = CalibrationDB._recalibration_image_rows(conn.cursor(), calibration_id, since_date)
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    @staticmethod
     def recalculate_measurements_for_calibration(
         calibration_id: int,
         new_calibration_id: int,
-        new_scale: float
+        new_scale: float,
+        since_date=None,
+        image_ids=None,
     ) -> int:
-        """Recalculate measurements for images that used a specific calibration.
+        """Move images from ``calibration_id`` to the new calibration and rescale their measurements.
 
-        Updates the images to use the new calibration and recalculates their measurements.
-        Returns the number of measurements updated.
+        ``since_date`` limits the update to images dated that day or later (see
+        ``_recalibration_image_rows``); ``None`` updates every image on the old
+        calibration. ``image_ids`` further limits it to those images (the ones
+        a preview showed), so nothing that changed after the preview is pulled
+        in. Images left out keep their calibration link and scale. Returns the
+        number of measurements updated. One transaction.
 
         Also flags any linked observations as ``dirty`` so that cloud sync picks
         up the retroactive calibration reference change as a metadata-only patch
@@ -5645,60 +5711,60 @@ class CalibrationDB:
         """
         conn = get_connection()
         conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("BEGIN IMMEDIATE")
+            images = CalibrationDB._recalibration_image_rows(cursor, calibration_id, since_date)
+            if image_ids is not None:
+                allowed = {int(image_id) for image_id in image_ids}
+                images = [img for img in images if int(img["image_id"]) in allowed]
 
-        cursor.execute(
-            "SELECT id, observation_id, scale_microns_per_pixel FROM images WHERE calibration_id = ?",
-            (calibration_id,)
-        )
-        images = cursor.fetchall()
+            total_updated = 0
+            touched_observation_ids: set[int] = set()
 
-        if not images:
-            conn.close()
-            return 0
+            for img in images:
+                image_id = img["image_id"]
+                observation_id = img["observation_id"]
+                old_scale = img["scale_microns_per_pixel"] or 0
 
-        total_updated = 0
-        touched_observation_ids: set[int] = set()
+                if old_scale <= 0 or new_scale <= 0:
+                    # Even without a rescale we still want to reassign the
+                    # calibration link so the metadata reflects the new UUID.
+                    cursor.execute(
+                        "UPDATE images SET calibration_id = ? WHERE id = ?",
+                        (new_calibration_id, image_id),
+                    )
+                    if observation_id is not None:
+                        touched_observation_ids.add(int(observation_id))
+                    continue
 
-        for img in images:
-            image_id = img["id"]
-            observation_id = img["observation_id"]
-            old_scale = img["scale_microns_per_pixel"] or 0
+                scale_ratio = new_scale / old_scale
 
-            if old_scale <= 0 or new_scale <= 0:
-                # Even without a rescale we still want to reassign the
-                # calibration link so the metadata reflects the new UUID.
                 cursor.execute(
-                    "UPDATE images SET calibration_id = ? WHERE id = ?",
-                    (new_calibration_id, image_id),
+                    "UPDATE images SET calibration_id = ?, scale_microns_per_pixel = ? WHERE id = ?",
+                    (new_calibration_id, new_scale, image_id)
                 )
                 if observation_id is not None:
                     touched_observation_ids.add(int(observation_id))
-                continue
 
-            scale_ratio = new_scale / old_scale
+                total_updated += _rescale_measurements_on_cursor(cursor, image_id, scale_ratio)
 
-            cursor.execute(
-                "UPDATE images SET calibration_id = ?, scale_microns_per_pixel = ? WHERE id = ?",
-                (new_calibration_id, new_scale, image_id)
-            )
-            if observation_id is not None:
-                touched_observation_ids.add(int(observation_id))
+            if touched_observation_ids:
+                placeholders = ",".join("?" for _ in touched_observation_ids)
+                cursor.execute(
+                    (
+                        "UPDATE observations SET sync_status = 'dirty' "
+                        "WHERE id IN (" + placeholders + ") AND cloud_id IS NOT NULL"
+                    ),
+                    tuple(touched_observation_ids),
+                )
 
-            total_updated += _rescale_measurements_on_cursor(cursor, image_id, scale_ratio)
-
-        if touched_observation_ids:
-            placeholders = ",".join("?" for _ in touched_observation_ids)
-            cursor.execute(
-                (
-                    "UPDATE observations SET sync_status = 'dirty' "
-                    "WHERE id IN (" + placeholders + ") AND cloud_id IS NOT NULL"
-                ),
-                tuple(touched_observation_ids),
-            )
-
-        conn.commit()
-        conn.close()
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
         return total_updated
 
