@@ -6,6 +6,7 @@ import json
 import uuid
 import os
 import time
+import math
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 from datetime import datetime
@@ -5705,6 +5706,14 @@ class CalibrationDB:
         in. Images left out keep their calibration link and scale. Returns the
         number of measurements updated. One transaction.
 
+        The correction is the calibration's own change, ``new_scale`` divided
+        by the old calibration's stored scale. Each image's scale and
+        measurements are multiplied by it, so an image whose scale differs from
+        the old calibration (resampled on import, or carrying another
+        calibration's scale) keeps that relation instead of being reset to
+        ``new_scale``. Without a usable old calibration scale the images are
+        only relinked.
+
         Also flags any linked observations as ``dirty`` so that cloud sync picks
         up the retroactive calibration reference change as a metadata-only patch
         (no image bytes need to change).
@@ -5719,6 +5728,23 @@ class CalibrationDB:
                 allowed = {int(image_id) for image_id in image_ids}
                 images = [img for img in images if int(img["image_id"]) in allowed]
 
+            cursor.execute(
+                "SELECT microns_per_pixel FROM calibrations WHERE id = ?",
+                (calibration_id,),
+            )
+            calibration_row = cursor.fetchone()
+            old_calibration_scale = (
+                float(calibration_row["microns_per_pixel"] or 0) if calibration_row else 0.0
+            )
+            new_scale = float(new_scale or 0)
+            scale_ratio = (
+                new_scale / old_calibration_scale
+                if old_calibration_scale > 0 and new_scale > 0
+                else None
+            )
+            if scale_ratio is not None and not (math.isfinite(scale_ratio) and scale_ratio > 0):
+                scale_ratio = None
+
             total_updated = 0
             touched_observation_ids: set[int] = set()
 
@@ -5727,7 +5753,7 @@ class CalibrationDB:
                 observation_id = img["observation_id"]
                 old_scale = img["scale_microns_per_pixel"] or 0
 
-                if old_scale <= 0 or new_scale <= 0:
+                if old_scale <= 0 or scale_ratio is None:
                     # Even without a rescale we still want to reassign the
                     # calibration link so the metadata reflects the new UUID.
                     cursor.execute(
@@ -5738,11 +5764,9 @@ class CalibrationDB:
                         touched_observation_ids.add(int(observation_id))
                     continue
 
-                scale_ratio = new_scale / old_scale
-
                 cursor.execute(
                     "UPDATE images SET calibration_id = ?, scale_microns_per_pixel = ? WHERE id = ?",
-                    (new_calibration_id, new_scale, image_id)
+                    (new_calibration_id, float(old_scale) * scale_ratio, image_id)
                 )
                 if observation_id is not None:
                     touched_observation_ids.add(int(observation_id))

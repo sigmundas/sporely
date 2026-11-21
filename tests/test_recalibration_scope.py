@@ -247,6 +247,63 @@ def test_update_existing_images_rescales_every_image_on_the_previous_calibration
     _assert_untouched(scene.db, scene.other_calibration, scene.older_cal)
 
 
+# --- Images whose scale differs from the calibration -------------------------
+
+
+@pytest.mark.parametrize(
+    "image_scale, resample_factor",
+    [
+        (OLD_SCALE / 0.75, 0.75),  # resampled to 75% on import
+        (0.098, 1.0),  # still carries an earlier calibration's scale
+        (0.0536, 1.0),  # carries another objective's scale
+    ],
+    ids=["resampled", "earlier-calibration-scale", "other-objective-scale"],
+)
+def test_update_applies_the_calibration_change_to_the_image_scale(scene, image_scale, resample_factor):
+    """The image keeps its relation to the calibration: scale and lengths change by new/old calibration."""
+    _sql(
+        scene.db,
+        "UPDATE images SET scale_microns_per_pixel = ?, resample_scale_factor = ? WHERE id = ?",
+        (image_scale, resample_factor, scene.today.image_id),
+    )
+
+    updated = models.CalibrationDB.recalculate_measurements_for_calibration(
+        scene.old_cal, scene.new_cal, NEW_SCALE, since_date=TODAY
+    )
+
+    factor = NEW_SCALE / OLD_SCALE
+    assert updated == 1
+    assert _state(scene.db, scene.today) == pytest.approx(
+        {
+            "calibration_id": scene.new_cal,
+            "scale": image_scale * factor,
+            "length": 10.0 * factor,
+            "width": 4.0 * factor,
+            "notes": "Q=2.5",
+            "bar": 20.0,
+            "sync": "dirty",
+        }
+    )
+    resample = _sql(scene.db, "SELECT resample_scale_factor FROM images WHERE id = ?", (scene.today.image_id,))
+    assert resample[0][0] == pytest.approx(resample_factor)
+
+
+@pytest.mark.parametrize("stored", [0.0, float("inf")], ids=["zero", "infinite"])
+def test_update_without_an_old_calibration_scale_only_relinks(scene, stored):
+    """With no usable old calibration scale there is no correction to apply."""
+    _sql(scene.db, "UPDATE calibrations SET microns_per_pixel = ? WHERE id = ?", (stored, scene.old_cal))
+
+    updated = models.CalibrationDB.recalculate_measurements_for_calibration(
+        scene.old_cal, scene.new_cal, NEW_SCALE, since_date=TODAY
+    )
+
+    assert updated == 0
+    state = _state(scene.db, scene.today)
+    assert state["calibration_id"] == scene.new_cal
+    assert state["scale"] == pytest.approx(OLD_SCALE)
+    assert (state["length"], state["width"]) == pytest.approx((10.0, 4.0))
+
+
 # --- Choice 3: update recent images ------------------------------------------
 
 
