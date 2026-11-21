@@ -148,11 +148,22 @@ Decisions made while building it:
   and their scale: their measurements still were made with it.
 - Cancel changes nothing, like *new calibration only*.
 
-Not changed, found while checking the owner's data (follow-up): the update
-sets every chosen image's scale to the objective's new scale. Images on a
-calibration whose stored scale came from a scale bar or an import resample
-factor (several dozen in the owner's data) are then rescaled to the objective
-scale.
+**How much an image changes** (fixed 2026-11-21, after PR #82). The update
+used to set every chosen image's scale to the objective's new scale. It now
+multiplies each image's scale and measurements by the calibration's own
+change (new scale ÷ the old calibration's stored scale), so an image keeps its
+relation to the calibration. In the owner's data (read-only check) no
+scale-bar image is linked to a calibration (those are saved as *Custom* with
+no `calibration_id`). Of ~6,350 calibrated images with a scale, the ones
+whose scale differs from their own calibration were (2026-11-21): 507 with
+another calibration's scale of the same objective (0.2–1.1% off), 8 resampled
+on import (scale = calibration ÷ resample factor), 7 with another objective's
+calibration scale (for example 63X scales on 40X images) and 6 others. The old
+rule reset all of these to the objective scale, which would have changed the
+measurements of the resampled and other-objective images by roughly 15–60%.
+Existing offsets are kept, not repaired: which scale such an
+image should have is not knowable from the database. With no usable old
+calibration scale, images are only relinked.
 
 ## Stages 1–3 — landed together (2026-11-20)
 
