@@ -539,6 +539,36 @@ def reset_cloud_sync_state() -> dict[str, int]:
     }
 
 
+def _transform_multiline_notes(notes, fx, fy):
+    """Apply ``fx`` / ``fy`` to a multiline path stored as JSON in ``notes``.
+
+    Uses the same ``{"multiline"`` marker the renderer looks for. Anything else
+    (Q text, free text, unreadable JSON, a path that is not a list of numeric
+    ``[x, y]`` pairs) is returned unchanged.
+    """
+    if not notes or '{"multiline"' not in str(notes):
+        return notes
+    try:
+        data = json.loads(notes)
+    except (ValueError, TypeError):
+        return notes
+    path = data.get("multiline") if isinstance(data, dict) else None
+    if not isinstance(path, list):
+        return notes
+    for point in path:
+        if (
+            not isinstance(point, (list, tuple))
+            or len(point) != 2
+            or not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in point)
+        ):
+            return notes
+    try:
+        data["multiline"] = [[fx(float(x)), fy(float(y))] for x, y in path]
+    except (OverflowError, ValueError):
+        return notes
+    return json.dumps(data)
+
+
 def _rescale_measurements_on_cursor(cursor, image_id: int, ratio: float) -> int:
     """Multiply an image's measured lengths and widths by ``ratio``.
 
@@ -4093,6 +4123,75 @@ class MeasurementDB:
         return meas_id
 
     @staticmethod
+    def scale_measurement_points(image_id: int, factor: float) -> None:
+        """Scale an image's measurement geometry after the image is resampled.
+
+        Multiplies the stored point columns and any multiline path (kept as
+        JSON in ``notes``) by ``factor``. Lengths in µm are unchanged.
+        """
+        if not image_id or not factor or factor <= 0:
+            return
+        f = float(factor)
+        MeasurementDB._transform_measurement_geometry(image_id, lambda x: x * f, lambda y: y * f)
+
+    @staticmethod
+    def translate_measurement_points(image_id: int, offset_x: float, offset_y: float) -> None:
+        """Shift an image's measurement geometry after the image is cropped.
+
+        Subtracts the crop origin from the stored point columns and any
+        multiline path (kept as JSON in ``notes``).
+        """
+        if not image_id or (not offset_x and not offset_y):
+            return
+        ox = float(offset_x or 0.0)
+        oy = float(offset_y or 0.0)
+        MeasurementDB._transform_measurement_geometry(image_id, lambda x: x - ox, lambda y: y - oy)
+
+    @staticmethod
+    def _transform_measurement_geometry(image_id: int, fx, fy) -> None:
+        """Apply per-axis ``fx`` / ``fy`` to every stored coordinate of an image's measurements."""
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            # Take the write lock before reading, so a concurrent write cannot
+            # land between the read and the rewrite and be overwritten.
+            cursor.execute("BEGIN IMMEDIATE")
+            cursor.execute(
+                "SELECT id, notes, p1_x, p1_y, p2_x, p2_y, p3_x, p3_y, p4_x, p4_y "
+                "FROM spore_measurements WHERE image_id = ?",
+                (image_id,),
+            )
+            for row in cursor.fetchall():
+                measurement_id, notes = row[0], row[1]
+                coords = list(row[2:])
+                for i, value in enumerate(coords):
+                    if value is not None:
+                        coords[i] = (fx if i % 2 == 0 else fy)(float(value))
+                new_notes = _transform_multiline_notes(notes, fx, fy)
+                cursor.execute(
+                    "UPDATE spore_measurements SET p1_x = ?, p1_y = ?, p2_x = ?, p2_y = ?, "
+                    "p3_x = ?, p3_y = ?, p4_x = ?, p4_y = ?, notes = ? WHERE id = ?",
+                    (*coords, new_notes, measurement_id),
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    @staticmethod
+    def get_measurement_length(measurement_id: int) -> float | None:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT length_um FROM spore_measurements WHERE id = ?", (measurement_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+        return float(row[0]) if row and row[0] is not None else None
+
+    @staticmethod
     def has_rescalable_measurements(measurements: list[dict] | None) -> bool:
         """True when ``rescale_image_measurements`` would change any of these rows."""
         return any(
@@ -4127,6 +4226,9 @@ class MeasurementDB:
         conn = get_connection()
         try:
             cursor = conn.cursor()
+            # The stored scale is the denominator; hold the write lock while
+            # reading it so nothing changes it before the rescale is written.
+            cursor.execute("BEGIN IMMEDIATE")
             cursor.execute(
                 "SELECT observation_id, scale_microns_per_pixel FROM images WHERE id = ?",
                 (image_id,),
