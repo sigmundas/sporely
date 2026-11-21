@@ -12935,15 +12935,15 @@ class MainWindow(GeometryMixin, QMainWindow):
         objective_lookup = self.load_objective_definitions()
         show_old_calibration_warning = False
 
+        # Loading an image never rewrites its scale or calibration link: its
+        # measurements were computed at the stored scale, and a re-calibration
+        # may have deliberately left it on an earlier calibration. A scale
+        # change is an explicit action through apply_objective/set_custom_scale,
+        # which offers to rescale the measurements.
         resolved_key = resolve_objective_key(objective_name, objective_lookup)
         if resolved_key and resolved_key != objective_name:
             objective_name = resolved_key
-            calibration_id = CalibrationDB.get_active_calibration_id(resolved_key)
-            ImageDB.update_image(
-                image_data.get("id"),
-                objective_name=resolved_key,
-                calibration_id=calibration_id,
-            )
+            ImageDB.update_image(image_data.get("id"), objective_name=resolved_key)
 
         self.current_calibration_id = calibration_id
         self.suppress_scale_prompt = True
@@ -12959,28 +12959,9 @@ class MainWindow(GeometryMixin, QMainWindow):
                 diff_ratio = abs(expected_scale - scale) / max(1e-9, float(expected_scale))
             else:
                 diff_ratio = 0 if scale is None else 1
-            if scale and diff_ratio > 0.01 and resample_factor >= 0.999:
-                self.current_objective = objective_data
-                self.current_objective_name = objective_name
-                self.microns_per_pixel = scale
-                show_old_calibration_warning = True
-
-                mag = objective_display_name(objective, objective_name) or objective_name
-                tag_text = self._objective_tag_text(mag, objective_name)
-                self._set_calibration_info(objective_name, calibration_id)
-
-                if self.current_pixmap:
-                    self.image_label.set_objective_text(tag_text)
-                    self.image_label.set_objective_color(self._objective_color_for_name(tag_text))
-                self.image_label.set_microns_per_pixel(self.microns_per_pixel)
-
-                self.measure_status_label.setText(self.tr("Warning: Older calibration standard used."))
-                self.measure_status_label.setStyleSheet(
-                    f"color: #e67e22; font-weight: bold; font-size: {pt(9)}pt;"
-                )
-
-                self._populate_scale_combo(objective_name)
-            elif scale and resample_factor < 0.999:
+            if scale:
+                # Keep the stored scale, also when it is within 1% of the
+                # objective's current scale.
                 self.current_objective = objective_data
                 self.current_objective_name = objective_name
                 self.microns_per_pixel = scale
@@ -12993,12 +12974,18 @@ class MainWindow(GeometryMixin, QMainWindow):
                     self.image_label.set_objective_text(tag_text)
                     self.image_label.set_objective_color(self._objective_color_for_name(tag_text))
                 self.image_label.set_microns_per_pixel(self.microns_per_pixel)
+
+                if diff_ratio > 0.01 and resample_factor >= 0.999:
+                    show_old_calibration_warning = True
+                    self.measure_status_label.setText(self.tr("Warning: Older calibration standard used."))
+                    self.measure_status_label.setStyleSheet(
+                        f"color: #e67e22; font-weight: bold; font-size: {pt(9)}pt;"
+                    )
 
                 self._populate_scale_combo(objective_name)
             else:
+                # No stored scale yet: take the objective's (a first fill, not a rewrite).
                 self.apply_objective(objective_data)
-                if scale:
-                    self.microns_per_pixel = scale
         elif scale:
             self.set_custom_scale(scale)
         elif objective_name:
