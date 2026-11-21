@@ -5071,11 +5071,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
                                 self.objective_combo.setCurrentIndex(combo_idx)
                         self.objective_combo.blockSignals(False)
                     return
-                if decision == "all":
-                    rescale_targets = {t[0]: t[1:] for t in targets}
-                else:
-                    image_id, old_scale, new_scale, measurements = targets[0]
-                    rescale_targets = {image_id: (old_scale, new_scale, measurements)}
+                # Every selected image gets the new scale, so every one of them
+                # has its measurements rescaled: a measurement stored in µm is
+                # only right for the scale it was computed at.
+                rescale_targets = {t[0]: t[1:] for t in targets}
 
         for idx in indices:
             if idx is None:
@@ -5199,35 +5198,22 @@ class ImageImportDialog(GeometryMixin, QDialog):
         return targets
 
     def _confirm_rescale_for_targets(self, target_count: int) -> str:
+        """Ask before rescaling the measurements of all affected images.
+
+        Returns "all" or "cancel". There is no "only this image" choice: the
+        new scale applies to every selected image, and their measurements must
+        follow it.
+        """
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Question)
         box.setWindowTitle(self.tr("Changing image scale"))
-        if target_count > 1:
-            box.setText(
-                self.tr(
-                    "Changing image scale: This will update previous measurements to match the new scale.\n"
-                    "Apply to all selected images?"
-                )
-            )
-            apply_all_btn = box.addButton(self.tr("Apply to all"), QMessageBox.AcceptRole)
-            ok_btn = box.addButton(self.tr("OK"), QMessageBox.AcceptRole)
-            cancel_btn = box.addButton(self.tr("Cancel"), QMessageBox.RejectRole)
-        else:
-            box.setText(
-                self.tr("Changing image scale: This will update previous measurements to match the new scale.")
-            )
-            apply_all_btn = None
-            ok_btn = box.addButton(self.tr("OK"), QMessageBox.AcceptRole)
-            cancel_btn = box.addButton(self.tr("Cancel"), QMessageBox.RejectRole)
+        box.setText(
+            self.tr("Changing image scale: This will update previous measurements to match the new scale.")
+        )
+        ok_btn = box.addButton(self.tr("OK"), QMessageBox.AcceptRole)
+        box.addButton(self.tr("Cancel"), QMessageBox.RejectRole)
         box.exec()
-        clicked = box.clickedButton()
-        if clicked == cancel_btn:
-            return "cancel"
-        if apply_all_btn and clicked == apply_all_btn:
-            return "all"
-        if target_count > 1 and clicked == ok_btn:
-            return "one"
-        return "one"
+        return "all" if box.clickedButton() == ok_btn else "cancel"
 
     def _maybe_rescale_measurements_for_image(
         self,

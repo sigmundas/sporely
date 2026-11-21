@@ -63,3 +63,30 @@ def test_a_real_objective_edit_is_saved(two_desktops, tmp_path):
     obs_id = ObservationDB.create_observation(date="2026-10-16", genus="Boletus", species="edulis")
     image_id, path = _image(tmp_path, obs_id, image_type="microscope", objective="40x")
     assert _save(obs_id, image_id, path, image_type="microscope", objective="100x") == "100x"
+
+
+def test_save_keeps_the_scale_prepare_images_just_stored(two_desktops, tmp_path):
+    """The image is at 40x with an older calibration (0.125 um/px). Prepare
+    Images re-selects 40x (now 0.1), rescales the measurements and stores 0.1.
+    Save must keep 0.1, not restore 0.125 from its pre-dialog snapshot."""
+    from PySide6.QtCore import QPointF
+    from database.models import MeasurementDB
+
+    obs_id = ObservationDB.create_observation(date="2026-10-16", genus="Boletus", species="edulis")
+    image_id, path = _image(tmp_path, obs_id, image_type="microscope", objective="40x")
+    ImageDB.update_image(image_id, scale=0.125)
+    spore_id = MeasurementDB.add_measurement(
+        image_id, length=12.5, width=5.0,
+        points=[QPointF(0, 0), QPointF(100, 0), QPointF(50, -20), QPointF(50, 20)],
+    )
+    snapshot = ImageDB.get_images_for_observation(obs_id)
+
+    MeasurementDB.rescale_image_measurements(image_id, 0.125, 0.1)  # what the dialog does
+    result = ImageImportResult(filepath=path, preview_path=path, original_filepath=path,
+                               image_id=image_id, image_type="microscope", objective="40x",
+                               resize_to_optimal=False)
+    ObservationsTab._apply_import_results_to_observation(_TabStub(), obs_id, [result], existing_images=snapshot)
+
+    assert ImageDB.get_image(image_id)["scale_microns_per_pixel"] == pytest.approx(0.1)
+    lengths = {m["id"]: m["length_um"] for m in MeasurementDB.get_measurements_for_image(image_id)}
+    assert lengths[spore_id] == pytest.approx(10.0)
