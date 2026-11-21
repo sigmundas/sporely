@@ -14202,6 +14202,12 @@ class ObservationsTab(QWidget):
                     if result.image_id:
                         existing = existing_by_id.get(result.image_id)
                         existing_scale = existing.get("scale_microns_per_pixel") if existing else None
+                        # `existing` was read before Prepare Images opened; the
+                        # dialog may since have rescaled this image's measurements
+                        # and stored a new scale, which must not be overwritten.
+                        current_row = ImageDB.get_image(result.image_id)
+                        if current_row and current_row.get("scale_microns_per_pixel") is not None:
+                            existing_scale = current_row.get("scale_microns_per_pixel")
                         existing_obj = existing.get("objective_name") if existing else None
                         existing_key = resolve_objective_key(existing_obj, objectives) or existing_obj
                         if (
