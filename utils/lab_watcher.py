@@ -10,6 +10,10 @@ from utils.raw_detection import SUPPORTED_RAW_SUFFIXES, is_raw_image_path
 
 logger = logging.getLogger(__name__)
 
+WATCHED_IMAGE_SUFFIXES = frozenset(
+    {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".heic", ".heif"} | set(SUPPORTED_RAW_SUFFIXES)
+)
+
 WATCHER_STABILITY_TIMEOUT_SECONDS = 10.0
 WATCHER_RAW_STABILITY_TIMEOUT_SECONDS = 45.0
 WATCHER_STABILITY_POLL_SECONDS = 0.25
@@ -31,9 +35,7 @@ class NewImageHandler(FileSystemEventHandler):
     ):
         super().__init__()
         self.callback = callback
-        self.valid_extensions = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".heic", ".heif"} | set(
-            SUPPORTED_RAW_SUFFIXES
-        )
+        self.valid_extensions = set(WATCHED_IMAGE_SUFFIXES)
         self.stability_timeout_seconds = max(0.0, float(stability_timeout_seconds))
         self.raw_stability_timeout_seconds = max(0.0, float(raw_stability_timeout_seconds))
         self.poll_seconds = max(0.0, float(poll_seconds))
@@ -119,6 +121,9 @@ class NewImageHandler(FileSystemEventHandler):
 
 # How often the worker lists the watched folder for new captures.
 WATCHER_FOLDER_POLL_SECONDS = 0.25
+# A new file is reported once its size, above zero, is the same at this many
+# listings in a row (about 0.5 s at the interval above).
+WATCHER_STABLE_LISTINGS = 3
 
 
 def _list_file_names(directory: str) -> set[str] | None:
@@ -136,8 +141,9 @@ class LabWatcherWorker(QThread):
     It lists the folder every ``WATCHER_FOLDER_POLL_SECONDS`` instead of
     waiting for macOS file events (FSEvents): when ``fseventsd`` is busy those
     arrive a minute or more late, and the captures with them. Listing a
-    folder of 5,000 files takes about 3 ms. Each new file goes through
-    ``NewImageHandler``, which waits until its size stops changing.
+    folder of 5,000 files takes about 3 ms. A new file is reported once its
+    size has stopped changing; until then each listing checks it again, so a
+    file still being written never holds up the others or a stop.
     """
 
     new_image_detected = Signal(str)
@@ -149,9 +155,14 @@ class LabWatcherWorker(QThread):
         self.directory_to_watch = directory_to_watch
         self._is_running = False
         self._stop_requested = False
+        self.listing_started = False  # the files there at the start are known
 
     def _should_run(self) -> bool:
         return self._is_running and not self._stop_requested and not self.isInterruptionRequested()
+
+    def _pause(self) -> bool:
+        time.sleep(WATCHER_FOLDER_POLL_SECONDS)
+        return self._should_run()
 
     def run(self):
         if self._stop_requested or self.isInterruptionRequested():
@@ -160,22 +171,40 @@ class LabWatcherWorker(QThread):
         if not os.path.exists(self.directory_to_watch):
             self.error_occurred.emit(f"Directory does not exist: {self.directory_to_watch}")
             return
-
-        handler = NewImageHandler(self._handle_new_image)
-        known = _list_file_names(self.directory_to_watch) or set()
         try:
-            while self._should_run():
-                time.sleep(WATCHER_FOLDER_POLL_SECONDS)
+            known = _list_file_names(self.directory_to_watch)
+            while known is None:  # unreadable for a moment: never take its files for new ones
+                if not self._pause():
+                    return
+                known = _list_file_names(self.directory_to_watch)
+            self.listing_started = True
+            # Name -> (size at the last listing, listings in a row at that size).
+            settling: dict[str, tuple[int, int]] = {}
+            while self._pause():
                 current = _list_file_names(self.directory_to_watch)
                 if current is None:
                     continue  # unreadable for a moment (a network folder): try again
                 for name in sorted(current - known):
-                    if not self._should_run():
-                        break
-                    handler._emit_if_supported(os.path.join(self.directory_to_watch, name))
-                    known.add(name)
+                    if Path(name).suffix.lower() not in WATCHED_IMAGE_SUFFIXES:
+                        known.add(name)
+                        continue
+                    try:
+                        size = os.stat(os.path.join(self.directory_to_watch, name)).st_size
+                    except OSError:
+                        continue  # gone or locked: the next listing decides
+                    last_size, count = settling.get(name, (-1, 0))
+                    count = count + 1 if size > 0 and size == last_size else (1 if size > 0 else 0)
+                    if count >= WATCHER_STABLE_LISTINGS:
+                        settling.pop(name, None)
+                        known.add(name)
+                        self._handle_new_image(os.path.join(self.directory_to_watch, name))
+                    else:
+                        settling[name] = (size, count)
                 # Forget deleted names, so a file written again under one is new.
                 known &= current
+                for name in list(settling):
+                    if name not in current:
+                        del settling[name]
         except Exception as e:
             self.error_occurred.emit(f"Watcher error: {str(e)}")
         finally:
