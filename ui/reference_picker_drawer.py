@@ -48,6 +48,12 @@ from PySide6.QtWidgets import (
 
 from database.reference_library import MeasurementSetCandidate, MeasurementSetRepository, ReferenceLibraryError
 from database.taxon_suggestions import ai_prediction_external_id, reference_default_suggestions
+from references.reference_comparison import (
+    ObservationBaseline,
+    build_domains,
+    comparison_view,
+    observation_baseline_from_points,
+)
 from references.reference_display import format_measurement_expression
 
 from .add_reference_dialog import (
@@ -59,6 +65,7 @@ from .add_reference_dialog import (
     semantic_badge_text,
 )
 from .library_source_row import DEFAULT_REFERENCE_USE_ROLE, LibraryResultsList, LibrarySourceRow
+from .reference_range_bars import ReferenceRangeBars
 from .segmented_selector import SegmentedSelector
 from .taxon_picker import AiSuggestion, TaxonPicker
 from .two_line_row import CheckableTwoLineRow
@@ -154,6 +161,8 @@ class ReferencePickerHost(Protocol):
     # one) and the observation's stored AI predictions (reference_ai_entries).
     def reference_picker_taxon_lookup(self) -> object | None: ...
     def reference_picker_ai_entries(self, context: dict) -> list[dict]: ...
+    # The observation's own spore measurements, for the range bars.
+    def reference_picker_observation_points(self, observation_id: int) -> list[dict]: ...
 
 
 class ReferencePickerPage(QWidget):
@@ -169,6 +178,11 @@ class ReferencePickerPage(QWidget):
         self._candidates: list[MeasurementSetCandidate] = []
         self._attached: dict[str, str] = {}
         self._expanded: set[str] = set()
+        # The range bars: the observation's own spores, and the axes every
+        # row shares (derived once per observation and target, then frozen
+        # while the list is searched or filtered).
+        self._baseline = ObservationBaseline()
+        self._bar_domains: dict | None = None
         # The public-observation notice is asked on the first tick each time
         # the drawer opens (an attach on an already public observation).
         self._attach_confirmed = False
@@ -316,6 +330,8 @@ class ReferencePickerPage(QWidget):
         self._load_my_observations()
         if self._source == "community":
             self._refresh_community()
+        self._bar_domains = None
+        self._baseline = self._load_baseline()
         if self._context is None:
             self._candidates, self._attached = [], {}
             self._populate()
@@ -328,6 +344,83 @@ class ReferencePickerPage(QWidget):
             self._set_status(self.tr("Could not load the reference library: {error}").format(error=str(exc)))
         self._attached = dict(self._host.reference_picker_attached(int(self._context["observation_id"])))
         self._populate()
+
+    def _load_baseline(self) -> ObservationBaseline:
+        observation_id = self._current_observation_id()
+        loader = getattr(self._host, "reference_picker_observation_points", None)
+        if not observation_id or not callable(loader):
+            return ObservationBaseline()
+        try:
+            return observation_baseline_from_points(loader(observation_id) or [])
+        except Exception:
+            return ObservationBaseline()
+
+    def _range_bar_domains(self) -> dict:
+        """The axes all rows share: the observation's spores and the sets
+        of this taxon and its genus, whatever the search or "Only this taxon"
+        shows, so the bars do not move while the list is filtered. A set far
+        outside them is drawn clamped, with a chevron at that end."""
+        if self._bar_domains is None:
+            context = self._target_context()
+            taxon_id = context.get("taxon_id")
+            groups = group_library_candidates(
+                self._candidates,
+                taxon_id=str(taxon_id) if taxon_id not in (None, "") else None,
+                genus=context.get("genus") or "",
+                taxon_name=self._taxon_name(),
+            )
+            near = [c for group, members in groups if group != "rest" for c in members]
+            self._bar_domains = build_domains(
+                baseline=self._baseline,
+                displays=[c.source_display() for c in near],
+                extents=[c.raw_point_extents for c in near if c.raw_point_extents],
+            )
+        return self._bar_domains
+
+    def _range_bars(self, candidate: MeasurementSetCandidate) -> ReferenceRangeBars:
+        bars = ReferenceRangeBars()
+        self._show_range_bars(bars, candidate)
+        return bars
+
+    def _show_range_bars(self, bars: ReferenceRangeBars, candidate: MeasurementSetCandidate) -> None:
+        domains = self._range_bar_domains()
+        bars.set_view(comparison_view(domains=domains, baseline=self._baseline, display=candidate.source_display()))
+        axes = self.tr("Axes: length {length}, width {width} µm.").format(
+            length=f"{domains['length'].low:.1f}–{domains['length'].high:.1f}",
+            width=f"{domains['width'].low:.1f}–{domains['width'].high:.1f}",
+        )
+        if self._baseline.has_measurements:
+            legend = self.tr(
+                "Length (L) and width (W). Blue, above the line: this reference. "
+                "Green, below: your spores (n = {count}), min–max with the 5–95% range filled."
+            ).format(count=self._baseline.point_count)
+        else:
+            legend = self.tr(
+                "Length (L) and width (W) of this reference. "
+                "This observation has no spore measurements to compare yet."
+            )
+        bars.setToolTip(f"{legend}\n{axes}")
+
+    def shown_observation_id(self) -> int:
+        """The observation the page was last loaded for (0 for none)."""
+        return self._current_observation_id()
+
+    def refresh_range_bars(self) -> None:
+        """Re-read the observation's spores and redraw the rows' bars in
+        place (the list, its scroll position and expanded rows stay), for
+        spores measured since the page was loaded. The axes are rebuilt only
+        when the spores changed."""
+        baseline = self._load_baseline()
+        if baseline == self._baseline:
+            return
+        self._baseline = baseline
+        self._bar_domains = None
+        by_id = {str(c.measurement_set_id): c for c in self._candidates}
+        for index in range(self.results_list.count()):
+            row = self.results_list.itemWidget(self.results_list.item(index))
+            candidate = by_id.get(row.measurement_set_id) if isinstance(row, LibrarySourceRow) else None
+            if candidate is not None and isinstance(row.range_bars, ReferenceRangeBars):
+                self._show_range_bars(row.range_bars, candidate)
 
     def _target_context(self) -> dict:
         """The observation's context with "Compare with"'s taxon in place of its own."""
@@ -400,6 +493,7 @@ class ReferencePickerPage(QWidget):
             relevance_badge=relevance_badge_text(group),
             semantic_badge=semantic_badge_text(candidate),
             summary_lines=tuple(summary),
+            range_bars=self._range_bars(candidate),
             parent=self.results_list,
         )
         row.set_checked_silently(set_id in self._attached)
@@ -850,6 +944,7 @@ class ReferencePickerPage(QWidget):
         """Search the sources again for the target that was just set."""
         self._refresh_target_line()
         self._set_status("")
+        self._bar_domains = None  # another taxon's sets size the axes
         self._populate()
         self._load_my_observations()
         self._community_stale = True

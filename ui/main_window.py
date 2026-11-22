@@ -7387,7 +7387,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         plot_area_layout.setContentsMargins(0, 0, 0, 0)
         plot_area_layout.addWidget(self.plot_width_splitter)
         plot_layout.addWidget(self.analysis_plot_area)
-        self.reference_drawer = SideDrawer(self.analysis_plot_area, side="left", width=400)
+        # Wide enough for each row's range bars beside its text.
+        self.reference_drawer = SideDrawer(self.analysis_plot_area, side="left", width=600)
         self.reference_picker_page = ReferencePickerPage(self)
         self.reference_drawer.add_page("references", self.tr("Add reference"), self.reference_picker_page)
         self.reference_picker_page.new_reference_requested.connect(self._on_reference_picker_new_reference)
@@ -9053,6 +9054,31 @@ class MainWindow(GeometryMixin, QMainWindow):
             "genus": self._clean_ref_genus_text(observation.get("genus")),
             "species": self._clean_ref_species_text(observation.get("species") or observation.get("species_guess")),
         }
+
+    def reference_picker_observation_points(self, observation_id: int) -> list[dict]:
+        """The observation's spore measurements, for the drawer's range bars.
+
+        Spores in the Analysis category sense (``normalize_measurement_category``,
+        so the stored "Spores" counts), read the way the Analysis plot reads
+        them (``update_graph_plots``): every measured length, and a width only
+        where it is above zero, so a length-only (Line mode) spore still counts
+        towards the length bar."""
+        try:
+            raw = MeasurementDB.get_measurements_for_observation(int(observation_id)) or []
+        except Exception:
+            return []
+        points = []
+        for m in raw:
+            if m.get("length_um") is None:
+                continue
+            if self.normalize_measurement_category(m.get("measurement_type")) != "spores":
+                continue
+            try:
+                width = float(m.get("width_um")) if m.get("width_um") is not None else None
+            except (TypeError, ValueError):
+                width = None
+            points.append({"length_um": m.get("length_um"), "width_um": width if width and width > 0 else None})
+        return points
 
     @staticmethod
     def _reference_picker_uses(observation_id: int) -> dict[str, object]:
@@ -14634,6 +14660,20 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.apply_gallery_settings()
             self.refresh_gallery_filter_options()
             self.schedule_gallery_refresh()
+        if hasattr(self, "analysis_tab") and self.tab_widget.widget(index) is self.analysis_tab:
+            self._refresh_reference_drawer_on_return()
+
+    def _refresh_reference_drawer_on_return(self) -> None:
+        """Back on Analysis with the reference drawer open: spores may have
+        been measured, or another observation activated, meanwhile."""
+        drawer = getattr(self, "reference_drawer", None)
+        if drawer is None or not drawer.is_open():
+            return
+        page = self.reference_picker_page
+        if page.shown_observation_id() != int(getattr(self, "active_observation_id", None) or 0):
+            page.load()
+        else:
+            page.refresh_range_bars()
 
     def schedule_gallery_refresh(self):
         """Coalesce multiple refresh requests into a single gallery update."""

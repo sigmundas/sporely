@@ -39,6 +39,7 @@ files=(
   "ui/capture_state_bar.py"
   "ui/side_drawer.py"
   "ui/reference_picker_drawer.py"
+  "ui/reference_range_bars.py"
   "ui/reference_create_dialog.py"
   "ui/microscope_settings_dialog.py"
   "ui/mode_bar.py"
