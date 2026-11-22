@@ -690,6 +690,57 @@ def reset_cloud_sync_state() -> dict[str, int]:
     }
 
 
+def _transform_multiline_notes(notes, fx, fy):
+    """Apply ``fx`` / ``fy`` to a multiline path stored as JSON in ``notes``.
+
+    Uses the same ``{"multiline"`` marker the renderer looks for. Anything else
+    (Q text, free text, unreadable JSON, a path that is not a list of numeric
+    ``[x, y]`` pairs) is returned unchanged.
+    """
+    if not notes or '{"multiline"' not in str(notes):
+        return notes
+    try:
+        data = json.loads(notes)
+    except (ValueError, TypeError):
+        return notes
+    path = data.get("multiline") if isinstance(data, dict) else None
+    if not isinstance(path, list):
+        return notes
+    for point in path:
+        if (
+            not isinstance(point, (list, tuple))
+            or len(point) != 2
+            or not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in point)
+        ):
+            return notes
+    try:
+        data["multiline"] = [[fx(float(x)), fy(float(y))] for x, y in path]
+    except (OverflowError, ValueError):
+        return notes
+    return json.dumps(data)
+
+
+def _rescale_measurements_on_cursor(cursor, image_id: int, ratio: float) -> int:
+    """Multiply an image's measured lengths and widths by ``ratio``.
+
+    The single rescale rule: the scale-bar calibration record keeps its
+    labelled length, and notes are never rewritten (Q does not change when
+    length and width scale together, and notes also hold multiline paths).
+    """
+    cursor.execute(
+        """
+        UPDATE spore_measurements
+        SET length_um = length_um * ?,
+            width_um = CASE WHEN width_um IS NOT NULL THEN width_um * ? ELSE NULL END
+        WHERE image_id = ?
+          AND length_um IS NOT NULL
+          AND COALESCE(LOWER(measurement_type), '') != 'calibration'
+        """,
+        (ratio, ratio, image_id),
+    )
+    return cursor.rowcount or 0
+
+
 def _touch_observation(cursor, observation_id: int | None, *, mark_dirty: bool = True) -> None:
     try:
         obs_id = int(observation_id or 0)
@@ -4421,9 +4472,36 @@ class MeasurementDB:
             sync_key: Omitted mints a fresh key; an explicit value
                 (None included) is stored as given.
         """
-        resolved_sync_key = _resolve_sync_key(sync_key)
+        coords = [(p.x(), p.y()) for p in points] if points else None
         conn = get_connection()
-        cursor = conn.cursor()
+        try:
+            cursor = conn.cursor()
+            meas_id = MeasurementDB._insert_measurement(
+                cursor,
+                image_id,
+                length,
+                width,
+                measurement_type,
+                notes,
+                coords,
+                sync_key,
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return meas_id
+
+    @staticmethod
+    def _insert_measurement(cursor, image_id: int, length: float, width: float | None,
+                            measurement_type: str, notes: str | None,
+                            coords: list[tuple[float, float]] | None,
+                            sync_key: str | None | object = MINT_SYNC_KEY) -> int:
+        """Insert one measurement on ``cursor`` and mark its observation dirty.
+
+        ``coords`` holds 2 or 4 ``(x, y)`` pixel points, or nothing. The caller
+        owns the transaction.
+        """
+        resolved_sync_key = _resolve_sync_key(sync_key)
         cursor.execute('SELECT observation_id FROM images WHERE id = ?', (image_id,))
         row = cursor.fetchone()
         try:
@@ -4431,27 +4509,27 @@ class MeasurementDB:
         except Exception:
             observation_id = None
 
-        if points and len(points) == 4:
+        if coords and len(coords) == 4:
             cursor.execute('''
                 INSERT INTO spore_measurements
                 (image_id, length_um, width_um, measurement_type, notes,
                  p1_x, p1_y, p2_x, p2_y, p3_x, p3_y, p4_x, p4_y, sync_key)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (image_id, length, width, measurement_type, notes,
-                  points[0].x(), points[0].y(),
-                  points[1].x(), points[1].y(),
-                  points[2].x(), points[2].y(),
-                  points[3].x(), points[3].y(),
+                  coords[0][0], coords[0][1],
+                  coords[1][0], coords[1][1],
+                  coords[2][0], coords[2][1],
+                  coords[3][0], coords[3][1],
                   resolved_sync_key))
-        elif points and len(points) == 2:
+        elif coords and len(coords) == 2:
             cursor.execute('''
                 INSERT INTO spore_measurements
                 (image_id, length_um, width_um, measurement_type, notes,
                  p1_x, p1_y, p2_x, p2_y, sync_key)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (image_id, length, width, measurement_type, notes,
-                  points[0].x(), points[0].y(),
-                  points[1].x(), points[1].y(),
+                  coords[0][0], coords[0][1],
+                  coords[1][0], coords[1][1],
                   resolved_sync_key))
         else:
             cursor.execute('''
@@ -4462,9 +4540,209 @@ class MeasurementDB:
         meas_id = cursor.lastrowid
         if observation_id:
             _touch_observation(cursor, observation_id, mark_dirty=True)
-        conn.commit()
-        conn.close()
         return meas_id
+
+    @staticmethod
+    def replace_calibration_measurement(
+        image_id: int,
+        scale_bar_selection,
+        total_um: float,
+    ) -> int | None:
+        """Replace an image's scale-bar calibration measurement in one transaction.
+
+        ``scale_bar_selection`` is ``((x1, y1), (x2, y2))`` in image pixels and
+        ``total_um`` the bar's labelled length. The stored record is the bar
+        itself (length ``total_um``) plus a cross tick at its midpoint, one
+        tenth of the bar long (width ``total_um / 10``). Any existing
+        calibration row is removed, whatever the case of its type. Returns the
+        new measurement id, or ``None`` when the input cannot describe a bar.
+        """
+        if not image_id or not scale_bar_selection or len(scale_bar_selection) != 2:
+            return None
+        if total_um is None or total_um <= 0:
+            return None
+        (x1, y1), (x2, y2) = scale_bar_selection
+        x1, y1, x2, y2 = float(x1), float(y1), float(x2), float(y2)
+        dx = x2 - x1
+        dy = y2 - y1
+        length_px = (dx * dx + dy * dy) ** 0.5
+        if length_px <= 0:
+            return None
+        perp_x = -dy / length_px
+        perp_y = dx / length_px
+        half_tick_px = length_px / 20.0
+        mx = (x1 + x2) / 2
+        my = (y1 + y2) / 2
+        coords = [
+            (x1, y1),
+            (x2, y2),
+            (mx - perp_x * half_tick_px, my - perp_y * half_tick_px),
+            (mx + perp_x * half_tick_px, my + perp_y * half_tick_px),
+        ]
+        total_um = float(total_um)
+
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM spore_measurements "
+                "WHERE image_id = ? AND COALESCE(LOWER(measurement_type), '') = 'calibration'",
+                (image_id,),
+            )
+            meas_id = MeasurementDB._insert_measurement(
+                cursor,
+                image_id,
+                total_um,
+                total_um / 10.0,
+                "calibration",
+                f"Scale bar: {total_um:.1f} µm",
+                coords,
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return meas_id
+
+    @staticmethod
+    def scale_measurement_points(image_id: int, factor: float) -> None:
+        """Scale an image's measurement geometry after the image is resampled.
+
+        Multiplies the stored point columns and any multiline path (kept as
+        JSON in ``notes``) by ``factor``. Lengths in µm are unchanged.
+        """
+        if not image_id or not factor or factor <= 0:
+            return
+        f = float(factor)
+        MeasurementDB._transform_measurement_geometry(image_id, lambda x: x * f, lambda y: y * f)
+
+    @staticmethod
+    def translate_measurement_points(image_id: int, offset_x: float, offset_y: float) -> None:
+        """Shift an image's measurement geometry after the image is cropped.
+
+        Subtracts the crop origin from the stored point columns and any
+        multiline path (kept as JSON in ``notes``).
+        """
+        if not image_id or (not offset_x and not offset_y):
+            return
+        ox = float(offset_x or 0.0)
+        oy = float(offset_y or 0.0)
+        MeasurementDB._transform_measurement_geometry(image_id, lambda x: x - ox, lambda y: y - oy)
+
+    @staticmethod
+    def _transform_measurement_geometry(image_id: int, fx, fy) -> None:
+        """Apply per-axis ``fx`` / ``fy`` to every stored coordinate of an image's measurements."""
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            # Take the write lock before reading, so a concurrent write cannot
+            # land between the read and the rewrite and be overwritten.
+            cursor.execute("BEGIN IMMEDIATE")
+            cursor.execute(
+                "SELECT id, notes, p1_x, p1_y, p2_x, p2_y, p3_x, p3_y, p4_x, p4_y "
+                "FROM spore_measurements WHERE image_id = ?",
+                (image_id,),
+            )
+            for row in cursor.fetchall():
+                measurement_id, notes = row[0], row[1]
+                coords = list(row[2:])
+                for i, value in enumerate(coords):
+                    if value is not None:
+                        coords[i] = (fx if i % 2 == 0 else fy)(float(value))
+                new_notes = _transform_multiline_notes(notes, fx, fy)
+                cursor.execute(
+                    "UPDATE spore_measurements SET p1_x = ?, p1_y = ?, p2_x = ?, p2_y = ?, "
+                    "p3_x = ?, p3_y = ?, p4_x = ?, p4_y = ?, notes = ? WHERE id = ?",
+                    (*coords, new_notes, measurement_id),
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    @staticmethod
+    def get_measurement_length(measurement_id: int) -> float | None:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT length_um FROM spore_measurements WHERE id = ?", (measurement_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+        return float(row[0]) if row and row[0] is not None else None
+
+    @staticmethod
+    def has_rescalable_measurements(measurements: list[dict] | None) -> bool:
+        """True when ``rescale_image_measurements`` would change any of these rows."""
+        return any(
+            m.get("length_um") is not None
+            and str(m.get("measurement_type") or "").strip().lower() != "calibration"
+            for m in (measurements or [])
+        )
+
+    @staticmethod
+    def rescale_image_measurements(
+        image_id: int,
+        old_scale: float | None,
+        new_scale: float | None,
+    ) -> int:
+        """Rescale an image's measurements to ``new_scale`` µm/px and store that scale.
+
+        The image's stored ``scale_microns_per_pixel`` is the scale its
+        measurements were computed at, so it is the denominator; ``old_scale``
+        is used only when the image has no stored scale. Using the caller's
+        cached scale instead would rescale twice after another window already
+        rescaled the image.
+
+        Lengths and widths are multiplied by the ratio; notes (which hold Q
+        values and multiline paths) and the scale-bar calibration record are
+        left alone. The new scale is stored in the same transaction, and the
+        observation is marked dirty only when a value changed. Returns the
+        number of measurements rescaled.
+        """
+        if not image_id or not new_scale or new_scale <= 0:
+            return 0
+        new_scale = float(new_scale)
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            # The stored scale is the denominator; hold the write lock while
+            # reading it so nothing changes it before the rescale is written.
+            cursor.execute("BEGIN IMMEDIATE")
+            cursor.execute(
+                "SELECT observation_id, scale_microns_per_pixel FROM images WHERE id = ?",
+                (image_id,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return 0
+            observation_id, stored_scale = row[0], row[1]
+            base_scale = stored_scale if stored_scale and stored_scale > 0 else old_scale
+            if not base_scale or base_scale <= 0:
+                return 0
+            ratio = new_scale / float(base_scale)
+            updated = 0
+            if abs(ratio - 1.0) >= 1e-9:
+                updated = _rescale_measurements_on_cursor(cursor, image_id, ratio)
+            scale_changed = stored_scale is None or abs(float(stored_scale) - new_scale) >= 1e-12
+            if scale_changed:
+                cursor.execute(
+                    "UPDATE images SET scale_microns_per_pixel = ? WHERE id = ?",
+                    (new_scale, image_id),
+                )
+            if (updated or scale_changed) and observation_id is not None:
+                _touch_observation(cursor, int(observation_id), mark_dirty=True)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return updated
     
     @staticmethod
     def get_measurements_for_image(image_id: int) -> List[dict]:
@@ -5795,15 +6073,89 @@ class CalibrationDB:
         return [dict(row) for row in rows]
 
     @staticmethod
+    def _recalibration_image_rows(cursor, calibration_id: int, since_date=None) -> list:
+        """Images linked to ``calibration_id``, optionally only those dated ``since_date`` or later.
+
+        The one place that decides which images a re-calibration touches; the
+        dialog's preview and the update both read it. An image's date is the
+        day it was taken (the date part of ``captured_at``, local camera time,
+        whatever offset follows it) or, when that is unknown, the local day it
+        was added (``created_at`` is stored in UTC). ``measurement_count`` is 0
+        for an image with no stored scale: the update only relinks it.
+        """
+        since_text = None
+        if since_date is not None:
+            since_text = since_date.isoformat() if hasattr(since_date, "isoformat") else str(since_date)
+        cursor.execute(
+            """
+            SELECT i.id AS image_id,
+                   i.observation_id,
+                   i.filepath,
+                   i.scale_microns_per_pixel,
+                   COALESCE(date(substr(i.captured_at, 1, 10)), date(i.created_at, 'localtime')) AS image_date,
+                   CASE WHEN date(substr(i.captured_at, 1, 10)) IS NOT NULL THEN 'captured' ELSE 'added' END
+                       AS image_date_source,
+                   o.genus, o.species, o.common_name, o.date AS observation_date,
+                   CASE WHEN COALESCE(i.scale_microns_per_pixel, 0) > 0 THEN (
+                       SELECT COUNT(*) FROM spore_measurements m
+                       WHERE m.image_id = i.id
+                         AND m.length_um IS NOT NULL
+                         AND COALESCE(LOWER(m.measurement_type), '') != 'calibration'
+                   ) ELSE 0 END AS measurement_count
+            FROM images i
+            LEFT JOIN observations o ON o.id = i.observation_id
+            WHERE i.calibration_id = ?
+              AND (
+                  ? IS NULL
+                  OR COALESCE(date(substr(i.captured_at, 1, 10)), date(i.created_at, 'localtime')) >= ?
+              )
+            ORDER BY image_date DESC, i.observation_id, i.id
+            """,
+            (calibration_id, since_text, since_text),
+        )
+        return cursor.fetchall()
+
+    @staticmethod
+    def get_recalibration_images(calibration_id: int, since_date=None) -> List[dict]:
+        """Images a re-calibration would update, with their observation and measurement count.
+
+        ``since_date`` (a ``date`` or ``YYYY-MM-DD``) limits the list to images
+        dated that day or later; ``None`` lists every image on the calibration.
+        ``measurement_count`` counts the rows a rescale changes (not the
+        scale-bar record).
+        """
+        conn = get_connection()
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = CalibrationDB._recalibration_image_rows(conn.cursor(), calibration_id, since_date)
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    @staticmethod
     def recalculate_measurements_for_calibration(
         calibration_id: int,
         new_calibration_id: int,
-        new_scale: float
+        new_scale: float,
+        since_date=None,
+        image_ids=None,
     ) -> int:
-        """Recalculate measurements for images that used a specific calibration.
+        """Move images from ``calibration_id`` to the new calibration and rescale their measurements.
 
-        Updates the images to use the new calibration and recalculates their measurements.
-        Returns the number of measurements updated.
+        ``since_date`` limits the update to images dated that day or later (see
+        ``_recalibration_image_rows``); ``None`` updates every image on the old
+        calibration. ``image_ids`` further limits it to those images (the ones
+        a preview showed), so nothing that changed after the preview is pulled
+        in. Images left out keep their calibration link and scale. Returns the
+        number of measurements updated. One transaction.
+
+        The correction is the calibration's own change, ``new_scale`` divided
+        by the old calibration's stored scale. Each image's scale and
+        measurements are multiplied by it, so an image whose scale differs from
+        the old calibration (resampled on import, or carrying another
+        calibration's scale) keeps that relation instead of being reset to
+        ``new_scale``. Without a usable old calibration scale the images are
+        only relinked.
 
         Also flags any linked observations as ``dirty`` so that cloud sync picks
         up the retroactive calibration reference change as a metadata-only patch
@@ -5811,67 +6163,75 @@ class CalibrationDB:
         """
         conn = get_connection()
         conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("BEGIN IMMEDIATE")
+            images = CalibrationDB._recalibration_image_rows(cursor, calibration_id, since_date)
+            if image_ids is not None:
+                allowed = {int(image_id) for image_id in image_ids}
+                images = [img for img in images if int(img["image_id"]) in allowed]
 
-        cursor.execute(
-            "SELECT id, observation_id, scale_microns_per_pixel FROM images WHERE calibration_id = ?",
-            (calibration_id,)
-        )
-        images = cursor.fetchall()
+            cursor.execute(
+                "SELECT microns_per_pixel FROM calibrations WHERE id = ?",
+                (calibration_id,),
+            )
+            calibration_row = cursor.fetchone()
+            old_calibration_scale = (
+                float(calibration_row["microns_per_pixel"] or 0) if calibration_row else 0.0
+            )
+            new_scale = float(new_scale or 0)
+            scale_ratio = (
+                new_scale / old_calibration_scale
+                if old_calibration_scale > 0 and new_scale > 0
+                else None
+            )
+            if scale_ratio is not None and not (math.isfinite(scale_ratio) and scale_ratio > 0):
+                scale_ratio = None
 
-        if not images:
-            conn.close()
-            return 0
+            total_updated = 0
+            touched_observation_ids: set[int] = set()
 
-        total_updated = 0
-        touched_observation_ids: set[int] = set()
+            for img in images:
+                image_id = img["image_id"]
+                observation_id = img["observation_id"]
+                old_scale = img["scale_microns_per_pixel"] or 0
 
-        for img in images:
-            image_id = img["id"]
-            observation_id = img["observation_id"]
-            old_scale = img["scale_microns_per_pixel"] or 0
+                if old_scale <= 0 or scale_ratio is None:
+                    # Even without a rescale we still want to reassign the
+                    # calibration link so the metadata reflects the new UUID.
+                    cursor.execute(
+                        "UPDATE images SET calibration_id = ? WHERE id = ?",
+                        (new_calibration_id, image_id),
+                    )
+                    if observation_id is not None:
+                        touched_observation_ids.add(int(observation_id))
+                    continue
 
-            if old_scale <= 0 or new_scale <= 0:
-                # Even without a rescale we still want to reassign the
-                # calibration link so the metadata reflects the new UUID.
                 cursor.execute(
-                    "UPDATE images SET calibration_id = ? WHERE id = ?",
-                    (new_calibration_id, image_id),
+                    "UPDATE images SET calibration_id = ?, scale_microns_per_pixel = ? WHERE id = ?",
+                    (new_calibration_id, float(old_scale) * scale_ratio, image_id)
                 )
                 if observation_id is not None:
                     touched_observation_ids.add(int(observation_id))
-                continue
 
-            scale_ratio = new_scale / old_scale
+                total_updated += _rescale_measurements_on_cursor(cursor, image_id, scale_ratio)
 
-            cursor.execute(
-                "UPDATE images SET calibration_id = ?, scale_microns_per_pixel = ? WHERE id = ?",
-                (new_calibration_id, new_scale, image_id)
-            )
-            if observation_id is not None:
-                touched_observation_ids.add(int(observation_id))
+            if touched_observation_ids:
+                placeholders = ",".join("?" for _ in touched_observation_ids)
+                cursor.execute(
+                    (
+                        "UPDATE observations SET sync_status = 'dirty' "
+                        "WHERE id IN (" + placeholders + ") AND cloud_id IS NOT NULL"
+                    ),
+                    tuple(touched_observation_ids),
+                )
 
-            cursor.execute('''
-                UPDATE spore_measurements
-                SET length_um = length_um * ?,
-                    width_um = CASE WHEN width_um IS NOT NULL THEN width_um * ? ELSE NULL END
-                WHERE image_id = ?
-            ''', (scale_ratio, scale_ratio, image_id))
-
-            total_updated += cursor.rowcount
-
-        if touched_observation_ids:
-            placeholders = ",".join("?" for _ in touched_observation_ids)
-            cursor.execute(
-                (
-                    "UPDATE observations SET sync_status = 'dirty' "
-                    "WHERE id IN (" + placeholders + ") AND cloud_id IS NOT NULL"
-                ),
-                tuple(touched_observation_ids),
-            )
-
-        conn.commit()
-        conn.close()
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
         return total_updated
 

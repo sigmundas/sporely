@@ -2305,53 +2305,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 ImageDB.update_image(result.image_id, scale_bar_selection=result.scale_bar_selection)
             # Create / update calibration measurement (1:10 aspect ratio)
             if result.image_id and result.scale_bar_selection:
-                self._upsert_calibration_measurement(result.image_id, result.scale_bar_selection, total_um, pixel_dist)
+                MeasurementDB.replace_calibration_measurement(result.image_id, result.scale_bar_selection, total_um)
             # Re-apply overlay after scale updates, because scale application can refresh the preview widget.
             self._restore_scale_bar_overlay(result)
         self.set_hint(None)
-
-    def _upsert_calibration_measurement(
-        self,
-        image_id: int,
-        scale_bar_selection: tuple,
-        total_um: float,
-        pixel_dist: float,
-    ) -> None:
-        """Create or replace the calibration measurement for an image (1:10 aspect ratio)."""
-        (x1, y1), (x2, y2) = scale_bar_selection
-        dx = x2 - x1
-        dy = y2 - y1
-        length_px = (dx * dx + dy * dy) ** 0.5
-        if length_px <= 0:
-            return
-        perp_x = -dy / length_px
-        perp_y = dx / length_px
-        half_width_px = pixel_dist / 20.0  # 1:10 ratio: width = length/10, half = length/20
-        mx = (x1 + x2) / 2
-        my = (y1 + y2) / 2
-        p1 = QPointF(x1, y1)
-        p2 = QPointF(x2, y2)
-        p3 = QPointF(mx - perp_x * half_width_px, my - perp_y * half_width_px)
-        p4 = QPointF(mx + perp_x * half_width_px, my + perp_y * half_width_px)
-        width_um = total_um / 10.0
-
-        # Delete existing calibration measurement(s) for this image
-        conn = get_connection()
-        conn.execute(
-            "DELETE FROM spore_measurements WHERE image_id = ? AND measurement_type = 'calibration'",
-            (image_id,),
-        )
-        conn.commit()
-        conn.close()
-
-        MeasurementDB.add_measurement(
-            image_id=image_id,
-            length=total_um,
-            width=width_um,
-            measurement_type="calibration",
-            notes=f"Scale bar: {total_um:.1f} µm",
-            points=[p1, p2, p3, p4],
-        )
 
     def apply_scale_bar(self, scale_um: float) -> None:
         if not scale_um or scale_um <= 0:
@@ -5322,15 +5279,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
             img = ImageDB.get_image(result.image_id)
             if img:
                 old_scale = img.get("scale_microns_per_pixel")
-            new_scale = self._resolve_selected_scale_value(selected_objective)
-            factor = getattr(result, "resample_scale_factor", None)
-            if (
-                new_scale is not None
-                and isinstance(factor, (int, float))
-                and factor > 0
-                and factor < 0.999
-            ):
-                new_scale = float(new_scale) / float(factor)
+            new_scale = self._stored_pixel_scale_for_result(
+                result, self._resolve_selected_scale_value(selected_objective)
+            )
             if (
                 old_scale is not None
                 and new_scale is not None
@@ -5419,11 +5370,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
                                 self.objective_combo.setCurrentIndex(combo_idx)
                         self.objective_combo.blockSignals(False)
                     return
-                if decision == "all":
-                    rescale_targets = {t[0]: t[1:] for t in targets}
-                else:
-                    image_id, old_scale, new_scale, measurements = targets[0]
-                    rescale_targets = {image_id: (old_scale, new_scale, measurements)}
+                # Every selected image gets the new scale, so every one of them
+                # has its measurements rescaled: a measurement stored in µm is
+                # only right for the scale it was computed at.
+                rescale_targets = {t[0]: t[1:] for t in targets}
 
         for idx in indices:
             if idx is None:
@@ -5466,9 +5416,29 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._update_set_from_image_button_state()
         self._update_ai_controls_state()
 
-    def _resolve_selected_scale_value(self, selected_objective) -> float | None:
+    def _selected_scale_is_scale_bar(self) -> bool:
         scale_bar_active = bool(getattr(self, "scale_bar_mode_checkbox", None) and self.scale_bar_mode_checkbox.isChecked())
-        if scale_bar_active and self._custom_scale:
+        return bool(scale_bar_active and self._custom_scale)
+
+    def _stored_pixel_scale_for_result(self, result, scale: float | None) -> float | None:
+        """The µm/px of ``result``'s stored image for a selected ``scale``.
+
+        An objective's scale is per sensor pixel, so for an image that was
+        resampled at import it is divided by that resample factor. A scale-bar
+        scale was measured on the stored image the preview shows, so it already
+        is per stored pixel. This matches _apply_import_results_to_observation.
+        """
+        if scale is None:
+            return None
+        if self._selected_scale_is_scale_bar():
+            return float(scale)
+        factor = getattr(result, "resample_scale_factor", None)
+        if isinstance(factor, (int, float)) and 0 < factor < 0.999:
+            return float(scale) / float(factor)
+        return float(scale)
+
+    def _resolve_selected_scale_value(self, selected_objective) -> float | None:
+        if self._selected_scale_is_scale_bar():
             return float(self._custom_scale)
         if selected_objective and selected_objective in self.objectives:
             return self.objectives[selected_objective].get("microns_per_pixel")
@@ -5504,19 +5474,14 @@ class ImageImportDialog(GeometryMixin, QDialog):
             img = ImageDB.get_image(result.image_id)
             if not img:
                 continue
-            # Prefer the in-memory value to avoid stale DB reads during repeated rescales in the same session
-            old_scale = result.custom_scale if result.custom_scale is not None else img.get("scale_microns_per_pixel")
+            # The stored scale is what the measurements were computed at; every
+            # rescale in this dialog writes it immediately, so it is never stale.
+            old_scale = img.get("scale_microns_per_pixel")
+            if old_scale is None:
+                old_scale = result.custom_scale
             if old_scale is None:
                 continue
-            factor = getattr(result, "resample_scale_factor", None)
-            effective_new_scale = new_scale
-            if (
-                effective_new_scale is not None
-                and isinstance(factor, (int, float))
-                and factor > 0
-                and factor < 0.999
-            ):
-                effective_new_scale = float(effective_new_scale) / float(factor)
+            effective_new_scale = self._stored_pixel_scale_for_result(result, new_scale)
             if effective_new_scale is None:
                 continue
             if abs(float(effective_new_scale) - float(old_scale)) <= 1e-6:
@@ -5524,11 +5489,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
             measurements = MeasurementDB.get_measurements_for_image(result.image_id)
             if not measurements:
                 continue
-            has_points = any(
-                all(m.get(f"p{i}_{axis}") is not None for i in range(1, 5) for axis in ("x", "y"))
-                for m in measurements
-            )
-            if not has_points:
+            if not MeasurementDB.has_rescalable_measurements(measurements):
                 continue
             targets.append(
                 (result.image_id, float(old_scale), float(effective_new_scale), measurements)
@@ -5536,35 +5497,22 @@ class ImageImportDialog(GeometryMixin, QDialog):
         return targets
 
     def _confirm_rescale_for_targets(self, target_count: int) -> str:
+        """Ask before rescaling the measurements of all affected images.
+
+        Returns "all" or "cancel". There is no "only this image" choice: the
+        new scale applies to every selected image, and their measurements must
+        follow it.
+        """
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Question)
         box.setWindowTitle(self.tr("Changing image scale"))
-        if target_count > 1:
-            box.setText(
-                self.tr(
-                    "Changing image scale: This will update previous measurements to match the new scale.\n"
-                    "Apply to all selected images?"
-                )
-            )
-            apply_all_btn = box.addButton(self.tr("Apply to all"), QMessageBox.AcceptRole)
-            ok_btn = box.addButton(self.tr("OK"), QMessageBox.AcceptRole)
-            cancel_btn = box.addButton(self.tr("Cancel"), QMessageBox.RejectRole)
-        else:
-            box.setText(
-                self.tr("Changing image scale: This will update previous measurements to match the new scale.")
-            )
-            apply_all_btn = None
-            ok_btn = box.addButton(self.tr("OK"), QMessageBox.AcceptRole)
-            cancel_btn = box.addButton(self.tr("Cancel"), QMessageBox.RejectRole)
+        box.setText(
+            self.tr("Changing image scale: This will update previous measurements to match the new scale.")
+        )
+        ok_btn = box.addButton(self.tr("OK"), QMessageBox.AcceptRole)
+        box.addButton(self.tr("Cancel"), QMessageBox.RejectRole)
         box.exec()
-        clicked = box.clickedButton()
-        if clicked == cancel_btn:
-            return "cancel"
-        if apply_all_btn and clicked == apply_all_btn:
-            return "all"
-        if target_count > 1 and clicked == ok_btn:
-            return "one"
-        return "one"
+        return "all" if box.clickedButton() == ok_btn else "cancel"
 
     def _maybe_rescale_measurements_for_image(
         self,
@@ -5577,9 +5525,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if abs(new_scale - old_scale) < 1e-6:
             return True
         measurements = MeasurementDB.get_measurements_for_image(image_id)
-        if not measurements:
-            return True
-        if not any(m.get("length_um") is not None for m in measurements):
+        if not MeasurementDB.has_rescalable_measurements(measurements):
             return True
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Question)
@@ -5599,37 +5545,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
         new_scale: float,
         measurements: list[dict] | None = None,
     ) -> bool:
-        if not image_id or not old_scale or not new_scale:
-            return True
-        if abs(new_scale - old_scale) < 1e-6:
-            return True
-        measurements = measurements or MeasurementDB.get_measurements_for_image(image_id)
-        if not measurements:
-            return True
-        if not any(m.get("length_um") is not None for m in measurements):
-            return True
-        ratio = float(new_scale) / float(old_scale)
-        conn = get_connection()
-        cursor = conn.cursor()
-        for m in measurements:
-            old_length = m.get("length_um")
-            if old_length is None:
-                continue
-            new_length_um = float(old_length) * ratio
-            old_width = m.get("width_um")
-            new_width_um = float(old_width) * ratio if old_width is not None else None
-            q_value = new_length_um / new_width_um if new_width_um and new_width_um > 0 else 0
-            cursor.execute(
-                "UPDATE spore_measurements SET length_um = ?, width_um = ?, notes = ? WHERE id = ?",
-                (new_length_um, new_width_um, f"Q={q_value:.1f}", m["id"]),
-            )
-        # Also update the image's scale so _apply_import_results_to_observation won't double-rescale
-        cursor.execute(
-            "UPDATE images SET scale_microns_per_pixel = ? WHERE id = ?",
-            (float(new_scale), image_id),
-        )
-        conn.commit()
-        conn.close()
+        # Also stores the new image scale, so _apply_import_results_to_observation
+        # does not rescale a second time, and marks the observation dirty,
+        # because this commits before (and independently of) that apply step.
+        MeasurementDB.rescale_image_measurements(image_id, old_scale, new_scale)
         return True
 
     def _apply_metadata_to_index(self, index: int) -> None:

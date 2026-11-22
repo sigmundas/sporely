@@ -16,6 +16,7 @@ files=(
   "ui/observation_details_dialog.py"
   "ui/edit_page.py"
   "ui/calibration_dialog.py"
+  "ui/recalibration_scope_dialog.py"
   "ui/cloud_conflict_dialog.py"
   "ui/species_plate_dialog.py"
   "ui/zoomable_image_widget.py"

@@ -17,6 +17,7 @@ from .portable_import import register_archive_message_scenarios, register_portab
 from .preferences import register_preferences_scenarios
 from .quick_fixes import register_quick_fix_scenarios
 from .style_tokens import register_style_token_scenarios
+from .recalibration import register_recalibration_scenarios
 from .taxon_picker import register_taxon_picker_scenarios
 
 
@@ -39,6 +40,7 @@ def create_registry() -> ScenarioRegistry:
     register_live_lab_scenarios(registry)
     register_style_token_scenarios(registry)
     register_taxon_picker_scenarios(registry)
+    register_recalibration_scenarios(registry)
     return registry
 
 

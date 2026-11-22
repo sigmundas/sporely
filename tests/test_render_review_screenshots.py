@@ -71,6 +71,10 @@ CONFLICT_IDS = {
 }
 OTHER_UI_IDS = {
     "measure.metadata-tags",
+    "measure.active-calibration-prompt",
+    "measure.active-calibration-prompt-nb",
+    "measure.active-calibration-prompt-de-dark",
+    "measure.active-calibration-prompt-no-measurements",
     "observations.image-metadata-tags",
     "observations.taxon-link-offer",
     "observations.taxon-picker-search",
@@ -175,6 +179,14 @@ PREFERENCES_IDS = {
     "preferences.credential-prompt-missing-de", "preferences.profile-not-loaded-nb",
     "preferences.profile-not-loaded-de",
 }
+RECALIBRATION_IDS = {
+    "recalibration.update-existing",
+    "recalibration.update-recent",
+    "recalibration.update-recent-dark",
+    "recalibration.new-only-dark",
+    "recalibration.update-recent-small",
+    "recalibration.update-recent-en",
+}
 ALL_IDS = (
     REFERENCE_IDS
     | CONFLICT_IDS
@@ -189,6 +201,7 @@ ALL_IDS = (
     | NOTICE_IDS
     | CALIBRATION_IDS
     | PREFERENCES_IDS
+    | RECALIBRATION_IDS
 )
 
 
@@ -212,8 +225,8 @@ def test_registry_has_unique_semantic_ids_and_expected_groups() -> None:
     assert len(ids) == len(set(ids))
     assert set(registry.groups()) == {
         "analysis", "archive-messages", "calibration", "conflict", "live-lab", "measure", "mode-bar", "notices", "observations",
-        "portable-import", "preferences", "quick-fixes", "raw-processing", "reference-library", "style-tokens",
-        "taxon-picker",
+        "portable-import", "preferences", "quick-fixes", "raw-processing", "recalibration", "reference-library",
+        "style-tokens", "taxon-picker",
     }
     assert {scenario.id for scenario in registry.all()} == ALL_IDS
 

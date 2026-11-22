@@ -254,8 +254,7 @@ from references.reference_plotting import (
 from utils.annotation_capture import save_spore_annotation
 from utils.taxon_identity import proven_sporely_taxon_id
 from utils.image_metadata_merge import merge_image_lab_metadata
-from utils.thumbnail_generator import generate_all_sizes
-from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
+from utils.image_utils import load_oriented_pixmap
 from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
 from utils.cloud_sync import is_cloud_auth_error, is_cloud_reauth_required_error
 from utils.publish_media import prepare_ordered_mosaic_inputs
@@ -589,7 +588,6 @@ class AnalysisGalleryTile(QWidget):
         super().resizeEvent(event)
 from app_identity import APP_NAME, APP_REPOSITORY_URL, app_data_dir
 from config import (
-    LOCAL_IMPORT_IMAGE_FILTER,
     RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG,
     RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW,
     SETTING_RAW_COMPANION_SOURCE_PREFERENCE,
@@ -4678,6 +4676,31 @@ class _PortableImportWorker(QThread):
             self.failed.emit(str(exc))
 
 
+def build_active_calibration_prompt(parent, *, new_label, old_label=None, change=None):
+    """The question asked before moving an image to its objective's active calibration.
+
+    Returns the message box and its Move button. ``old_label`` names the image's
+    current calibration when it has one; ``change`` is the signed percentage its
+    measurements change by, when it has measurements to rescale.
+    """
+    translate = QCoreApplication.translate
+    if old_label:
+        text = translate(
+            "MainWindow", "Move this image from the {old} calibration to the active {new} calibration?"
+        ).format(old=old_label, new=new_label)
+    else:
+        text = translate("MainWindow", "Move this image to the active {new} calibration?").format(new=new_label)
+    if change:
+        text = text + " " + translate("MainWindow", "Measurements change by {change}.").format(change=change)
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Question)
+    box.setWindowTitle(translate("MainWindow", "Use active calibration"))
+    box.setText(text)
+    move_btn = box.addButton(translate("MainWindow", "Move"), QMessageBox.AcceptRole)
+    box.addButton(translate("MainWindow", "Cancel"), QMessageBox.RejectRole)
+    return box, move_btn
+
+
 class MainWindow(GeometryMixin, QMainWindow):
     """Main application window with modern UI and measurement table."""
 
@@ -6117,7 +6140,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         calib_layout = self.measure_scale_section.body_layout
 
         self.scale_combo = QComboBox()
-        self.scale_combo.currentIndexChanged.connect(self.on_scale_combo_changed)
+        self._connect_scale_combo_signals()
         calib_layout.addWidget(self.scale_combo)
 
         self.set_from_scalebar_btn = QPushButton(self.tr("Set from scalebar"))
@@ -10404,8 +10427,106 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.scale_combo.blockSignals(False)
         self._last_scale_combo_key = self.scale_combo.currentData()
 
+    def _connect_scale_combo_signals(self) -> None:
+        self.scale_combo.currentIndexChanged.connect(self.on_scale_combo_changed)
+        self.scale_combo.activated.connect(self.on_scale_combo_activated)
+
     def on_scale_combo_changed(self):
         """Handle objective selection from the scale combo."""
+        try:
+            self._apply_scale_combo_selection()
+        finally:
+            # Qt emits activated() right after currentIndexChanged() for the same
+            # user choice, with the index the change left (or reverted to). That
+            # is not a re-choice of the shown objective, so it is skipped until
+            # the event loop has finished delivering this choice.
+            self._scale_combo_selection_changed = True
+            QTimer.singleShot(0, self, self._clear_scale_combo_selection_changed)
+
+    def _clear_scale_combo_selection_changed(self) -> None:
+        self._scale_combo_selection_changed = False
+
+    def on_scale_combo_activated(self, index):
+        """Re-choosing the shown objective offers its active calibration."""
+        if getattr(self, "_scale_combo_selection_changed", False):
+            return
+        if not hasattr(self, "scale_combo"):
+            return
+        self._offer_active_calibration_for_current_image(self.scale_combo.itemData(index))
+
+    def _offer_active_calibration_for_current_image(self, objective_key) -> bool:
+        """Offer to move the current image to its objective's active calibration.
+
+        Opening an image keeps its stored scale and calibration link, so an image
+        on an earlier calibration of the selected objective stays there until the
+        user re-chooses that objective. Does nothing when the image already has
+        the active calibration's scale and link.
+        """
+        image_id = self.current_image_id
+        if not image_id or not objective_key:
+            return False
+        objective = self.load_objective_definitions().get(objective_key)
+        if not objective:
+            return False
+        active_calibration_id = CalibrationDB.get_active_calibration_id(objective_key)
+        active_calibration = CalibrationDB.get_calibration(active_calibration_id) if active_calibration_id else None
+        if not active_calibration:
+            return False
+        # The same scale source as every objective change (apply_objective).
+        objective_scale = objective.get("microns_per_pixel")
+        target_scale = self._stored_pixel_scale_for_current_image(objective_scale)
+        if not target_scale:
+            return False
+        image_data = ImageDB.get_image(image_id) or {}
+        stored_scale = image_data.get("scale_microns_per_pixel")
+        stored_calibration_id = image_data.get("calibration_id")
+        if (
+            stored_scale
+            and abs(float(stored_scale) - float(target_scale)) < 1e-6
+            and stored_calibration_id == active_calibration_id
+        ):
+            return False
+
+        stored_calibration = None
+        if stored_calibration_id and stored_calibration_id != active_calibration_id:
+            stored_calibration = CalibrationDB.get_calibration(stored_calibration_id)
+        new_date = str(active_calibration.get("calibration_date") or "")
+        old_date = str(stored_calibration.get("calibration_date") or "") if stored_calibration else ""
+        # Dates name the calibrations; two from the same day also show their time.
+        label_length = 19 if old_date and old_date[:10] == new_date[:10] else 10
+        new_label = new_date[:label_length] or f"#{active_calibration_id}"
+        old_label = (old_date[:label_length] or f"#{stored_calibration_id}") if stored_calibration else None
+        if old_label and old_label == new_label:
+            old_label = f"{old_label} #{stored_calibration_id}"
+            new_label = f"{new_label} #{active_calibration_id}"
+        change = None
+        old_scale = stored_scale if stored_scale and stored_scale > 0 else self.microns_per_pixel
+        if old_scale and abs(float(old_scale) - float(target_scale)) >= 1e-6:
+            measurements = MeasurementDB.get_measurements_for_image(image_id)
+            if measurements and MeasurementDB.has_rescalable_measurements(measurements):
+                change_pct = (float(target_scale) / float(old_scale) - 1.0) * 100.0
+                change = f"{change_pct:+.1f}%" if abs(change_pct) >= 0.05 else f"{change_pct:+.2f}%"
+
+        box, move_btn = build_active_calibration_prompt(
+            self, new_label=new_label, old_label=old_label, change=change
+        )
+        box.exec()
+        if box.clickedButton() != move_btn:
+            return False
+        # What the user agreed to must still hold: the same image, active
+        # calibration and objective scale as when the question was asked.
+        current_objective = self.load_objective_definitions().get(objective_key) or {}
+        if (
+            self.current_image_id != image_id
+            or CalibrationDB.get_active_calibration_id(objective_key) != active_calibration_id
+            or current_objective.get("microns_per_pixel") != objective_scale
+        ):
+            return False
+        objective_data = dict(current_objective)
+        objective_data["key"] = objective_key
+        return bool(self.apply_objective(objective_data, rescale_confirmed=True))
+
+    def _apply_scale_combo_selection(self):
         if not hasattr(self, "scale_combo"):
             return
         previous_key = getattr(self, "_last_scale_combo_key", None)
@@ -10526,17 +10647,22 @@ class MainWindow(GeometryMixin, QMainWindow):
         if hasattr(self, "scale_bar_inline"):
             self.scale_bar_inline.setVisible(not hide_scalebar_controls)
 
-    def apply_objective(self, objective):
-        """Apply an objective's settings."""
+    def apply_objective(self, objective, rescale_confirmed=False):
+        """Apply an objective's settings.
+
+        rescale_confirmed: the caller has already asked the user to rescale the
+        current image's measurements, so they are rescaled without asking again.
+        """
         old_scale = self.microns_per_pixel
         previous_key = self.current_objective_name
-        new_scale = objective.get("microns_per_pixel", 0.5)
+        new_scale = self._stored_pixel_scale_for_current_image(objective.get("microns_per_pixel", 0.5))
         objective_key = objective.get("key") or objective.get("objective_key")
         if not objective_key:
             objective_key = objective.get("magnification") or objective.get("name")
         calibration_id = CalibrationDB.get_active_calibration_id(objective_key) if objective_key else None
         if not self._maybe_rescale_current_image(
             old_scale, new_scale, objective_name=objective_key, calibration_id=calibration_id,
+            confirmed=rescale_confirmed,
         ):
             self._populate_scale_combo(previous_key)
             return False
@@ -10565,12 +10691,34 @@ class MainWindow(GeometryMixin, QMainWindow):
             )
             if not self.suppress_scale_prompt:  # the user changed it, not an image load
                 self.refresh_observation_images(select_image_id=self.current_image_id, preserve_selection=True)
+        # The image now has the objective's active calibration.
+        if (
+            hasattr(self, "measure_status_label")
+            and self.measure_status_label.text() == self.tr("Warning: Older calibration standard used.")
+        ):
+            self.measure_status_label.setText("")
+            self.measure_status_label.setStyleSheet("")
         self._populate_scale_combo(self.current_objective_name)
         self._last_scale_combo_key = self.current_objective_name
         self._update_scale_mismatch_warning()
         self._update_measure_view_option_states()
         self._update_scalebar_controls_visibility()
         return True
+
+    def _stored_pixel_scale_for_current_image(self, objective_scale):
+        """µm per pixel of the current image's stored file for an objective's scale.
+
+        An objective's scale is per sensor pixel; an image resampled at import
+        has fewer pixels, so its scale is divided by that factor, as
+        apply_image_scale and Prepare Images already do.
+        """
+        if not objective_scale or not self.current_image_id:
+            return objective_scale
+        image_data = ImageDB.get_image(self.current_image_id)
+        factor = image_data.get("resample_scale_factor") if image_data else None
+        if isinstance(factor, (int, float)) and 0 < factor < 0.999:
+            return float(objective_scale) / float(factor)
+        return objective_scale
 
     def load_objective_definitions(self):
         """Load objective definitions from the calibration database."""
@@ -10633,15 +10781,15 @@ class MainWindow(GeometryMixin, QMainWindow):
         objective_lookup = self.load_objective_definitions()
         show_old_calibration_warning = False
 
+        # Loading an image never rewrites its scale or calibration link: its
+        # measurements were computed at the stored scale, and a re-calibration
+        # may have deliberately left it on an earlier calibration. A scale
+        # change is an explicit action through apply_objective/set_custom_scale,
+        # which offers to rescale the measurements.
         resolved_key = resolve_objective_key(objective_name, objective_lookup)
         if resolved_key and resolved_key != objective_name:
             objective_name = resolved_key
-            calibration_id = CalibrationDB.get_active_calibration_id(resolved_key)
-            ImageDB.update_image(
-                image_data.get("id"),
-                objective_name=resolved_key,
-                calibration_id=calibration_id,
-            )
+            ImageDB.update_image(image_data.get("id"), objective_name=resolved_key)
 
         self.current_calibration_id = calibration_id
         self.suppress_scale_prompt = True
@@ -10657,28 +10805,9 @@ class MainWindow(GeometryMixin, QMainWindow):
                 diff_ratio = abs(expected_scale - scale) / max(1e-9, float(expected_scale))
             else:
                 diff_ratio = 0 if scale is None else 1
-            if scale and diff_ratio > 0.01 and resample_factor >= 0.999:
-                self.current_objective = objective_data
-                self.current_objective_name = objective_name
-                self.microns_per_pixel = scale
-                show_old_calibration_warning = True
-
-                mag = objective_display_name(objective, objective_name) or objective_name
-                tag_text = self._objective_tag_text(mag, objective_name)
-                self._set_calibration_info(objective_name, calibration_id)
-
-                if self.current_pixmap:
-                    self.image_label.set_objective_text(tag_text)
-                    self.image_label.set_objective_color(self._objective_color_for_name(objective_name, objective))
-                self.image_label.set_microns_per_pixel(self.microns_per_pixel)
-
-                self.measure_status_label.setText(self.tr("Warning: Older calibration standard used."))
-                self.measure_status_label.setStyleSheet(
-                    f"color: #e67e22; font-weight: bold; font-size: {pt(9)}pt;"
-                )
-
-                self._populate_scale_combo(objective_name)
-            elif scale and resample_factor < 0.999:
+            if scale:
+                # Keep the stored scale, also when it is within 1% of the
+                # objective's current scale.
                 self.current_objective = objective_data
                 self.current_objective_name = objective_name
                 self.microns_per_pixel = scale
@@ -10691,12 +10820,18 @@ class MainWindow(GeometryMixin, QMainWindow):
                     self.image_label.set_objective_text(tag_text)
                     self.image_label.set_objective_color(self._objective_color_for_name(objective_name, objective))
                 self.image_label.set_microns_per_pixel(self.microns_per_pixel)
+
+                if diff_ratio > 0.01 and resample_factor >= 0.999:
+                    show_old_calibration_warning = True
+                    self.measure_status_label.setText(self.tr("Warning: Older calibration standard used."))
+                    self.measure_status_label.setStyleSheet(
+                        f"color: #e67e22; font-weight: bold; font-size: {pt(9)}pt;"
+                    )
 
                 self._populate_scale_combo(objective_name)
             else:
+                # No stored scale yet: take the objective's (a first fill, not a rewrite).
                 self.apply_objective(objective_data)
-                if scale:
-                    self.microns_per_pixel = scale
         elif scale:
             self.set_custom_scale(scale)
         elif objective_name:
@@ -10812,7 +10947,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         selected_category, value = selected.data()
         if selected_category == "objective":
             index = self.scale_combo.findData(value)
-            if index >= 0:
+            if index >= 0 and index == self.scale_combo.currentIndex():
+                self._offer_active_calibration_for_current_image(value)
+            elif index >= 0:
                 self.scale_combo.setCurrentIndex(index)
         else:
             column = {
@@ -12073,89 +12210,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.spore_preview.clear()
         self.update_display_lines()
         self._update_scale_mismatch_warning()
-
-    def load_image(self):
-        """Load a microscope image."""
-        paths, _ = QFileDialog.getOpenFileNames(
-            self, "Open Microscope Image", self._get_default_import_dir(),
-            self.tr(LOCAL_IMPORT_IMAGE_FILTER + ";;All Files (*)")
-        )
-
-        if not paths:
-            return
-        self._remember_import_dir(paths[0])
-
-        output_dir = get_images_dir() / "imports"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        last_image_data = None
-        for path in paths:
-            try:
-                ingest = prepare_local_ingest_image(
-                    path,
-                    lab_metadata=merge_image_lab_metadata({"image_type": "microscope"}),
-                    output_dir=output_dir,
-                )
-            except RawRenderingUnavailableError as exc:
-                QMessageBox.warning(
-                    self,
-                    "RAW Rendering Unavailable",
-                    f"Could not import {Path(path).name}: {exc}",
-                )
-                continue
-            except RuntimeError as exc:
-                QMessageBox.warning(
-                    self,
-                    "Image Preparation Failed",
-                    f"Could not prepare {Path(path).name}: {exc}",
-                )
-                continue
-
-            objective_name = self.get_objective_name_for_storage()
-            calibration_id = CalibrationDB.get_active_calibration_id(objective_name) if objective_name else None
-            contrast_fallback = SettingsDB.get_list_setting(
-                "contrast_options",
-                DatabaseTerms.CONTRAST_METHODS,
-            )
-            contrast_value = SettingsDB.get_setting(DatabaseTerms.last_used_key("contrast"), None)
-            if not contrast_value:
-                contrast_value = SettingsDB.get_setting(
-                    "contrast_default",
-                    contrast_fallback[0] if contrast_fallback else DatabaseTerms.CONTRAST_METHODS[0],
-                )
-            contrast_value = DatabaseTerms.canonicalize("contrast", contrast_value)
-            if not contrast_value:
-                contrast_value = contrast_fallback[0] if contrast_fallback else DatabaseTerms.CONTRAST_METHODS[0]
-            provenance_kwargs = ingest.provenance_kwargs()
-            original_filepath = path if ingest.working_path != path else None
-            image_id = ImageDB.add_image(
-                observation_id=self.active_observation_id,
-                filepath=ingest.working_path,
-                image_type='microscope',
-                scale=self.microns_per_pixel,
-                objective_name=objective_name,
-                contrast=contrast_value,
-                calibration_id=calibration_id,
-                resample_scale_factor=1.0,
-                original_filepath=original_filepath,
-                lab_metadata=merge_image_lab_metadata({"image_type": "microscope"}, getattr(ingest, "lab_metadata", None)),
-                **provenance_kwargs,
-            )
-
-            image_data = ImageDB.get_image(image_id)
-            stored_path = image_data.get("filepath") if image_data else ingest.working_path
-
-            # Generate thumbnails for ML training
-            try:
-                generate_all_sizes(stored_path, image_id)
-            except Exception as e:
-                print(f"Warning: Could not generate thumbnails: {e}")
-
-            last_image_data = ImageDB.get_image(image_id)
-            cleanup_import_temp_file(path, ingest.working_path, stored_path, output_dir)
-
-        if last_image_data:
-            self.load_image_record(last_image_data, refresh_table=True)
-            self.refresh_observation_images(select_image_id=last_image_data['id'])
 
     def zoom_in(self):
         """Zoom in the image."""
@@ -13632,8 +13686,25 @@ class MainWindow(GeometryMixin, QMainWindow):
     def on_dimensions_changed(self, measurement_id, new_length_um, new_width_um, new_points):
         """Handle dimension changes from the preview widget."""
         is_line = len(new_points) == 2
+        measurement_type = self._cached_measurement_type(measurement_id)
+        is_calibration = self.normalize_measurement_category(measurement_type) == "calibration"
+        if is_calibration and not is_line:
+            # Moving a scale bar's endpoints corrects where the bar is, not how
+            # long it is: keep its labelled length (the preview computes one
+            # from the current scale) so the image scale can change instead.
+            labelled_um = MeasurementDB.get_measurement_length(measurement_id)
+            bar_px = math.hypot(new_points[1].x() - new_points[0].x(), new_points[1].y() - new_points[0].y())
+            tick_px = math.hypot(new_points[3].x() - new_points[2].x(), new_points[3].y() - new_points[2].y())
+            if labelled_um and labelled_um > 0 and bar_px > 0:
+                new_length_um = float(labelled_um)
+                new_width_um = new_length_um * tick_px / bar_px
         has_width = (not is_line) and (new_width_um is not None and new_width_um > 0)
         q_value = new_length_um / new_width_um if has_width else None
+        if is_calibration:
+            # The scale-bar record keeps its label, not a Q value.
+            measurement_notes = f"Scale bar: {float(new_length_um):.1f} µm"
+        else:
+            measurement_notes = f"Q={q_value:.1f}" if q_value is not None else None
 
         # Update the database
         conn = get_connection()
@@ -13663,7 +13734,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             ''', (
                 new_length_um,
                 new_width_um,
-                f"Q={q_value:.1f}" if q_value is not None else None,
+                measurement_notes,
                 new_points[0].x(), new_points[0].y(),
                 new_points[1].x(), new_points[1].y(),
                 new_points[2].x(), new_points[2].y(),
@@ -13687,16 +13758,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         else:
             line2 = [new_points[2].x(), new_points[2].y(), new_points[3].x(), new_points[3].y()]
             self.measurement_lines[measurement_id] = [line1, line2]
-        measurement_type = None
-        for cached in self.measurements_cache:
-            if cached.get("id") == measurement_id:
-                measurement_type = cached.get("measurement_type")
-                break
-        if measurement_type is None:
-            record = self._get_measurement_by_id(measurement_id)
-            if record:
-                measurement_type = record.get("measurement_type")
-
         for idx, label in enumerate(self.measurement_labels):
             if label.get("id") == measurement_id:
                 if is_line:
@@ -13727,8 +13788,15 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.measure_status_label.setStyleSheet(f"color: #27ae60; font-weight: bold; font-size: {pt(9)}pt;")
 
         # If calibration measurement was edited, offer to rescale all other measurements
-        if (not is_line) and self.normalize_measurement_category(measurement_type) == "calibration":
+        if (not is_line) and is_calibration:
             self._on_calibration_measurement_edited(measurement_id, new_length_um, new_points)
+
+    def _cached_measurement_type(self, measurement_id):
+        for cached in self.measurements_cache:
+            if cached.get("id") == measurement_id:
+                return cached.get("measurement_type")
+        record = self._get_measurement_by_id(measurement_id)
+        return record.get("measurement_type") if record else None
 
     def _on_calibration_measurement_edited(self, measurement_id, new_length_um, new_points):
         """Handle edit of a calibration measurement — offer to rescale others."""
@@ -13777,35 +13845,16 @@ class MainWindow(GeometryMixin, QMainWindow):
         if box.clickedButton() != ok_btn:
             return
 
-        ratio = new_scale_mpp / old_scale_mpp
-        conn = get_connection()
-        measurements = conn.execute(
-            "SELECT id, length_um, width_um FROM spore_measurements WHERE image_id = ? AND measurement_type != 'calibration'",
-            (image_id,),
-        ).fetchall()
-        for m in measurements:
-            m_id, length, width = m
-            if length is None:
-                continue
-            new_l = float(length) * ratio
-            new_w = float(width) * ratio if width is not None else None
-            q = new_l / new_w if new_w and new_w > 0 else 0
-            conn.execute(
-                "UPDATE spore_measurements SET length_um = ?, width_um = ?, notes = ? WHERE id = ?",
-                (new_l, new_w, f"Q={q:.1f}", m_id),
-            )
-        conn.execute(
-            "UPDATE images SET scale_microns_per_pixel = ? WHERE id = ?",
-            (new_scale_mpp, image_id),
-        )
-        conn.commit()
-        conn.close()
+        MeasurementDB.rescale_image_measurements(image_id, old_scale_mpp, new_scale_mpp)
 
         # Refresh UI
-        self.update_measurements_table()
-        self.update_statistics()
         if hasattr(self, "microns_per_pixel"):
             self.microns_per_pixel = new_scale_mpp
+        if hasattr(self, "image_label"):
+            self.image_label.set_microns_per_pixel(new_scale_mpp)
+        self.load_measurement_lines()
+        self.update_measurements_table()
+        self.update_statistics()
         self.update_display_lines()
 
     def show_measurement_preview(self, measurement):
@@ -19898,7 +19947,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         return ask_wrapped_yes_no(self, title, text, default_yes=default_yes)
 
     def _maybe_rescale_current_image(self, old_scale, new_scale, *, objective_name=KEEP_FIELD,
-                                     calibration_id=KEEP_FIELD):
+                                     calibration_id=KEEP_FIELD, confirmed=False):
         """Prompt, then recalculate the current image's measurements for a new scale.
 
         Uses the shared rescale path (``MeasurementDB.apply_scale_changes``),
@@ -19906,7 +19955,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         calibration when given, in the same transaction. Every
         kind of measurement is recalculated, including single lines and
         multi-line measurements; calibration measurements are left alone.
-        Returns False when the user cancels.
+        Returns False when the user cancels. confirmed: the user already
+        agreed to rescale; rescale without the prompt.
         """
         if self.suppress_scale_prompt:
             return True
@@ -19926,15 +19976,16 @@ class MainWindow(GeometryMixin, QMainWindow):
             return True
         if not MeasurementDB.rescalable_count(self.current_image_id):
             return True
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Question)
-        box.setWindowTitle(self.tr("Changing image scale"))
-        box.setText(self.tr("Changing image scale: This will update previous measurements to match the new scale."))
-        ok_btn = box.addButton(self.tr("OK"), QMessageBox.AcceptRole)
-        box.addButton(self.tr("Cancel"), QMessageBox.RejectRole)
-        box.exec()
-        if box.clickedButton() != ok_btn:
-            return False
+        if not confirmed:
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Question)
+            box.setWindowTitle(self.tr("Changing image scale"))
+            box.setText(self.tr("Changing image scale: This will update previous measurements to match the new scale."))
+            ok_btn = box.addButton(self.tr("OK"), QMessageBox.AcceptRole)
+            box.addButton(self.tr("Cancel"), QMessageBox.RejectRole)
+            box.exec()
+            if box.clickedButton() != ok_btn:
+                return False
 
         MeasurementDB.apply_scale_changes([
             ScaleChange(
@@ -20205,11 +20256,10 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self.current_image_id,
                 scale_bar_selection=scale_bar_selection,
             )
-            self._upsert_calibration_measurement(
+            MeasurementDB.replace_calibration_measurement(
                 self.current_image_id,
                 scale_bar_selection,
                 total_um,
-                distance_pixels,
             )
             self.load_measurement_lines()
             self.update_measurements_table()
@@ -20226,47 +20276,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.temp_lines = []
         self._show_calibration_overlay_for_scalebar = False
         self.update_display_lines()
-
-    def _upsert_calibration_measurement(
-        self,
-        image_id: int,
-        scale_bar_selection: tuple[tuple[float, float], tuple[float, float]],
-        total_um: float,
-        pixel_dist: float,
-    ) -> None:
-        (x1, y1), (x2, y2) = scale_bar_selection
-        dx = x2 - x1
-        dy = y2 - y1
-        length_px = (dx * dx + dy * dy) ** 0.5
-        if length_px <= 0:
-            return
-        perp_x = -dy / length_px
-        perp_y = dx / length_px
-        half_width_px = pixel_dist / 20.0
-        mx = (x1 + x2) / 2
-        my = (y1 + y2) / 2
-        p1 = QPointF(x1, y1)
-        p2 = QPointF(x2, y2)
-        p3 = QPointF(mx - perp_x * half_width_px, my - perp_y * half_width_px)
-        p4 = QPointF(mx + perp_x * half_width_px, my + perp_y * half_width_px)
-        width_um = total_um / 10.0
-
-        conn = get_connection()
-        conn.execute(
-            "DELETE FROM spore_measurements WHERE image_id = ? AND measurement_type = 'calibration'",
-            (image_id,),
-        )
-        conn.commit()
-        conn.close()
-
-        MeasurementDB.add_measurement(
-            image_id=image_id,
-            length=total_um,
-            width=width_um,
-            measurement_type="calibration",
-            notes=f"Scale bar: {total_um:.1f} µm",
-            points=[p1, p2, p3, p4],
-        )
 
     def _should_show_calibration_overlay(self) -> bool:
         if self.calibration_mode or self._show_calibration_overlay_for_scalebar:

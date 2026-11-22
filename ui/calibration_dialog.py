@@ -51,6 +51,7 @@ from utils.image_import_candidates import (
 from utils.raw_detection import is_raw_image_path
 from utils.raw_render import RawRenderSettings
 from .hint_status import HintBar, HintLabel, HintStatusController, style_progress_widgets
+from .recalibration_scope_dialog import RecalibrationScopeDialog
 from .section_card import create_section_card
 from .styles import pt, _is_dark
 from .window_state import GeometryMixin
@@ -6080,40 +6081,30 @@ class CalibrationDialog(GeometryMixin, QDialog):
         diff_percent = ((new_scale - old_scale) / old_scale) * 100
         if abs(diff_percent) < 0.2:
             return
-        sign = "+" if diff_percent >= 0 else ""
 
-        old_nm = um_to_nm(old_scale)
-        new_nm = um_to_nm(new_scale)
-
-        # Show dialog asking if user wants to update measurements
-        msg = self.tr(
-            "The calibration scale has changed from {old:.2f} to {new:.2f} nm/px ({sign}{diff:.2f}%).\n\n"
-            "There are {images} images with {measurements} spore measurements using the old calibration.\n\n"
-            "Would you like to update these images to use the new calibration and recalculate the measurements?"
-        ).format(
-            old=old_nm,
-            new=new_nm,
-            sign=sign,
-            diff=diff_percent,
-            images=image_count,
-            measurements=measurement_count,
-        )
-
-        reply = QMessageBox.question(
+        # Ask how far back the new calibration applies.
+        dialog = RecalibrationScopeDialog(
             self,
-            self.tr("Update Measurements?"),
-            msg,
-            QMessageBox.Yes | QMessageBox.No,
+            calibration_id=old_calibration_id,
+            old_scale_um=old_scale,
+            new_scale_um=new_scale,
         )
+        if dialog.exec() != QDialog.Accepted:
+            return
+        if dialog.choice() == RecalibrationScopeDialog.CHOICE_NEW_ONLY:
+            return
 
-        if reply == QMessageBox.Yes:
-            updated = CalibrationDB.recalculate_measurements_for_calibration(
-                old_calibration_id, new_calibration_id, new_scale
-            )
-            self._show_notice(
-                self.tr("Updated {count} spore measurements to use the new calibration.").format(count=updated),
-                "success",
-            )
+        updated = CalibrationDB.recalculate_measurements_for_calibration(
+            old_calibration_id,
+            new_calibration_id,
+            new_scale,
+            since_date=dialog.since_date(),
+            image_ids=dialog.selected_image_ids(),
+        )
+        self._show_notice(
+            self.tr("Updated {count} spore measurements to use the new calibration.").format(count=updated),
+            "success",
+        )
 
     def _save_calibration_image(self, source_path: str) -> Optional[str]:
         """Save a calibration image to the calibrations directory."""
@@ -6181,17 +6172,6 @@ class CalibrationDialog(GeometryMixin, QDialog):
         if item is not None:
             self.history_table.scrollToItem(item)
         self._on_history_row_clicked(row, 0)
-
-    # Backward compatibility methods for in-place calibration
-    # The new dialog handles calibration internally, so these are stubs
-
-    def set_calibration_distance(self, distance_pixels: float):
-        """Backward compatibility stub. New dialog handles this internally."""
-        pass
-
-    def set_calibration_preview(self, pixmap: QPixmap, points: list):
-        """Backward compatibility stub. New dialog handles this internally."""
-        pass
 
     def get_last_used_objective(self):
         """Get the last used objective data, or the default objective if set."""

@@ -148,9 +148,31 @@ def test_updated_measurements_are_a_success_notice(dialog, monkeypatch):
         calibration_dialog.CalibrationDB, "get_calibration_usage_summary",
         lambda key: [{"calibration_id": 1, "image_count": 2, "measurement_count": 9}],
     )
-    monkeypatch.setattr(QMessageBox, "question", lambda *_a, **_k: QMessageBox.Yes)  # the confirmation stays
+    # The confirmation stays a real dialog (the recalibration scope dialog);
+    # here it is answered "apply to all earlier images".
+    scope = calibration_dialog.RecalibrationScopeDialog
+
+    class _AcceptAll:
+        CHOICE_NEW_ONLY = scope.CHOICE_NEW_ONLY
+
+        def __init__(self, *_a, **_k):
+            pass
+
+        def exec(self):
+            return calibration_dialog.QDialog.Accepted
+
+        def choice(self):
+            return scope.CHOICE_ALL
+
+        def since_date(self):
+            return None
+
+        def selected_image_ids(self):
+            return [1, 2]
+
+    monkeypatch.setattr(calibration_dialog, "RecalibrationScopeDialog", _AcceptAll)
     monkeypatch.setattr(
-        calibration_dialog.CalibrationDB, "recalculate_measurements_for_calibration", lambda *_a: 9,
+        calibration_dialog.CalibrationDB, "recalculate_measurements_for_calibration", lambda *_a, **_k: 9,
     )
     dialog._prompt_recalculate_measurements(1, 0.0120, 2, 0.0130)
     notice = _notice(dialog)

@@ -121,9 +121,12 @@ class _MeasureStub:
     """Just enough of MainWindow for apply_objective's objective-tag path."""
 
     def __init__(self):
+        from PySide6.QtWidgets import QLabel
+
         from ui.zoomable_image_widget import ZoomableImageLabel
 
         self.image_label = ZoomableImageLabel()
+        self.measure_status_label = QLabel()  # apply_objective clears its calibration warning
         self.microns_per_pixel = 0.1
         self.current_objective = None
         self.current_objective_name = None
