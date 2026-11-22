@@ -4680,8 +4680,10 @@ def build_active_calibration_prompt(parent, *, new_label, old_label=None, change
     """The question asked before moving an image to its objective's active calibration.
 
     Returns the message box and its Move button. ``old_label`` names the image's
-    current calibration when it has one; ``change`` is the signed percentage its
-    measurements change by, when it has measurements to rescale.
+    current calibration when it has one; ``change`` is the signed percentage the
+    image scale changes by, when it has measurements to rescale. It is not the
+    change in each measurement: lengths are recomputed from their drawn points
+    where those match, so a measurement can move by a slightly different amount.
     """
     translate = QCoreApplication.translate
     if old_label:
@@ -4691,7 +4693,7 @@ def build_active_calibration_prompt(parent, *, new_label, old_label=None, change
     else:
         text = translate("MainWindow", "Move this image to the active {new} calibration?").format(new=new_label)
     if change:
-        text = text + " " + translate("MainWindow", "Measurements change by {change}.").format(change=change)
+        text = text + " " + translate("MainWindow", "The image scale changes by {change}.").format(change=change)
     box = QMessageBox(parent)
     box.setIcon(QMessageBox.Question)
     box.setWindowTitle(translate("MainWindow", "Use active calibration"))
