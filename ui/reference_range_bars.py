@@ -139,6 +139,14 @@ class ReferenceRangeBars(QWidget):
         for band in (series.outer, series.core):
             if band is None:
                 continue
+            if band.high < domain.low or band.low > domain.high:
+                # Wholly off the axis: a clamped sliver at the edge would read
+                # as overlap, so only the chevron says where it went.
+                self._paint_overflow(
+                    painter, band.high < domain.low, band.low > domain.high, left, width,
+                    top + LANE_HEIGHT / 2.0, color,
+                )
+                continue
             core = band.role == "core"
             # Inset only inside an outer extent; a typical range on its own fills the lane.
             inset = 1.5 if core and filled and series.outer is not None else 0.0

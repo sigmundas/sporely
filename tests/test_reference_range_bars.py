@@ -19,7 +19,10 @@ from tools.review_ui.scenarios.analysis_tab import EXTRA_LIBRARY
 from tools.review_ui.live_lab_harness import FakeRawpy, create_observation, isolation_patches, prepare_profile
 from ui.library_source_row import LibrarySourceRow
 from ui.reference_range_bars import (
+    LABEL_WIDTH,
     LANE_HEIGHT,
+    TRACK_GAP,
+    TRACK_MARGIN,
     OBSERVATION_COLOR,
     SOURCE_COLOR,
     TRACK_HEIGHT,
@@ -43,10 +46,11 @@ def _observation(profile, key="default", *, spores=True):
     image_id = ImageDB.add_image(
         observation_id, str(profile.jpeg(f"{key}.JPG", seed=5)), "microscope", scale=0.1, objective_name="100X",
     )
-    # The stored "Spores", the older "spores", and a basidium that must not count.
+    # The stored "Spores", the older "spores", a length-only (Line mode)
+    # spore with a zero width, and a basidium that must not count.
     for index, (length, width, kind) in enumerate((
         (9.0, 5.0, "spores"), (9.6, 5.2, "spores"), (10.2, 5.4, "Spores"), (10.8, 5.6, "Spores"),
-        (30.0, 9.0, "Basidia"),
+        (11.4, 0.0, "Spores"), (30.0, 9.0, "Basidia"),
     )):
         x = 40 + index * 40
         MeasurementDB.add_measurement(
@@ -119,10 +123,13 @@ def test_every_row_draws_its_set_against_the_observations_spores_on_one_axis(qtb
         assert row.taxon_label.geometry().right() < row.range_bars.geometry().left()
         assert row.range_bars.geometry().right() < row.expand_button.geometry().left()
         view = row.range_bars.view()
-        # The four spores, whatever their stored spelling; not the basidium.
-        assert view.observation_point_count == 4
+        # Five spores, whatever their stored spelling; not the basidium. The
+        # length-only one counts for length, its zero width for nothing.
+        assert view.observation_point_count == 5
         assert view.metric("length").observation.outer.low == pytest.approx(9.0)
-        assert view.metric("length").observation.outer.high == pytest.approx(10.8)
+        assert view.metric("length").observation.outer.high == pytest.approx(11.4)
+        assert view.metric("width").observation.outer.low == pytest.approx(5.0)
+        assert view.metric("width").observation.outer.high == pytest.approx(5.6)
     assert len({_domains(row) for row in rows}) == 1  # one shared axis
 
     # A stated range: the typical range and the extremes.
@@ -157,6 +164,11 @@ def test_the_axis_stays_put_while_searching_and_filtering_and_follows_compare_wi
     page._set_target(taxon_id="206", genus="Macrolepiota", species="procera", rank="species")
     moved = {_domains(row) for row in _rows(page)}
     assert len(moved) == 1 and moved != {axis}
+    # Sized by the target's set (12–19 × 8–12 µm) as well as the spores.
+    length = _rows(page)[0].range_bars.view().metric("length").domain
+    width = _rows(page)[0].range_bars.view().metric("width").domain
+    assert length.low <= 9.0 and length.high >= 19.0 and width.high >= 12.0
+    assert not _rows(page)[0].range_bars.view().metric("length").source.outer.clipped
     page.reset_target()
     assert {_domains(row) for row in _rows(page)} == {axis}
 
@@ -173,11 +185,13 @@ def test_without_measurements_only_the_reference_is_drawn(qtbot, profile, librar
     assert "no spore measurements" in row.range_bars.toolTip()
 
 
-def _lane_colours(bars: ReferenceRangeBars, lane_y: float) -> set[str]:
+def _lane_colours(bars: ReferenceRangeBars, lane_y: float, x_range: tuple[int, int] | None = None) -> set[str]:
     image = bars.grab().toImage()
-    y = int(lane_y * image.height() / bars.height())
+    scale = image.height() / bars.height()
+    y = int(lane_y * scale)
+    first, last = x_range if x_range is not None else (0, bars.width())
     seen = set()
-    for x in range(image.width()):
+    for x in range(int(first * scale), int(last * scale)):
         pixel = image.pixelColor(x, y)
         if pixel.blue() > pixel.green() + 40 and pixel.blue() > pixel.red() + 40:
             seen.add("blue")
@@ -192,7 +206,46 @@ def test_the_reference_is_painted_above_the_axis_and_the_spores_below(qtbot, pro
     page = _open(qtbot, window)
     bars = page.row_for(library[0].id).range_bars
     top = (bars.height() - bars.sizeHint().height()) / 2.0
-    axis_y = top + TRACK_HEIGHT / 2.0
     assert SOURCE_COLOR.name() != OBSERVATION_COLOR.name()
-    assert _lane_colours(bars, axis_y - 1.0 - LANE_HEIGHT / 2.0) == {"blue"}
-    assert _lane_colours(bars, axis_y + 1.0 + LANE_HEIGHT / 2.0) == {"green"}
+    for track in range(2):  # length, then width
+        axis_y = top + track * (TRACK_HEIGHT + TRACK_GAP) + TRACK_HEIGHT / 2.0
+        assert _lane_colours(bars, axis_y - 1.0 - LANE_HEIGHT / 2.0) == {"blue"}
+        assert _lane_colours(bars, axis_y + 1.0 + LANE_HEIGHT / 2.0) == {"green"}
+
+    # Wholly beyond the axis: no band on the track, only the chevron past its end.
+    page.only_this_taxon_checkbox.setChecked(False)
+    far = _row_by_taxon(page, "Morchella esculenta").range_bars
+    source_y = top + TRACK_HEIGHT / 2.0 - 1.0 - LANE_HEIGHT / 2.0
+    track_left, track_right = LABEL_WIDTH + TRACK_MARGIN, far.width() - TRACK_MARGIN
+    assert _lane_colours(far, source_y, (track_left, track_right - 1)) == set()
+    assert _lane_colours(far, source_y, (track_right, far.width())) == {"blue"}
+
+
+def test_bars_follow_spores_measured_while_the_drawer_stays_open(qtbot, profile, library):
+    observation_id = _observation(profile)
+    window = _window(qtbot, observation_id)
+    page = _open(qtbot, window)
+    row = page.row_for(library[0].id)
+    row.set_expanded(True)
+    assert row.range_bars.view().observation_point_count == 5
+    image_id = ImageDB.get_images_for_observation(observation_id)[0]["id"]
+    MeasurementDB.add_measurement(image_id, 12.5, 6.0, measurement_type="Spores")
+    window.tab_widget.setCurrentIndex(window.tab_widget.indexOf(window.observations_tab))
+    window.tab_widget.setCurrentWidget(window.analysis_tab)
+    qtbot.waitUntil(lambda: row.range_bars.view().observation_point_count == 6, timeout=3000)
+    # Redrawn in place: the same row, still expanded, on a rebuilt axis.
+    assert page.row_for(library[0].id) is row and row.is_expanded()
+    assert row.range_bars.view().metric("length").domain.high > 12.5
+
+
+def test_bars_give_way_to_the_text_in_a_narrow_pane(qtbot, profile, library):
+    observation_id = _observation(profile)
+    window = _window(qtbot, observation_id)
+    page = _open(qtbot, window)
+    row = page.row_for(library[0].id)
+    assert row.range_bars.isVisible()
+    row.resize(row.range_bars.sizeHint().width() + 200, row.height())
+    assert row.range_bars.isHidden()
+    qtbot.waitUntil(lambda: row.taxon_label.width() > 60, timeout=2000)
+    row.resize(560, row.height())
+    assert row.range_bars.isVisible()

@@ -54,6 +54,11 @@ SELECTED_FILL_COLOR = QColor(39, 174, 96, 38)
 #: Width in pixels of the left bar. Narrow on purpose: it marks the preview
 #: row, it does not compete with the checkbox.
 SELECTED_BAR_WIDTH = 3
+# Room a row keeps for its checkbox, text and arrow beside its range bars.
+# Narrower than that (a small window's plot pane), the bars are hidden: the
+# taxon name matters more, and squeezed bars would no longer share an axis
+# width with their neighbours.
+RANGE_BARS_TEXT_ROOM = 320
 
 #: The roles an attached reference use can carry, in display order. Stored
 #: values match ``observation_reference_uses.role``; ``compared`` is the
@@ -365,6 +370,13 @@ class LibrarySourceRow(QWidget):
     def _on_toggled(self, checked: bool) -> None:
         self._show_role(bool(checked))
         self.check_toggled.emit(self._measurement_set_id, bool(checked))
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        super().resizeEvent(event)
+        if self.range_bars is not None:
+            wide_enough = self.width() >= self.range_bars.sizeHint().width() + RANGE_BARS_TEXT_ROOM
+            if self.range_bars.isHidden() == wide_enough:
+                self.range_bars.setVisible(wide_enough)
 
     # -- painting ------------------------------------------------------
 

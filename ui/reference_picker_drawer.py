@@ -378,8 +378,12 @@ class ReferencePickerPage(QWidget):
         return self._bar_domains
 
     def _range_bars(self, candidate: MeasurementSetCandidate) -> ReferenceRangeBars:
-        domains = self._range_bar_domains()
         bars = ReferenceRangeBars()
+        self._show_range_bars(bars, candidate)
+        return bars
+
+    def _show_range_bars(self, bars: ReferenceRangeBars, candidate: MeasurementSetCandidate) -> None:
+        domains = self._range_bar_domains()
         bars.set_view(comparison_view(domains=domains, baseline=self._baseline, display=candidate.source_display()))
         axes = self.tr("Axes: length {length}, width {width} µm.").format(
             length=f"{domains['length'].low:.1f}–{domains['length'].high:.1f}",
@@ -396,7 +400,27 @@ class ReferencePickerPage(QWidget):
                 "This observation has no spore measurements to compare yet."
             )
         bars.setToolTip(f"{legend}\n{axes}")
-        return bars
+
+    def shown_observation_id(self) -> int:
+        """The observation the page was last loaded for (0 for none)."""
+        return self._current_observation_id()
+
+    def refresh_range_bars(self) -> None:
+        """Re-read the observation's spores and redraw the rows' bars in
+        place (the list, its scroll position and expanded rows stay), for
+        spores measured since the page was loaded. The axes are rebuilt only
+        when the spores changed."""
+        baseline = self._load_baseline()
+        if baseline == self._baseline:
+            return
+        self._baseline = baseline
+        self._bar_domains = None
+        by_id = {str(c.measurement_set_id): c for c in self._candidates}
+        for index in range(self.results_list.count()):
+            row = self.results_list.itemWidget(self.results_list.item(index))
+            candidate = by_id.get(row.measurement_set_id) if isinstance(row, LibrarySourceRow) else None
+            if candidate is not None and isinstance(row.range_bars, ReferenceRangeBars):
+                self._show_range_bars(row.range_bars, candidate)
 
     def _target_context(self) -> dict:
         """The observation's context with "Compare with"'s taxon in place of its own."""
