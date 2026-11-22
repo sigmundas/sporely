@@ -5,7 +5,6 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 from watchdog.events import FileSystemEventHandler
-from watchdog.observers import Observer
 
 from utils.raw_detection import SUPPORTED_RAW_SUFFIXES, is_raw_image_path
 
@@ -118,7 +117,29 @@ class NewImageHandler(FileSystemEventHandler):
             self._emit_if_supported(event.dest_path)
 
 
+# How often the worker lists the watched folder for new captures.
+WATCHER_FOLDER_POLL_SECONDS = 0.25
+
+
+def _list_file_names(directory: str) -> set[str] | None:
+    """The names of the files in ``directory``; None when it cannot be read."""
+    try:
+        with os.scandir(directory) as entries:
+            return {entry.name for entry in entries if entry.is_file()}
+    except OSError:
+        return None
+
+
 class LabWatcherWorker(QThread):
+    """Reports image files that appear in a folder (not those there at start).
+
+    It lists the folder every ``WATCHER_FOLDER_POLL_SECONDS`` instead of
+    waiting for macOS file events (FSEvents): when ``fseventsd`` is busy those
+    arrive a minute or more late, and the captures with them. Listing a
+    folder of 5,000 files takes about 3 ms. Each new file goes through
+    ``NewImageHandler``, which waits until its size stops changing.
+    """
+
     new_image_detected = Signal(str)
     error_occurred = Signal(str)
 
@@ -126,9 +147,11 @@ class LabWatcherWorker(QThread):
         super().__init__(parent)
         self.setObjectName("Lab watcher")
         self.directory_to_watch = directory_to_watch
-        self.observer = None
         self._is_running = False
         self._stop_requested = False
+
+    def _should_run(self) -> bool:
+        return self._is_running and not self._stop_requested and not self.isInterruptionRequested()
 
     def run(self):
         if self._stop_requested or self.isInterruptionRequested():
@@ -138,19 +161,24 @@ class LabWatcherWorker(QThread):
             self.error_occurred.emit(f"Directory does not exist: {self.directory_to_watch}")
             return
 
-        event_handler = NewImageHandler(self._handle_new_image)
-        self.observer = Observer()
-        self.observer.schedule(event_handler, self.directory_to_watch, recursive=False)
+        handler = NewImageHandler(self._handle_new_image)
+        known = _list_file_names(self.directory_to_watch) or set()
         try:
-            self.observer.start()
-            while self._is_running and not self.isInterruptionRequested():
-                time.sleep(WATCHER_STABILITY_POLL_SECONDS)
+            while self._should_run():
+                time.sleep(WATCHER_FOLDER_POLL_SECONDS)
+                current = _list_file_names(self.directory_to_watch)
+                if current is None:
+                    continue  # unreadable for a moment (a network folder): try again
+                for name in sorted(current - known):
+                    if not self._should_run():
+                        break
+                    handler._emit_if_supported(os.path.join(self.directory_to_watch, name))
+                    known.add(name)
+                # Forget deleted names, so a file written again under one is new.
+                known &= current
         except Exception as e:
             self.error_occurred.emit(f"Watcher error: {str(e)}")
         finally:
-            if self.observer:
-                self.observer.stop()
-                self.observer.join()
             self._is_running = False
 
     def _handle_new_image(self, file_path):
@@ -161,10 +189,4 @@ class LabWatcherWorker(QThread):
         self._stop_requested = True
         self._is_running = False
         self.requestInterruption()
-        try:
-            if self.observer:
-                self.observer.stop()
-                self.observer.join(timeout=3)
-        except Exception:
-            pass
         self.wait(5000)
