@@ -57,14 +57,6 @@ from PySide6.QtCore import (
 
 _ALT_LABEL = "⌥" if QSysInfo.productType() == "macos" else "Alt"
 
-# The activity badge's timer ticks every 400 ms; its database lookups (the
-# observations pending and blocked in cloud sync) are reused for this long.
-# Each lookup opens and closes a connection, and SQLite creates and deletes
-# mushrooms.db-wal and -shm whenever the last one closes: at every tick that
-# floods macOS file events, and the Live Lab folder watcher then learns of
-# new captures about a minute late.
-_BADGE_SYNC_LOOKUP_MAX_AGE_S = 5.0
-
 # ── Corner icon SVGs ───────────────────────────────────────────────────────────
 _SVG_SETTINGS = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
   stroke="currentColor" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round">
@@ -5721,6 +5713,15 @@ def build_active_calibration_prompt(parent, *, new_label, old_label=None, change
     move_btn = box.addButton(translate("MainWindow", "Move"), QMessageBox.AcceptRole)
     box.addButton(translate("MainWindow", "Cancel"), QMessageBox.RejectRole)
     return box, move_btn
+
+
+# The activity badge's timer ticks every 400 ms; its database lookups (the
+# observations pending and blocked in cloud sync) are reused for this long.
+# Each lookup opens and closes a connection, and SQLite creates and deletes
+# mushrooms.db-wal and -shm whenever the last one closes: at every tick that
+# floods macOS file events, and the Live Lab folder watcher then learns of
+# new captures about a minute late.
+_BADGE_SYNC_LOOKUP_MAX_AGE_S = 5.0
 
 
 class MainWindow(GeometryMixin, QMainWindow):
