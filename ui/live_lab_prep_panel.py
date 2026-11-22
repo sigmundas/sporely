@@ -89,6 +89,7 @@ class LiveLabPrepPanelMixin:
             # Chip rows: click to choose, click the chosen chip again to clear,
             # "+ N more" shows the rest in place. "Not set" has no chip.
             combo.set_chip_mode(clear_value="Not_set")
+            combo.set_form_label(prep_form.labelForField(combo))
             combo.add_display_listener(self._update_prep_summary)
         self._update_prep_summary()
 
