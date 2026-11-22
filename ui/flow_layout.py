@@ -12,7 +12,14 @@ class FlowLayout(QLayout):
         super().__init__(parent)
         self._items: list[QLayoutItem] = []
         self._spacing = int(spacing)
+        self._center_vertically = False
         self.setContentsMargins(QMargins(0, 0, 0, 0))
+
+    def set_center_vertically(self, center: bool) -> None:
+        """Centre the rows in a rect taller than they need (default: top-aligned)."""
+        if self._center_vertically != bool(center):
+            self._center_vertically = bool(center)
+            self.invalidate()
 
     def insert_widget(self, index: int, widget: QWidget) -> None:
         """Insert ``widget`` at ``index`` (``addWidget`` always appends)."""
@@ -61,7 +68,12 @@ class FlowLayout(QLayout):
 
     def setGeometry(self, rect: QRect) -> None:  # type: ignore[override]
         super().setGeometry(rect)
-        self._do_layout(rect, test_only=False)
+        offset = 0
+        if self._center_vertically:
+            # The parent can be taller than the rows need (a sibling page of a
+            # stacked layout sets its height): split the slack evenly.
+            offset = max(0, (rect.height() - self.heightForWidth(rect.width())) // 2)
+        self._do_layout(rect.translated(0, offset), test_only=False)
 
     def sizeHint(self) -> QSize:  # type: ignore[override]
         return self.minimumSize()

@@ -68,6 +68,8 @@ class AdaptiveChoiceSelector(QWidget):
         self._chip_container: QWidget | None = None
         self._chip_layout = None
         self._more_chip: QPushButton | None = None
+        self._chip_fit_running = False
+        self._chip_fit_pending = False
         self._fit_timer = QTimer(self)
         self._fit_timer.setSingleShot(True)
         self._fit_timer.timeout.connect(self._refresh_mode_for_width)
@@ -453,7 +455,8 @@ class AdaptiveChoiceSelector(QWidget):
                 for index, button in enumerate(self._buttons)
                 if button is not None and not self._chip_is_hidden_choice(index)
             ]
-            width = max(40, sum(widths) + spacing * max(0, len(widths) - 1))
+            margins = self._chip_layout.contentsMargins()
+            width = max(40, sum(widths) + spacing * max(0, len(widths) - 1) + margins.left() + margins.right())
             current = self.width() if self.width() > 40 else width
             return QSize(width, self._chip_layout.heightForWidth(current))
         combo_hint = self._combo.sizeHint()
@@ -531,6 +534,7 @@ class AdaptiveChoiceSelector(QWidget):
             f" background-color: {background}; border: {border}; border-radius: 10px;"
             " }"
         )
+        self._apply_chip_alert_inset()
         if self._more_chip is not None:
             self._more_chip.setStyleSheet(
                 "QPushButton#adaptiveChoiceMoreChip {"
@@ -545,6 +549,28 @@ class AdaptiveChoiceSelector(QWidget):
                 f" background-color: {tokens['surface_hover']};"
                 " }"
             )
+
+    # Side inset of the chips inside the red "not set" box.
+    _CHIP_ALERT_INSET = 4
+
+    def _apply_chip_alert_inset(self) -> None:
+        """Keep the chips evenly inside the "not set" box; set rows keep their layout.
+
+        The row is taller than its chips (the hidden dropdown page sets the
+        selector's height), so centring the chips gives the box even top and
+        bottom padding without changing the row's height: choosing a value
+        never moves the rows below. The sides get a fixed inset.
+        """
+        if self._chip_layout is None:
+            return
+        inset = self._CHIP_ALERT_INSET if self._lab_state_alert else 0
+        self._chip_layout.set_center_vertically(self._lab_state_alert)
+        margins = self._chip_layout.contentsMargins()
+        if (margins.left(), margins.right()) == (inset, inset):
+            return
+        self._chip_layout.setContentsMargins(inset, 0, inset, 0)
+        self.updateGeometry()
+        self._layout_chips()
 
     _CHIP_ACTIVATE_KEYS = (Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter)
     _CHIP_MOVE_KEYS = (Qt.Key_Left, Qt.Key_Right)
@@ -620,7 +646,26 @@ class AdaptiveChoiceSelector(QWidget):
                 chips[0].setFocus(Qt.TabFocusReason)
 
     def _layout_chips(self) -> None:
-        """Show the chips that fit on one row (all of them when expanded)."""
+        """Show the chips that fit on one row (all of them when expanded).
+
+        Showing a chip can resize the selector synchronously (Qt activates the
+        parent layouts), which calls back in here; that nested fit runs after
+        this one instead of inside a half-finished ``setVisible``.
+        """
+        if self._chip_fit_running:
+            self._chip_fit_pending = True
+            return
+        self._chip_fit_running = True
+        try:
+            for _attempt in range(3):
+                self._chip_fit_pending = False
+                self._fit_chips()
+                if not self._chip_fit_pending:
+                    break
+        finally:
+            self._chip_fit_running = False
+
+    def _fit_chips(self) -> None:
         if not self._chip_mode or self._chip_layout is None or self._more_chip is None:
             return
         choices = [
@@ -634,7 +679,8 @@ class AdaptiveChoiceSelector(QWidget):
         visible = list(choices)
         # The selector's own width: the chip container only follows it once
         # the stacked layout has run, which can be after this.
-        available = self.contentsRect().width()
+        margins = self._chip_layout.contentsMargins()
+        available = self.contentsRect().width() - margins.left() - margins.right()
         if not self._chips_expanded and available > 40:
             spacing = self._chip_layout.spacing()
 
@@ -646,8 +692,12 @@ class AdaptiveChoiceSelector(QWidget):
                 return total <= available
 
             if not fits(choices, 0):
-                self._more_chip.setText(self.tr("+ {count} more").format(count=len(choices)))
-                more_width = self._more_chip.sizeHint().width()
+                # The widest "+ N more" this row can show: digits differ in
+                # width, so the final count's chip can be wider than another's.
+                more_width = 0
+                for count in range(1, len(choices) + 1):
+                    self._more_chip.setText(self.tr("+ {count} more").format(count=count))
+                    more_width = max(more_width, self._more_chip.sizeHint().width())
                 keep: list[int] = []
                 for index in choices:
                     if fits(keep + [index], more_width):
