@@ -672,6 +672,45 @@ def test_clicking_a_chip_chooses_it_and_clicking_it_again_clears_it(qtbot, profi
     assert changes[-2:] == [("mount_medium", "Water"), ("mount_medium", "Not_set")]
 
 
+def test_a_chip_row_keeps_its_geometry_when_it_toggles_between_unset_and_set(qtbot, profile):
+    """Only the red "not set" fill and border come and go: the chips, the row's
+    height, the label and the rows below stay exactly where they are."""
+    from ui.combo_alerts import combo_is_unset
+
+    tab = _make_tab(qtbot)
+    stain = tab.stain_combo
+    form = tab.slide_prep_group.body_layout
+    if not combo_is_unset(stain):
+        qtbot.mouseClick(_chip(stain, stain.selected_value()), Qt.LeftButton)  # click again to clear
+
+    def geometry():
+        QApplication.processEvents()
+        chips = {
+            button.text(): (button.geometry().x(), button.geometry().y(), button.geometry().height())
+            for button in stain.buttons() + [stain.more_chip()]
+            if button.isVisible()
+        }
+        label = form.labelForField(stain).geometry()
+        below = tab.sample_combo.geometry()
+        return chips, stain.height(), (label.y(), label.height()), below.y()
+
+    qtbot.waitUntil(lambda: stain.property("labStateAlert") is True, timeout=2000)
+    unset = geometry()
+    chips, row_height, _label, _below = unset
+    chip_x, chip_y, chip_height = chips[min(chips, key=lambda text: chips[text][0])]
+    assert chip_x > 0 and chip_y > 0  # inset inside the box
+    assert {(y, height) for _x, y, height in chips.values()} == {(chip_y, chip_height)}  # "+ N more" too
+    assert row_height - chip_y - chip_height == chip_y  # even top and bottom, no gap under the chips
+
+    qtbot.mouseClick(_chip(stain, "Melzer"), Qt.LeftButton)
+    qtbot.waitUntil(lambda: stain.property("labStateAlert") is False, timeout=2000)
+    assert geometry() == unset
+
+    qtbot.mouseClick(_chip(stain, "Melzer"), Qt.LeftButton)  # clear it again
+    qtbot.waitUntil(lambda: stain.property("labStateAlert") is True, timeout=2000)
+    assert geometry() == unset
+
+
 def test_more_chip_shows_the_rest_in_place_and_folds_after_a_choice(qtbot, profile):
     tab = _make_tab(qtbot, width=1100, height=720)  # narrow side panel: stains do not fit
     stain = tab.stain_combo

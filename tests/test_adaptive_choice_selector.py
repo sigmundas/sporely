@@ -581,11 +581,11 @@ def test_chip_row_keeps_its_natural_width_in_a_form_that_does_not_stretch_fields
     assert not selector.more_chip().isVisible()
 
 
-def test_unset_chip_row_sits_evenly_inside_its_alert_box_and_set_rows_keep_their_layout(qapp):
-    """The red "not set" box: its chips are centred in the row, which is taller than
-    they are (the hidden dropdown page sets the row height; the taller combo here
-    stands in for macOS / the app stylesheet), and get a side inset. Set rows keep
-    their chips at the top-left, and no row changes height."""
+def test_chip_rows_have_the_same_inset_set_or_unset_and_no_gap_under_the_chips(qapp):
+    """Every chip row reserves the same even inset, so the red "not set" box only
+    adds colour. The hidden dropdown page is taller than a chip (the padding here
+    stands in for the app stylesheet / macOS) but no longer sets the row's
+    height, which left a gap under the chips."""
     from PySide6.QtWidgets import QFormLayout, QWidget
 
     page = QWidget()
@@ -598,42 +598,48 @@ def test_unset_chip_row_sits_evenly_inside_its_alert_box_and_set_rows_keep_their
         for value in ("Water", "KOH", "L4"):
             selector.addItem(value, value)
         selector.set_chip_mode(clear_value="Not_set")
-        chip_height = selector.buttons()[1].sizeHint().height()
-        selector.combo().setMinimumHeight(chip_height + 12)
+        selector.combo().setStyleSheet("QComboBox { padding: 12px 10px; }")  # like the app's padded combos
+        assert selector.combo().sizeHint().height() > selector.buttons()[1].sizeHint().height() + 6
         selector.setCurrentIndex(selector.findData(selected or "Not_set"))
         form.addRow("Mount:", selector)
+        selector.set_form_label(form.labelForField(selector))
         selectors.append(selector)
     unset, chosen = selectors
     page.resize(600, 200)
     page.show()
     for _ in range(5):
         qapp.processEvents()
-    height_before = unset.height()
-
     update_combo_alert(unset)
     update_combo_alert(chosen)
     for _ in range(5):
         qapp.processEvents()
 
-    assert combo_is_unset(unset) and not combo_is_unset(chosen)
-    assert unset.height() == chosen.height() == height_before
-    chips = [button for button in unset.buttons() if button.isVisible()]
-    assert [button.text() for button in chips] == ["Water", "KOH", "L4"]
-    assert not unset.more_chip().isVisible()
-    first = chips[0].geometry()
-    top, bottom = first.top(), unset.height() - 1 - first.bottom()
-    assert first.left() == 4 and top >= 4
-    assert abs(top - bottom) <= 1
-    assert chips[-1].geometry().right() <= unset.width() - 1 - 4
-    assert chosen.buttons()[1].geometry().topLeft().toTuple() == (0, 0)
+    def layout(selector):
+        return [
+            (button.text(), button.geometry().getRect())
+            for button in selector.buttons()
+            if button.isVisible()
+        ], selector.size().toTuple()
 
-    # Choosing a value drops the box and puts the chips back at the top-left.
+    assert combo_is_unset(unset) and not combo_is_unset(chosen)
+    assert layout(unset) == layout(chosen)
+    chips, (width, height) = layout(unset)
+    assert [text for text, _rect in chips] == ["Water", "KOH", "L4"]
+    assert not unset.more_chip().isVisible()
+    x, y, _w, chip_height = chips[0][1]
+    assert x == 4 and y == 3 and height == chip_height + 2 * y
+    assert chips[-1][1][0] + chips[-1][1][2] <= width - 4
+    label = form.labelForField(unset).geometry()
+    assert label.center().y() - unset.y() == y + (chip_height - 1) // 2  # centred on the chips
+
+    # Choosing a value only drops the colours.
+    before = layout(unset)
     unset.setCurrentIndex(unset.findData("Water"))
     update_combo_alert(unset)
     for _ in range(5):
         qapp.processEvents()
-    assert unset.buttons()[1].geometry().topLeft().toTuple() == (0, 0)
-    assert unset.height() == height_before
+    assert not combo_is_unset(unset)
+    assert layout(unset) == before
 
 
 def test_clearing_a_chip_by_click_leaves_no_stray_more_chip(qapp):
@@ -701,3 +707,32 @@ def test_the_alert_keeps_a_folded_row_on_one_line(qapp, width):
     assert selector.more_chip().isVisible()
     assert len({button.geometry().y() for button in shown}) == 1
     assert max(button.geometry().right() for button in shown) <= selector.width() - 1 - 4
+
+
+def test_a_chip_row_label_keeps_room_for_a_large_font(qapp):
+    """The form label gets one chip line's height, but never less than its own
+    text needs: a large font must not clip it."""
+    from PySide6.QtWidgets import QFormLayout, QWidget
+
+    page = QWidget()
+    form = QFormLayout(page)
+    selector = AdaptiveChoiceSelector(compact=True)
+    selector.addItem("Not set", "Not_set", pillText="—")
+    for value in ("Water", "KOH"):
+        selector.addItem(value, value)
+    selector.set_chip_mode(clear_value="Not_set")
+    form.addRow("Mount:", selector)
+    label = form.labelForField(selector)
+    selector.set_form_label(label)
+    page.resize(500, 200)
+    page.show()
+    for _ in range(5):
+        qapp.processEvents()
+    assert label.height() == selector.buttons()[1].height() + 6  # one chip line
+
+    font = page.font()
+    font.setPointSize(40)
+    page.setFont(font)
+    for _ in range(10):
+        qapp.processEvents()
+    assert label.height() >= label.sizeHint().height() > selector.buttons()[1].height() + 6

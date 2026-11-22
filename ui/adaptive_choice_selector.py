@@ -70,6 +70,7 @@ class AdaptiveChoiceSelector(QWidget):
         self._more_chip: QPushButton | None = None
         self._chip_fit_running = False
         self._chip_fit_pending = False
+        self._form_label: QWidget | None = None
         self._fit_timer = QTimer(self)
         self._fit_timer.setSingleShot(True)
         self._fit_timer.timeout.connect(self._refresh_mode_for_width)
@@ -294,6 +295,17 @@ class AdaptiveChoiceSelector(QWidget):
         self._chip_container = QWidget(self)
         self._chip_container.setObjectName("adaptiveChoiceChipContainer")
         self._chip_layout = FlowLayout(self._chip_container, spacing=4)
+        self._chip_layout.setContentsMargins(
+            self._CHIP_INSET_X, self._CHIP_INSET_Y, self._CHIP_INSET_X, self._CHIP_INSET_Y
+        )
+        self._chip_layout.set_center_vertically(True)
+        # The pill row and dropdown pages stay in the stack but are never shown
+        # in chip mode; they must not set the row's height (the dropdown is
+        # taller than a chip, which left a gap under the chips).
+        for page in (self._pill_container, self._combo):
+            policy = page.sizePolicy()
+            policy.setVerticalPolicy(QSizePolicy.Ignored)
+            page.setSizePolicy(policy)
         self._more_chip = QPushButton(self._chip_container)
         self._more_chip.setObjectName("adaptiveChoiceMoreChip")
         self._more_chip.setCursor(self.cursor())
@@ -534,7 +546,6 @@ class AdaptiveChoiceSelector(QWidget):
             f" background-color: {background}; border: {border}; border-radius: 10px;"
             " }"
         )
-        self._apply_chip_alert_inset()
         if self._more_chip is not None:
             self._more_chip.setStyleSheet(
                 "QPushButton#adaptiveChoiceMoreChip {"
@@ -550,27 +561,11 @@ class AdaptiveChoiceSelector(QWidget):
                 " }"
             )
 
-    # Side inset of the chips inside the red "not set" box.
-    _CHIP_ALERT_INSET = 4
-
-    def _apply_chip_alert_inset(self) -> None:
-        """Keep the chips evenly inside the "not set" box; set rows keep their layout.
-
-        The row is taller than its chips (the hidden dropdown page sets the
-        selector's height), so centring the chips gives the box even top and
-        bottom padding without changing the row's height: choosing a value
-        never moves the rows below. The sides get a fixed inset.
-        """
-        if self._chip_layout is None:
-            return
-        inset = self._CHIP_ALERT_INSET if self._lab_state_alert else 0
-        self._chip_layout.set_center_vertically(self._lab_state_alert)
-        margins = self._chip_layout.contentsMargins()
-        if (margins.left(), margins.right()) == (inset, inset):
-            return
-        self._chip_layout.setContentsMargins(inset, 0, inset, 0)
-        self.updateGeometry()
-        self._layout_chips()
+    # Inset of the chips inside their row's box (sides, top and bottom). Every
+    # chip row has it, set or not, so a chip never moves when the red "not
+    # set" fill and border appear or disappear: only the colours change.
+    _CHIP_INSET_X = 4
+    _CHIP_INSET_Y = 3
 
     _CHIP_ACTIVATE_KEYS = (Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter)
     _CHIP_MOVE_KEYS = (Qt.Key_Left, Qt.Key_Right)
@@ -664,6 +659,36 @@ class AdaptiveChoiceSelector(QWidget):
                     break
         finally:
             self._chip_fit_running = False
+        self._sync_form_label_height()
+
+    def set_form_label(self, label: QWidget | None) -> None:
+        """Keep the row's form label centred on the first line of chips.
+
+        QFormLayout top-aligns a label in a taller row, so the label gets the
+        height of one chip line (chips plus their inset) and centres its text
+        in that; the chip row's inset would otherwise leave it a few px high.
+        """
+        self._form_label = label
+        self._sync_form_label_height()
+
+    def _sync_form_label_height(self) -> None:
+        label = self._form_label
+        if label is None or self._chip_layout is None:
+            return
+        chips = [button for button in self._buttons if button is not None]
+        if self._more_chip is not None:
+            chips.append(self._more_chip)
+        if not chips:
+            return
+        margins = self._chip_layout.contentsMargins()
+        height = max(button.sizeHint().height() for button in chips) + margins.top() + margins.bottom()
+        try:
+            # Never shorter than the label's own text (a large app font).
+            height = max(height, label.sizeHint().height())
+            if label.minimumHeight() != height or label.maximumHeight() != height:
+                label.setFixedHeight(height)
+        except RuntimeError:  # the label was deleted with its form
+            self._form_label = None
 
     def _fit_chips(self) -> None:
         if not self._chip_mode or self._chip_layout is None or self._more_chip is None:
