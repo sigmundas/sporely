@@ -7387,7 +7387,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         plot_area_layout.setContentsMargins(0, 0, 0, 0)
         plot_area_layout.addWidget(self.plot_width_splitter)
         plot_layout.addWidget(self.analysis_plot_area)
-        self.reference_drawer = SideDrawer(self.analysis_plot_area, side="left", width=400)
+        # Wide enough for each row's range bars beside its text.
+        self.reference_drawer = SideDrawer(self.analysis_plot_area, side="left", width=600)
         self.reference_picker_page = ReferencePickerPage(self)
         self.reference_drawer.add_page("references", self.tr("Add reference"), self.reference_picker_page)
         self.reference_picker_page.new_reference_requested.connect(self._on_reference_picker_new_reference)
@@ -9053,6 +9054,21 @@ class MainWindow(GeometryMixin, QMainWindow):
             "genus": self._clean_ref_genus_text(observation.get("genus")),
             "species": self._clean_ref_species_text(observation.get("species") or observation.get("species_guess")),
         }
+
+    def reference_picker_observation_points(self, observation_id: int) -> list[dict]:
+        """The observation's spore measurements with both dimensions, for the
+        drawer's range bars. Spores in the Analysis category sense
+        (``normalize_measurement_category``), so the stored "Spores" counts."""
+        try:
+            raw = MeasurementDB.get_measurements_for_observation(int(observation_id)) or []
+        except Exception:
+            return []
+        return [
+            m for m in raw
+            if m.get("length_um") is not None
+            and m.get("width_um") is not None
+            and self.normalize_measurement_category(m.get("measurement_type")) == "spores"
+        ]
 
     @staticmethod
     def _reference_picker_uses(observation_id: int) -> dict[str, object]:

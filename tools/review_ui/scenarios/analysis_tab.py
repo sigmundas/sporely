@@ -123,6 +123,70 @@ def _open_source(source: str):
     return after
 
 
+#: Extra library rows for the range bars: the same genus, the rest of the
+#: library (a long name, one far outside the axes, one without a width) and
+#: enough of them to scroll. ``(name, taxon id, length, width)``: a range is
+#: ``(min, core min, core max, max)`` with ``None`` where nothing was stated.
+EXTRA_LIBRARY = (
+    ("Cortinarius pulchripes Rob. Henry", "98", (None, 9.0, 11.5, None), (None, 5.5, 6.5, None)),
+    ("Cortinarius albonigrellus Rob. Henry", "97", (7.5, 8.0, 9.5, 10.0), (4.0, 4.5, 5.0, 5.5)),
+    ("Hygrophorus hypothejus (Fr.) Fr.", "201", (None, 7.0, 9.0, None), (None, 4.0, 5.0, None)),
+    ("Hypholoma capnoides (Fr.) P. Kumm.", "202", (None, 7.0, 9.0, None), (None, 4.0, 5.0, None)),
+    ("Strobilurus stephanocystis (Kühner & Romagn. ex Hora) Singer", "203", (None, 5.8, 7.0, None), (None, 3.0, 3.9, None)),
+    ("Inocybe geophylla (Bull.) P. Kumm.", "204", (None, 7.5, 10.5, None), (None, 4.5, 6.5, None)),
+    ("Sarcomyxa serotina (Pers.) P. Karst.", "205", (None, 4.0, 6.5, None), (None, 1.0, 2.0, None)),
+    ("Macrolepiota procera (Scop.) Singer", "206", (12.0, 13.0, 17.0, 19.0), (8.0, 9.0, 11.0, 12.0)),
+    ("Morchella esculenta (L.) Pers.", "207", (None, 18.0, 25.0, None), (None, 11.0, 15.0, None)),
+    ("Laccaria laccata (Scop.) Cooke", "208", (None, 7.0, 10.0, None), None),
+    ("Flammulina velutipes (Curtis) Singer", "209", (None, 5.9, 8.1, None), (None, 3.0, 4.1, None)),
+)
+
+
+def _seed_extra_library() -> None:
+    from database.reference_library import (
+        MeasurementSet,
+        MeasurementSetRepository,
+        ReferenceWork,
+        ReferenceWorkRepository,
+        TaxonTreatment,
+        TaxonTreatmentRepository,
+    )
+
+    work = ReferenceWorkRepository.create(ReferenceWork(
+        id="", type="book", title="Funga Nordica", short_label="Funga Nordica", year=2008,
+    ))
+    for name, taxon_id, length, width in EXTRA_LIBRARY:
+        treatment = TaxonTreatmentRepository.create(TaxonTreatment(
+            id="", reference_work_id=work.id, taxon_id=taxon_id, name_as_published=name,
+        ))
+        values = {}
+        for metric, bounds in (("length", length), ("width", width)):
+            if bounds is None:
+                continue
+            low, core_low, core_high, high = bounds
+            values.update({
+                f"{metric}_min": low, f"{metric}_core_min": core_low,
+                f"{metric}_core_max": core_high, f"{metric}_max": high,
+            })
+        text = " × ".join(
+            f"{b[1]}–{b[2]}" for b in (length, width) if b is not None
+        ) + " µm"
+        MeasurementSetRepository.create(MeasurementSet(
+            id="", taxon_treatment_id=treatment.id, character="spore_size", data_kind="range",
+            raw_text=text, **values,
+        ))
+
+
+def _range_bars():
+    """The drawer with the whole library listed, each row with its range bars."""
+    def after(window) -> None:
+        _seed_extra_library()
+        window._toggle_reference_drawer()
+        page = window.reference_picker_page
+        page.only_this_taxon_checkbox.setChecked(False)
+    return after
+
+
 def _open_drawer(window) -> None:
     window._toggle_reference_drawer()
     page = window.reference_picker_page
@@ -255,6 +319,24 @@ def register_analysis_tab_scenarios(registry: ScenarioRegistry) -> None:
                 build=lambda context: _analysis_tab(context, after=_open_drawer),
                 viewport=(1500, 950),
                 locale="nb_NO",
+                theme=theme,
+            )
+        )
+    for suffix, theme, locale, size in (
+        ("", "light", "nb_NO", (1500, 950)),
+        ("-dark", "dark", "nb_NO", (1500, 950)),
+        ("-de", "light", "de_DE", (1500, 950)),
+        ("-small", "light", "nb_NO", (1100, 760)),
+    ):
+        registry.register(
+            ReviewScenario(
+                id=f"analysis.reference-drawer-bars{suffix}",
+                group="analysis",
+                title=f"Analysis tab, reference drawer: range bars ({locale}, {theme}, {size[0]}x{size[1]})",
+                description="The whole library listed (\"Only this taxon\" off), each row with its length and width bars against the observation's spores.",
+                build=lambda context, size=size: _analysis_tab(context, size=size, after=_range_bars()),
+                viewport=size,
+                locale=locale,
                 theme=theme,
             )
         )

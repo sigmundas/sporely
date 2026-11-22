@@ -139,6 +139,8 @@ ANALYSIS_TAB_IDS = {
     "analysis.tab", "analysis.tab-dark", "analysis.tab-small",
     "analysis.reference-drawer", "analysis.reference-drawer-dark", "analysis.reference-drawer-de",
     "analysis.reference-drawer-community", "analysis.reference-drawer-my-observations",
+    "analysis.reference-drawer-bars", "analysis.reference-drawer-bars-dark",
+    "analysis.reference-drawer-bars-de", "analysis.reference-drawer-bars-small",
     "analysis.reference-compare-picker", "analysis.reference-compare-picker-dark",
     "analysis.reference-compare-picker-de", "analysis.reference-compare-other",
     "analysis.reference-compare-other-de",

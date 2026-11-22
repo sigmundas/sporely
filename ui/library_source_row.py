@@ -168,17 +168,21 @@ class LibrarySourceRow(QWidget):
         relevance_badge: str = "",
         semantic_badge: str = "",
         summary_lines: tuple[str, ...] | None = None,
+        range_bars: QWidget | None = None,
         parent: QWidget | None = None,
     ) -> None:
         """``summary_lines`` makes the row expandable (the Analysis reference
         drawer, stage 7): an arrow opens those lines, the role selector and
-        a "Details…" link under the row, instead of the role selector beside it."""
+        a "Details…" link under the row, instead of the role selector beside it.
+        ``range_bars`` (the reference drawer) is placed to the right of the
+        text, before the arrow."""
         super().__init__(parent)
         self._measurement_set_id = measurement_set_id
         self._selected = False
         self._expandable = summary_lines is not None
         self.details_widget: QWidget | None = None
         self.expand_button: QToolButton | None = None
+        self.range_bars: QWidget | None = None
 
         if self._expandable:
             outer = QVBoxLayout(self)
@@ -261,6 +265,11 @@ class LibrarySourceRow(QWidget):
         if not self._expandable:
             root.addWidget(self.role_combo, 0, Qt.AlignVCenter)
             return
+
+        if range_bars is not None:
+            self.range_bars = range_bars
+            range_bars.setParent(self)
+            root.addWidget(range_bars, 0, Qt.AlignVCenter)
 
         self.expand_button = QToolButton(self)
         self.expand_button.setAutoRaise(True)
