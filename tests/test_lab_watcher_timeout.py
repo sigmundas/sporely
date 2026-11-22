@@ -269,3 +269,62 @@ def test_new_image_handler_deduplicates_create_and_move_events(monkeypatch, tmp_
 
     assert calls == [str(path)]
     assert str(path.resolve()) in handler._handled_paths
+
+
+def _start_worker(qtbot, folder):
+    from utils.lab_watcher import LabWatcherWorker
+
+    worker = LabWatcherWorker(str(folder))
+    reported: list[str] = []
+    worker.new_image_detected.connect(reported.append)
+    worker.start()
+    qtbot.waitUntil(lambda: worker.listing_started, timeout=3000)
+    return worker, reported
+
+
+def test_lab_watcher_worker_reports_new_files_by_listing_the_folder(qtbot, tmp_path):
+    """The worker finds new captures without macOS file events (FSEvents).
+
+    When fseventsd is busy, its events arrive a minute or more late. The
+    worker lists the folder instead: a file written there is reported once
+    its size settles; files there before the start, and unsupported ones,
+    are not.
+    """
+    (tmp_path / "before.jpg").write_bytes(b"old capture")
+    worker, reported = _start_worker(qtbot, tmp_path)
+    try:
+        (tmp_path / "notes.txt").write_bytes(b"not an image")
+        (tmp_path / "PB220140.ORF").write_bytes(b"raw capture")
+        (tmp_path / "PB220140.JPG").write_bytes(b"jpeg capture")
+        qtbot.waitUntil(lambda: len(reported) == 2, timeout=3000)
+        assert sorted(Path(path).name for path in reported) == ["PB220140.JPG", "PB220140.ORF"]
+        qtbot.wait(600)  # later listings report nothing again
+        assert len(reported) == 2
+    finally:
+        worker.stop()
+    assert not worker.isRunning()
+
+
+def test_lab_watcher_worker_waits_for_a_file_being_written_without_holding_up_others(qtbot, tmp_path):
+    """A file still growing is checked again at each listing, not given up on.
+
+    Meanwhile other new files are reported, and Stop is not held up by it.
+    """
+    worker, reported = _start_worker(qtbot, tmp_path)
+    try:
+        growing = tmp_path / "PB220141.ORF"
+        growing.write_bytes(b"")
+        (tmp_path / "PB220142.JPG").write_bytes(b"jpeg capture")
+        qtbot.waitUntil(lambda: [Path(path).name for path in reported] == ["PB220142.JPG"], timeout=3000)
+        for chunk in range(4):  # still being written, longer than a settle
+            growing.write_bytes(b"x" * (chunk + 1) * 1000)
+            qtbot.wait(300)
+        assert [Path(path).name for path in reported] == ["PB220142.JPG"]
+        qtbot.waitUntil(lambda: len(reported) == 2, timeout=3000)  # finished: reported
+        assert Path(reported[1]).name == "PB220141.ORF"
+        (tmp_path / "PB220143.ORF").write_bytes(b"")  # never written
+        started = time.monotonic()
+    finally:
+        worker.stop()
+    assert time.monotonic() - started < 1.0
+    assert not worker.isRunning()
