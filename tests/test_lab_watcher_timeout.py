@@ -269,3 +269,33 @@ def test_new_image_handler_deduplicates_create_and_move_events(monkeypatch, tmp_
 
     assert calls == [str(path)]
     assert str(path.resolve()) in handler._handled_paths
+
+
+def test_lab_watcher_worker_reports_new_files_by_listing_the_folder(qtbot, tmp_path):
+    """The worker finds new captures without macOS file events (FSEvents).
+
+    When fseventsd is busy, its events arrive a minute or more late. The
+    worker lists the folder instead: a file written there is reported within
+    a second; files there before the start, and unsupported ones, are not.
+    """
+    from utils.lab_watcher import LabWatcherWorker
+
+    (tmp_path / "before.jpg").write_bytes(b"old capture")
+    worker = LabWatcherWorker(str(tmp_path))
+    reported: list[str] = []
+    worker.new_image_detected.connect(reported.append)
+    worker.start()
+    try:
+        qtbot.wait(400)  # the worker has listed what is there at the start
+        (tmp_path / "notes.txt").write_bytes(b"not an image")
+        start = time.monotonic()
+        (tmp_path / "PB220140.ORF").write_bytes(b"raw capture")
+        (tmp_path / "PB220140.JPG").write_bytes(b"jpeg capture")
+        qtbot.waitUntil(lambda: len(reported) == 2, timeout=3000)
+        assert time.monotonic() - start < 2.0
+        assert sorted(Path(path).name for path in reported) == ["PB220140.JPG", "PB220140.ORF"]
+        qtbot.wait(600)  # later listings report nothing again
+        assert len(reported) == 2
+    finally:
+        worker.stop()
+    assert not worker.isRunning()
