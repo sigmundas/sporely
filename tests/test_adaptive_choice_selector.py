@@ -579,3 +579,125 @@ def test_chip_row_keeps_its_natural_width_in_a_form_that_does_not_stretch_fields
         qapp.processEvents()
     assert selector.visible_chip_values() == ["Water", "KOH", "L4"]
     assert not selector.more_chip().isVisible()
+
+
+def test_unset_chip_row_sits_evenly_inside_its_alert_box_and_set_rows_keep_their_layout(qapp):
+    """The red "not set" box: its chips are centred in the row, which is taller than
+    they are (the hidden dropdown page sets the row height; the taller combo here
+    stands in for macOS / the app stylesheet), and get a side inset. Set rows keep
+    their chips at the top-left, and no row changes height."""
+    from PySide6.QtWidgets import QFormLayout, QWidget
+
+    page = QWidget()
+    form = QFormLayout(page)
+    form.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
+    selectors = []
+    for selected in (None, "KOH"):
+        selector = AdaptiveChoiceSelector(compact=True)
+        selector.addItem("Not set", "Not_set", pillText="—")
+        for value in ("Water", "KOH", "L4"):
+            selector.addItem(value, value)
+        selector.set_chip_mode(clear_value="Not_set")
+        chip_height = selector.buttons()[1].sizeHint().height()
+        selector.combo().setMinimumHeight(chip_height + 12)
+        selector.setCurrentIndex(selector.findData(selected or "Not_set"))
+        form.addRow("Mount:", selector)
+        selectors.append(selector)
+    unset, chosen = selectors
+    page.resize(600, 200)
+    page.show()
+    for _ in range(5):
+        qapp.processEvents()
+    height_before = unset.height()
+
+    update_combo_alert(unset)
+    update_combo_alert(chosen)
+    for _ in range(5):
+        qapp.processEvents()
+
+    assert combo_is_unset(unset) and not combo_is_unset(chosen)
+    assert unset.height() == chosen.height() == height_before
+    chips = [button for button in unset.buttons() if button.isVisible()]
+    assert [button.text() for button in chips] == ["Water", "KOH", "L4"]
+    assert not unset.more_chip().isVisible()
+    first = chips[0].geometry()
+    top, bottom = first.top(), unset.height() - 1 - first.bottom()
+    assert first.left() == 4 and top >= 4
+    assert abs(top - bottom) <= 1
+    assert chips[-1].geometry().right() <= unset.width() - 1 - 4
+    assert chosen.buttons()[1].geometry().topLeft().toTuple() == (0, 0)
+
+    # Choosing a value drops the box and puts the chips back at the top-left.
+    unset.setCurrentIndex(unset.findData("Water"))
+    update_combo_alert(unset)
+    for _ in range(5):
+        qapp.processEvents()
+    assert unset.buttons()[1].geometry().topLeft().toTuple() == (0, 0)
+    assert unset.height() == height_before
+
+
+def test_clearing_a_chip_by_click_leaves_no_stray_more_chip(qapp):
+    """In a form that keeps fields at their size hint, the alert's side inset
+    resizes the row while a click refits it; the "+ N more" chip must not be
+    left visible from a refit that a resize re-entered."""
+    from PySide6.QtWidgets import QFormLayout, QWidget
+
+    page = QWidget()
+    form = QFormLayout(page)
+    form.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
+    selector = AdaptiveChoiceSelector(compact=True)
+    selector.addItem("Not set", "Not_set", pillText="—")
+    for value in ("Water", "KOH", "L4"):
+        selector.addItem(value, value)
+    selector.set_chip_mode(clear_value="Not_set")
+    selector.currentIndexChanged.connect(lambda _index: update_combo_alert(selector))
+    selector.set_selected_value("Water")
+    form.addRow("Mount:", selector)
+    page.resize(600, 120)
+    page.show()
+    for _ in range(5):
+        qapp.processEvents()
+
+    QTest.mouseClick(selector.button_for_value("Water"), Qt.LeftButton)  # clears
+    for _ in range(5):
+        qapp.processEvents()
+    assert combo_is_unset(selector)
+    assert selector.visible_chip_values() == ["Water", "KOH", "L4"]
+    assert not selector.more_chip().isVisible()
+
+    QTest.mouseClick(selector.button_for_value("KOH"), Qt.LeftButton)
+    for _ in range(5):
+        qapp.processEvents()
+    assert not combo_is_unset(selector)
+    assert not selector.more_chip().isVisible()
+
+
+@pytest.mark.parametrize("width", range(380, 440, 2))
+def test_the_alert_keeps_a_folded_row_on_one_line(qapp, width):
+    """The alert's side inset can fold one more chip, but the folded row stays on
+    one line and inside the box: "+ N more" is measured at its widest count (at
+    406 px the default stains once wrapped "+ 4 more" onto a second line)."""
+    from PySide6.QtWidgets import QFormLayout, QWidget
+
+    page = QWidget()
+    form = QFormLayout(page)
+    form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+    selector = AdaptiveChoiceSelector(compact=True)
+    for value in DatabaseTerms.default_values("stain"):
+        selector.addItem(DatabaseTerms.translate("stain", value), value)
+    selector.set_chip_mode(clear_value="Not_set")
+    selector.set_selected_value("Melzer")
+    form.addRow("Stain:", selector)
+    page.resize(width, 200)
+    page.show()
+    for _ in range(5):
+        qapp.processEvents()
+
+    selector.set_selected_value("Not_set")
+    update_combo_alert(selector)
+    for _ in range(5):
+        qapp.processEvents()
+    shown = [button for button in selector.buttons() + [selector.more_chip()] if button.isVisible()]
+    assert selector.more_chip().isVisible()
+    assert len({button.geometry().y() for button in shown}) == 1
+    assert max(button.geometry().right() for button in shown) <= selector.width() - 1 - 4

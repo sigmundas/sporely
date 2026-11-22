@@ -145,6 +145,15 @@ def _sections_collapsed(context: ReviewContext) -> QWidget:
     return _DrainingHost(tab, context.host)
 
 
+def _prep_unset(context: ReviewContext) -> QWidget:
+    """Mount, stain and condition unset: their chip rows show the red "not set" box; the source is set."""
+    tab, _profile_ = _live_lab_tab(
+        context,
+        lab_state={**LAB_STATE, "mount_combo": "Not_set", "stain_combo": "Not_set", "sample_combo": "Not_set"},
+    )
+    return _DrainingHost(tab, context.host)
+
+
 def _raw_pending(context: ReviewContext) -> QWidget:
     tab, profile = _live_lab_tab(context, raw_mode="review", lab_state={**LAB_STATE, "contrast_combo": "Phase"})
     _start(tab)
@@ -299,6 +308,13 @@ _LIVE_LAB_STATES = (
         "uncalibrated objective",
         "A capture with an objective that has no calibration (63x): no scale bar on the viewer.",
         _uncalibrated,
+    ),
+    (
+        "prep-unset",
+        "Preparation not set",
+        "Mount, stain and condition unset: each chip row sits evenly inside its red box; "
+        "the set source row keeps its plain layout.",
+        _prep_unset,
     ),
     (
         "sections-collapsed",

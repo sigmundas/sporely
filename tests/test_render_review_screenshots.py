@@ -120,6 +120,7 @@ LIVE_LAB_IDS = {
         "uncalibrated",
         "camera-import-empty",
         "camera-import-scanned",
+        "prep-unset",
         "sections-collapsed",
     )
     for suffix in ("", "-dark")
