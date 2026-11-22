@@ -4703,6 +4703,15 @@ def build_active_calibration_prompt(parent, *, new_label, old_label=None, change
     return box, move_btn
 
 
+# The activity badge's timer ticks every 400 ms; its database lookups (the
+# observations pending and blocked in cloud sync) are reused for this long.
+# Each lookup opens and closes a connection, and SQLite creates and deletes
+# mushrooms.db-wal and -shm whenever the last one closes: at every tick that
+# floods macOS file events, and the Live Lab folder watcher then learns of
+# new captures about a minute late.
+_BADGE_SYNC_LOOKUP_MAX_AGE_S = 5.0
+
+
 class MainWindow(GeometryMixin, QMainWindow):
     """Main application window with modern UI and measurement table."""
 
@@ -4744,6 +4753,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._background_activity_badge: QLabel | None = None
         self._cloud_sync_status_hint_active = False
         self._background_activity_timer: QTimer | None = None
+        # (monotonic time, pending ids, blocked ids) of the badge's last lookup.
+        self._badge_sync_lookup: tuple[float, list[int], list[int]] | None = None
+        self._badge_sync_running: bool | None = None  # at the last tick
         self._pixmap_cache: dict[str, QPixmap] = {}
         self._pixmap_cache_order: list[str] = []
         self._pixmap_cache_max = 6
@@ -5201,7 +5213,7 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         self._background_activity_timer = QTimer(self)
         self._background_activity_timer.setInterval(400)
-        self._background_activity_timer.timeout.connect(self._refresh_background_activity_badge)
+        self._background_activity_timer.timeout.connect(self._on_background_activity_tick)
         self._background_activity_timer.start()
 
         self._update_corner_ui()
@@ -5785,14 +5797,35 @@ class MainWindow(GeometryMixin, QMainWindow):
                 return client
         return None
 
-    def _refresh_background_activity_badge(self) -> None:
+    def _on_background_activity_tick(self) -> None:
+        # A sync starting or ending changes what is pending or blocked: query then.
+        running = bool(self.is_cloud_sync_running())
+        unchanged = running == getattr(self, "_badge_sync_running", None)
+        self._badge_sync_running = running
+        self._refresh_background_activity_badge(reuse_sync_lookup=unchanged)
+
+    def _badge_sync_observation_ids(self, *, reuse: bool) -> tuple[list[int], list[int]]:
+        """The observations pending and blocked in cloud sync, for the badge.
+
+        With ``reuse``, a lookup younger than ``_BADGE_SYNC_LOOKUP_MAX_AGE_S``
+        is returned again instead of querying the database (see that constant).
+        """
+        now = time.monotonic()
+        last = getattr(self, "_badge_sync_lookup", None)
+        if reuse and last is not None and 0 <= now - last[0] < _BADGE_SYNC_LOOKUP_MAX_AGE_S:
+            return list(last[1]), list(last[2])
+        pending_ids = self._cloud_sync_pending_observation_ids()
+        blocked_ids = self._cloud_sync_blocked_observation_ids()
+        self._badge_sync_lookup = (now, list(pending_ids), list(blocked_ids))
+        return pending_ids, blocked_ids
+
+    def _refresh_background_activity_badge(self, *, reuse_sync_lookup: bool = False) -> None:
         badge = getattr(self, "_background_activity_badge", None)
         if badge is None:
             self._refresh_cloud_sync_close_state()
             return
         total, labels = self._background_activity_summary()
-        pending_ids = self._cloud_sync_pending_observation_ids()
-        blocked_ids = self._cloud_sync_blocked_observation_ids()
+        pending_ids, blocked_ids = self._badge_sync_observation_ids(reuse=reuse_sync_lookup)
         pending_count = len(pending_ids)
         blocked_count = len(blocked_ids)
         logged_in = bool(self._cached_cloud_client())

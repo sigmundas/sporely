@@ -568,3 +568,77 @@ def test_close_event_saves_state_and_closes_without_starting_cloud_sync(monkeypa
     assert badge.visible is True
     assert badge.text == ""
     window.deleteLater()
+
+
+def test_badge_timer_reuses_its_sync_lookup_and_other_refreshes_query(monkeypatch, qapp):
+    """The 400 ms tick queries the database at most every few seconds.
+
+    Each lookup opens and closes a connection, and with no other connection
+    open SQLite creates and deletes mushrooms.db-wal and -shm every time: at
+    every tick that flooded macOS file events and delayed the Live Lab folder
+    watcher by about a minute. Refreshes for a change (activity started or
+    ended, a sync status update), and a tick when a sync starts or ends,
+    still query at once.
+    """
+    window = _build_window(monkeypatch)  # no timer (init_ui is stubbed): ticks are driven below
+    badge = _DummyBadge()
+    window._background_activity_badge = badge
+    monkeypatch.setattr(main_window.QApplication, "instance", lambda: _DummyApp([]))
+    syncing = [False]
+    monkeypatch.setattr(main_window.MainWindow, "is_cloud_sync_running", lambda self: syncing[0])
+    pending: list[int] = []
+    blocked: list[int] = []
+    lookups: list[str] = []
+
+    def _pending(self):
+        lookups.append("pending")
+        return list(pending)
+
+    def _blocked(self):
+        lookups.append("blocked")
+        return list(blocked)
+
+    monkeypatch.setattr(main_window.MainWindow, "_cloud_sync_pending_observation_ids", _pending)
+    monkeypatch.setattr(main_window.MainWindow, "_cloud_sync_blocked_observation_ids", _blocked)
+    clock = [1000.0]
+    monkeypatch.setattr(main_window.time, "monotonic", lambda: clock[0])
+
+    window._on_background_activity_tick()
+    assert lookups == ["pending", "blocked"]
+    assert badge.visible is False
+
+    pending.append(42)  # an observation is edited: not seen until the lookup is renewed
+    for _ in range(12):  # 4.8 s of ticks
+        clock[0] += 0.4
+        window._on_background_activity_tick()
+    assert lookups == ["pending", "blocked"]
+    assert badge.visible is False
+
+    clock[0] += 0.4  # 5.2 s after the lookup
+    window._on_background_activity_tick()
+    assert lookups == ["pending", "blocked"] * 2
+    assert badge.visible is True
+    assert badge.text == window.tr("Sync pending")
+
+    pending.clear()
+    window.end_background_activity(window.begin_background_activity("Saving"))
+    assert lookups == ["pending", "blocked"] * 4  # each explicit refresh queries
+    assert badge.visible is False
+
+    syncing[0] = True
+    clock[0] += 0.4
+    window._on_background_activity_tick()  # the sync started
+    assert lookups == ["pending", "blocked"] * 5
+    assert badge.text == window.tr("Syncing...")
+    clock[0] += 0.4
+    window._on_background_activity_tick()
+    assert lookups == ["pending", "blocked"] * 5
+
+    syncing[0] = False
+    blocked.append(7)  # the sync blocked an observation
+    clock[0] += 0.4
+    window._on_background_activity_tick()  # the sync ended: shown at once, not 5 s later
+    assert lookups == ["pending", "blocked"] * 6
+    assert badge.visible is True
+    assert badge.text == window.tr("Sync blocked")
+    window.deleteLater()
