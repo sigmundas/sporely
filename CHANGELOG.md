@@ -2,6 +2,14 @@
 
 All notable changes to Sporely are documented here.
 
+## 2026-11-22 (desktop 1.0.1)
+
+No server migration is required. The bundled taxonomy is still `tax-2026.10.31-01`, the release active on the server.
+
+### Fixed
+- **Live Lab showed new captures a minute or more after the camera saved them.** Live Lab waited for macOS to report changes in the watched folder, and those reports could arrive minutes late. It now checks the folder itself four times a second and shows a new capture once the file has finished writing, usually within a second or two. A file still being written no longer holds up other captures or the Stop button.
+- **Sporely no longer opens the database several times a second while it sits idle.** The activity indicator in the corner checked cloud sync every 0.4 s, which flooded macOS with file events and slowed the Live Lab folder watch. It now checks every 5 s, and at once when a sync starts or ends.
+
 ## 2026-11-15 (desktop 1.0.0)
 
 No server migration is required. The bundled taxonomy is still `tax-2026.10.31-01`, the release active on the server.
