@@ -1,44 +1,89 @@
 ![Sporely](docs/images/sporely-logo-dark.png)
 
-Sporely is a desktop app for field observations, microscopy calibration, and spore measurements.
+Sporely is a desktop app for mushroom field observations, microscope calibration and spore measurements.
 
-## What Sporely Is For
+![A species plate for Pholiotina rugosa, with field photos and microscope insets](docs/images/readme/species-plate.jpg)
 
-Sporely helps you keep mushroom finds, field photos, macro photos, microscope images, measurements, and notes together in one place. The goal is to make it easy to move between platforms and cameras without losing the story of a find, from the first mobile photo in the field to later microscopy and spore analysis.
+## What Sporely is for
 
-Sporely Cloud is being built around a simple idea: mushroom spore data and analysis should be open and easily available for everyone. Its main purpose is to make measurements, images, and analysis easier to preserve, compare, and share. A secondary goal is social: connecting with friends, sharing finds, locations, and images when you choose to.
+Sporely keeps a mushroom find together in one place: field photos, macro photos, microscope images, measurements and notes. You can follow a find from the first phone photo in the field to the microscope and the spore statistics, across devices and cameras, without losing track of it.
 
-Sporely uses a Free and Pro model for the cloud service. Pro adds more private sync capacity and higher-quality cloud images. Payment details and plan information are on [sporely.no](https://sporely.no).
+Sporely Cloud is built around a simple idea: spore data and analysis should be open and available to everyone. Its main purpose is to preserve, compare and share measurements, images and analysis. A second goal is social: sharing finds, places and images with friends when you choose to. The desktop app syncs with the Sporely web and Android apps.
 
-Regional publishing and place support follows the services that make the most sense locally:
+Sporely has a Free and a Pro plan for the cloud service. Pro adds more private sync capacity and higher-quality cloud images. Prices and plan details are on [sporely.no](https://sporely.no).
 
-- Norway: Sporely uses Norwegian place-name and reporting support, including Artsobservasjoner-oriented workflows.
-- Sweden: Sporely uses Swedish reporting support through Artportalen-oriented workflows.
-- Denmark: support is pending, with Danmarks Svampeatlas as the intended regional destination.
-- Everywhere else: iNaturalist and Sporely Cloud 
+Publishing and place names follow the services that make most sense locally:
 
+- **Norway:** Norwegian place names and reporting to Artsobservasjoner.
+- **Sweden:** Swedish reporting to Artportalen.
+- **Denmark:** pending, with Danmarks Svampeatlas as the intended destination.
+- **Everywhere else:** iNaturalist and Sporely Cloud.
+
+## A tour of the app
+
+The screenshots below are from the author's own observations from the 2026 season.
+
+### Observations
+
+Every find is a row in the **Observations** tab, with its field and microscope images in the gallery below. From here you create, edit, publish and sync observations, and open the species plate.
+
+![Observations tab](docs/images/readme/observations.jpg)
+
+### Observation details
+
+The observation dialog holds the date, coordinates, place name and comments, who can see the find in Sporely Cloud, and the species. Search for a scientific or common name in one field, or ask Artsorakel or iNaturalist to suggest the species from your photos. Habitat (NiN2 biotope), substrate and host (Grows on) have their own tabs.
+
+![Observation details dialog](docs/images/readme/observation-details.jpg)
+
+### Measure
+
+In the **Measure** tab you measure spores and other structures on calibrated microscope images, with rectangles, lines or multi-line paths. Each measurement can be fine-tuned in the preview on the right. Objective, contrast, mount, stain, condition and sample source are kept for every microscope image.
+
+![Measure tab with spore measurements](docs/images/readme/measure.jpg)
+
+### Analysis
+
+The **Analysis** tab plots length, width and Q (L/W) for the observation, with histograms and a confidence ellipse, and compares them with reference values from the literature or your own reference library. Plots, statistics and an image gallery can be exported.
+
+![Analysis tab comparing measurements with reference data](docs/images/readme/analysis.jpg)
+
+### Species plate
+
+**Plate** builds a presentation plate from one observation: field photos in the background, microscope images as insets with their magnification and preparation, and the spore statistics as a caption. The plate at the top of this page was made this way. Layouts can be saved and reused.
+
+### Live Lab and Camera import
+
+**Live Lab** watches your microscope camera's capture folder and imports new images into the current observation as you work, tagged with the objective, contrast, mount and stain you have selected. **Camera import** matches field and microscope photos taken earlier to the right observations by their timestamps, optionally using a Sync Shot QR code to correct a camera clock.
+
+![Live Lab tab](docs/images/readme/live-lab.jpg)
+
+### Calibration
+
+Calibrate each objective from a photo of a stage micrometer, automatically or by hand, or enter a known scale. Sporely keeps a calibration history per objective, with scatter and tilt checks, and tells you how many observations use each calibration.
+
+![Calibration dialog](docs/images/readme/calibration.jpg)
 
 ## Installation
 
 ### Prebuilt application
 
-Download the latest release from:
+Download the latest release from
 https://github.com/sigmundas/sporely/releases/latest
 
 | Platform | File | How to install |
 |----------|------|----------------|
-| **Windows** | `Sporely-x.x.x-windows-setup.exe` | Run the installer — creates Start Menu entry and uninstaller |
-| **macOS** | `Sporely-vx.x.x-macos.dmg` | Open the disk image, drag **Sporely** to **Applications** |
-|  **Linux (Ubuntu/Debian)** | `sporely_x.x.x_amd64.deb` | `sudo dpkg -i sporely_x.x.x_amd64.deb` — adds app menu entry |
+| **Windows** | `Sporely-x.x.x-windows-setup.exe` | Run the installer. It creates a Start Menu entry and an uninstaller. |
+| **macOS** | `Sporely-vx.x.x-macos-apple-silicon.dmg` (M-series) or `Sporely-vx.x.x-macos-intel.dmg` | Open the disk image and drag **Sporely** to **Applications**. |
+| **Linux (Ubuntu/Debian)** | `sporely_x.x.x_amd64.deb` | `sudo dpkg -i sporely_x.x.x_amd64.deb` adds an app menu entry. |
 
 ### Notes for Windows and macOS
 
-Windows may show a Microsoft Defender SmartScreen warning like "This app isn't commonly downloaded". Choose `Keep` and run the installer. 
+Windows may show a Microsoft Defender SmartScreen warning such as "This app isn't commonly downloaded". Choose `Keep` and run the installer.
 
-If macOS shows a warning like "Apple could not verify ..." or blocks the app because it was downloaded from the Internet, either:
+If macOS shows a warning such as "Apple could not verify …", or blocks the app because it was downloaded from the Internet, either:
 
-1. In Finder, open `Applications`, right-click `Sporely.app`, and choose `Open`.
-2. Or remove the quarantine attribute in Terminal:
+1. In Finder, open `Applications`, right-click `Sporely.app` and choose `Open`, or
+2. remove the quarantine attribute in Terminal:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Sporely.app
@@ -46,12 +91,9 @@ xattr -dr com.apple.quarantine /Applications/Sporely.app
 
 ### Run from source (Python)
 
-This repository does not ship a `.venv` folder or activation scripts.
-They are created locally when you run `python -m venv .venv`.
+The repository does not ship a `.venv` folder; you create it locally with `python -m venv .venv`. Use `python -m pip` rather than plain `pip`, so packages are installed for the interpreter you run.
 
-Use `python -m pip` (not plain `pip`) so installs always target the same interpreter you run.
-
-Linux/macOS (first-time setup):
+Linux/macOS, first-time setup:
 
 ```bash
 cd ~/myapps/sporely
@@ -62,7 +104,7 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
-Windows PowerShell (first-time setup):
+Windows PowerShell, first-time setup:
 
 ```powershell
 cd path\to\sporely
@@ -73,95 +115,78 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
-Note for macOS development: when you launch the app from VS Code or with `python main.py`, the menu bar may show `Python` as the app name. The packaged app/installer shows `Sporely`.
-
-Each new terminal session:
+In each new terminal, activate the environment again:
 
 - Linux/macOS: `source .venv/bin/activate`
 - Windows PowerShell: `.\.venv\Scripts\Activate.ps1`
 - Windows Command Prompt: `.\.venv\Scripts\activate.bat`
 
-## Cloud Media
+On macOS, when you start the app from VS Code or with `python main.py`, the menu bar may show `Python` as the app name. The packaged app shows `Sporely`.
 
-Normal desktop media sync uses the authenticated Cloudflare upload Worker, not direct R2.
+## Getting started
 
-- Set the public Worker URL with `SPORELY_MEDIA_WORKER_URL` if you need to override the default. The default is `https://upload.sporely.no`.
-- `SPORELY_MEDIA_WORKER_URL` is public runtime config, not a secret.
-- Normal users do not need `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_S3_ENDPOINT`, or `SPORELY_ENABLE_DIRECT_R2`.
-- Direct R2 remains admin/developer-only and is only enabled when `SPORELY_ENABLE_DIRECT_R2=1` is set alongside local admin secrets.
-- The public image tier is still described as 20 MP, but the client only downsizes when a source image exceeds `21 MP` or `5300 px` on the longest edge, which keeps borderline 20 MP frames intact.
+### Set up your microscope
 
-If you need to audit or repair broken media rows:
+1. Open **Settings › Calibration**.
+2. Add or edit your objectives (magnification, NA and name).
+3. Load a photo of a stage micrometer, calibrate the objective automatically or by hand, and save the calibration. **Set as Active** chooses which calibration new images use.
+4. Check where your database and images are stored in **Settings › Preferences › Database**.
 
-- `materialize_cloud_media_for_observation(client, local_observation_id)` will re-download missing local media through the public Worker URL or the authenticated Worker download endpoint.
-- `download_image_file(storage_path, dest_path)` now surfaces missing remote objects as `Cloud image file is missing from storage (<key>)`.
-- For a cloud observation, `pull_image_metadata(obs_cloud_id, include_deleted_for_sync=True)` shows the remote rows to inspect before reuploading or removing broken media entries.
+### Create your first observation
 
-
-
-## First Run
-
-1. Open `Calibration > Microscope Objectives`.
-2. Add or edit objectives (Magnification, NA, Objective name).
-3. Calibrate an objective (auto or manual) and set it active.
-4. Confirm your database folder in `Settings > Database`.
-
-## Create Your First Observation
-
-1. Click **New Observation**.
-2. Add images (field or microscope). Multi-select is supported.
-3. For microscope images, choose Objective/Scale, Contrast, Mount, and Sample type.
-4. Ctrl+click multiple images in the gallery to apply settings to all selected at once.
+1. In the Observations tab, click **New** (or press N).
+2. Add field and microscope images. You can select several at once.
+3. For microscope images, choose the objective, contrast, mount, stain and condition. Ctrl+click several images in the gallery to set them all at once.
+4. Search for the species, or use **Guess** to get AI suggestions.
 5. Save the observation.
 
-## Measure and Analyze
+### Measure and analyze
 
-- Use the **Measure** tab to draw rectangles for spores or line measurements for length-only.
-- Use **Analysis** to plot distributions and compare with reference datasets.
-- Use **Species Plate** to build a composite plate from one observation. Saved plate layouts are stored in the app data folder, not in the project root.
+- In **Measure**, choose a category (Spores, Basidia, Cheilocystidia …) and draw rectangles for length and width, or lines for length only.
+- In **Analysis**, look at the distributions and add reference values to compare with.
+- Click **Plate** in the Observations tab to build a species plate.
 
-### Species Plate Layouts
+### Species plate layouts
 
-- Saved layouts are written as `.mplate` files in the app data folder.
-- Current plate state is also remembered automatically per observation.
-- macOS: `~/Library/Application Support/Sporely/plate_layouts`
+- Saved layouts are `.mplate` files in a `plate_layouts` folder next to the database. With the default database location on macOS, that is `~/Library/Application Support/Sporely/plate_layouts`.
+- The current plate is also remembered automatically for each observation.
 
-## Screenshots
+## For developers
 
-Automatic or manual calibration of image scales: 
-![Calibrate or pick objective](docs/images/calibration.png)
+### Cloud media
 
-Create a new observation by importing images: 
-![Create a new observation](docs/images/1-new-observation.png)
+Desktop media sync uses the authenticated Cloudflare upload Worker, not direct R2.
 
-Search-as-you-type species, or use AI lookup to guess the species: 
-![Import images](docs/images/2-new-observation.png)
+- `SPORELY_MEDIA_WORKER_URL` overrides the public Worker URL (default `https://upload.sporely.no`). It is public runtime config, not a secret.
+- Normal users do not need `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_S3_ENDPOINT` or `SPORELY_ENABLE_DIRECT_R2`.
+- Direct R2 is for admins and developers only, and is enabled only when `SPORELY_ENABLE_DIRECT_R2=1` is set together with local admin secrets.
+- The public image tier is described as 20 MP, but the client only downsizes an image larger than 21 MP or 5300 px on its longest edge, so borderline 20 MP frames are kept intact.
 
-Measure spores or other features: 
-![Measure spores or lengths](docs/images/3-measure-spores.png)
+To audit or repair broken media rows:
 
-Review plots and compare to references: 
-![Review analysis and references](docs/images/4-stats-reference.png)
+- `materialize_cloud_media_for_observation(client, local_observation_id)` downloads missing local media again through the public Worker URL or the authenticated Worker download endpoint.
+- `download_image_file(storage_path, dest_path)` reports a missing remote object as `Cloud image file is missing from storage (<key>)`.
+- For a cloud observation, `pull_image_metadata(obs_cloud_id, include_deleted_for_sync=True)` lists the remote rows to inspect before re-uploading or removing broken media entries.
 
-## Documentation
+### Documentation
 
-- [Technical overview](docs/technical-overview.md) — concise architecture and current-system orientation
-- [GUI development conventions](docs/development/gui-conventions.md) — PySide6 implementation patterns
-- [Development plans](docs/plans/README.md) — inbox, active plans, and completed design records
-- [Agent working agreements](AGENTS.md) — repository rules for coding agents
-- [Engineering history](docs/engineering-history.md) — detailed implementation and debugging notes
-- [Cloud sync contract](docs/supabase-sync-contract.md) — authoritative sync behavior
-- [Cloud sync architecture](docs/cloud-sync-architecture.md) — implementation ownership and navigation
+- [Technical overview](docs/technical-overview.md): architecture and current-system orientation
+- [GUI development conventions](docs/development/gui-conventions.md): PySide6 implementation patterns
+- [Development plans](docs/plans/README.md): inbox, active plans and completed design records
+- [Agent working agreements](AGENTS.md): repository rules for coding agents
+- [Engineering history](docs/engineering-history.md): detailed implementation and debugging notes
+- [Cloud sync contract](docs/supabase-sync-contract.md): authoritative sync behavior
+- [Cloud sync architecture](docs/cloud-sync-architecture.md): implementation ownership and navigation
 - [Online publishing](docs/artsobservasjoner.md)
 - [Field photography](docs/field-photography.md)
 - [Microscopy workflow](docs/microscopy-workflow.md)
 - [Spore measurements](docs/spore-measurements.md)
-- [Species database](docs/taxonomy-database.md) — where species names come from, how releases are updated, adding a country
-- [Taxonomy identity repair runbook](docs/taxonomy-identity-repair-runbook.md) — observation identity audit, migration gate and rollback
+- [Live Lab](docs/live-lab-tab.md) and [hardware sync and camera import](docs/hardware-sync.md)
+- [Species database](docs/taxonomy-database.md): where species names come from, how releases are updated, adding a country
+- [Taxonomy identity repair runbook](docs/taxonomy-identity-repair-runbook.md): observation identity audit, migration gate and rollback
 - [Database structure](docs/database-structure.md)
-- [Changelog](CHANGELOG.md) — user-facing notable release changes
-
+- [Changelog](CHANGELOG.md): user-facing release notes
 
 ## License
 
-MIT License - feel free to modify and extend.
+MIT License. Feel free to modify and extend.
