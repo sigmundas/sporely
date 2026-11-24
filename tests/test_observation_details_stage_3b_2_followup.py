@@ -19,6 +19,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QLineEdit, QLabel
 import database.models as models
 from database.taxon_lookup import TaxonChoice
 import ui.observations_tab as observations_tab
+import ui.observation_details_dialog as observation_details_dialog
 from ui.observations_tab import (
     ObservationDetailsDialog,
     _format_observation_display_label,
@@ -109,6 +110,8 @@ def _configure(monkeypatch, db_path: Path, language: str = "no") -> None:
     )
     monkeypatch.setattr(observations_tab, "resolve_vernacular_db_path",
                         lambda _lang: db_path)
+    monkeypatch.setattr(observation_details_dialog, "resolve_vernacular_db_path",
+                        lambda _lang: db_path)
 
 
 def _build_dlg() -> _Dlg:
@@ -174,9 +177,8 @@ def test_typing_custom_vernacular_does_not_clear_taxon(tmp_path, monkeypatch, qa
     d = _dialog(tmp_path, monkeypatch)
     d.genus_input.setText("Candolleomyces")
     d.species_input.setText("candolleanus")
-    d.vernacular_input.setText("")
-    # Simulate user typing free-text that has no matches for this taxon.
-    ObservationDetailsDialog._on_vernacular_text_changed(d, "custom-nickname-xyz")
+    # Free text that has no matches for this taxon.
+    d.vernacular_input.setText("custom-nickname-xyz")
     # Genus and species must remain intact — the previous
     # `_clear_scientific_taxon_for_vernacular_search` side effect is gone.
     assert d.genus_input.text() == "Candolleomyces"
@@ -189,9 +191,7 @@ def test_clearing_vernacular_does_not_clear_taxon(tmp_path, monkeypatch, qapp) -
     d.genus_input.setText("Candolleomyces")
     d.species_input.setText("candolleanus")
     d.vernacular_input.setText("hvit sprøsopp")
-    # Actually clear the vernacular field and fire the changed handler.
     d.vernacular_input.setText("")
-    ObservationDetailsDialog._on_vernacular_text_changed(d, "")
     assert d.genus_input.text() == "Candolleomyces"
     assert d.species_input.text() == "candolleanus"
     assert d.vernacular_input.text() == ""
@@ -209,8 +209,8 @@ def test_focus_opens_vernacular_chooser_with_empty_prefix(tmp_path, monkeypatch,
 
     complete_calls: list[str] = []
     monkeypatch.setattr(
-        d._vernacular_completer, "complete",
-        lambda: complete_calls.append(d._vernacular_completer.completionPrefix()),
+        d._taxon_controller.vernacular_completer, "complete",
+        lambda: complete_calls.append(d._taxon_controller.vernacular_completer.completionPrefix()),
     )
     event = QFocusEvent(QEvent.FocusIn, Qt.MouseFocusReason)
     d._taxon_controller.eventFilter(d.vernacular_input, event)
@@ -227,7 +227,7 @@ def test_mouseclick_reopens_chooser_when_already_focused(tmp_path, monkeypatch, 
     d._taxon_controller.sync_vernacular_after_taxon_change()
     calls: list[int] = []
     monkeypatch.setattr(
-        d._vernacular_completer, "complete", lambda: calls.append(1))
+        d._taxon_controller.vernacular_completer, "complete", lambda: calls.append(1))
     press = QMouseEvent(
         QEvent.MouseButtonPress, QPoint(0, 0), Qt.LeftButton,
         Qt.LeftButton, Qt.NoModifier,
@@ -262,7 +262,7 @@ def test_selecting_alternative_preserves_taxon(tmp_path, monkeypatch, qapp) -> N
     )
     # Locate the row in the vernacular model that corresponds to the choice
     # so we can pass a real QModelIndex.
-    model = d._vernacular_model
+    model = d._taxon_controller.vernacular_model
     idx = None
     for row in range(model.rowCount()):
         item = model.item(row, 0)

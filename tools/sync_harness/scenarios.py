@@ -273,38 +273,44 @@ def _guarded(ctx, action):
     return run
 
 
+def _files_new_observation(ctx, photos: bool):
+    """Bilder › Files and SD card's Ny observasjon editor, with photos in if ``photos`` (stage 9g4b).
+
+    A RAW file and its JPEG companion are one photo there, so files are not counted.
+    """
+    page = ctx.w.files_source_page
+    ctx.wait_until(
+        lambda: page.is_showing_new() and (bool(page.editor().import_results) or not photos),
+        30,
+        "Files' new observation",
+    )
+    return page
+
+
+def _save_files_new_observation(ctx, page, name: str) -> None:
+    before = {r["id"] for r in _query("select id from observations")}
+    ctx.shot(name)
+    ctx.click(page.save_btn, "Save new observation")
+    ctx.wait_until(lambda: {r["id"] for r in _query("select id from observations")} - before, 30, "new observation")
+
+
 def new_microscope_observation(ctx):
     """Drop image files on the list, mark them Microscope with an objective in
-    Prepare Images, Continue, then Create Observation.
+    Bilder › Files and SD card's new observation, then Save new observation.
     args: files, objective (substring, default "100X"), sync"""
-    from ui.image_import_dialog import ImageImportDialog
-    from ui.observations_tab import ObservationDetailsDialog
     a = ctx.args
     ctx.wait(1500)
-
-    def prepare(dlg):
-        ctx.wait(2500)
-        ctx.click(dlg.micro_radio, "Microscope Image")
-        ctx.wait(600)
-        _choose_objective(ctx, dlg.objective_combo, a.get("objective", "100X"))
-        ctx.wait(600)
-        ctx.result["pi_micro"] = {"objective": str(dlg.objective_combo.currentData()),
-                                  "micro": dlg.micro_radio.isChecked()}
-        ctx.shot("prepare-images-micro", dlg)
-        ctx.click(dlg.next_btn, "Prepare Images continue")
-
-    def details(dlg):
-        ctx.wait(1500)
-        ctx.shot("details-new-micro", dlg)
-        ctx.click(dlg.submit_observation_btn, "Create Observation")
-
-    ctx.on_modal(lambda m: isinstance(m, ImageImportDialog), _guarded(ctx, prepare), "prepare-images-micro")
-    ctx.on_modal(lambda m: isinstance(m, ObservationDetailsDialog), _guarded(ctx, details), "details-new-micro")
     _drop_files(ctx, a["files"])
-    ctx.wait(4000)
-    pending = [r["name"] for r in ctx.modal_rules]
-    if pending:
-        raise RuntimeError(f"dialogs not reached: {pending}")
+    page = _files_new_observation(ctx, True)
+    editor = page.editor()
+    ctx.wait(2500)
+    ctx.click(editor.type_hud.micro_btn, "Microscope")
+    ctx.wait(600)
+    _choose_objective(ctx, editor.objective_combo, a.get("objective", "100X"))
+    ctx.wait(600)
+    ctx.result["pi_micro"] = {"objective": str(editor.objective_combo.currentData()),
+                              "micro": editor.micro_radio.isChecked()}
+    _save_files_new_observation(ctx, page, "files-new-micro")
     ctx.wait(2000)
     newest = _query("select id from observations order by id desc limit 1")[0]["id"]
     ctx.result["new_observation"] = newest
@@ -317,32 +323,15 @@ def new_microscope_observation(ctx):
 
 
 def new_observation_without_images(ctx):
-    """Click "+ New", continue from an empty Prepare Images, then Create
-    Observation. args: sync"""
-    from ui.image_import_dialog import ImageImportDialog
-    from ui.observations_tab import ObservationDetailsDialog
-    a = ctx.args
+    """Click "+ New", then Save new observation in Bilder › Files and SD card
+    without adding photos. args: sync"""
     ctx.wait(1500)
     before = {r["id"] for r in _query("select id from observations")}
-
-    def prepare(dlg):
-        ctx.wait(1500)
-        ctx.result["pi_images"] = len(getattr(dlg, "import_results", []) or [])
-        ctx.shot("prepare-images-empty", dlg)
-        ctx.click(dlg.next_btn, "Prepare Images continue")
-
-    def details(dlg):
-        ctx.wait(1500)
-        ctx.shot("details-new-no-images", dlg)
-        ctx.click(dlg.submit_observation_btn, "Create Observation")
-
-    ctx.on_modal(lambda m: isinstance(m, ImageImportDialog), _guarded(ctx, prepare), "prepare-images-empty")
-    ctx.on_modal(lambda m: isinstance(m, ObservationDetailsDialog), _guarded(ctx, details), "details-new-no-images")
     ctx.click(ctx.w.observations_tab.new_btn, "+ New")
-    ctx.wait(4000)
-    pending = [r["name"] for r in ctx.modal_rules]
-    if pending:
-        raise RuntimeError(f"dialogs not reached: {pending}")
+    page = _files_new_observation(ctx, False)
+    ctx.wait(1500)
+    ctx.result["pi_images"] = len(page.editor().import_results)
+    _save_files_new_observation(ctx, page, "files-new-no-images")
     ctx.wait(1500)
     created = sorted({r["id"] for r in _query("select id from observations")} - before)
     if len(created) != 1:

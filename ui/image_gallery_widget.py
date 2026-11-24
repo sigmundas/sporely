@@ -7,9 +7,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
 
-from PySide6.QtCore import Qt, Signal, QEvent, QSize, QRectF, QTimer, QMimeData, QPoint, QPointF, QThread
+from PySide6.QtCore import Qt, Signal, QEvent, QSize, QRectF, QTimer, QMimeData, QPoint, QThread, QObject, QT_TRANSLATE_NOOP, QCoreApplication
 from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QDrag, QShortcut, QKeySequence, QIcon, QPalette
-from PySide6.QtWidgets import QGraphicsDropShadowEffect
+from shiboken6 import isValid
 from PySide6.QtWidgets import (
     QApplication,
     QGroupBox,
@@ -42,7 +42,7 @@ from database.database_tags import DatabaseTerms
 from utils.thumbnail_generator import get_thumbnail_path
 from utils.image_utils import load_oriented_pixmap
 from .adaptive_choice_selector import objective_color, objective_short_label
-from .styles import pt
+from .styles import STAGING_BORDER, objective_ring_outline, pt
 
 
 # Padding around every thumbnail's outer selection-backdrop container.
@@ -113,6 +113,21 @@ def _tag_text_color(background: QColor) -> str:
     if background.isValid() and background.lightness() >= 180:
         return "#000000"
     return "#ffffff"
+
+
+def _badge_translator(translate=None):
+    """Badge labels live in the gallery's context, whichever page builds them.
+
+    Pages pass their own ``tr`` (another context, where these strings were
+    never translated): look in the gallery's context first, then theirs.
+    """
+    def tr(text: str) -> str:
+        translated = QCoreApplication.translate("ImageGalleryWidget", text)
+        if translated != text or translate is None:
+            return translated
+        return translate(text)
+
+    return tr
 
 
 @dataclass(frozen=True)
@@ -193,74 +208,6 @@ def thumbnail_selection_colors(dark_theme: bool, palette: QPalette | None = None
     )
 
 
-def _draw_thumbnail_corner_brackets(
-    painter: QPainter,
-    rect: QRectF,
-    color: QColor,
-    stroke_width: float,
-    corner_len: float,
-) -> None:
-    if rect.isEmpty() or corner_len <= 0.0:
-        return
-    edge = rect.adjusted(stroke_width / 2.0, stroke_width / 2.0, -stroke_width / 2.0, -stroke_width / 2.0)
-    if edge.width() <= 0.0 or edge.height() <= 0.0:
-        return
-    painter.save()
-    pen = QPen(QColor(color), max(1.0, stroke_width))
-    pen.setCapStyle(Qt.RoundCap)
-    pen.setJoinStyle(Qt.RoundJoin)
-    painter.setPen(pen)
-    left = edge.left()
-    top = edge.top()
-    right = edge.right()
-    bottom = edge.bottom()
-    painter.drawLine(QPointF(left, top + corner_len), QPointF(left, top))
-    painter.drawLine(QPointF(left, top), QPointF(left + corner_len, top))
-    painter.drawLine(QPointF(right - corner_len, top), QPointF(right, top))
-    painter.drawLine(QPointF(right, top), QPointF(right, top + corner_len))
-    painter.drawLine(QPointF(left, bottom - corner_len), QPointF(left, bottom))
-    painter.drawLine(QPointF(left, bottom), QPointF(left + corner_len, bottom))
-    painter.drawLine(QPointF(right - corner_len, bottom), QPointF(right, bottom))
-    painter.drawLine(QPointF(right, bottom - corner_len), QPointF(right, bottom))
-    painter.restore()
-
-
-def _draw_thumbnail_selection_badge(
-    painter: QPainter,
-    rect: QRectF,
-    text: str,
-    colors: ThumbnailSelectionColors,
-    size_hint: float,
-) -> None:
-    badge_text = str(text or "").strip()
-    if not badge_text:
-        return
-    badge_margin = max(3.0, min(5.0, size_hint * 0.04))
-    badge_pad_x = max(4.0, min(7.0, size_hint * 0.06))
-    badge_pad_y = max(2.0, min(4.0, size_hint * 0.03))
-
-    badge_font = painter.font()
-    badge_font.setBold(True)
-    badge_font.setPixelSize(max(8, min(12, int(round(size_hint * 0.11)))))
-    painter.setFont(badge_font)
-
-    metrics = painter.fontMetrics()
-    text_width = float(metrics.horizontalAdvance(badge_text))
-    text_height = float(metrics.height())
-    badge_width = min(max(0.0, rect.width() - (badge_margin * 2.0)), text_width + (badge_pad_x * 2.0))
-    badge_height = min(max(0.0, rect.height() - (badge_margin * 2.0)), text_height + (badge_pad_y * 2.0))
-    if badge_width <= 0.0 or badge_height <= 0.0:
-        return
-
-    badge_rect = QRectF(rect.left() + badge_margin, rect.top() + badge_margin, badge_width, badge_height)
-    badge_radius = max(3.0, min(5.5, badge_height / 2.0))
-    painter.setPen(QPen(colors.badge_border, max(1.0, min(2.0, size_hint * 0.012))))
-    painter.setBrush(colors.badge_fill)
-    painter.drawRoundedRect(badge_rect, badge_radius, badge_radius)
-    painter.setPen(colors.badge_text)
-    painter.drawText(badge_rect.adjusted(0.0, -1.0, 0.0, 1.0), Qt.AlignCenter, badge_text)
-
-
 def paint_thumbnail_selection_overlay(
     painter: QPainter,
     rect: QRectF,
@@ -333,21 +280,6 @@ def paint_thumbnail_selection_overlay(
             painter.drawRoundedRect(halo_rect, max(1.0, radius - 0.5), max(1.0, radius - 0.5))
 
     painter.restore()
-
-
-def _visible_fraction(viewport_rect: QRectF, item_rect: QRectF | None) -> float:
-    if item_rect is None:
-        return 0.0
-    viewport_width = float(viewport_rect.width())
-    item_width = float(item_rect.width())
-    if viewport_width <= 0.0 or item_width <= 0.0:
-        return 0.0
-    viewport_left = float(viewport_rect.x())
-    viewport_right = viewport_left + viewport_width
-    item_left = float(item_rect.x())
-    item_right = item_left + item_width
-    visible_width = max(0.0, min(viewport_right, item_right) - max(viewport_left, item_left))
-    return visible_width / item_width
 
 
 def center_horizontal_scroll_target(
@@ -546,6 +478,40 @@ class _ObservationGalleryLoader(QThread):
         self.loaded.emit(self._observation_id, images, measurement_image_ids)
 
 
+class GalleryChannel(QObject):
+    """One page's view of a shared strip (redesign stage 9c).
+
+    A strip shared by several pages forwards its signals only to the active
+    channel, so a click acts on the page shown. Same signals as the strip.
+    ``accepts_staged``: the page that owns the unsaved images (Live, 9d) also
+    gets them in delete and the other saved-image actions.
+    """
+
+    accepts_staged = False
+
+    imageClicked = Signal(object, str)
+    imageSelected = Signal(object, str)
+    imageDoubleClicked = Signal(object, str)
+    measureBadgeClicked = Signal(object, str)
+    editRequested = Signal(object, str)
+    deleteImagesRequested = Signal(list)
+    deleteCloudCopiesRequested = Signal(list)
+    moveToObservationRequested = Signal(list)
+    changeSettingsRequested = Signal(list)
+    selectionChanged = Signal(list)
+    publishSelectionChanged = Signal(object)
+    itemsReordered = Signal(object)
+    observationLoaded = Signal(object)
+
+
+_CHANNEL_SIGNALS = (
+    "imageClicked", "imageSelected", "imageDoubleClicked", "measureBadgeClicked", "editRequested",
+    "deleteImagesRequested", "deleteCloudCopiesRequested", "moveToObservationRequested",
+    "changeSettingsRequested", "selectionChanged", "publishSelectionChanged", "itemsReordered",
+    "observationLoaded",
+)
+
+
 class ImageGalleryWidget(QGroupBox):
     """Collapsible thumbnail gallery for observations or explicit image lists."""
 
@@ -567,6 +533,8 @@ class ImageGalleryWidget(QGroupBox):
     # ``cloud_delete_eligible_image_ids``.
     deleteCloudCopiesRequested = Signal(list)
     moveToObservationRequested = Signal(list)
+    # The selected image keys, for "Change microscope settings…" (stage 8).
+    changeSettingsRequested = Signal(list)
     selectionChanged = Signal(list)
     publishSelectionChanged = Signal(object)
     itemsReordered = Signal(object)
@@ -589,6 +557,7 @@ class ImageGalleryWidget(QGroupBox):
         publish_checkbox_hint: str = "",
         delete_menu_label_single: str = "",
         delete_menu_label_multi: str = "",
+        show_change_settings: bool = False,
     ) -> None:
         super().__init__(title, parent)
         self._gallery_title = str(title or "")
@@ -608,6 +577,7 @@ class ImageGalleryWidget(QGroupBox):
         self._show_publish_checkbox = bool(show_publish_checkbox)
         self._show_move_to_observation = bool(show_move_to_observation)
         self._show_edit = bool(show_edit)
+        self._show_change_settings = bool(show_change_settings)
         self._show_delete_cloud_copy = bool(show_delete_cloud_copy)
         self._publish_checkbox_hint = str(publish_checkbox_hint or "").strip()
         # Per-instance delete labels — lets callers say "Remove from batch"
@@ -624,6 +594,13 @@ class ImageGalleryWidget(QGroupBox):
         self._decode_max_dim = max(384, self._base_thumb_size * 4)
         self._items: list[dict] = []
         self._frames: list[QFrame] = []
+        # Stage 9c: channels for a strip shared by pages, the observation
+        # whose images are shown, and unsaved images kept per observation.
+        self._channels: dict[str, GalleryChannel] = {}
+        self._active_channel: str | None = None
+        self._shown_observation_id: int | None = None
+        self._observation_base_items: list[dict] = []
+        self._staged_by_observation: dict[int, dict[str, list[dict]]] = {}
         self._selected_id = None
         self._selected_keys: set[str | int] = set()
         # Filepaths to re-select on the next set_items / observation reload
@@ -638,6 +615,9 @@ class ImageGalleryWidget(QGroupBox):
         self._objectives_cache: dict | None = None
         self._publish_checked_by_key: dict[str | int, bool] = {}
         self._suppress_publish_signal = False
+        # The photos whose checkbox the last publishSelectionChanged changed
+        # (image id -> checked): hosts persist only these.
+        self._last_publish_change: dict[int, bool] = {}
         self._pixmap_cache: dict[str, QPixmap] = {}
         self._pixmap_cache_max = 512
         self._render_batch_size = 8
@@ -714,7 +694,135 @@ class ImageGalleryWidget(QGroupBox):
             return bool(default_publish_selected)
         return True
 
+    # -- a strip shared by pages (stage 9c) -----------------------------------
+
+    def channel(self, key: str, *, accepts_staged: bool = False) -> GalleryChannel:
+        """The signals as seen by page ``key``; the first channel starts active."""
+        if not self._channels:
+            for name in _CHANNEL_SIGNALS:
+                getattr(self, name).connect(lambda *args, _name=name: self._forward_to_channel(_name, *args))
+        channel = self._channels.get(key)
+        if channel is None:
+            channel = GalleryChannel(self)
+            channel.accepts_staged = bool(accepts_staged)
+            self._channels[key] = channel
+            if self._active_channel is None:
+                self._active_channel = key
+        return channel
+
+    def set_active_channel(self, key: str) -> None:
+        if key in self._channels:
+            self._active_channel = key
+
+    def active_channel(self) -> str | None:
+        return self._active_channel
+
+    # Actions on saved images: unsaved (staged) ones never reach a page's handlers.
+    _SAVED_IMAGE_ACTIONS = frozenset(
+        {"deleteImagesRequested", "deleteCloudCopiesRequested", "moveToObservationRequested", "changeSettingsRequested"}
+    )
+
+    def _forward_to_channel(self, name: str, *args) -> None:
+        channel = self._channels.get(self._active_channel or "")
+        if channel is None:
+            return
+        if name in self._SAVED_IMAGE_ACTIONS and args and not channel.accepts_staged:
+            staged_keys = {
+                item.get("id") if item.get("id") is not None else item.get("filepath")
+                for item in self._items
+                if item.get("staged")
+            }
+            keys = [key for key in (args[0] or []) if key not in staged_keys]
+            if not keys:
+                return
+            args = (keys, *args[1:])
+        getattr(channel, name).emit(*args)
+
+    def set_context_actions(
+        self,
+        *,
+        change_settings: bool | None = None,
+        move_to_observation: bool | None = None,
+        delete_cloud_copy: bool | None = None,
+        publish_checkbox: bool | None = None,
+        delete: bool | None = None,
+    ) -> None:
+        """The right-click actions (and cloud checkboxes) the page shown offers.
+
+        Cloud checkboxes only where a page saves them (View, Measure): elsewhere
+        a click would change nothing that lasts.
+        """
+        if publish_checkbox is not None and bool(publish_checkbox) != self._show_publish_checkbox:
+            self._show_publish_checkbox = bool(publish_checkbox)
+            if self._items:
+                self._render()
+        if delete is not None and bool(delete) != self._show_delete:
+            self._show_delete = bool(delete)
+            if self._items:
+                self._render()
+        if change_settings is not None:
+            self._show_change_settings = bool(change_settings)
+        if move_to_observation is not None:
+            self._show_move_to_observation = bool(move_to_observation)
+        if delete_cloud_copy is not None:
+            self._show_delete_cloud_copy = bool(delete_cloud_copy)
+
+    def set_page_behaviour(
+        self, *, toggle_on_plain_click: bool, clear_on_background_click: bool, reveal_mode: str, reorderable: bool,
+    ) -> None:
+        """How clicks, reveal and dragging behave on the page that holds the strip."""
+        self.set_toggle_selection_on_plain_click(toggle_on_plain_click)
+        self.set_clear_selection_on_background_click(clear_on_background_click)
+        self.set_center_reveal_mode(reveal_mode)
+        self.set_reorderable(reorderable)
+
+    def shown_observation_id(self) -> int | None:
+        """The observation whose images the strip shows, if it shows one."""
+        return self._shown_observation_id
+
+    def set_staged_items(
+        self, observation_id: int, items: Iterable[dict], *, render: bool = True, source: str = "live",
+    ) -> None:
+        """Unsaved images for ``observation_id``: shown first, with an orange border.
+
+        They stay with that observation and show whenever its images do. Each
+        ``source`` (Live's captures, Files and SD card's new files) keeps its
+        own list, so one never replaces the other's.
+        """
+        try:
+            key = int(observation_id)
+        except (TypeError, ValueError):
+            return
+        staged = []
+        for item in items or []:
+            entry = dict(item)
+            entry["staged"] = True
+            entry.setdefault("frame_border_color", STAGING_BORDER)
+            staged.append(entry)
+        by_source = self._staged_by_observation.setdefault(key, {})
+        if staged:
+            by_source[str(source)] = staged
+        else:
+            by_source.pop(str(source), None)
+        if not by_source:
+            self._staged_by_observation.pop(key, None)
+        if render and self._shown_observation_id == key:
+            shown = key
+            self.set_items(self.staged_items(key) + list(self._observation_base_items), reveal="preserve")
+            self._shown_observation_id = shown
+
+    def staged_items(self, observation_id: int, source: str | None = None) -> list[dict]:
+        try:
+            by_source = self._staged_by_observation.get(int(observation_id), {})
+        except (TypeError, ValueError):
+            return []
+        if source is not None:
+            return list(by_source.get(str(source), []))
+        return [item for items in by_source.values() for item in items]
+
     def clear(self) -> None:
+        self._shown_observation_id = None
+        self._observation_base_items = []
         self._render_generation += 1
         self._observation_load_generation += 1
         self._invalidate_center_requests()
@@ -936,11 +1044,6 @@ class ImageGalleryWidget(QGroupBox):
         frame._thumbnail_hovered = hovered
         self._update_thumbnail_selection_overlay(frame)
 
-    def set_fixed_thumbnail_size(self, enabled: bool) -> None:
-        self._fixed_thumbnail_size = bool(enabled)
-        self._thumb_size = self._target_thumb_size()
-        self._update_thumbnail_sizes()
-
     def set_center_reveal_mode(self, mode: str) -> None:
         text = str(mode or "").strip().lower()
         if text not in {"precise", "nudge"}:
@@ -1017,20 +1120,6 @@ class ImageGalleryWidget(QGroupBox):
         for frame in getattr(self, "_frames", []):
             frame.setAcceptDrops(self._reorderable)
 
-    def set_images(self, image_paths: Iterable[str]) -> None:
-        items = []
-        for idx, path in enumerate(image_paths):
-            if path:
-                items.append(
-                    {
-                        "id": None,
-                        "filepath": str(path),
-                        "has_measurements": False,
-                        "image_number": idx + 1,
-                    }
-                )
-        self.set_items(items)
-
     def set_items(
         self,
         items: Iterable[dict],
@@ -1042,6 +1131,7 @@ class ImageGalleryWidget(QGroupBox):
         # `preserve_scroll=True` remains for callers that haven't switched
         # to the reveal API; when both are unset the refresh doesn't touch
         # the scroll position.
+        self._shown_observation_id = None
         mode = reveal
         if mode is None:
             mode = "preserve" if preserve_scroll else "off"
@@ -1099,6 +1189,7 @@ class ImageGalleryWidget(QGroupBox):
                     "cloud_uploaded": item.get("cloud_uploaded"),
                     "cloud_tombstone_synced": item.get("cloud_tombstone_synced"),
                     "cloud_state": item.get("cloud_state"),
+                    "staged": bool(item.get("staged")),
                 }
             )
         self._consume_pending_selection_paths()
@@ -1138,6 +1229,8 @@ class ImageGalleryWidget(QGroupBox):
         *,
         reveal: str | None = None,
     ) -> None:
+        if not isValid(self):
+            return  # the loader finished after the gallery was destroyed (window closing)
         if generation != self._observation_load_generation:
             return
         try:
@@ -1258,7 +1351,9 @@ class ImageGalleryWidget(QGroupBox):
                     "publish_selected_default": image_type != "microscope",
                 }
             )
-        self.set_items(items, reveal=reveal)
+        self._observation_base_items = list(items)
+        self.set_items(self.staged_items(observation_id) + items, reveal=reveal)
+        self._shown_observation_id = int(observation_id)
 
     def _consume_pending_selection_paths(self) -> None:
         pending = getattr(self, "_pending_selection_paths", None)
@@ -1410,6 +1505,9 @@ class ImageGalleryWidget(QGroupBox):
         edit_action = None
         if self._show_edit:
             edit_action = menu.addAction(self.tr("Edit photo"))
+        settings_action = None
+        if self._show_change_settings:
+            settings_action = menu.addAction(self.tr("Change microscope settings…"))
         delete_action = None
         if self._show_delete:
             if len(selected_keys) > 1:
@@ -1442,6 +1540,9 @@ class ImageGalleryWidget(QGroupBox):
             image_path = getattr(frame, "image_path", "") or ""
             self.editRequested.emit(image_id, image_path)
             return
+        if settings_action is not None and chosen == settings_action:
+            self.changeSettingsRequested.emit(list(selected_keys))
+            return
         if delete_action is not None and chosen == delete_action:
             self.deleteImagesRequested.emit(list(selected_keys))
         elif move_action is not None and chosen == move_action:
@@ -1457,6 +1558,8 @@ class ImageGalleryWidget(QGroupBox):
         target_index = ordered_keys.index(target_key)
         if source_index == target_index and not insert_after:
             return False
+        if self._items[source_index].get("staged") or self._items[target_index].get("staged"):
+            return False  # unsaved images stay first, in their own order
 
         moved_item = self._items.pop(source_index)
         if source_index < target_index:
@@ -1500,14 +1603,14 @@ class ImageGalleryWidget(QGroupBox):
 
     @staticmethod
     def _short_objective_label(name: str | None, translate=None) -> str | None:
-        tr = translate if translate is not None else (lambda text: text)
+        tr = _badge_translator(translate)
         if not name:
             return None
         text = str(name).strip()
         if not text:
             return None
         if text.lower() == "custom":
-            return tr("Scale bar")
+            return tr(QT_TRANSLATE_NOOP("ImageGalleryWidget", "Scale bar"))
         match = re.search(r"(\d+(?:\.\d+)?)\s*[xX]", text)
         if match:
             return f"{match.group(1)}X"
@@ -1527,34 +1630,34 @@ class ImageGalleryWidget(QGroupBox):
         resize_to_optimal: bool = False,
         translate=None,
     ) -> list[str]:
-        tr = translate if translate is not None else (lambda text: text)
+        tr = _badge_translator(translate)
         image_type = (image_type or "field").strip().lower()
         badges: list[str] = []
 
         if image_type == "microscope":
             detail = None
             if custom_scale:
-                detail = tr("Scale bar")
+                detail = tr(QT_TRANSLATE_NOOP("ImageGalleryWidget", "Scale bar"))
             elif objective_name:
                 if str(objective_name).strip().lower() == "custom":
-                    detail = tr("Scale bar")
+                    detail = tr(QT_TRANSLATE_NOOP("ImageGalleryWidget", "Scale bar"))
                 else:
                     detail = ImageGalleryWidget._short_objective_label(objective_name, tr)
                     if not detail:
-                        detail = tr("Micro")
+                        detail = tr(QT_TRANSLATE_NOOP("ImageGalleryWidget", "Micro"))
             elif scale_microns_per_pixel:
-                detail = tr("Scale bar")
+                detail = tr(QT_TRANSLATE_NOOP("ImageGalleryWidget", "Scale bar"))
             else:
-                detail = tr("Micro")
+                detail = tr(QT_TRANSLATE_NOOP("ImageGalleryWidget", "Micro"))
             if contrast:
                 detail = f"{detail} {DatabaseTerms.translate_contrast(contrast)}"
             badges.append(detail)
             if resize_to_optimal:
                 badges.append("R")
             if needs_scale:
-                badges.append(tr("(!) needs scale"))
+                badges.append(tr(QT_TRANSLATE_NOOP("ImageGalleryWidget", "(!) needs scale")))
         else:
-            badges.append(tr("Field"))
+            badges.append(tr(QT_TRANSLATE_NOOP("ImageGalleryWidget", "Field")))
 
         return badges
 
@@ -1585,7 +1688,7 @@ class ImageGalleryWidget(QGroupBox):
 
     @staticmethod
     def build_raw_source_badges(lab_metadata, translate=None) -> list[str]:
-        tr = translate if translate is not None else (lambda text: text)
+        tr = _badge_translator(translate)
         if not isinstance(lab_metadata, dict):
             return []
         raw_processing = lab_metadata.get("raw_processing")
@@ -1595,7 +1698,7 @@ class ImageGalleryWidget(QGroupBox):
         if not isinstance(source, dict):
             return []
         if str(source.get("kind") or "").strip().lower() == "camera_raw":
-            return [tr("From raw")]
+            return [tr(QT_TRANSLATE_NOOP("ImageGalleryWidget", "From raw"))]
         return []
 
     def select_image(self, image_id: int | None, center: bool = True) -> None:
@@ -1608,15 +1711,53 @@ class ImageGalleryWidget(QGroupBox):
         previous_id = self._selected_id
         previous_frame = self._frame_for_key(previous_id) if previous_id is not None else None
         new_frame = self._frame_for_key(image_id) if image_id is not None else None
+        was_multi = len(self._selected_keys) > 1
         self._selected_id = image_id
         self._selected_keys = set(current_keys)
         self._last_clicked_index = self._index_for_key(image_id)
-        if previous_frame is not None and previous_id != image_id:
+        if was_multi:
+            self._apply_selection_styles()  # unmark every frame of the old selection
+        elif previous_frame is not None and previous_id != image_id:
             self._set_frame_selected_state(previous_frame, False)
         if new_frame is not None:
             self._set_frame_selected_state(new_frame, True)
         if image_id is not None and center:
             self._queue_center_on_key(image_id)
+
+    def last_publish_change(self) -> dict[int, bool]:
+        """What the last ``publishSelectionChanged`` changed: image id ->
+        checked, for the saved photos whose checkbox it actually flipped (a
+        click, a multi-selection click, a cloud-copy delete, or a host's
+        ``set_publish_selected_ids(..., emit_signal=True)``)."""
+        return dict(self._last_publish_change)
+
+    def _emit_publish_change(self, before: dict) -> None:
+        change: dict[int, bool] = {}
+        for item in self._items:
+            item_id = item.get("id")
+            if item_id is None or item.get("staged"):
+                continue
+            try:
+                image_id = int(item_id)
+            except (TypeError, ValueError):
+                continue
+            now = bool(self._resolve_publish_checked_state(item))
+            if before.get(image_id) != now:
+                change[image_id] = now
+        self._last_publish_change = change
+        self.publishSelectionChanged.emit(self.publish_selected_ids())
+
+    def _publish_state_snapshot(self) -> dict[int, bool]:
+        snapshot: dict[int, bool] = {}
+        for item in self._items:
+            item_id = item.get("id")
+            if item_id is None:
+                continue
+            try:
+                snapshot[int(item_id)] = bool(self._resolve_publish_checked_state(item))
+            except (TypeError, ValueError):
+                continue
+        return snapshot
 
     def publish_selected_ids(self) -> set[int]:
         selected: set[int] = set()
@@ -1635,12 +1776,17 @@ class ImageGalleryWidget(QGroupBox):
         if not self._show_publish_checkbox:
             return
         normalized_ids = {int(i) for i in (selected_ids or set())}
+        before = self._publish_state_snapshot() if emit_signal else {}
         self._suppress_publish_signal = True
         try:
             for item in self._items:
                 item_id = item.get("id")
                 key = item_id if item_id is not None else item.get("filepath")
-                is_checked = bool(item_id is not None and int(item_id) in normalized_ids)
+                try:
+                    numeric_id = int(item_id) if item_id is not None else None
+                except (TypeError, ValueError):
+                    numeric_id = None  # an unsaved capture ("pending:…"): not in the cloud
+                is_checked = bool(numeric_id is not None and numeric_id in normalized_ids)
                 self._publish_checked_by_key[key] = is_checked
                 item["publish_selected"] = is_checked
             for frame in self._frames:
@@ -1655,7 +1801,7 @@ class ImageGalleryWidget(QGroupBox):
         finally:
             self._suppress_publish_signal = False
         if emit_signal:
-            self.publishSelectionChanged.emit(self.publish_selected_ids())
+            self._emit_publish_change(before)
 
     def publish_checkbox_widgets(self) -> list[_PublishToggle]:
         widgets: list[_PublishToggle] = []
@@ -1827,36 +1973,6 @@ class ImageGalleryWidget(QGroupBox):
             "QFrame { border: 2px solid %s; border-radius: 5px; background: white; }"
         ) % border
 
-    @staticmethod
-    def _apply_frame_glow(frame: QFrame, selected: bool, hovered: bool = False) -> None:
-        raw_halo_color = getattr(frame, "raw_halo_color", None)
-        # Selection is now indicated by the outer square backdrop — the old
-        # drop-shadow was too soft and combined weirdly with the backdrop.
-        # Keep the shadow only for RAW halo + hover states.
-        if selected and raw_halo_color:
-            # Retain the RAW halo when a RAW thumbnail is selected.
-            pass  # falls through into the raw_halo_color branch below
-        if raw_halo_color:
-            effect = QGraphicsDropShadowEffect(frame)
-            effect.setBlurRadius(22)
-            effect.setOffset(0, 0)
-            effect_color = QColor(raw_halo_color)
-            if not effect_color.isValid():
-                effect_color = QColor(231, 76, 60, 190)
-            effect.setColor(effect_color)
-            frame.setGraphicsEffect(effect)
-        elif hovered:
-            from PySide6.QtWidgets import QApplication
-            is_dark = QApplication.instance().palette().window().color().lightness() < 128
-            hover_color = QColor(255, 255, 255, 220) if is_dark else QColor(80, 80, 80, 160)
-            effect = QGraphicsDropShadowEffect(frame)
-            effect.setBlurRadius(26)
-            effect.setOffset(0, 0)
-            effect.setColor(hover_color)
-            frame.setGraphicsEffect(effect)
-        else:
-            frame.setGraphicsEffect(None)
-
     def _create_thumbnail_widget(self, item: dict) -> QFrame:
         frame = QFrame()
         frame.setStyleSheet(self._frame_style(border_color=item.get("frame_border_color")))
@@ -2014,6 +2130,14 @@ class ImageGalleryWidget(QGroupBox):
             microscope_label = QLabel(str(microscope_tag_text))
             microscope_color = QColor(microscope_tag_color) if microscope_tag_color is not None else QColor("#3498db")
             text_color = _tag_text_color(microscope_color)
+            microscope_outline = objective_ring_outline(microscope_color)
+            microscope_border = f"1px solid {microscope_outline}" if microscope_outline else "none"
+            microscope_pad_v, microscope_pad_h = overlay_label_pad_v, overlay_label_pad_h
+            if microscope_outline:
+                # The 1px outline takes its room from the padding, so an outlined
+                # badge keeps the size (and width cap) of every other badge.
+                microscope_pad_v = max(0, microscope_pad_v - 1)
+                microscope_pad_h = max(0, microscope_pad_h - 1)
             if microscope_color.isValid():
                 microscope_color.setAlpha(220)
                 background = (
@@ -2024,7 +2148,8 @@ class ImageGalleryWidget(QGroupBox):
             microscope_label.setStyleSheet(
                 f"color: {text_color}; background-color: {background};"
                 f"font-size: {overlay_label_font_px}{'px' if self._compact_overlay else 'pt'}; font-weight: bold;"
-                f" padding: {overlay_label_pad_v}px {overlay_label_pad_h}px; border-radius: 3px; border: none;"
+                f" padding: {microscope_pad_v}px {microscope_pad_h}px; border-radius: 3px;"
+                f" border: {microscope_border};"
             )
             if self._compact_overlay:
                 microscope_label.setMaximumWidth(max(30, self._thumb_size - overlay_btn_size - 28))
@@ -2159,7 +2284,7 @@ class ImageGalleryWidget(QGroupBox):
         image_layout.addWidget(overlay, 0, 0, alignment=Qt.AlignTop | Qt.AlignRight)
 
         publish_checkbox = None
-        if self._show_publish_checkbox:
+        if self._show_publish_checkbox and not item.get("staged"):  # unsaved: nothing to keep in the cloud yet
             publish_checkbox = _PublishToggle()
             key = item.get("id") if item.get("id") is not None else item.get("filepath")
             checked = bool(self._resolve_publish_checked_state(item))
@@ -2332,6 +2457,7 @@ class ImageGalleryWidget(QGroupBox):
             return 0
         updated = 0
         publish_changed = False
+        before = self._publish_state_snapshot()
         for item in self._items:
             item_id = item.get("id")
             try:
@@ -2350,7 +2476,7 @@ class ImageGalleryWidget(QGroupBox):
         if updated:
             self._render()
         if publish_changed:
-            self.publishSelectionChanged.emit(self.publish_selected_ids())
+            self._emit_publish_change(before)
         return updated
 
     def refresh_cloud_states(self, image_ids=None) -> int:
@@ -2649,6 +2775,7 @@ class ImageGalleryWidget(QGroupBox):
         keys_to_update: list[str | int] = [key]
         if key in self._selected_keys and len(self._selected_keys) > 1:
             keys_to_update = [k for k in self._selected_keys]
+        before = self._publish_state_snapshot()
         self._suppress_publish_signal = True
         try:
             for update_key in keys_to_update:
@@ -2661,7 +2788,7 @@ class ImageGalleryWidget(QGroupBox):
                     checkbox.blockSignals(False)
         finally:
             self._suppress_publish_signal = False
-        self.publishSelectionChanged.emit(self.publish_selected_ids())
+        self._emit_publish_change(before)
 
     def _target_thumb_size(self) -> int:
         if self._fixed_thumbnail_size:
@@ -2819,10 +2946,3 @@ class ImageGalleryWidget(QGroupBox):
         painter.end()
         return annotated
 
-    def _has_spore_measurements(self, image_id: int) -> bool:
-        measurements = MeasurementDB.get_measurements_for_image(image_id)
-        for measurement in measurements:
-            measurement_type = (measurement.get("measurement_type") or "").lower()
-            if measurement_type in ("", "manual", "spore"):
-                return True
-        return False

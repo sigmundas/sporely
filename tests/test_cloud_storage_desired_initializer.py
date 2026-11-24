@@ -8,11 +8,11 @@ Pins the invariants of
     into cloud storage state.
   * DELETE_PENDING/DELETED images land in the excluded set but are not
     re-tombstoned by the initializer (idempotent).
-  * Local-only microscope images with multiple magnification groups get a
-    sparse default: one desired per group, the rest excluded.
-  * A microscope group with an already-uploaded image keeps that image as the
-    desired keeper and defaults the cloud-null siblings to excluded (the
-    2026-08-19 fix — the old group-freeze rule left siblings looking checked).
+  * Local-only microscope images all start excluded (unchecked), whatever
+    their magnification: no image is picked per objective (2026-11-15).
+  * An already-uploaded microscope image stays desired and its cloud-null
+    siblings default to excluded (the 2026-08-19 fix — the old group-freeze
+    rule left siblings looking checked).
   * The per-image intent ledger prevents a second initialization from
     clobbering user edits.
 """
@@ -220,12 +220,12 @@ def test_initializer_marks_delete_pending_excluded_without_extra_tombstone(
 
 
 # ---------------------------------------------------------------------------
-# 3. Local-only microscope with 3 magnification groups: one desired per group,
-#    the rest excluded.
+# 3. Local-only microscope with 3 magnification groups: every image starts
+#    excluded (no per-objective pick).
 # ---------------------------------------------------------------------------
 
 
-def test_initializer_sparse_default_for_local_microscope_groups(
+def test_initializer_leaves_every_local_microscope_image_unchecked(
     monkeypatch, tmp_path
 ):
     db_path = _init_db(tmp_path)
@@ -257,17 +257,17 @@ def test_initializer_sparse_default_for_local_microscope_groups(
     cloud_sync._initialize_cloud_image_storage_desired_state_for_observation(702)
 
     excluded = cloud_sync._cloud_image_storage_excluded_image_ids(702)
-    # Expect one desired per group: 21 (10x), 23 (40x), 26 (100x).
-    # The rest are excluded: 22, 24, 25.
-    assert excluded == {22, 24, 25}
-    desired = {img_id for img_id, _ in groups} - excluded
-    assert desired == {21, 23, 26}
+    # No image is picked per magnification group (owner 2026-11-15): every
+    # local microscope image starts unchecked, whatever its objective.
+    assert excluded == {21, 22, 23, 24, 25, 26}
+    assert cloud_sync._cloud_image_storage_intent_initialized_ids(702) == {
+        21, 22, 23, 24, 25, 26,
+    }
 
 
 # ---------------------------------------------------------------------------
-# 4. Microscope group that already contains a cloud-identified image keeps
-#    that image as the desired keeper and defaults the cloud-null siblings to
-#    excluded. (Replaces the old group-freeze rule that left siblings looking
+# 4. A cloud-identified microscope image stays desired and the cloud-null
+#    images (in its group or another) default to excluded. (Replaces the old group-freeze rule that left siblings looking
 #    explicitly checked — mechanism A of the 2026-08-19 mass upload.)
 # ---------------------------------------------------------------------------
 
@@ -309,9 +309,8 @@ def test_initializer_keeps_uploaded_keeper_and_excludes_cloud_null_siblings(
     assert 31 not in excluded
     assert 32 in excluded
     assert 33 in excluded
-    # Group 40x has no cloud-identified image — sparse default applies:
-    # 34 stays desired (first), 35 is excluded.
-    assert excluded == {32, 33, 35}
+    # Group 40x has no cloud-identified image: nothing is picked for it.
+    assert excluded == {32, 33, 34, 35}
     # Every image now has a recorded storage-intent decision.
     assert cloud_sync._cloud_image_storage_intent_initialized_ids(703) == {
         31, 32, 33, 34, 35,
@@ -328,7 +327,7 @@ def test_initializer_ledger_makes_second_call_a_noop(monkeypatch, tmp_path):
     db_path = _init_db(tmp_path)
     _patch(monkeypatch, db_path)
     _seed_obs(db_path, 704)
-    # Group with two local microscope images so the sparse default is visible.
+    # Two local microscope images, both unchecked by default.
     for image_id in (41, 42):
         p = tmp_path / f"m-{image_id}.jpg"
         p.write_bytes(b"x")
@@ -343,10 +342,10 @@ def test_initializer_ledger_makes_second_call_a_noop(monkeypatch, tmp_path):
 
     cloud_sync._initialize_cloud_image_storage_desired_state_for_observation(704)
     first_pass = cloud_sync._cloud_image_storage_excluded_image_ids(704)
-    # First pass: image 41 desired, 42 excluded.
-    assert first_pass == {42}
+    # First pass: both local microscope images start unchecked.
+    assert first_pass == {41, 42}
 
-    # Now the user re-selects 42 and de-selects 41.
+    # Now the user checks 42 (41 stays unchecked).
     cloud_sync._set_cloud_image_storage_excluded_image_ids(704, {41})
 
     # A second initializer call must be a no-op — do not clobber the user

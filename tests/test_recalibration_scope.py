@@ -473,11 +473,6 @@ def _drive_prompt(monkeypatch, scene, choose):
     the button is clicked, so its accept/reject wiring is exercised.
     """
     info_messages = []
-    monkeypatch.setattr(
-        calibration_dialog.QMessageBox,
-        "information",
-        staticmethod(lambda *args, **kwargs: info_messages.append(args)),
-    )
 
     def _exec(dialog):
         dialog._today = TODAY
@@ -490,6 +485,8 @@ def _drive_prompt(monkeypatch, scene, choose):
     # The method reads only the objective key from the calibration dialog.
     owner = QWidget()
     owner.current_objective_key = "40x"
+    # The result is reported as a notice in the dialog's bottom bar.
+    owner._show_notice = lambda text, tone="error", **kwargs: info_messages.append((text, tone))
     CalibrationDialog._prompt_recalculate_measurements(
         owner, scene.old_cal, OLD_SCALE, scene.new_cal, NEW_SCALE
     )

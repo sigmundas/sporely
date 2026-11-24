@@ -110,13 +110,11 @@ def _no_modal_warnings(monkeypatch):
 @pytest.fixture()
 def editor(qapp, libs):
     from ui.reference_entry_editor import ReferenceEntryEditor
-    from ui.reference_preview_pane import ReferencePreviewPane
 
     parent = QWidget()
-    pane = ReferencePreviewPane(parent)
     widget = ReferenceEntryEditor(
         parent, "Hebeloma", "crustuliniforme", observation_id=42,
-        sporely_taxon_id=7, preview_pane=pane,
+        sporely_taxon_id=7,
     )
     try:
         yield widget
@@ -608,108 +606,6 @@ def test_swapping_length_and_width_moves_the_tags_with_the_numbers(editor):
     text = editor.measurement_tags_label.text()
     assert "W extremes: reported" in text
     assert "L extremes: reported" not in text
-
-
-# --- Entry editor: preview pane ----------------------------------------------
-
-
-def test_the_preview_pane_shows_the_tags_and_the_reported_median(editor):
-    _parse(editor, HEBELOMA_TABLE)
-    editor.sync_preview()
-
-    pane_text = editor._preview_pane.reported_statistics_label.text()
-    assert "L inner 5–95%" in pane_text
-    assert "L median 9.2-11.7" in pane_text
-    assert editor._preview_pane.reported_statistics_label.accessibleDescription()
-
-
-def test_a_later_summary_without_tags_does_not_inherit_the_previous_one(editor):
-    """The preview pane is shared between the picker's tabs.
-
-    Showing a tagged literature entry and then a community dataset must not
-    leave the first one's meaning tags describing the second one's numbers.
-    """
-    _parse(editor, HEBELOMA_TABLE)
-    editor.sync_preview()
-    pane = editor._preview_pane
-    assert pane.reported_statistics_label.text()
-
-    pane.set_summary("Community dataset", "", [("Length", "8", "9", "10")], "note")
-
-    assert pane.reported_statistics_label.text() == ""
-    assert pane.reported_statistics_label.isVisible() is False
-
-
-def test_the_preview_shows_an_interval_mean_as_an_interval(editor):
-    """Replaces the old summary-table assertion for the same guarantee.
-
-    The table this stage removed printed the mean in a single cell, so the
-    only way to keep a reported mean *interval* honest there was to print
-    both bounds as text. The comparison model carries the interval as an
-    interval, and that -- not its rendering -- is what must not collapse to
-    a midpoint nobody reported.
-    """
-    _parse(editor, HEBELOMA_TABLE)
-    editor.sync_preview()
-
-    view = editor._preview_pane.comparison_view.view()
-    centre = view.metric("length").source.centre("mean")
-    assert centre.value is None
-    assert centre.interval == pytest.approx((9.2, 11.7))
-
-
-def test_reopening_a_stored_enhanced_set_shows_what_it_reports(editor, libs):
-    work = ReferenceWorkRepository.create(
-        ReferenceWork(id="", type="book", title="Hebeloma", short_label="H 2004", year=2004)
-    )
-    treatment = TaxonTreatmentRepository.create(
-        TaxonTreatment(id="", reference_work_id=work.id, name_as_published="Hebeloma sp.")
-    )
-    stored = MeasurementSetRepository.create(
-        MeasurementSet(
-            id="",
-            taxon_treatment_id=treatment.id,
-            character="spore_size",
-            data_kind="range",
-            length_core_min=8.4,
-            length_core_max=13.0,
-            width_core_min=5.1,
-            width_core_max=7.2,
-            measurement_details_json=json.dumps(
-                {
-                    "schema_version": 1,
-                    "metrics": {
-                        "length": {
-                            "core_range": {
-                                "kind": "percentile_interval",
-                                "percentile_bounds": [5, 95],
-                            },
-                            "mean_interval": {
-                                "lower": 9.2,
-                                "upper": 11.7,
-                                "kind": "reported_range",
-                            },
-                            "sd": {"value": 0.6},
-                        }
-                    },
-                }
-            ),
-        )
-    )
-    editor.use_existing_radio.setEnabled(True)
-    editor.use_existing_radio.setChecked(True)
-    editor._existing_sets_cache = [stored]
-    editor._selected_measurement_set_id = stored.id
-    editor.sync_preview()
-
-    pane = editor._preview_pane
-    assert "L inner 5–95%" in pane.reported_statistics_label.text()
-    assert "L S.D. 0.6" in pane.reported_statistics_label.text()
-    length = pane.comparison_view.view().metric("length").source
-    assert length.centre("mean").interval == pytest.approx((9.2, 11.7))
-    # The stored core pair is an explicit percentile interval and stays one.
-    assert length.core.meaning == "percentile_interval"
-    assert length.core.percentile_bounds == pytest.approx((5.0, 95.0))
 
 
 # --- Library manager form: inspect-only presentation --------------------------

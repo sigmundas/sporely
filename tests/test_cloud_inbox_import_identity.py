@@ -144,11 +144,14 @@ def test_a_stale_inbox_row_already_on_this_desktop_is_never_imported_twice(two_d
     stub = _TabStub()
     opened = []
     stub._cloud_image_import_results = lambda row_data: opened.append(row_data) or []
+    stub.cloud_row_on_this_desktop = lambda row_data: ObservationsTab.cloud_row_on_this_desktop(stub, row_data)
+    stub.window = lambda: type("Host", (), {"open_cloud_observation": lambda self, row: opened.append(row)})()
+    row = {"cloud_id": "cobs", "raw": {"id": "cobs", "sync_key": KEY_OBS}}
 
-    ObservationsTab._open_cloud_observation_editor(
-        stub, {"cloud_id": "cobs", "raw": {"id": "cobs", "sync_key": KEY_OBS}},
-    )
-
-    assert opened == [], "the editor never opens for a held row"
+    ObservationsTab._open_cloud_observation_editor(stub, row)
+    assert opened == [], "Rediger never shows a held row"
     assert stub.refreshed == 1 and stub.status == ["Sporely Cloud already up to date."]
+    # Nor does its import (stage 9g4c: the row went stale while Rediger showed it).
+    assert ObservationsTab.import_cloud_observation(stub, row) is None
+    assert opened == [] and stub.refreshed == 2
     assert len(ObservationDB.get_all_observations()) == 1

@@ -1,58 +1,28 @@
 """Dialog for reviewing and importing community spore data."""
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Any, Callable
 
-from PySide6.QtCore import QCoreApplication, QEvent, QModelIndex, QStringListModel, QThread, Qt, QTimer, Signal
-from PySide6.QtGui import QStandardItem, QStandardItemModel
+from PySide6.QtCore import QCoreApplication, QEvent, QStringListModel, QThread, Qt, QTimer, Signal
+from PySide6.QtGui import QStandardItemModel
 from PySide6.QtWidgets import (
-    QAbstractItemView,
     QButtonGroup,
     QCompleter,
-    QDialog,
-    QFormLayout,
     QFrame,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
-    QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
-    QPlainTextEdit,
-    QPushButton,
     QRadioButton,
-    QSizePolicy,
-    QSplitter,
-    QTabWidget,
-    QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from database.models import SettingsDB, SpeciesDataAvailability
-from database.taxon_lookup import TAXON_COMPLETER_LIMIT, TaxonChoice, TaxonLookupService
-from database.vernacular_db import VernacularDB
-from references.reference_comparison import ComparisonView, comparison_view
-from references.reference_display import (
-    display_from_community_summary,
-    display_from_points,
-)
 from utils.cloud_sync import CloudSyncError, SporelyCloudClient
-from utils.vernacular_utils import (
-    common_name_display_label,
-    normalize_vernacular_language,
-    resolve_available_vernacular_language,
-    resolve_vernacular_db_path,
-)
 
-from .delegates import SpeciesItemDelegate
-from .dialog_helpers import make_github_help_button
-from .reference_preview_pane import ReferencePreviewPane
-from .taxon_input_controller import TaxonInputController
-from .two_line_row import TwoLineRow
+from .two_line_row import CheckableTwoLineRow, TwoLineRow
 
 # Quiet period after the last keystroke in the Community tab's search field
 # before a search is issued. One search is a QThread plus three network RPCs,
@@ -319,929 +289,15 @@ def community_points_payload(detail: dict[str, Any], tr: Callable[[str], str]) -
     }
 
 
-def community_detail_preview_fields(detail: dict[str, Any], tr: Callable[[str], str]) -> dict[str, Any]:
-    """Compute every field a review pane needs for one community dataset detail.
-
-    Shared by :class:`CloudReferenceDialog` and the Community tab's
-    ``CommunityResultsPane`` so both apply the identical computation to
-    whichever :class:`~ui.reference_preview_pane.ReferencePreviewPane`
-    instance they own, through that pane's public ``set_*`` API.
-    """
-    kind = str(detail.get("_kind") or "").strip()
-    genus = str(detail.get("genus") or "").strip()
-    species = str(detail.get("species") or "").strip()
-    contributor = str(detail.get("contributor_label") or "—")
-    observed_on = str(detail.get("observed_on") or "").strip()
-    measurement_count = int(detail.get("measurement_count") or 0)
-
-    title = f"{genus} {species}".strip() or tr("Community dataset")
-    if kind == "reference":
-        title += f" ({tr('Reference')})"
-    else:
-        title += f" ({tr('Observation dataset')})"
-    meta = tr("Contributor: {contributor}  •  Date: {date}  •  n={count}").format(
-        contributor=contributor,
-        date=observed_on or "—",
-        count=measurement_count,
-    )
-
-    rows: list[tuple[str, str, str, str]] = []
-    for key in ("length", "width", "q"):
-        median_value = detail.get(f"{key}_p50")
-        if median_value is None:
-            median_value = detail.get(f"{key}_avg")
-        rows.append(
-            (
-                tr(key.capitalize()),
-                format_stat_value(detail.get(f"{key}_min")),
-                format_stat_value(median_value),
-                format_stat_value(detail.get(f"{key}_max")),
-            )
-        )
-
-    qc_flags = detail.get("qc_flags") or {}
-    qc_lines = []
-    if isinstance(qc_flags, dict):
-        for key, label in (
-            ("has_mount", tr("Mount recorded")),
-            ("has_stain", tr("Stain recorded")),
-            ("has_sample_type", tr("Sample type recorded")),
-            ("has_contrast", tr("Contrast recorded")),
-            ("has_objective", tr("Objective recorded")),
-            ("has_scale", tr("Scale recorded")),
-            ("has_point_geometry", tr("Measurement points recorded")),
-        ):
-            if qc_flags.get(key):
-                qc_lines.append(label)
-    note = tr("QC signals: {signals}").format(
-        signals=", ".join(qc_lines) if qc_lines else tr("No extra QC metadata")
-    )
-
-    measurements = detail.get("measurements_json") or []
-    raw_lines = []
-    for row in measurements[:200]:
-        if not isinstance(row, dict):
-            continue
-        raw_lines.append(
-            f"L={format_stat_value(row.get('length_um'))}  "
-            f"W={format_stat_value(row.get('width_um'))}  "
-            f"Q={format_stat_value((float(row.get('length_um')) / float(row.get('width_um'))) if row.get('length_um') is not None and row.get('width_um') not in (None, 0) else None)}"
-        )
-    raw_text = "\n".join(raw_lines) if raw_lines else tr("No raw point data returned.")
-
-    def _join_list(value: Any) -> str:
-        if isinstance(value, list):
-            cleaned = [str(item).strip() for item in value if str(item).strip()]
-            return ", ".join(cleaned) if cleaned else "—"
-        text = str(value or "").strip()
-        return text or "—"
-
-    method_mapping = {
-        "mount": _join_list(detail.get("mount_media") or detail.get("mount_medium")),
-        "stain": _join_list(detail.get("stains") or detail.get("stain")),
-        "sample_type": _join_list(detail.get("sample_types") or detail.get("sample_type")),
-        "contrast": _join_list(detail.get("contrasts") or detail.get("contrast")),
-        "objective": _join_list(detail.get("objectives") or detail.get("objective_name")),
-    }
-    scale_min = detail.get("scale_min")
-    scale_max = detail.get("scale_max")
-    if scale_min is not None or scale_max is not None:
-        if scale_min == scale_max or scale_max is None:
-            scale_text = f"{format_stat_value(scale_min)} µm/px"
-        else:
-            scale_text = f"{format_stat_value(scale_min)}-{format_stat_value(scale_max)} µm/px"
-    else:
-        scale_text = format_stat_value(detail.get("scale_microns_per_pixel"))
-        if scale_text != "—":
-            scale_text += " µm/px"
-    method_mapping["scale"] = scale_text
-
-    calibration_lines = []
-    if scale_text != "—":
-        calibration_lines.append(f"{tr('Scale')}: {scale_text}")
-    if kind == "observation":
-        calibration_lines.append(
-            tr("Calibration details come from image/objective metadata in the synced observation dataset.")
-        )
-    else:
-        calibration_lines.append(tr("Reference rows currently expose summary values only."))
-    calibration_text = "\n".join(calibration_lines)
-
-    provenance_lines = [
-        f"{tr('Kind')}: {kind or '—'}",
-        f"{tr('Contributor')}: {contributor}",
-        f"{tr('Date')}: {observed_on or '—'}",
-    ]
-    if kind == "reference":
-        provenance_lines.append(f"{tr('Source')}: {detail.get('source') or '—'}")
-        provenance_lines.append(tr("Imported reference values are currently treated as shared reference material."))
-    else:
-        provenance_lines.append(f"{tr('Observation id')}: {detail.get('observation_id') or '—'}")
-        provenance_lines.append(tr("Location and private observation content are intentionally excluded from this review flow."))
-    provenance_text = "\n".join(provenance_lines)
-
-    method_recorded = any(
-        method_mapping[key] != "—"
-        for key in ("mount", "stain", "sample_type", "contrast", "objective")
-    )
-    not_reported = tr("not reported")
-    provenance_summary = tr(
-        "Reported by: {contributor} ({date}) · sample size: {size} · method recorded: {method}"
-    ).format(
-        contributor=contributor,
-        date=observed_on or not_reported,
-        size=measurement_count if measurement_count else not_reported,
-        method=tr("yes") if method_recorded else not_reported,
-    )
-
-    return {
-        "title": title,
-        "meta": meta,
-        "rows": rows,
-        "note": note,
-        "raw_text": raw_text,
-        "method_mapping": method_mapping,
-        "calibration_text": calibration_text,
-        "provenance_text": provenance_text,
-        "provenance_summary": provenance_summary,
-        "points_count": len(measurements) if isinstance(measurements, list) else 0,
-    }
-
-
-class CloudReferenceDialog(QDialog):
-    """Search, review, and import community spore data."""
-
-    _ROLE_TAXON_CHOICE = Qt.UserRole + 4
-
-    def __init__(
-        self,
-        parent=None,
-        *,
-        genus: str = "",
-        species: str = "",
-        vernacular: str = "",
-    ) -> None:
-        super().__init__(parent)
-        self.setWindowTitle(self.tr("Search Community Spore Data"))
-        self.setModal(True)
-        self.setMinimumSize(980, 640)
-        self.resize(1080, 700)
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
-
-        self._vernacular_db = None
-        self._taxon_lookup = None
-        self._species_availability = getattr(parent, "species_availability", None)
-        if not isinstance(self._species_availability, SpeciesDataAvailability):
-            self._species_availability = SpeciesDataAvailability()
-        self._search_worker: _CloudSearchWorker | None = None
-        self._detail_worker: _CloudDetailWorker | None = None
-        # Strong Python refs to workers that have finished emitting but whose
-        # QThread.finished hasn't fired yet (i.e. run() hasn't returned).
-        # Prevents PySide6 GC from collecting the wrapper while the OS thread is live.
-        self._worker_refs: list[QThread] = []
-        self._results: list[dict[str, Any]] = []
-        self._community_summary: dict[str, Any] = {}
-        self._selected_result: dict[str, Any] | None = None
-        self._selected_detail: dict[str, Any] | None = None
-        self._accepted_action: str | None = None
-        self._accepted_data: dict[str, Any] | None = None
-
-        root = QVBoxLayout(self)
-        root.setContentsMargins(16, 16, 16, 16)
-        root.setSpacing(12)
-
-        intro = QLabel(
-            self.tr(
-                "Search public and friend-visible community spore datasets, review measurement quality, "
-                "and import only after checking the method and calibration context."
-            )
-        )
-        intro.setWordWrap(True)
-        root.addWidget(intro)
-
-        search_row = QHBoxLayout()
-        search_row.setSpacing(8)
-
-        form = QFormLayout()
-        form.setContentsMargins(0, 0, 0, 0)
-        form.setSpacing(8)
-        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-
-        self.vernacular_label = QLabel(self._vernacular_label())
-        self.vernacular_input = QLineEdit()
-        self.vernacular_input.setPlaceholderText(self._vernacular_placeholder())
-        self.genus_input = QLineEdit(genus or "")
-        self.genus_input.setPlaceholderText(self.tr("e.g., Flammulina"))
-        self.species_input = QLineEdit(species or "")
-        self.species_input.setPlaceholderText(self.tr("e.g., velutipes"))
-
-        form.addRow(self.vernacular_label, self.vernacular_input)
-        form.addRow(self.tr("Genus:"), self.genus_input)
-        form.addRow(self.tr("Species:"), self.species_input)
-        search_row.addLayout(form, 1)
-
-        actions_col = QVBoxLayout()
-        actions_col.setContentsMargins(0, 0, 0, 0)
-        actions_col.setSpacing(8)
-        self.search_button = QPushButton(self.tr("Search"))
-        self.search_button.clicked.connect(self._on_search_clicked)
-        self.search_button.setDefault(True)
-        actions_col.addWidget(self.search_button)
-        actions_col.addWidget(
-            make_github_help_button(self, "community-spore-data-plan.md"),
-            0,
-            Qt.AlignRight | Qt.AlignTop,
-        )
-        actions_col.addStretch(1)
-        search_row.addLayout(actions_col)
-        root.addLayout(search_row)
-
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.setChildrenCollapsible(False)
-        root.addWidget(splitter, 1)
-
-        left_panel = QWidget()
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(8)
-
-        left_title = QLabel(self.tr("Results"))
-        left_title.setStyleSheet("font-weight: 600;")
-        left_layout.addWidget(left_title)
-
-        self.results_table = QTableWidget(0, 4)
-        self.results_table.setFocusPolicy(Qt.NoFocus)
-        self.results_table.setHorizontalHeaderLabels(
-            [self.tr("Source"), self.tr("n"), self.tr("Q / L-W"), self.tr("Contributor")]
-        )
-        self.results_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.results_table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.results_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.results_table.setAlternatingRowColors(True)
-        self.results_table.verticalHeader().setVisible(False)
-        header = self.results_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        self.results_table.itemSelectionChanged.connect(self._on_result_selection_changed)
-        left_layout.addWidget(self.results_table, 1)
-
-        self.search_status_label = QLabel("")
-        self.search_status_label.setWordWrap(True)
-        self.search_status_label.setStyleSheet("color: #7f8c8d;")
-        left_layout.addWidget(self.search_status_label)
-        splitter.addWidget(left_panel)
-
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(8)
-
-        preview_title = QLabel(self.tr("Review"))
-        preview_title.setStyleSheet("font-weight: 600;")
-        right_layout.addWidget(preview_title)
-
-        self._preview_pane = ReferencePreviewPane()
-        right_layout.addWidget(self._preview_pane, 1)
-
-        splitter.addWidget(right_panel)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 4)
-
-        button_row = QHBoxLayout()
-        button_row.setSpacing(8)
-        self.footer_hint = QLabel("")
-        self.footer_hint.setWordWrap(True)
-        self.footer_hint.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.footer_hint.setStyleSheet("color: #7f8c8d;")
-        button_row.addWidget(self.footer_hint, 1)
-
-        self.import_summary_button = QPushButton(self.tr("Import summary as reference"))
-        self.import_summary_button.setEnabled(False)
-        self.import_summary_button.clicked.connect(self._on_import_summary_clicked)
-        button_row.addWidget(self.import_summary_button)
-
-        self.plot_points_button = QPushButton(self.tr("Use raw points for plot"))
-        self.plot_points_button.setEnabled(False)
-        self.plot_points_button.clicked.connect(self._on_plot_points_clicked)
-        button_row.addWidget(self.plot_points_button)
-
-        close_button = QPushButton(self.tr("Close"))
-        close_button.clicked.connect(self.reject)
-        button_row.addWidget(close_button)
-        root.addLayout(button_row)
-
-        self._init_completers()
-        if vernacular and not self.vernacular_input.text().strip():
-            self.vernacular_input.setText(vernacular)
-        self._maybe_set_vernacular_from_taxon()
-        self._reset_preview()
-
-    def _track_worker(self, worker: QThread) -> None:
-        """Keep a strong Python ref to *worker* until after QThread.finished fires."""
-        self._worker_refs.append(worker)
-        worker.finished.connect(lambda: self._release_worker(worker))
-
-    def _release_worker(self, worker: QThread) -> None:
-        try:
-            self._worker_refs.remove(worker)
-        except ValueError:
-            pass
-        worker.deleteLater()
-
-    # ------------------------------------------------------------------
-    # Delegating properties — keep existing attribute names working
-    # ------------------------------------------------------------------
-
-    @property
-    def review_tabs(self) -> QTabWidget:
-        return self._preview_pane.review_tabs
-
-    @property
-    def summary_title_label(self) -> QLabel:
-        return self._preview_pane.summary_title_label
-
-    @property
-    def summary_meta_label(self) -> QLabel:
-        return self._preview_pane.summary_meta_label
-
-    @property
-    def summary_table(self) -> QTableWidget:
-        return self._preview_pane.summary_table
-
-    @property
-    def summary_note_label(self) -> QLabel:
-        return self._preview_pane.summary_note_label
-
-    @property
-    def raw_spores_text(self) -> QPlainTextEdit:
-        return self._preview_pane.raw_spores_text
-
-    @property
-    def _method_labels(self) -> dict[str, QLabel]:
-        return self._preview_pane._method_labels
-
-    @property
-    def calibration_text(self) -> QPlainTextEdit:
-        return self._preview_pane.calibration_text
-
-    @property
-    def provenance_text(self) -> QPlainTextEdit:
-        return self._preview_pane.provenance_text
-
-    def closeEvent(self, event) -> None:
-        if self._search_worker is not None:
-            self._search_worker.wait()
-            self._search_worker = None
-        if self._detail_worker is not None:
-            self._detail_worker.wait()
-            self._detail_worker = None
-        super().closeEvent(event)
-
-    def accepted_action(self) -> str | None:
-        return self._accepted_action
-
-    def accepted_data(self) -> dict[str, Any] | None:
-        return dict(self._accepted_data or {}) if isinstance(self._accepted_data, dict) else None
-
-    def _vernacular_label(self) -> str:
-        stored = SettingsDB.get_setting("vernacular_language", "no")
-        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
-        base = self.tr("Common name")
-        return f"{common_name_display_label(lang, base)}:"
-
-    def _vernacular_placeholder(self) -> str:
-        stored = SettingsDB.get_setting("vernacular_language", "no")
-        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
-        examples = {
-            "no": "Kantarell",
-            "de": "Pfifferling",
-            "fr": "Girolle",
-            "es": "Rebozuelo",
-            "da": "Kantarel",
-            "sv": "Kantarell",
-            "fi": "Kantarelli",
-            "pl": "Kurka",
-            "pt": "Cantarelo",
-            "it": "Gallinaccio",
-        }
-        return f"e.g., {examples.get(lang, 'Chanterelle')}"
-
-    def _clean_species_text(self, text: str | None) -> str:
-        return str(text or "").strip()
-
-    def _clean_genus_text(self, text: str | None) -> str:
-        token = str(text or "").strip().split()
-        return token[0].strip() if token else ""
-
-    def _set_species_placeholder_from_suggestions(self, suggestions: list[str]) -> None:
-        cleaned = [str(name).strip() for name in (suggestions or []) if str(name).strip()]
-        if not cleaned:
-            self.species_input.setPlaceholderText(self.tr("e.g., velutipes"))
-            return
-        self.species_input.setPlaceholderText(f"e.g., {'; '.join(cleaned[:4])}")
-
-    def _set_vernacular_placeholder_from_suggestions(self, suggestions: list[str]) -> None:
-        cleaned = [str(name).strip() for name in (suggestions or []) if str(name).strip()]
-        if not cleaned:
-            self.vernacular_input.setPlaceholderText(self._vernacular_placeholder())
-            return
-        self.vernacular_input.setPlaceholderText(f"e.g., {'; '.join(cleaned[:4])}")
-
-    def _format_species_choice_display(self, choice: TaxonChoice) -> str:
-        return self._clean_species_text(choice.species)
-
-    def _format_common_name_choice_display(self, choice: TaxonChoice) -> str:
-        return str(choice.common_name or "").strip()
-
-    def _choice_from_index(self, index: QModelIndex) -> TaxonChoice | None:
-        if not index.isValid():
-            return None
-        choice = index.data(self._ROLE_TAXON_CHOICE)
-        if isinstance(choice, TaxonChoice):
-            return choice
-        genus = self._clean_genus_text(index.data(Qt.UserRole + 1))
-        species = self._clean_species_text(index.data(Qt.UserRole + 2))
-        common_name = str(index.data(Qt.UserRole) or index.data(Qt.DisplayRole) or "").strip() or None
-        if genus and species:
-            return TaxonChoice(genus=genus, species=species, common_name=common_name)
-        return None
-
-    def _customize_species_item(self, item: QStandardItem, choice: TaxonChoice) -> None:
-        has_data = False
-        if self._species_availability and choice.genus and choice.species:
-            try:
-                info = self._species_availability.get_detailed_info(choice.genus, choice.species)
-                has_data = bool(
-                    info.get("has_personal_points")
-                    or info.get("has_shared_points")
-                    or info.get("has_published_points")
-                    or info.get("has_reference_minmax")
-                )
-            except Exception:
-                has_data = False
-        item.setData(bool(has_data), Qt.UserRole + 3)
-
-    def _apply_taxon_choice_to_inputs(self, choice: TaxonChoice, *, vernacular_text: str | None = None) -> None:
-        genus = self._clean_genus_text(choice.genus)
-        species = self._clean_species_text(choice.species)
-        if vernacular_text is not None:
-            self.vernacular_input.blockSignals(True)
-            self.vernacular_input.setText(str(vernacular_text or "").strip())
-            self.vernacular_input.blockSignals(False)
-        if genus:
-            self.genus_input.setText(genus)
-        if species:
-            self.species_input.setText(species)
-
-    def _init_completers(self) -> None:
-        popup_styler = getattr(self.parent(), "_style_dropdown_popup_readability", None)
-        stored = SettingsDB.get_setting("vernacular_language", "no")
-        lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
-        db_path = resolve_vernacular_db_path(lang)
-        if db_path:
-            self._vernacular_db = VernacularDB(db_path, language_code=lang)
-        else:
-            self._vernacular_db = None
-        self._taxon_lookup = TaxonLookupService(
-            vernacular_db=self._vernacular_db,
-            language_code=lang,
-            include_reference_data=True,
-        )
-        self._taxon_controller = TaxonInputController(
-            self._taxon_lookup,
-            self.genus_input,
-            self.species_input,
-            self.vernacular_input,
-            self,
-            species_item_customizer=self._customize_species_item,
-        )
-        self._genus_model = self._taxon_controller.genus_model
-        self._species_model = self._taxon_controller.species_model
-        self._vernacular_model = self._taxon_controller.vernacular_model
-        self._genus_completer = self._taxon_controller.genus_completer
-        self._species_completer = self._taxon_controller.species_completer
-        self._vernacular_completer = self._taxon_controller.vernacular_completer
-
-        genus_popup = self._genus_completer.popup() if self._genus_completer else None
-        if callable(popup_styler) and genus_popup is not None:
-            popup_styler(genus_popup, self.genus_input)
-        species_popup = self._species_completer.popup() if self._species_completer else None
-        if callable(popup_styler) and species_popup is not None:
-            popup_styler(species_popup, self.species_input)
-        if species_popup is not None:
-            species_popup.setItemDelegate(
-                SpeciesItemDelegate(
-                    self._species_availability,
-                    species_popup,
-                    genus_provider=lambda: self._clean_genus_text(self.genus_input.text()),
-                )
-            )
-        vernacular_popup = self._vernacular_completer.popup() if self._vernacular_completer else None
-        if callable(popup_styler) and vernacular_popup is not None:
-            popup_styler(vernacular_popup, self.vernacular_input)
-
-    def eventFilter(self, obj, event):
-        controller = getattr(self, "_taxon_controller", None)
-        if controller is not None and controller.eventFilter(obj, event):
-            return True
-        return super().eventFilter(obj, event)
-
-    def _update_genus_suggestions(self, text: str, hide_on_exact: bool = False) -> list[str]:
-        lookup = self._taxon_lookup
-        values = lookup.suggest_genera(text or "", limit=TAXON_COMPLETER_LIMIT) if lookup else []
-        values = sorted({value for value in values if value})
-        if hide_on_exact and text.strip():
-            text_lower = text.strip().lower()
-            if any(value.lower() == text_lower for value in values):
-                self._genus_model.setStringList([])
-                self._genus_completer.popup().hide()
-                return values
-        self._genus_model.setStringList(values)
-        return values
-
-    def _update_species_suggestions(self, genus: str, text: str, hide_on_exact: bool = False) -> list[str]:
-        genus = self._clean_genus_text(genus)
-        prefix = self._clean_species_text(text)
-        lookup = self._taxon_lookup
-        choices = lookup.suggest_species(genus, prefix, limit=TAXON_COMPLETER_LIMIT) if lookup else []
-        values = [self._clean_species_text(choice.species) for choice in choices if self._clean_species_text(choice.species)]
-        if hide_on_exact and prefix:
-            prefix_lower = prefix.lower()
-            if any(value.lower() == prefix_lower for value in values):
-                self._species_model.clear()
-                self._species_completer.popup().hide()
-                return values
-        self._species_model.clear()
-        for choice in choices:
-            species = self._clean_species_text(choice.species)
-            if not species:
-                continue
-            item = QStandardItem(self._format_species_choice_display(choice))
-            item.setData(species, Qt.UserRole)
-            item.setData(self._clean_genus_text(choice.genus) or genus, Qt.UserRole + 1)
-            item.setData(species, Qt.UserRole + 2)
-            item.setData(choice, self._ROLE_TAXON_CHOICE)
-            if self._species_availability:
-                try:
-                    info = self._species_availability.get_detailed_info(genus, species)
-                    has_data = bool(
-                        info.get("has_personal_points")
-                        or info.get("has_shared_points")
-                        or info.get("has_published_points")
-                        or info.get("has_reference_minmax")
-                    )
-                except Exception:
-                    has_data = False
-                item.setData(has_data, Qt.UserRole + 3)
-            self._species_model.appendRow(item)
-        return values
-
-    def _populate_vernacular_model(self, suggestions: list[TaxonChoice]) -> None:
-        self._vernacular_model.clear()
-        for choice in suggestions or []:
-            name = self._format_common_name_choice_display(choice)
-            item = QStandardItem(name)
-            item.setData(name, Qt.UserRole)
-            item.setData(self._clean_genus_text(choice.genus), Qt.UserRole + 1)
-            item.setData(self._clean_species_text(choice.species), Qt.UserRole + 2)
-            item.setData(choice, self._ROLE_TAXON_CHOICE)
-            self._vernacular_model.appendRow(item)
-
-    def _update_vernacular_suggestions_for_taxon(self) -> None:
-        lookup = self._taxon_lookup
-        if not lookup:
-            self._vernacular_model.clear()
-            self._set_vernacular_placeholder_from_suggestions([])
-            return
-        genus = self._clean_genus_text(self.genus_input.text()) or None
-        species = self._clean_species_text(self.species_input.text()) or None
-        suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species, limit=TAXON_COMPLETER_LIMIT)
-        self._populate_vernacular_model(suggestions)
-        self._set_vernacular_placeholder_from_suggestions([choice.common_name for choice in suggestions if choice.common_name])
-
-    def _maybe_set_vernacular_from_taxon(self) -> None:
-        lookup = self._taxon_lookup
-        if not lookup or self.vernacular_input.text().strip():
-            return
-        genus = self._clean_genus_text(self.genus_input.text())
-        species = self._clean_species_text(self.species_input.text())
-        if not genus or not species:
-            return
-        choice = lookup.best_common_name_for_taxon(genus, species)
-        if choice and choice.common_name:
-            self.vernacular_input.setText(choice.common_name)
-        else:
-            suggestions = lookup.suggest_common_names(prefix="", genus=genus, species=species, limit=TAXON_COMPLETER_LIMIT)
-            self._set_vernacular_placeholder_from_suggestions([item.common_name for item in suggestions if item.common_name])
-
-    def _on_genus_text_changed(self, text: str) -> None:
-        self._update_genus_suggestions(text, hide_on_exact=True)
-        genus = self._clean_genus_text(text)
-        if self.genus_input.hasFocus():
-            if self.vernacular_input.text().strip():
-                self.vernacular_input.blockSignals(True)
-                self.vernacular_input.clear()
-                self.vernacular_input.blockSignals(False)
-            if self.species_input.text().strip():
-                self.species_input.blockSignals(True)
-                self.species_input.clear()
-                self.species_input.blockSignals(False)
-                self._species_model.clear()
-        if genus and not self.species_input.text().strip():
-            suggestions = self._update_species_suggestions(genus, "")
-            self._set_species_placeholder_from_suggestions(suggestions)
-        elif not genus:
-            self._species_model.clear()
-            self._set_species_placeholder_from_suggestions([])
-        self._update_vernacular_suggestions_for_taxon()
-
-    def _on_species_text_changed(self, text: str) -> None:
-        genus = self._clean_genus_text(self.genus_input.text())
-        if not genus:
-            self._species_model.clear()
-            self._set_species_placeholder_from_suggestions([])
-            return
-        suggestions = self._update_species_suggestions(genus, text, hide_on_exact=True)
-        if not self._clean_species_text(text):
-            self._set_species_placeholder_from_suggestions(suggestions)
-
-    def _on_vernacular_text_changed(self, text: str) -> None:
-        lookup = self._taxon_lookup
-        if not lookup:
-            return
-        genus = self._clean_genus_text(self.genus_input.text()) or None
-        species = self._clean_species_text(self.species_input.text()) or None
-        if not text.strip():
-            self._update_vernacular_suggestions_for_taxon()
-            return
-        suggestions = lookup.suggest_common_names(prefix=text, genus=genus, species=species, limit=TAXON_COMPLETER_LIMIT)
-        self._populate_vernacular_model(suggestions)
-
-    def _on_taxon_editing_finished(self) -> None:
-        genus = self._clean_genus_text(self.genus_input.text())
-        species = self._clean_species_text(self.species_input.text())
-        if genus != self.genus_input.text().strip():
-            self.genus_input.blockSignals(True)
-            self.genus_input.setText(genus)
-            self.genus_input.blockSignals(False)
-        if species != self.species_input.text().strip():
-            self.species_input.blockSignals(True)
-            self.species_input.setText(species)
-            self.species_input.blockSignals(False)
-        self._maybe_set_vernacular_from_taxon()
-
-    def _on_vernacular_selected(self, index: QModelIndex) -> None:
-        lookup = self._taxon_lookup
-        if not lookup or not index.isValid():
-            return
-        choice = self._choice_from_index(index)
-        if choice is None:
-            name = (index.data(Qt.UserRole) or index.data(Qt.DisplayRole) or "").strip()
-            resolved = lookup.resolve_common_name(name) if name else []
-            choice = resolved[0] if resolved else None
-        if not choice:
-            return
-        name = str(choice.common_name or index.data(Qt.UserRole) or index.data(Qt.DisplayRole) or "").strip()
-        self._apply_taxon_choice_to_inputs(choice, vernacular_text=name)
-
-    def _on_vernacular_editing_finished(self) -> None:
-        lookup = self._taxon_lookup
-        if not lookup:
-            return
-        name = self.vernacular_input.text().strip()
-        if not name:
-            return
-        matches = lookup.resolve_common_name(name)
-        if matches:
-            taxon = matches[0]
-            genus = self._clean_genus_text(taxon.genus)
-            species = self._clean_species_text(taxon.species)
-            if not species:
-                self.vernacular_input.clear()
-                return
-            if genus:
-                self.genus_input.setText(genus)
-            if species:
-                self.species_input.setText(species)
-
-    def _on_genus_selected(self, genus: str) -> None:
-        cleaned = self._clean_genus_text(genus)
-        if cleaned:
-            self.genus_input.setText(cleaned)
-
-    def _on_species_selected(self, index: QModelIndex) -> None:
-        if not index.isValid():
-            return
-        choice = self._choice_from_index(index)
-        species = self._clean_species_text(choice.species) if choice and choice.species else ""
-        if not choice:
-            species = self._clean_species_text(index.data(Qt.UserRole) or index.data(Qt.DisplayRole))
-        if species:
-            self.species_input.setText(species)
-        if choice and choice.common_name and not self.vernacular_input.text().strip():
-            self.vernacular_input.setText(choice.common_name)
-        if choice and choice.species:
-            self._maybe_set_vernacular_from_taxon()
-
-    def _set_busy(self, busy: bool, status_text: str | None = None) -> None:
-        self.search_button.setEnabled(not busy)
-        self.genus_input.setEnabled(not busy)
-        self.species_input.setEnabled(not busy)
-        self.vernacular_input.setEnabled(not busy)
-        if status_text is not None:
-            self.search_status_label.setText(status_text)
-
-    def _result_source_label(self, row: dict[str, Any]) -> str:
-        return community_result_source_label(row, self.tr)
-
-    def _result_q_range_label(self, row: dict[str, Any]) -> str:
-        return community_result_q_range_label(row)
-
-    def _populate_results_table(self) -> None:
-        self.results_table.setRowCount(0)
-        for row_data in self._results:
-            row = self.results_table.rowCount()
-            self.results_table.insertRow(row)
-            values = [
-                self._result_source_label(row_data),
-                str(int(row_data.get("measurement_count") or 0) or "—"),
-                self._result_q_range_label(row_data),
-                str(row_data.get("contributor_label") or "—"),
-            ]
-            for col, value in enumerate(values):
-                item = QTableWidgetItem(value)
-                item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-                self.results_table.setItem(row, col, item)
-        self.results_table.resizeRowsToContents()
-
-    def _reset_preview(self) -> None:
-        self._preview_pane.clear()
-        self.footer_hint.setText("")
-        self.import_summary_button.setEnabled(False)
-        self.plot_points_button.setEnabled(False)
-        self._selected_result = None
-        self._selected_detail = None
-
-    def _on_search_clicked(self) -> None:
-        genus = self._clean_genus_text(self.genus_input.text())
-        species = self._clean_species_text(self.species_input.text())
-        if not genus:
-            QMessageBox.warning(
-                self,
-                self.tr("Missing Genus"),
-                self.tr("Enter at least a genus to search community spore data."),
-            )
-            return
-        if self._search_worker is not None:
-            return
-        self._results = []
-        self._community_summary = {}
-        self.results_table.clearSelection()
-        self.results_table.setRowCount(0)
-        self._reset_preview()
-        self._set_busy(True, self.tr("Searching community spore data..."))
-        worker = _CloudSearchWorker(genus, species)
-        worker.search_done.connect(self._on_search_finished)
-        worker.error.connect(self._on_search_error)
-        self._search_worker = worker
-        self._track_worker(worker)
-        worker.start()
-
-    def _on_search_finished(self, results: list, summary: dict) -> None:
-        self._search_worker = None
-        self._set_busy(False)
-        self._results = [dict(row or {}) for row in (results or [])]
-        self._community_summary = dict(summary or {})
-        self._populate_results_table()
-        if self._results:
-            text = self.tr("Found {count} community source(s). Select one to review before importing.").format(
-                count=len(self._results)
-            )
-            dataset_count = int(self._community_summary.get("dataset_count") or 0)
-            measurement_count = int(self._community_summary.get("measurement_count") or 0)
-            if dataset_count or measurement_count:
-                text += " " + self.tr("Community aggregate: {datasets} dataset(s), n={count}.").format(
-                    datasets=dataset_count,
-                    count=measurement_count,
-                )
-            self.search_status_label.setText(text)
-            self.footer_hint.setText(
-                self.tr("Use Import summary to save a local reference, or Use raw points for a temporary comparison plot.")
-            )
-        else:
-            genus_q = self._clean_genus_text(self.genus_input.text())
-            species_q = self._clean_species_text(self.species_input.text())
-            taxon_q = f"{genus_q} {species_q}".strip() if species_q else genus_q
-            self.search_status_label.setText(
-                self.tr("No community spore results found for {taxon}.").format(taxon=taxon_q)
-            )
-
-    def _on_search_error(self, message: str) -> None:
-        self._search_worker = None
-        self._set_busy(False)
-        self.search_status_label.setText(str(message or "").strip() or self.tr("Community search failed."))
-
-    def _on_result_selection_changed(self) -> None:
-        if self._detail_worker is not None:
-            return
-        row = self.results_table.currentRow()
-        if row < 0 or row >= len(self._results):
-            self._reset_preview()
-            return
-        self._selected_result = dict(self._results[row])
-        self._selected_detail = None
-        self.import_summary_button.setEnabled(False)
-        self.plot_points_button.setEnabled(False)
-        self.summary_title_label.setText(self.tr("Loading review details..."))
-        self.summary_meta_label.setText(self._result_source_label(self._selected_result))
-        self.summary_note_label.setText(self.tr("Loading dataset details..."))
-        worker = _CloudDetailWorker(self._selected_result)
-        worker.detail_done.connect(self._on_detail_finished)
-        worker.error.connect(self._on_detail_error)
-        self._detail_worker = worker
-        self._track_worker(worker)
-        worker.start()
-
-    def _on_detail_finished(self, detail: dict) -> None:
-        self._detail_worker = None
-        self._selected_detail = dict(detail or {})
-        self._populate_detail_preview()
-
-    def _on_detail_error(self, message: str) -> None:
-        self._detail_worker = None
-        self._selected_detail = None
-        self.summary_title_label.setText(self.tr("Could not load dataset"))
-        self.summary_meta_label.setText(str(message or "").strip())
-        self.summary_note_label.setText(self.tr("This result could not be reviewed."))
-        self.raw_spores_text.setPlainText(str(message or "").strip())
-        self.import_summary_button.setEnabled(False)
-        self.plot_points_button.setEnabled(False)
-
-    def _format_stat(self, value: Any, decimals: int = 2) -> str:
-        return format_stat_value(value, decimals)
-
-    def _populate_detail_preview(self) -> None:
-        detail = self._selected_detail or {}
-        fields = community_detail_preview_fields(detail, self.tr)
-        self._preview_pane.set_summary(fields["title"], fields["meta"], fields["rows"], fields["note"])
-        self._preview_pane.set_raw_spores(fields["raw_text"])
-        self._preview_pane.set_method(fields["method_mapping"])
-        self._preview_pane.set_calibration(fields["calibration_text"])
-        self._preview_pane.set_provenance(fields["provenance_text"])
-        self._preview_pane.set_provenance_summary(fields["provenance_summary"])
-
-        self.import_summary_button.setEnabled(True)
-        self.plot_points_button.setEnabled(bool(fields["points_count"]))
-        self.footer_hint.setText(
-            self.tr("Review complete. Import summary saves a local reference; Use raw points adds a temporary comparison plot.")
-        )
-
-    def _default_import_source(self) -> str:
-        return community_default_import_source(self._selected_detail or {}, self.tr)
-
-    def _single_detail_value(self, *keys: str) -> str | None:
-        return community_single_detail_value(self._selected_detail or {}, *keys)
-
-    def _summary_metadata_payload(self) -> dict[str, Any]:
-        return community_summary_metadata_payload(self._selected_detail or {}, self.tr)
-
-    def _summary_reference_payload(self) -> dict[str, Any] | None:
-        return community_summary_reference_payload(self._selected_detail or {}, self.tr)
-
-    def _points_payload(self) -> dict[str, Any] | None:
-        return community_points_payload(self._selected_detail or {}, self.tr)
-
-    def _on_import_summary_clicked(self) -> None:
-        payload = self._summary_reference_payload()
-        if not payload:
-            QMessageBox.warning(self, self.tr("Missing Data"), self.tr("No summary data is loaded for import."))
-            return
-        self._accepted_action = "import_summary"
-        self._accepted_data = payload
-        self.accept()
-
-    def _on_plot_points_clicked(self) -> None:
-        payload = self._points_payload()
-        if not payload:
-            QMessageBox.warning(self, self.tr("Missing Data"), self.tr("No raw spore points are available for plotting."))
-            return
-        self._accepted_action = "plot_points"
-        self._accepted_data = payload
-        self.accept()
-
-
 class CommunityResultsPane(QWidget):
-    """Browse/select flow for the Community tab of ``AddReferenceDialog``.
+    """The reference drawer's Community list: browse, select and tick results.
 
-    Reuses ``CloudReferenceDialog``'s search/detail workers and payload
-    builders (``_CloudSearchWorker``, ``_CloudDetailWorker``,
-    ``community_summary_reference_payload``, ``community_points_payload``,
-    ``community_detail_preview_fields``) rather than duplicating them, and
-    populates the host's shared ``ReferencePreviewPane`` instance instead of
-    owning its own. Unlike ``CloudReferenceDialog``, there is no full taxon
-    entry form: results load automatically for the host's working taxon
+    Uses this module's search/detail workers and payload builders
+    (``_CloudSearchWorker``, ``_CloudDetailWorker``,
+    ``community_summary_reference_payload``, ``community_points_payload``).
+    The drawer's plot is the preview, so this pane draws none itself (stage
+    10a4). There is no taxon entry form: results load automatically for the
+    host's working taxon
     (``set_taxon``), mirroring the My-observations tab. A single search field
     overrides that taxon, debounced per keystroke, and accepts a genus alone
     as well as a genus and species; clearing it returns to the host's taxon.
@@ -1254,6 +310,11 @@ class CommunityResultsPane(QWidget):
     """
 
     selection_changed = Signal()
+    # Checkable mode (the Analysis reference drawer, stage 7c): a row's
+    # checkbox was ticked or unticked by the user: (result index, checked).
+    result_check_toggled = Signal(int, bool)
+    # The result list was rebuilt (a search finished or the taxon changed).
+    results_changed = Signal()
 
     def __init__(
         self,
@@ -1261,37 +322,14 @@ class CommunityResultsPane(QWidget):
         *,
         genus: str = "",
         species: str = "",
-        preview_pane: ReferencePreviewPane,
         results: list[dict[str, Any]] | None = None,
         exclude_observation_cloud_id: str | None = None,
-        comparison_view_factory: Callable[..., ComparisonView] | None = None,
-        preview_is_active: Callable[[], bool] | None = None,
+        checkable: bool = False,
     ) -> None:
         super().__init__(parent)
+        self._checkable = bool(checkable)
         self._genus = str(genus or "").strip()
         self._species = str(species or "").strip()
-        self._preview_pane = preview_pane
-        # How this pane turns a projected community source into the shared
-        # preview's comparison model. Supplied by the host, which owns the
-        # session's frozen axes and the current observation; without one the
-        # pane still renders, on axes derived from the selected source alone,
-        # which is the right fallback for a host that has no observation to
-        # compare against rather than a reason to fall back to a table.
-        self._comparison_view_factory = comparison_view_factory or (
-            lambda display=None, source_points=None: comparison_view(
-                domains={}, display=display, source_points=source_points
-            )
-        )
-        # Whether this pane is the one the shared preview currently belongs to.
-        # Search and detail both complete asynchronously and can land long
-        # after the user has moved to the Library or My-observations tab; a
-        # write that ignored ownership would replace the source that tab just
-        # put on screen with one from a tab the user is no longer looking at.
-        # Request generations cannot solve this -- the response is not stale,
-        # it is simply no longer the pane being displayed -- so state is kept
-        # either way and only the painting is gated. The default suits a host
-        # that gives this pane a preview to itself.
-        self._preview_is_active = preview_is_active or (lambda: True)
         # The active observation's own cloud identity (``observations.cloud_id``
         # locally), so a dataset built from the exact observation already
         # being plotted never reappears as a comparison candidate against
@@ -1391,7 +429,6 @@ class CommunityResultsPane(QWidget):
         self._mode_group = QButtonGroup(self)
         self._mode_group.addButton(self.range_summary_radio)
         self._mode_group.addButton(self.raw_points_radio)
-        self._mode_group.buttonToggled.connect(self._on_mode_changed)
         mode_row.addWidget(self.range_summary_radio)
         mode_row.addWidget(self.raw_points_radio)
         mode_row.addStretch(1)
@@ -1497,7 +534,6 @@ class CommunityResultsPane(QWidget):
         self._selected_error = None
         self.results_list.clearSelection()
         self.results_list.clear()
-        self._render_preview()
         self.selection_changed.emit()
 
         if self._injected_results is not None:
@@ -1574,7 +610,13 @@ class CommunityResultsPane(QWidget):
         self.status_label.setText(str(message or "").strip() or QCoreApplication.translate("CommunityResultsPane", "Community search failed."))
 
     def _update_status_after_results(self) -> None:
-        if self._results:
+        if self._results and self._checkable:
+            self.status_label.setText(
+                QCoreApplication.translate("CommunityResultsPane", "Found {count} community source(s). Tick one to add it to the plot.").format(
+                    count=len(self._results)
+                )
+            )
+        elif self._results:
             self.status_label.setText(
                 QCoreApplication.translate("CommunityResultsPane", "Found {count} community source(s). Select one to review before adding.").format(
                     count=len(self._results)
@@ -1605,9 +647,16 @@ class CommunityResultsPane(QWidget):
             item.setToolTip(label if not detail else f"{label}\n{detail}")
             item.setData(Qt.UserRole, index)
             self.results_list.addItem(item)
-            row_widget = TwoLineRow(label, detail, self.results_list)
+            if self._checkable:
+                row_widget = CheckableTwoLineRow(label, detail, self.results_list)
+                row_widget.toggled.connect(
+                    lambda checked, index=index: self.result_check_toggled.emit(index, bool(checked))
+                )
+            else:
+                row_widget = TwoLineRow(label, detail, self.results_list)
             item.setSizeHint(row_widget.sizeHint())
             self.results_list.setItemWidget(item, row_widget)
+        self.results_changed.emit()
 
     # ------------------------------------------------------------------
     # Selection / detail
@@ -1626,7 +675,6 @@ class CommunityResultsPane(QWidget):
             self._selected_result = None
             self._selected_detail = None
             self._selected_error = None
-            self._render_preview()
             self.selection_changed.emit()
             return
         row = items[0].data(Qt.UserRole)
@@ -1634,13 +682,11 @@ class CommunityResultsPane(QWidget):
             self._selected_result = None
             self._selected_detail = None
             self._selected_error = None
-            self._render_preview()
             self.selection_changed.emit()
             return
         self._selected_result = dict(self._results[row])
         self._selected_detail = None
         self._selected_error = None
-        self._render_preview()
         self.selection_changed.emit()
 
         if self._injected_results is not None:
@@ -1660,14 +706,10 @@ class CommunityResultsPane(QWidget):
         self._detail_worker = None
         self._selected_detail = dict(detail or {})
         self._selected_error = None
-        # Radio state first: the preview renders whichever mode is checked, so
-        # settling the mode before drawing avoids showing the raw-points
-        # comparison for one paint and then the summary one because the
-        # raw-points radio turned out to be unavailable. It is pane-local
-        # widget state and is updated whether or not this pane currently owns
-        # the shared preview, so the footer's payload stays correct.
+        # Radio state before telling the host: the payload it reads follows
+        # whichever mode is checked, and raw points are only offered when the
+        # detail carries measurements.
         self._update_mode_radio_state()
-        self._render_preview()
         self.selection_changed.emit()
 
     def _on_detail_error(self, message: str, generation: int) -> None:
@@ -1676,68 +718,11 @@ class CommunityResultsPane(QWidget):
         self._detail_worker = None
         self._selected_detail = None
         self._selected_error = str(message or "").strip()
-        self._render_preview()
         self.selection_changed.emit()
 
     # ------------------------------------------------------------------
     # Rendering into the shared preview
     # ------------------------------------------------------------------
-
-    def _render_preview(self) -> None:
-        """Paint this pane's current state, if the preview is currently ours.
-
-        Every transition goes through here rather than writing to the shared
-        pane directly, so there is one place that decides both *what* this tab
-        has to say and *whether* it is the tab entitled to say it. The state
-        itself is always kept, which is what lets :meth:`sync_preview` restore
-        a selection -- loaded, still loading or failed -- when the user comes
-        back to this tab.
-        """
-        if not self._preview_is_active():
-            return
-        if self._selected_error is not None:
-            self._show_error_preview(self._selected_error)
-        elif self._selected_detail:
-            self._show_detail_preview()
-        elif self._selected_result is not None:
-            self._show_loading_preview()
-        else:
-            self._preview_pane.clear()
-
-    def _show_loading_preview(self) -> None:
-        """A selected result whose detail has not arrived yet.
-
-        ``clear()`` first, and not merely a new header: the pane is shared, so
-        the method, calibration, provenance and raw-spore rows still on it
-        belong to whatever was selected before. Leaving them under this
-        source's name would attribute another dataset's mount medium and
-        another author's spores to the row the user just clicked.
-
-        No source band is drawn either. The list-level aggregate is not the
-        detail, and a band painted from it would be replaced by a different
-        one a moment later.
-        """
-        self._preview_pane.clear()
-        self._preview_pane.set_header(
-            QCoreApplication.translate("CommunityResultsPane", "Loading review details..."),
-            community_result_source_label(self._selected_result or {}, self.tr),
-            QCoreApplication.translate("CommunityResultsPane", "Loading dataset details..."),
-        )
-
-    def _show_error_preview(self, message: str) -> None:
-        """A selected result whose detail could not be fetched.
-
-        Same reasoning as the loading state, and the same ``clear()``: a
-        failed fetch establishes nothing about this dataset, so nothing may
-        remain on screen that a reader could take for its content.
-        """
-        self._preview_pane.clear()
-        self._preview_pane.set_header(
-            QCoreApplication.translate("CommunityResultsPane", "Could not load dataset"),
-            message,
-            QCoreApplication.translate("CommunityResultsPane", "This result could not be reviewed."),
-        )
-        self._preview_pane.set_raw_spores(message)
 
     def _selected_measurements(self) -> list[Any]:
         """The individual measurements behind the current detail, if any."""
@@ -1750,45 +735,6 @@ class CommunityResultsPane(QWidget):
         """Whether the checked mode is the raw-points one."""
         return self.raw_points_radio.isChecked() and self.raw_points_radio.isEnabled()
 
-    def _show_detail_preview(self) -> None:
-        """The loaded detail, in whichever mode is currently checked."""
-        fields = community_detail_preview_fields(self._selected_detail, self.tr)
-        self._preview_pane.set_header(fields["title"], fields["meta"], fields["note"])
-
-        measurements = self._selected_measurements()
-        if self._use_raw_points():
-            # The mode that attaches the contributors' individual
-            # measurements, so the pane compares those: the projection states
-            # no range, and the comparison derives measured extremes, a
-            # measured 5-95 interval and a measured median from the points.
-            display = display_from_points(measurements, source_kind="community")
-            source_points: list[Any] | None = measurements
-        else:
-            # The aggregate. ``display_from_community_summary`` tags the
-            # p05/p95 pair as a percentile interval only where the payload
-            # actually carries both bounds; a result with bare min/max stays a
-            # published range rather than acquiring 5-95 semantics it never
-            # stated. No points are passed: the summary's own numbers are what
-            # this mode will attach.
-            display = display_from_community_summary(self._selected_detail)
-            source_points = None
-        self._preview_pane.set_comparison(
-            self._comparison_view_factory(display=display, source_points=source_points)
-        )
-
-        if measurements:
-            self._preview_pane.set_raw_spore_points(measurements)
-        else:
-            # Contract N22: a community aggregate's range is never expanded
-            # into plausible-looking per-spore rows to fill this tab.
-            self._preview_pane.set_raw_spores_unavailable(
-                plotted_as_band=display.has_any_range
-            )
-        self._preview_pane.set_method(fields["method_mapping"])
-        self._preview_pane.set_calibration(fields["calibration_text"])
-        self._preview_pane.set_provenance(fields["provenance_text"])
-        self._preview_pane.set_provenance_summary(fields["provenance_summary"])
-
     def _update_mode_radio_state(self) -> None:
         n = len(self._selected_measurements())
         self.raw_points_radio.setText(QCoreApplication.translate("CommunityResultsPane", "Raw points (n={count})").format(count=n))
@@ -1796,41 +742,50 @@ class CommunityResultsPane(QWidget):
         if not self.raw_points_radio.isEnabled() and self.raw_points_radio.isChecked():
             self.range_summary_radio.setChecked(True)
 
-    def _on_mode_changed(self, _button=None, checked: bool = True) -> None:
-        """Redraw the preview when the user switches what will be added.
-
-        The two radios choose between two genuinely different claims -- the
-        contributors' aggregate and their individual measurements -- so the
-        pane must show the one about to be attached rather than whichever was
-        current when the detail loaded.
-
-        ``QButtonGroup.buttonToggled`` fires once for the radio being cleared
-        and once for the one being checked; only the second is acted on, so a
-        single click repaints the comparison once.
-        """
-        if not checked:
-            return
-        if self._selected_detail:
-            self._render_preview()
-
     # ------------------------------------------------------------------
     # Host-facing API
     # ------------------------------------------------------------------
 
-    def sync_preview(self) -> None:
-        """Re-apply the current selection to the (shared) preview pane.
-
-        Called by the host when switching back to this tab, since the preview
-        pane is shared across tabs and may show another tab's content in
-        between. Restores whichever state this tab is in -- a loaded detail, a
-        selection still waiting on its detail, or a failed one -- because a
-        response that arrived while the user was elsewhere was recorded but
-        deliberately not painted.
-        """
-        self._render_preview()
-
     def has_selection(self) -> bool:
         return self._selected_detail is not None
+
+    # -- checkable mode (the reference drawer) --------------------------
+
+    def result_count(self) -> int:
+        return len(self._results)
+
+    @staticmethod
+    def identity_of(row_data: dict[str, Any]) -> str:
+        """A stable identity for one result, the same across searches."""
+        keys = (
+            "_kind", "observation_id", "id", "reference_id", "reference_value_id", "genus", "species",
+            "source", "contributor_label", "observed_on", "mount_medium", "mount_media", "stain", "stains",
+        )
+        return json.dumps({key: row_data.get(key) for key in keys}, sort_keys=True, default=str)
+
+    def result_identity(self, index: int) -> str | None:
+        if 0 <= index < len(self._results):
+            return self.identity_of(self._results[index])
+        return None
+
+    def select_result(self, index: int) -> None:
+        """Select a result, which loads its detail (``selection_changed`` when it arrives)."""
+        if 0 <= index < self.results_list.count():
+            self.results_list.setCurrentRow(index)
+
+    def selected_index(self) -> int | None:
+        items = self.results_list.selectedItems()
+        value = items[0].data(Qt.UserRole) if items else None
+        return value if isinstance(value, int) else None
+
+    def detail_error(self) -> str | None:
+        return self._selected_error
+
+    def set_result_checked(self, index: int, checked: bool) -> None:
+        if 0 <= index < self.results_list.count():
+            widget = self.results_list.itemWidget(self.results_list.item(index))
+            if isinstance(widget, CheckableTwoLineRow):
+                widget.set_checked_silently(checked)
 
     def current_mode_payload(self) -> dict[str, Any] | None:
         """The reference_series-ready payload for the checked radio, or None."""
@@ -1842,10 +797,8 @@ class CommunityResultsPane(QWidget):
 
 
 __all__ = [
-    "CloudReferenceDialog",
     "CommunityResultsPane",
     "community_default_import_source",
-    "community_detail_preview_fields",
     "community_points_payload",
     "community_result_q_range_label",
     "community_result_source_label",

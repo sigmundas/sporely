@@ -4,7 +4,7 @@ from __future__ import annotations
 from PySide6.QtCore import QCoreApplication, QObject, Qt, QThread, Signal, Slot
 from PySide6.QtGui import QBrush, QColor, QFont
 from PySide6.QtWidgets import (
-    QAbstractItemView, QDialog, QDialogButtonBox, QLabel, QMessageBox, QPushButton, QTableWidget,
+    QAbstractItemView, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QPushButton, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -16,6 +16,8 @@ from database.curated_reference_forks import (
     copy_curated_bundle_to_personal_library,
     search_shared_reference_contributions,
 )
+
+from .hint_status import HintBar, HintStatusController
 
 
 def relationship_label(roles: tuple[str, ...] | list[str]) -> str:
@@ -75,6 +77,9 @@ class SharedReferenceCatalogueDialog(QDialog):
         self._bundles: tuple[CuratedReferenceBundle, ...] = ()
         self._thread: QThread | None = None
         self._close_pending = False
+        # What a successful copy said; the dialog closes after copying, so the
+        # window that opened it shows this (stage 10e).
+        self.copy_result_message = ""
         self.setWindowTitle(self.tr("Shared reference contributions"))
         self.resize(720, 420)
         layout = QVBoxLayout(self)
@@ -99,13 +104,23 @@ class SharedReferenceCatalogueDialog(QDialog):
         self.relationship_label.setTextFormat(Qt.PlainText)
         self.relationship_label.hide()
         layout.addWidget(self.relationship_label)
-        buttons = QDialogButtonBox(QDialogButtonBox.Close, parent=self)
+        # A Close button with its own text: the app loads no Qt base
+        # translations, so the standard one stays English.
+        buttons = QDialogButtonBox(Qt.Horizontal, self)
         self.copy_button = QPushButton(self.tr("Copy to personal library"), self)
         self.copy_button.setEnabled(False)
         self.copy_button.clicked.connect(self._copy_selected)
         buttons.addButton(self.copy_button, QDialogButtonBox.ActionRole)
+        buttons.addButton(self.tr("Close"), QDialogButtonBox.RejectRole)
         buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        # A failed copy shows in the bottom bar, not a message box (stage 10e).
+        bottom = QHBoxLayout()
+        bottom.setSpacing(8)
+        self.hint_bar = HintBar(self)
+        bottom.addWidget(self.hint_bar, 1)
+        bottom.addWidget(buttons, 0, Qt.AlignRight | Qt.AlignVCenter)
+        layout.addLayout(bottom)
+        self._hint_controller = HintStatusController(self.hint_bar, self)
         self._start_load()
 
     def _start_load(self) -> None:
@@ -203,22 +218,23 @@ class SharedReferenceCatalogueDialog(QDialog):
             return
         bundle = self._bundles[rows[0].row()]
         if bundle.measurement_details_omitted:
-            QMessageBox.warning(
-                self, self.tr("Shared reference contributions"),
+            self._hint_controller.show_notice(
                 self.tr("This contribution was served without its measurement details and cannot be copied."),
+                "warning",
             )
             return
         try:
             result = copy_curated_bundle_to_personal_library(bundle)
         except Exception as exc:
-            QMessageBox.warning(self, self.tr("Shared reference contributions"), self.tr("Could not copy reference: {error}").format(error=str(exc)))
+            self._hint_controller.show_notice(
+                self.tr("Could not copy the reference."), "error", details=str(exc),
+            )
             return
-        self.copied.emit(result.reference_measurement_set_id)
-        QMessageBox.information(
-            self, self.tr("Shared reference contributions"),
+        self.copy_result_message = (
             self.tr("The contribution was copied to your personal library.") if result.created
-            else self.tr("This contribution is already in your personal library."),
+            else self.tr("This contribution is already in your personal library.")
         )
+        self.copied.emit(result.reference_measurement_set_id)
         self.accept()
 
     def closeEvent(self, event) -> None:

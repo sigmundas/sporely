@@ -88,46 +88,30 @@ def _live_lab(scratch_db) -> LiveLabTab:
 # ---------------------------------------------------------------------------
 
 
-def test_live_lab_side_panel_splits_microscope_and_slide_prep_into_separate_groups(qapp, scratch_db):
+def test_live_lab_objective_and_contrast_live_on_the_capture_bar_not_the_side_panel(qapp, scratch_db):
+    """Stage 2: the Microscope card is gone; objective and contrast are chosen
+    on the capture-state bar over the viewer."""
     tab = _live_lab(scratch_db)
 
-    assert getattr(tab, "microscope_group", None) is not None, "microscope_group card missing"
+    assert getattr(tab, "microscope_group", None) is None, "the Microscope card must be gone"
     assert getattr(tab, "slide_prep_group", None) is not None, "slide_prep_group card missing"
-    assert tab.microscope_group is not tab.slide_prep_group
-    # The old combined 'sample' card must not linger.
     assert not hasattr(tab, "sample_group"), (
         "sample_group must be removed — its rows now live in slide_prep_group"
     )
 
-    # Optical microscope settings belong in MICROSCOPE only.
-    assert _is_descendant(tab.objective_combo, tab.microscope_group)
-    assert _is_descendant(tab.contrast_combo, tab.microscope_group)
-    assert not _is_descendant(tab.mount_combo, tab.microscope_group), (
-        "mount_combo must not live in MICROSCOPE — it is slide/prep metadata"
-    )
-    assert not _is_descendant(tab.stain_combo, tab.microscope_group), (
-        "stain_combo must not live in MICROSCOPE — it is slide/prep metadata"
-    )
+    # The selectors remain as the hidden runtime binding behind the bar.
+    assert _is_descendant(tab.objective_combo, tab.microscope_selectors)
+    assert _is_descendant(tab.contrast_combo, tab.microscope_selectors)
+    assert tab.microscope_selectors.isHidden()
+    assert _is_descendant(tab.capture_state_bar, tab.live_image_label)
+    assert not _is_descendant(tab.objective_combo, tab.slide_prep_group)
+    assert not _is_descendant(tab.contrast_combo, tab.slide_prep_group)
 
-    # Slide/prep metadata belongs in SLIDE / PREP.
+    # Slide/prep metadata belongs in the Preparation section.
     assert _is_descendant(tab.mount_combo, tab.slide_prep_group)
     assert _is_descendant(tab.stain_combo, tab.slide_prep_group)
     assert _is_descendant(tab.sample_combo, tab.slide_prep_group)
     assert _is_descendant(tab.sample_source_combo, tab.slide_prep_group)
-
-
-def test_live_lab_slide_prep_group_appears_above_microscope_group(qapp, scratch_db):
-    tab = _live_lab(scratch_db)
-
-    tab.resize(720, 900)
-    tab.show()
-    qapp.processEvents()
-
-    micro_top = tab.microscope_group.mapTo(tab, tab.microscope_group.rect().topLeft()).y()
-    prep_top = tab.slide_prep_group.mapTo(tab, tab.slide_prep_group.rect().topLeft()).y()
-    assert prep_top < micro_top, (
-        f"SLIDE / PREP must sit above MICROSCOPE; got micro_top={micro_top}, prep_top={prep_top}"
-    )
 
 
 def test_live_lab_slide_prep_rows_use_short_labels(qapp, scratch_db):

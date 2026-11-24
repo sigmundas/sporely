@@ -409,9 +409,11 @@ def test_gallery_checked_microscope_without_measurements_is_cloud_intent(
         "VALUES (902, 500, 'microscope', NULL, 0, '', 'converted_local', 'microscope', ?)",
         (str(fpath),),
     )
+    # The checkmark: a recorded storage decision for 902 that does not
+    # exclude it (what ``set_image_cloud_selected(902, True)`` stores).
     conn.execute(
         "INSERT INTO settings (key, value) VALUES (?, ?)",
-        ("artsobs_publish_micro_seeded_ids_500", "[902]"),
+        ("sporely_cloud_image_storage_intent_ids_500", "[902]"),
     )
     conn.commit()
     conn.close()

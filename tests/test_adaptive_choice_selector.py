@@ -50,14 +50,14 @@ def test_objective_short_labels_cover_common_objectives(objective, expected_labe
 @pytest.mark.parametrize(
     ("objective", "expected_color"),
     [
-        ({"magnification": 1.25}, "#3498db"),
-        ({"magnification": 2.5}, "#3498db"),
+        ({"magnification": 1.25}, "#202124"),
+        ({"magnification": 2.5}, "#8b5a2b"),
         ({"magnification": 4.0}, "#e74c3c"),
         ({"magnification": 5.0}, "#e74c3c"),
         ({"magnification": 6.0}, "#f39c12"),
         ({"magnification": 10.0}, "#f1c40f"),
         ({"magnification": 20.0}, "#2ecc71"),
-        ({"magnification": 32.0}, "#2ecc71"),
+        ({"magnification": 32.0}, "#1e8449"),
         ({"magnification": 50.0}, "#3498db"),
         ({"magnification": 63.0}, "#1f4ea8"),
         ({"magnification": 100.0}, "#f7f1e5"),
@@ -417,3 +417,322 @@ def test_microscope_lists_persist_and_are_read_by_prepare_images_and_live_lab(tm
         combo = LiveLabTab._build_term_combo(dummy, category)
         expected_values = values
         assert [combo.itemData(i) for i in range(combo.count())] == expected_values
+
+
+def test_display_listeners_follow_every_visible_change(qapp):
+    selector = AdaptiveChoiceSelector(compact=True)
+    seen: list[str] = []
+    selector.add_display_listener(lambda: seen.append(selector.itemText(selector.currentIndex())))
+    selector.addItem("KOH", "KOH")
+    selector.addItem("Water", "Water")
+    assert seen[-1] == "KOH"
+    blocked = selector.blockSignals(True)
+    selector.setCurrentIndex(1)
+    selector.blockSignals(blocked)
+    assert seen[-1] == "Water"  # also while signals are blocked
+    selector.setItemText(1, "Vann")
+    assert seen[-1] == "Vann"  # renaming the shown item
+    count = len(seen)
+    selector.setItemText(0, "Kalilut")
+    assert len(seen) == count  # renaming another item changes nothing shown
+    selector.set_mixed_values(["KOH", "Water"])
+    assert selector.is_mixed() and len(seen) == count + 1
+    selector.clear()
+    assert seen[-1] == ""  # cleared
+
+
+def _chip_selector(qapp, width: int):
+    from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+    page = QWidget()
+    layout = QVBoxLayout(page)
+    selector = AdaptiveChoiceSelector(compact=True)
+    selector.addItem("Not set", "Not_set", pillText="—")
+    for value in ("Melzer", "Congo red", "Cotton blue", "Lactofuchsin", "Cresyl blue", "Trypan blue"):
+        selector.addItem(value, value)
+    selector.set_chip_mode(clear_value="Not_set")
+    layout.addWidget(selector)
+    layout.addStretch(1)
+    page.resize(width, 300)
+    page.show()
+    qapp.processEvents()
+    return page, selector
+
+
+def test_chip_mode_never_falls_back_to_a_dropdown(qapp):
+    _page, selector = _chip_selector(qapp, 140)
+    assert selector.is_chip_mode() and selector.display_mode() == "chip"
+    assert not selector.combo().isVisible()
+    assert selector.more_chip().isVisible()
+    assert len(selector.visible_chip_values()) >= 1
+
+
+def test_chip_mode_keeps_mixed_values_visible_and_survives_a_rebuild(qapp):
+    _page, selector = _chip_selector(qapp, 260)
+    selector.set_mixed_values(["Melzer", "Trypan blue"])
+    qapp.processEvents()
+    assert {"Melzer", "Trypan blue"} <= set(selector.visible_chip_values())
+    selector.clear()
+    for value in ("Not set", "Water", "KOH"):
+        selector.addItem(value, "Not_set" if value == "Not set" else value)
+    qapp.processEvents()
+    assert selector.visible_chip_values() == ["Water", "KOH"]
+    assert not selector.more_chip().isVisible()
+
+
+def test_chip_mode_height_follows_wrapping(qapp):
+    _page, selector = _chip_selector(qapp, 260)
+    one_row = selector.heightForWidth(selector.width())
+    selector.more_chip().click()
+    qapp.processEvents()
+    assert selector.chips_expanded()
+    assert selector.heightForWidth(selector.width()) > one_row
+
+
+def test_other_selectors_keep_pills_and_dropdown(qapp):
+    from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+    page = QWidget()
+    layout = QVBoxLayout(page)
+    selector = AdaptiveChoiceSelector(compact=True)
+    for value in ("BF", "DIC"):
+        selector.addItem(value, value)
+    layout.addWidget(selector)
+    page.resize(400, 120)
+    page.show()
+    for _ in range(5):
+        qapp.processEvents()
+    assert not selector.is_chip_mode()
+    assert selector.more_chip() is None
+    assert selector.display_mode() in {"pill", "combo"}
+
+
+def test_a_chip_wider_than_the_row_stays_inside_it(qapp):
+    from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+    page = QWidget()
+    layout = QVBoxLayout(page)
+    layout.setContentsMargins(0, 0, 0, 0)
+    selector = AdaptiveChoiceSelector(compact=True)
+    selector.addItem("Water", "Water")
+    selector.addItem("A very long custom mounting medium name " * 3, "Long")
+    selector.set_chip_mode(clear_value="Not_set")
+    layout.addWidget(selector)
+    layout.addStretch(1)
+    page.resize(220, 200)
+    page.show()
+    selector.set_selected_value("Long")
+    for _ in range(5):
+        qapp.processEvents()
+    for button in selector.buttons():
+        if button.isVisible():
+            assert button.geometry().right() <= selector.width(), button.text()
+
+
+def test_non_chip_selectors_show_pills_when_wide_and_a_dropdown_when_narrow(qapp):
+    from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+    page = QWidget()
+    layout = QVBoxLayout(page)
+    selector = AdaptiveChoiceSelector(compact=True)
+    for value in ("BF", "DF", "DIC", "Phase"):
+        selector.addItem(value, value)
+    selector.set_selected_value("DIC")
+    layout.addWidget(selector)
+    page.resize(600, 120)
+    page.show()
+    for _ in range(10):
+        qapp.processEvents()
+    selector._refresh_mode_for_width()
+    assert selector.display_mode() == "pill"
+    assert selector.button_for_value("DIC").isChecked()
+    page.resize(90, 120)
+    for _ in range(10):
+        qapp.processEvents()
+    selector._refresh_mode_for_width()
+    assert selector.display_mode() == "combo"
+    assert selector.combo().currentData() == "DIC"
+    seen = []
+    selector.currentIndexChanged.connect(seen.append)
+    selector.combo().setCurrentIndex(selector.findData("BF"))
+    assert selector.selected_value() == "BF" and seen
+
+
+def test_chip_row_keeps_its_natural_width_in_a_form_that_does_not_stretch_fields(qapp):
+    """macOS's native style keeps form fields at their size hint; the chip row's
+    hint must be the row's own width, not whatever width it had before."""
+    from PySide6.QtWidgets import QFormLayout, QWidget
+
+    page = QWidget()
+    form = QFormLayout(page)
+    form.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
+    selector = AdaptiveChoiceSelector(compact=True)
+    selector.addItem("Not set", "Not_set", pillText="—")
+    for value in ("Water", "KOH", "L4"):
+        selector.addItem(value, value)
+    selector.set_chip_mode(clear_value="Not_set")
+    selector.resize(60, 30)  # a narrow width it once had
+    form.addRow("Mount:", selector)
+    page.resize(600, 120)
+    page.show()
+    for _ in range(5):
+        qapp.processEvents()
+    assert selector.visible_chip_values() == ["Water", "KOH", "L4"]
+    assert not selector.more_chip().isVisible()
+
+
+def test_chip_rows_have_the_same_inset_set_or_unset_and_no_gap_under_the_chips(qapp):
+    """Every chip row reserves the same even inset, so the red "not set" box only
+    adds colour. The hidden dropdown page is taller than a chip (the padding here
+    stands in for the app stylesheet / macOS) but no longer sets the row's
+    height, which left a gap under the chips."""
+    from PySide6.QtWidgets import QFormLayout, QWidget
+
+    page = QWidget()
+    form = QFormLayout(page)
+    form.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
+    selectors = []
+    for selected in (None, "KOH"):
+        selector = AdaptiveChoiceSelector(compact=True)
+        selector.addItem("Not set", "Not_set", pillText="—")
+        for value in ("Water", "KOH", "L4"):
+            selector.addItem(value, value)
+        selector.set_chip_mode(clear_value="Not_set")
+        selector.combo().setStyleSheet("QComboBox { padding: 12px 10px; }")  # like the app's padded combos
+        assert selector.combo().sizeHint().height() > selector.buttons()[1].sizeHint().height() + 6
+        selector.setCurrentIndex(selector.findData(selected or "Not_set"))
+        form.addRow("Mount:", selector)
+        selector.set_form_label(form.labelForField(selector))
+        selectors.append(selector)
+    unset, chosen = selectors
+    page.resize(600, 200)
+    page.show()
+    for _ in range(5):
+        qapp.processEvents()
+    update_combo_alert(unset)
+    update_combo_alert(chosen)
+    for _ in range(5):
+        qapp.processEvents()
+
+    def layout(selector):
+        return [
+            (button.text(), button.geometry().getRect())
+            for button in selector.buttons()
+            if button.isVisible()
+        ], selector.size().toTuple()
+
+    assert combo_is_unset(unset) and not combo_is_unset(chosen)
+    assert layout(unset) == layout(chosen)
+    chips, (width, height) = layout(unset)
+    assert [text for text, _rect in chips] == ["Water", "KOH", "L4"]
+    assert not unset.more_chip().isVisible()
+    x, y, _w, chip_height = chips[0][1]
+    assert x == 4 and y == 3 and height == chip_height + 2 * y
+    assert chips[-1][1][0] + chips[-1][1][2] <= width - 4
+    label = form.labelForField(unset).geometry()
+    assert label.center().y() - unset.y() == y + (chip_height - 1) // 2  # centred on the chips
+
+    # Choosing a value only drops the colours.
+    before = layout(unset)
+    unset.setCurrentIndex(unset.findData("Water"))
+    update_combo_alert(unset)
+    for _ in range(5):
+        qapp.processEvents()
+    assert not combo_is_unset(unset)
+    assert layout(unset) == before
+
+
+def test_clearing_a_chip_by_click_leaves_no_stray_more_chip(qapp):
+    """In a form that keeps fields at their size hint, the alert's side inset
+    resizes the row while a click refits it; the "+ N more" chip must not be
+    left visible from a refit that a resize re-entered."""
+    from PySide6.QtWidgets import QFormLayout, QWidget
+
+    page = QWidget()
+    form = QFormLayout(page)
+    form.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
+    selector = AdaptiveChoiceSelector(compact=True)
+    selector.addItem("Not set", "Not_set", pillText="—")
+    for value in ("Water", "KOH", "L4"):
+        selector.addItem(value, value)
+    selector.set_chip_mode(clear_value="Not_set")
+    selector.currentIndexChanged.connect(lambda _index: update_combo_alert(selector))
+    selector.set_selected_value("Water")
+    form.addRow("Mount:", selector)
+    page.resize(600, 120)
+    page.show()
+    for _ in range(5):
+        qapp.processEvents()
+
+    QTest.mouseClick(selector.button_for_value("Water"), Qt.LeftButton)  # clears
+    for _ in range(5):
+        qapp.processEvents()
+    assert combo_is_unset(selector)
+    assert selector.visible_chip_values() == ["Water", "KOH", "L4"]
+    assert not selector.more_chip().isVisible()
+
+    QTest.mouseClick(selector.button_for_value("KOH"), Qt.LeftButton)
+    for _ in range(5):
+        qapp.processEvents()
+    assert not combo_is_unset(selector)
+    assert not selector.more_chip().isVisible()
+
+
+@pytest.mark.parametrize("width", range(380, 440, 2))
+def test_the_alert_keeps_a_folded_row_on_one_line(qapp, width):
+    """The alert's side inset can fold one more chip, but the folded row stays on
+    one line and inside the box: "+ N more" is measured at its widest count (at
+    406 px the default stains once wrapped "+ 4 more" onto a second line)."""
+    from PySide6.QtWidgets import QFormLayout, QWidget
+
+    page = QWidget()
+    form = QFormLayout(page)
+    form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+    selector = AdaptiveChoiceSelector(compact=True)
+    for value in DatabaseTerms.default_values("stain"):
+        selector.addItem(DatabaseTerms.translate("stain", value), value)
+    selector.set_chip_mode(clear_value="Not_set")
+    selector.set_selected_value("Melzer")
+    form.addRow("Stain:", selector)
+    page.resize(width, 200)
+    page.show()
+    for _ in range(5):
+        qapp.processEvents()
+
+    selector.set_selected_value("Not_set")
+    update_combo_alert(selector)
+    for _ in range(5):
+        qapp.processEvents()
+    shown = [button for button in selector.buttons() + [selector.more_chip()] if button.isVisible()]
+    assert selector.more_chip().isVisible()
+    assert len({button.geometry().y() for button in shown}) == 1
+    assert max(button.geometry().right() for button in shown) <= selector.width() - 1 - 4
+
+
+def test_a_chip_row_label_keeps_room_for_a_large_font(qapp):
+    """The form label gets one chip line's height, but never less than its own
+    text needs: a large font must not clip it."""
+    from PySide6.QtWidgets import QFormLayout, QWidget
+
+    page = QWidget()
+    form = QFormLayout(page)
+    selector = AdaptiveChoiceSelector(compact=True)
+    selector.addItem("Not set", "Not_set", pillText="—")
+    for value in ("Water", "KOH"):
+        selector.addItem(value, value)
+    selector.set_chip_mode(clear_value="Not_set")
+    form.addRow("Mount:", selector)
+    label = form.labelForField(selector)
+    selector.set_form_label(label)
+    page.resize(500, 200)
+    page.show()
+    for _ in range(5):
+        qapp.processEvents()
+    assert label.height() == selector.buttons()[1].height() + 6  # one chip line
+
+    font = page.font()
+    font.setPointSize(40)
+    page.setFont(font)
+    for _ in range(10):
+        qapp.processEvents()
+    assert label.height() >= label.sizeHint().height() > selector.buttons()[1].height() + 6

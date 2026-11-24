@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtWidgets import QApplication, QWidget, QCheckBox, QLineEdit
 from PySide6.QtWidgets import QPlainTextEdit
-from PySide6.QtCore import QPoint, Signal
+from PySide6.QtCore import QObject, QPoint, Signal
 
 import ui.main_window as main_window
 import utils.cloud_sync as cloud_sync
@@ -213,6 +213,7 @@ def test_remove_saved_passwords_clears_all_keyring_services_but_keeps_sessions(m
         tr=lambda text: text,
         _update_status=lambda: calls.append("status"),
         _update_controls=lambda: calls.append("controls"),
+        _show_notice=lambda text, tone="error", details=None: calls.append(f"notice:{tone}"),
     )
 
     main_window.ArtsobservasjonerSettingsDialog._remove_saved_passwords(dialog)
@@ -223,7 +224,7 @@ def test_remove_saved_passwords_clears_all_keyring_services_but_keeps_sessions(m
         "cloud",
         "status",
         "controls",
-        "information",
+        "notice:success",
     ]
 
 
@@ -275,6 +276,97 @@ def test_profile_cloud_sign_in_buttons_follow_cached_login_state(monkeypatch, qa
     assert cloud_card.cloud_status_label.text() == "Signed in as: sigmund.as@gmail.com"
     assert cloud_card.cloud_login_button.isEnabled() is False
     assert cloud_card.cloud_logout_button.isEnabled() is True
+
+    dialog.deleteLater()
+    parent.deleteLater()
+
+
+def _sign_out_settings_hub(monkeypatch, parent, dialog) -> None:
+    monkeypatch.setattr(cloud_sync.SporelyCloudClient, "from_stored_credentials", lambda: None)
+    parent._cloud_client = None
+    dialog._cloud_client = None
+    dialog._artsobs_dialog._cloud_client = None
+
+
+def test_profile_cloud_signed_out_offers_browser_sign_in_only(monkeypatch, qapp):
+    parent, dialog = _build_settings_hub_dialog(monkeypatch, qapp, patch_controls=False)
+    cloud_card = dialog._artsobs_dialog
+    _sign_out_settings_hub(monkeypatch, parent, dialog)
+
+    cloud_card._update_cloud_controls()
+
+    assert cloud_card.cloud_status_label.text() == "Not logged in"
+    assert cloud_card.cloud_login_button.text() == "Log in"
+    assert cloud_card.cloud_login_button.isEnabled() is True
+    assert cloud_card.cloud_logout_button.isEnabled() is False
+    # Sign-in happens in the browser: the cloud section asks for no password.
+    password_fields = [
+        field
+        for field in cloud_card._cloud_section.findChildren(QLineEdit)
+        if field.echoMode() != QLineEdit.EchoMode.Normal
+    ]
+    assert password_fields == []
+
+    dialog.deleteLater()
+    parent.deleteLater()
+
+
+def test_profile_cloud_log_in_starts_browser_sign_in_and_closing_the_wait_cancels_it(monkeypatch, qapp):
+    parent, dialog = _build_settings_hub_dialog(monkeypatch, qapp, patch_controls=False)
+    cloud_card = dialog._artsobs_dialog
+    _sign_out_settings_hub(monkeypatch, parent, dialog)
+    cloud_card._update_cloud_controls()
+
+    workers: list = []
+
+    class _FakeLoginWorker(QObject):
+        ok = Signal(object)
+        fail = Signal(str)
+        finished = Signal()
+
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.started = False
+            self.cancelled = False
+            workers.append(self)
+
+        def start(self):
+            self.started = True
+
+        def cancel(self):
+            self.cancelled = True
+
+    seen_while_waiting: dict[str, object] = {}
+
+    def _close_waiting_dialog(waiting_dialog):
+        # The user closes the "Waiting for browser sign-in" dialog.
+        seen_while_waiting["button_text"] = cloud_card.cloud_login_button.text()
+        seen_while_waiting["button_enabled"] = cloud_card.cloud_login_button.isEnabled()
+        seen_while_waiting["worker_started"] = bool(workers and workers[0].started)
+        waiting_dialog.reject()
+        return 0
+
+    monkeypatch.setattr(main_window, "_CloudOAuthLoginWorker", _FakeLoginWorker)
+    monkeypatch.setattr(main_window.QDialog, "exec", _close_waiting_dialog)
+
+    cloud_card.cloud_login_button.click()
+
+    assert len(workers) == 1
+    assert seen_while_waiting == {
+        "button_text": "Signing in...",
+        "button_enabled": False,
+        "worker_started": True,
+    }
+    assert workers[0].cancelled is True
+
+    # A second click while that worker is still winding down starts nothing new.
+    cloud_card._open_cloud_login()
+    assert len(workers) == 1
+
+    workers[0].finished.emit()
+    assert cloud_card._cloud_login_worker is None
+    assert cloud_card.cloud_login_button.text() == "Log in"
+    assert cloud_card.cloud_login_button.isEnabled() is True
 
     dialog.deleteLater()
     parent.deleteLater()
@@ -467,16 +559,18 @@ def test_profile_cloud_sync_log_button_shows_summary_and_errors(monkeypatch, qap
 
     captured: dict[str, object] = {}
 
-    def fake_build(lines):
-        captured["lines"] = list(lines)
+    def fake_build(parent, text):
+        captured["parent"] = parent
+        captured["text"] = text
         return SimpleNamespace(exec=lambda: captured.setdefault("executed", True))
 
-    monkeypatch.setattr(dialog, "_build_cloud_sync_details_dialog", fake_build)
+    # The shared Sync log builder (stage 10d1).
+    monkeypatch.setattr(main_window, "build_sync_log_dialog", fake_build)
 
     dialog.cloud_sync_log_button.click()
 
-    assert captured["executed"] is True
-    text = "\n".join(captured["lines"])
+    assert captured["executed"] is True and captured["parent"] is dialog
+    text = captured["text"]
     assert "Status: ok" in text
     assert "Summary: Cloud sync complete." in text
     assert "Observations: 5 checked; 5 re-dirtied due to pending local images; 5 skipped as no-op." in text
@@ -600,6 +694,7 @@ def test_cloud_login_failure_refreshes_parent_ui_without_crashing(monkeypatch):
     fake_dialog = SimpleNamespace(
         tr=lambda text: text,
         parent=lambda: settings_hub_fake,
+        _show_cloud_notice=lambda text, tone="error", details=None: warning_calls.append(((text, tone, details), {})),
         observations_tab=SimpleNamespace(
             _reset_status_progress=lambda: events.append("reset_progress"),
             _set_status_progress_visible=lambda visible: events.append(f"progress_visible:{bool(visible)}"),
@@ -635,7 +730,8 @@ def test_cloud_login_failure_refreshes_parent_ui_without_crashing(monkeypatch):
     ]
     assert "settings_refresh" in events
     assert "badge_refresh" in events
-    assert warning_calls
+    # The user is told in the Sporely Cloud card's bar, the error in Details.
+    assert warning_calls == [(("Sporely Cloud login failed.", "error", "Connection closed"), {})]
 
 
 def test_cloud_profile_refresh_temporary_refresh_failure_does_not_wipe_or_flag(monkeypatch):
@@ -683,6 +779,8 @@ def test_cloud_profile_refresh_temporary_refresh_failure_does_not_wipe_or_flag(m
 
     monkeypatch.setattr(cloud_sync.SporelyCloudClient, "clear_session", lambda: clear_calls.append("clear_session"))
     monkeypatch.setattr(main_window.SettingsDB, "set_profile", lambda *args, **kwargs: None)
+    monkeypatch.setattr(main_window.SettingsDB, "get_setting", lambda key, default=None: default)
+    monkeypatch.setattr(main_window.SettingsDB, "set_setting", lambda *args, **kwargs: None)
     monkeypatch.setattr(main_window, "get_app_settings", lambda: {"cloud_user_email": "sigmund.as@gmail.com"})
     monkeypatch.setattr(
         main_window, "update_app_settings", lambda payload: settings_payload.update(payload)
@@ -790,6 +888,7 @@ def test_cloud_login_success_does_not_auto_start_sync(monkeypatch):
         set_hint=lambda text, tone="info": events.append(f"hint:{tone}:{text}"),
         _refresh_cloud_sync_ui=lambda: events.append("refresh_ui"),
     )
+    _with_host_lookup(fake_dialog)
 
     monkeypatch.setattr(cloud_sync, "ensure_database_linked_to_cloud_user", lambda client: "user-123")
     monkeypatch.setattr(main_window, "update_app_settings", lambda payload: settings_payload.update(payload))
@@ -823,9 +922,11 @@ def _build_profile_save_fake_dialog(events, fake_client, fake_main_window, profi
         _on_cloud_logout_changed=lambda: events.append("logout"),
         _settings_hub_main_window=lambda: fake_main_window,
         parent=lambda: None,
+        # The Profile page's notice (stage 10d1), recorded.
+        _show_profile_notice=lambda text, tone="error", *, details=None: events.append(("notice", tone, text)),
     )
-    fake_dialog._profile_sync_error_message = MethodType(
-        main_window.SettingsHubDialog._profile_sync_error_message,
+    fake_dialog._profile_sync_error_notice = MethodType(
+        main_window.SettingsHubDialog._profile_sync_error_notice,
         fake_dialog,
     )
     fake_dialog._mark_cloud_session_needs_reauth = MethodType(
@@ -883,8 +984,9 @@ def test_profile_save_temporary_refresh_failure_does_not_wipe_or_flag(monkeypatc
             {},
         )
     ]
-    # User is still warned about the failure (via _profile_sync_error_message).
-    assert warning_calls
+    # The user is still told, in the Profile page's bar.
+    assert [e for e in events if isinstance(e, tuple) and e[:2] == ("notice", "error")]
+    assert warning_calls == []
 
 
 def test_profile_save_reauth_required_flags_session_without_wiping(monkeypatch):
@@ -927,8 +1029,9 @@ def test_profile_save_reauth_required_flags_session_without_wiping(monkeypatch):
     # Session flagged for re-auth so the UI can prompt sign-in.
     assert settings_payload["cloud_last_sync_status"] == "reauth_required"
     assert "idle_hint" in events
-    # User still warned.
-    assert warning_calls
+    # The user is still told, in the Profile page's bar.
+    assert [e for e in events if isinstance(e, tuple) and e[:2] == ("notice", "error")]
+    assert warning_calls == []
 
 
 def test_raw_processing_preferences_page_exposes_advanced_controls(monkeypatch, qapp):
@@ -972,6 +1075,13 @@ def test_raw_processing_preferences_page_exposes_advanced_controls(monkeypatch, 
 # client in place, so a freshly reopened dialog appeared signed in again.
 # ---------------------------------------------------------------------------
 
+def _with_host_lookup(dialog):
+    """The real lookup of Preferanser (or the opening window) on a stand-in."""
+    dialog._settings_hub = MethodType(main_window.ArtsobservasjonerSettingsDialog._settings_hub, dialog)
+    dialog._settings_host = MethodType(main_window.ArtsobservasjonerSettingsDialog._settings_host, dialog)
+    return dialog
+
+
 def _make_logout_dialog(monkeypatch, *, parent, cached_client):
     """A lightweight stand-in for ArtsobservasjonerSettingsDialog, exercising
     the real _logout_cloud/_cached_cloud_client methods without building a
@@ -984,6 +1094,7 @@ def _make_logout_dialog(monkeypatch, *, parent, cached_client):
         _update_cloud_controls=lambda: events.append("update_controls"),
         _update_status=lambda: events.append("update_status"),
     )
+    _with_host_lookup(dialog)
     monkeypatch.setattr(cloud_sync.SporelyCloudClient, "clear_credentials", lambda: events.append("clear_credentials"))
     monkeypatch.setattr(main_window, "update_app_settings", lambda updates: events.append(("update_app_settings", dict(updates))))
     return dialog, events
@@ -1050,7 +1161,7 @@ def test_stale_cached_client_does_not_survive_reopen_after_signout(monkeypatch):
 
     main_window.ArtsobservasjonerSettingsDialog._logout_cloud(dialog)
 
-    reopened_dialog = SimpleNamespace(_cloud_client=None, parent=lambda: main_window_fake)
+    reopened_dialog = _with_host_lookup(SimpleNamespace(_cloud_client=None, parent=lambda: main_window_fake))
     resolved = main_window.ArtsobservasjonerSettingsDialog._cached_cloud_client(reopened_dialog)
 
     assert resolved is None, "Reopening after sign-out must show the logged-out state, not the stale session"

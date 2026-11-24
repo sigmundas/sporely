@@ -8,7 +8,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication, QDialog
+from PySide6.QtWidgets import QApplication
 
 import ui.cloud_conflict_dialog as conflict_ui
 import ui.observations_tab as observations_tab
@@ -126,9 +126,8 @@ def test_unchecking_draft_while_public_asks_and_cancel_keeps_draft(monkeypatch, 
     shown = []
     monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text, *_s: shown.append(text) or answer)
     dialog.is_draft_checkbox.setChecked(False)
-    dialog.accept()
+    assert dialog.confirm_publish_change() is answer
     assert len(shown) == 1 and "Attached references are shared by default" in shown[0]
-    assert dialog.result() == (QDialog.Accepted if answer else 0)
     assert dialog.is_draft_checkbox.isChecked() is (not answer)
     dialog._cleanup_dialog_threads()
     dialog.deleteLater()
@@ -139,13 +138,12 @@ def test_visibility_to_public_asks_and_cancel_restores_scope(monkeypatch, qapp):
     shown = []
     monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text, *_s: shown.append(text) or False)
     dialog._set_sharing_scope("public")
-    dialog.accept()
+    assert dialog.confirm_publish_change() is False
     assert len(shown) == 1
     assert dialog._selected_sharing_scope() == "friends"
-    assert dialog.result() == 0
     # Shown every time: a second attempt asks again.
     dialog._set_sharing_scope("public")
-    dialog.accept()
+    assert dialog.confirm_publish_change() is False
     assert len(shown) == 2
     dialog._cleanup_dialog_threads()
     dialog.deleteLater()
@@ -155,8 +153,7 @@ def test_no_notice_when_already_public(monkeypatch, qapp):
     dialog = _details_dialog(monkeypatch, qapp, {"is_draft": 0, "sharing_scope": "public"})
     monkeypatch.setattr(pn, "show_publish_notice",
                         lambda *_a: (_ for _ in ()).throw(AssertionError("no notice")))
-    dialog.accept()
-    assert dialog.result() == QDialog.Accepted
+    assert dialog.confirm_publish_change() is True
     dialog._cleanup_dialog_threads()
     dialog.deleteLater()
 
@@ -255,10 +252,9 @@ def test_precision_increase_in_details_dialog_asks_and_cancel_restores(monkeypat
     shown = []
     monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text, *_s: shown.append(text) or False)
     dialog._set_location_precision("exact")
-    dialog.accept()
+    assert dialog.confirm_publish_change() is False
     assert len(shown) == 1 and "the exact location" in shown[0]
     assert dialog._selected_location_precision() == "fuzzed"
-    assert dialog.result() == 0
     dialog._cleanup_dialog_threads()
     dialog.deleteLater()
 
@@ -270,8 +266,7 @@ def test_stored_hidden_or_region_precision_is_kept_on_save(monkeypatch, qapp, le
     monkeypatch.setattr(pn, "show_publish_notice",
                         lambda *_a: (_ for _ in ()).throw(AssertionError("no notice")))
     assert dialog.get_data()["location_precision"] == level
-    dialog.accept()
-    assert dialog.result() == QDialog.Accepted
+    assert dialog.confirm_publish_change() is True
     # Picking a level in the dialog replaces the stored one.
     dialog.location_precision_exact_radio.click()
     assert dialog.get_data()["location_precision"] == "exact"
@@ -334,10 +329,10 @@ def test_details_dialog_records_explicit_confirmed_precision(monkeypatch, qapp):
     dialog = _details_dialog(monkeypatch, qapp, {"is_draft": 0, "sharing_scope": "public",
                                                  "location_precision": "hidden"})
     monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text, *_s: True)
-    dialog.accept()  # unchanged hidden: nothing recorded
+    assert dialog.confirm_publish_change()  # unchanged hidden: nothing recorded
     assert dialog._recorded_precision == []
     dialog.location_precision_exact_radio.click()
-    dialog.accept()
+    assert dialog.confirm_publish_change() is True
     assert dialog._recorded_precision == [(917, "exact")]
     assert dialog.confirmed_location_precision == "exact"
     dialog._cleanup_dialog_threads()
@@ -357,9 +352,8 @@ def test_notice_compares_against_cloud_precision_not_stale_local(monkeypatch, qa
     shown = []
     monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text, *_s: shown.append(text) or False)
     dialog.location_precision_fuzzed_radio.click()
-    dialog.accept()
+    assert dialog.confirm_publish_change() is False
     assert len(shown) == 1 and "an approximate location" in shown[0]
-    assert dialog.result() == 0
     dialog._cleanup_dialog_threads()
     dialog.deleteLater()
 

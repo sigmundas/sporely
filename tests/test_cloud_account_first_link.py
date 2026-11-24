@@ -120,8 +120,10 @@ def test_profile_error_only_blames_username_for_username_conflicts(error, taken)
     from ui import main_window
 
     dialog = SimpleNamespace(tr=lambda text: text)
-    message = main_window.SettingsHubDialog._profile_sync_error_message(dialog, Exception(error))
+    message, details = main_window.SettingsHubDialog._profile_sync_error_notice(dialog, Exception(error))
     assert ("username is already taken" in message) is taken
+    # Details carry the server's error only when the message does not say it all.
+    assert (details is None) is taken
 
 
 def test_refused_first_link_at_sign_in_saves_no_credentials(local_db, monkeypatch):
@@ -131,14 +133,20 @@ def test_refused_first_link_at_sign_in_saves_no_credentials(local_db, monkeypatc
     client = _Client("acct-other", owned=())
     saved = []
     client.save_credentials = lambda **kwargs: saved.append(kwargs)
-    warnings = []
-    monkeypatch.setattr(main_window.QMessageBox, "warning", lambda *args: warnings.append(args[2]))
+    notices = []
     monkeypatch.setattr(main_window, "update_app_settings", lambda updates: saved.append(updates))
-    dialog = SimpleNamespace(tr=lambda text: text, _cloud_client="previous")
+    dialog = SimpleNamespace(
+        tr=lambda text: text,
+        _cloud_client="previous",
+        _show_cloud_notice=lambda text, tone="error", details=None: notices.append((text, tone, details)),
+    )
 
     main_window.ArtsobservasjonerSettingsDialog._on_cloud_login_success(dialog, client, "other@example.com")
 
     assert saved == []
     assert dialog._cloud_client is None
     assert "linked_cloud_user_id" not in local_db.settings
-    assert cloud_sync.ACCOUNT_MISMATCH_MESSAGE in warnings[0]
+    # Said in the Profile page's bar (stage 10d2), the full reason in Details.
+    text, tone, details = notices[0]
+    assert (text, tone) == ("This database belongs to another Sporely Cloud account.", "error")
+    assert cloud_sync.ACCOUNT_MISMATCH_MESSAGE in details

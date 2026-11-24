@@ -181,8 +181,12 @@ def test_source_image_publish_exclusion_does_not_filter_mosaic_measurements(
     )
     monkeypatch.setattr(
         ObservationsTab,
-        "_publish_excluded_image_ids",
-        classmethod(lambda _cls, _observation_id: set(excluded)),
+        "_shared_image_ids",
+        staticmethod(
+            lambda _observation_id, image_ids: {
+                int(v) for v in image_ids if int(v) not in excluded
+            }
+        ),
     )
 
     publish = SimpleNamespace(
@@ -196,7 +200,7 @@ def test_source_image_publish_exclusion_does_not_filter_mosaic_measurements(
             "gallery_sort": "length",
             "orient": True,
         },
-        _publish_excluded_image_ids=ObservationsTab._publish_excluded_image_ids,
+        _shared_image_ids=ObservationsTab._shared_image_ids,
     )
 
     uploaded_paths = ObservationsTab._collect_artsobs_image_paths(publish, 77)
@@ -347,8 +351,12 @@ def _publish_mosaic_signature(
     )
     monkeypatch.setattr(
         ObservationsTab,
-        "_publish_excluded_image_ids",
-        classmethod(lambda _cls, _observation_id: set(excluded)),
+        "_shared_image_ids",
+        staticmethod(
+            lambda _observation_id, image_ids: {
+                int(v) for v in image_ids if int(v) not in excluded
+            }
+        ),
     )
 
     publish = SimpleNamespace(
@@ -358,7 +366,7 @@ def _publish_mosaic_signature(
             _current_measure_rectangle_thickness=lambda: 1,
         ),
         _load_gallery_settings_for_observation=lambda _observation_id: dict(settings),
-        _publish_excluded_image_ids=ObservationsTab._publish_excluded_image_ids,
+        _shared_image_ids=ObservationsTab._shared_image_ids,
     )
 
     prepared_settings, mosaic_rows, image_rows, render_options = (

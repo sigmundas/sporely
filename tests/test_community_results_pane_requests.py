@@ -18,7 +18,6 @@ from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication
 
 import ui.cloud_reference_dialog as mod
-from ui.reference_preview_pane import ReferencePreviewPane
 
 
 def _app() -> QApplication:
@@ -99,8 +98,7 @@ def _patch_workers(monkeypatch):
 def _make_pane(monkeypatch, genus="Amanita", species="fulva"):
     _app()
     search_workers, detail_workers = _patch_workers(monkeypatch)
-    preview_pane = ReferencePreviewPane()
-    pane = mod.CommunityResultsPane(genus=genus, species=species, preview_pane=preview_pane)
+    pane = mod.CommunityResultsPane(genus=genus, species=species)
     return pane, search_workers, detail_workers
 
 
@@ -198,14 +196,13 @@ def test_stale_detail_success_cannot_overwrite_current_selection(monkeypatch):
 
     current_detail_worker.detail_done.emit({"contributor_label": "row 1 detail"})
     assert pane._selected_detail == {"contributor_label": "row 1 detail"}
-    title = pane._preview_pane.summary_title_label.text()
     stale_detail_worker.detail_done.emit({"contributor_label": "obsolete"})
     stale_detail_worker.error.emit("obsolete error")
     assert pane._selected_detail == {"contributor_label": "row 1 detail"}
-    assert pane._preview_pane.summary_title_label.text() == title
+    assert pane._selected_error is None
 
 
-def test_stale_detail_error_cannot_overwrite_current_preview(monkeypatch):
+def test_stale_detail_error_cannot_mark_the_current_selection_failed(monkeypatch):
     pane, search_workers, detail_workers = _make_pane(monkeypatch)
     search_workers[0].search_done.emit(
         [
@@ -219,10 +216,44 @@ def test_stale_detail_error_cannot_overwrite_current_preview(monkeypatch):
     _select_row(pane, 1)
 
     stale_detail_worker.error.emit("stale detail failure for row 0")
-    # Row 1 is still loading; the stale row-0 error must not overwrite its
-    # "Loading review details..." placeholder with a failure message.
+    # Row 1 is still loading; the stale row-0 error must not mark it failed.
     assert pane._selected_detail is None
-    assert pane._preview_pane.summary_title_label.text() != pane.tr("Could not load dataset")
+    assert pane._selected_error is None
+
+
+def test_the_checked_mode_decides_what_the_drawer_adds(monkeypatch):
+    """Range summary adds the aggregate; Raw points adds the contributors' points.
+
+    Raw points is only offered when the detail carries measurements, and a
+    detail without them falls back to the summary.
+    """
+    pane, search_workers, detail_workers = _make_pane(monkeypatch)
+    search_workers[0].search_done.emit([{"contributor_label": "row 0", "observation_id": 1}], {})
+    _select_row(pane, 0)
+    assert pane.current_mode_payload() is None  # nothing loaded yet
+
+    detail = {
+        "genus": "Amanita", "species": "fulva", "contributor_label": "row 0",
+        "length_min": 9.0, "length_max": 12.0, "width_min": 8.0, "width_max": 11.0,
+        "measurements_json": [{"length_um": 10.0, "width_um": 9.0}, {"length_um": 11.0, "width_um": 9.5}],
+    }
+    detail_workers[0].detail_done.emit(detail)
+    assert pane.raw_points_radio.isEnabled() is True
+    assert pane.raw_points_radio.text().endswith("(n=2)")
+    assert pane.current_mode_payload()["source_kind"] == "reference"
+
+    pane.raw_points_radio.setChecked(True)
+    payload = pane.current_mode_payload()
+    assert payload["source_kind"] == "points"
+    assert payload["points"] == [{"length_um": 10.0, "width_um": 9.0}, {"length_um": 11.0, "width_um": 9.5}]
+
+    # A later detail without measurements takes Raw points away again.
+    _select_row(pane, -1)
+    _select_row(pane, 0)
+    detail_workers[-1].detail_done.emit(dict(detail, measurements_json=[]))
+    assert pane.raw_points_radio.isEnabled() is False
+    assert pane.range_summary_radio.isChecked() is True
+    assert pane.current_mode_payload()["source_kind"] == "reference"
 
 
 def test_detail_pending_then_target_cleared_invalidates_stale_detail(monkeypatch):
@@ -287,22 +318,67 @@ def test_callbacks_after_close_cannot_restore_selection(monkeypatch):
     assert pane.current_mode_payload() is None
 
 
-def test_picker_reject_closes_outstanding_pane_workers(monkeypatch, tmp_path):
-    from PySide6.QtCore import QSettings
-    import ui.add_reference_dialog as picker
-    import ui.window_state as geometry
 
+
+# ---------------------------------------------------------------------
+# The active observation's own community dataset is never offered to
+# compare with itself (moved from the retired Add-reference dialog's tests,
+# stage 10a2; the drawer builds the pane this way).
+# ---------------------------------------------------------------------
+
+
+def _own_and_published_rows() -> list[dict]:
+    return [
+        {
+            "_kind": "observation",
+            "observation_id": 4242,
+            "genus": "Cortinarius",
+            "species": "limonius",
+            "contributor_label": "sporely_community_user_7",
+            "measurement_count": 3,
+        },
+        {
+            "_kind": "reference",
+            "genus": "Cortinarius",
+            "species": "limonius",
+            "source": "mycena.no",
+            "contributor_label": "mycena.no",
+        },
+    ]
+
+
+def _drawer_pane(rows, exclude_observation_cloud_id=None):
     _app()
-    searches, details = _patch_workers(monkeypatch)
-    settings = lambda *_args: QSettings(str(tmp_path / "picker.ini"), QSettings.IniFormat)
-    monkeypatch.setattr(picker, "QSettings", settings)
-    monkeypatch.setattr(geometry, "QSettings", settings)
-    dialog = picker.AddReferenceDialog(
-        genus="Amanita", species="fulva", candidates=[], my_observations=[]
+    return mod.CommunityResultsPane(
+        genus="Cortinarius",
+        species="limonius",
+        results=rows,
+        exclude_observation_cloud_id=exclude_observation_cloud_id,
+        checkable=True,
     )
-    searches[0].search_done.emit([{"observation_id": 1}], {})
-    _select_row(dialog._community_pane, 0)
-    dialog._community_pane.set_taxon("Cortinarius", "rubellus")
-    dialog.reject()
-    assert all(worker.waited for worker in searches + details)
-    assert not dialog._community_pane.has_selection()
+
+
+def test_the_active_observations_own_dataset_is_excluded_by_cloud_id():
+    pane = _drawer_pane(_own_and_published_rows(), exclude_observation_cloud_id="4242")
+    assert pane.results_list.count() == 1
+    assert [row["_kind"] for row in pane._results] == ["reference"]
+
+
+def test_another_observation_of_the_same_taxon_is_kept():
+    pane = _drawer_pane(_own_and_published_rows(), exclude_observation_cloud_id="9999")
+    assert pane.results_list.count() == 2
+    assert [row["_kind"] for row in pane._results] == ["observation", "reference"]
+
+
+def test_rows_of_other_taxa_pass_the_exclusion_untouched():
+    rows = _own_and_published_rows() + [
+        {"_kind": "observation", "observation_id": 7777, "genus": "Amanita", "species": "muscaria",
+         "contributor_label": "sporely_community_user_9", "measurement_count": 5},
+    ]
+    pane = _drawer_pane(rows, exclude_observation_cloud_id="4242")
+    assert [row.get("observation_id") for row in pane._results if row["_kind"] == "observation"] == [7777]
+
+
+def test_without_an_exclusion_id_every_row_stays():
+    pane = _drawer_pane(_own_and_published_rows())
+    assert pane.results_list.count() == 2

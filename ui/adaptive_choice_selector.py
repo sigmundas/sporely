@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 import re
 
-from PySide6.QtCore import QEvent, QTimer, Signal, QSize
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -20,7 +20,14 @@ from PySide6.QtWidgets import (
 )
 
 from .combo_alerts import lab_state_alert_colors
-from .styles import get_design_tokens
+from .styles import (
+    OBJECTIVE_RING_MACRO,
+    OBJECTIVE_RING_UNKNOWN,
+    REAGENT_COLORS,
+    get_design_tokens,
+    objective_ring_color,
+    objective_ring_outline,
+)
 
 
 @dataclass(slots=True)
@@ -53,6 +60,17 @@ class AdaptiveChoiceSelector(QWidget):
         self._lab_state_alert = False
         self._mixed_values: list[Any] = []
         self._has_measured_width = False
+        self._display_listeners: list = []
+        # Chip mode (set_chip_mode): wrapping chips, no dropdown fallback.
+        self._chip_mode = False
+        self._chip_clear_value: Any = None
+        self._chips_expanded = False
+        self._chip_container: QWidget | None = None
+        self._chip_layout = None
+        self._more_chip: QPushButton | None = None
+        self._chip_fit_running = False
+        self._chip_fit_pending = False
+        self._form_label: QWidget | None = None
         self._fit_timer = QTimer(self)
         self._fit_timer.setSingleShot(True)
         self._fit_timer.timeout.connect(self._refresh_mode_for_width)
@@ -100,8 +118,18 @@ class AdaptiveChoiceSelector(QWidget):
                 self._button_group.removeButton(widget)  # type: ignore[arg-type]
                 widget.setParent(None)
                 widget.deleteLater()
+        for button in self._buttons:
+            if button is not None and self._chip_layout is not None:
+                index = self._chip_layout.index_of_widget(button)
+                if index >= 0:
+                    self._chip_layout.takeAt(index)
+                    self._button_group.removeButton(button)
+                    button.setParent(None)
+                    button.deleteLater()
         self._buttons.clear()
+        self._chips_expanded = False
         self._schedule_fit_update(0)
+        self._notify_display_listeners()
 
     def addItem(
         self,
@@ -138,8 +166,11 @@ class AdaptiveChoiceSelector(QWidget):
                 button.setToolTip(item.display_text)
             button.setProperty("choiceIndex", index)
             self._button_group.addButton(button)
-            self._pill_container_layout.addWidget(button, 1)
             self._buttons.append(button)
+            if self._chip_mode:
+                self._place_chip(button)
+            else:
+                self._pill_container_layout.addWidget(button, 1)
             self._apply_button_style(button, item)
         else:
             self._buttons.append(None)
@@ -148,6 +179,7 @@ class AdaptiveChoiceSelector(QWidget):
             self._apply_index(0, emit=False)
         else:
             self._sync_button_states()
+            self._notify_display_listeners()
         self._schedule_fit_update(0)
 
     def add_option(self, *args, **kwargs) -> None:
@@ -209,6 +241,8 @@ class AdaptiveChoiceSelector(QWidget):
             if item.pill_text is None and item.value is not None:
                 button.setText(item.display_text)
         self._schedule_fit_update(0)
+        if index == self._current_index:
+            self._notify_display_listeners()
 
     def buttons(self) -> list[QPushButton]:
         return [button for button in self._buttons if button is not None]
@@ -242,6 +276,101 @@ class AdaptiveChoiceSelector(QWidget):
     def combo(self) -> QComboBox:
         return self._combo
 
+    def set_chip_mode(self, *, clear_value: Any = "Not_set") -> None:
+        """Show the choices as wrapping chips instead of pills or a dropdown.
+
+        Chips never fall back to a dropdown. The item whose value is
+        ``clear_value`` (the "not set" choice) gets no chip; clicking the
+        selected chip selects it instead, so a second click clears the
+        choice. Chips that do not fit on one row fold behind a "+ N more"
+        chip that shows them all in place; the selected chip always stays
+        visible.
+        """
+        if self._chip_mode:
+            return
+        from .flow_layout import FlowLayout
+
+        self._chip_mode = True
+        self._chip_clear_value = clear_value
+        self._chip_container = QWidget(self)
+        self._chip_container.setObjectName("adaptiveChoiceChipContainer")
+        self._chip_layout = FlowLayout(self._chip_container, spacing=4)
+        self._chip_layout.setContentsMargins(
+            self._CHIP_INSET_X, self._CHIP_INSET_Y, self._CHIP_INSET_X, self._CHIP_INSET_Y
+        )
+        self._chip_layout.set_center_vertically(True)
+        # The pill row and dropdown pages stay in the stack but are never shown
+        # in chip mode; they must not set the row's height (the dropdown is
+        # taller than a chip, which left a gap under the chips).
+        for page in (self._pill_container, self._combo):
+            policy = page.sizePolicy()
+            policy.setVerticalPolicy(QSizePolicy.Ignored)
+            page.setSizePolicy(policy)
+        self._more_chip = QPushButton(self._chip_container)
+        self._more_chip.setObjectName("adaptiveChoiceMoreChip")
+        self._more_chip.setCursor(self.cursor())
+        self._more_chip.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self._more_chip.clicked.connect(self._expand_chips)
+        self._more_chip.installEventFilter(self)
+        self._chip_layout.addWidget(self._more_chip)
+        for button in self._buttons:
+            if button is None:
+                continue
+            self._pill_container_layout.removeWidget(button)
+            self._place_chip(button)
+        policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        policy.setHeightForWidth(True)
+        self.setSizePolicy(policy)
+        self._stack.addWidget(self._chip_container)
+        self._mode = "chip"
+        self._stack.setCurrentWidget(self._chip_container)
+        self._refresh_theme_styles()
+        self._layout_chips()
+
+    def item_at(self, index: int) -> ChoiceItem | None:
+        return self._item_at(index)
+
+    def is_unset_item(self, index: int) -> bool:
+        """True for the "not set" choice ("Not_set", "—")."""
+        item = self._item_at(index)
+        return item is not None and self._is_unset_choice_item(item)
+
+    def is_mixed_present(self, index: int) -> bool:
+        """True when a mixed selection contains the item at ``index``."""
+        return self._index_is_mixed_present(index)
+
+    def is_chip_mode(self) -> bool:
+        return self._chip_mode
+
+    def chips_expanded(self) -> bool:
+        return self._chips_expanded
+
+    def more_chip(self) -> QPushButton | None:
+        return self._more_chip
+
+    def visible_chip_values(self) -> list[Any]:
+        """Values of the chips shown right now, in order."""
+        if not self._chip_mode:
+            return []
+        return [
+            self._items[index].value
+            for index, button in enumerate(self._buttons)
+            if button is not None and not button.isHidden()
+        ]
+
+    def add_display_listener(self, callback) -> None:
+        """Call ``callback()`` whenever the shown selection changes.
+
+        Unlike ``currentIndexChanged`` this also fires for changes made while
+        signals are blocked (a gallery selection loading its values), so a
+        summary that mirrors the selector never goes stale.
+        """
+        self._display_listeners.append(callback)
+
+    def _notify_display_listeners(self) -> None:
+        for callback in list(self._display_listeners):
+            callback()
+
     def set_lab_state_alert(self, alert: bool) -> None:
         self._lab_state_alert = bool(alert)
         self.setProperty("labStateAlert", self._lab_state_alert)
@@ -274,6 +403,7 @@ class AdaptiveChoiceSelector(QWidget):
             return
         self._mixed_values = []
         self._refresh_theme_styles()
+        self._notify_display_listeners()
 
     def is_mixed(self) -> bool:
         return bool(self._mixed_values)
@@ -296,6 +426,10 @@ class AdaptiveChoiceSelector(QWidget):
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
+        if self._chip_mode:
+            # Cheap, and a deferred refit would leave a stale row on screen.
+            self._layout_chips()
+            return
         self._schedule_fit_update(75)
         self._update_pill_button_widths()
 
@@ -306,7 +440,7 @@ class AdaptiveChoiceSelector(QWidget):
             self._schedule_fit_update(0)
 
     def event(self, event) -> bool:  # type: ignore[override]
-        if event.type() == QEvent.LayoutRequest:
+        if event.type() == QEvent.LayoutRequest and not self._chip_mode:
             # Fires when the parent layout has finished computing geometry.
             # This is our most reliable signal that self.width() is real —
             # showEvent / QTimer(0) can both fire before the splitter and
@@ -314,12 +448,36 @@ class AdaptiveChoiceSelector(QWidget):
             self._schedule_fit_update(0)
         return super().event(event)
 
+    def hasHeightForWidth(self) -> bool:  # type: ignore[override]
+        return self._chip_mode or super().hasHeightForWidth()
+
+    def heightForWidth(self, width: int) -> int:  # type: ignore[override]
+        if self._chip_mode and self._chip_layout is not None:
+            return self._chip_layout.heightForWidth(width)
+        return super().heightForWidth(width)
+
     def sizeHint(self):  # type: ignore[override]
+        if self._chip_mode and self._chip_layout is not None:
+            # The natural width of the whole row on one line; the height is
+            # what that width needs. (Not the current width: a layout that
+            # keeps fields at their size hint would otherwise never grow it.)
+            spacing = self._chip_layout.spacing()
+            widths = [
+                button.sizeHint().width()
+                for index, button in enumerate(self._buttons)
+                if button is not None and not self._chip_is_hidden_choice(index)
+            ]
+            margins = self._chip_layout.contentsMargins()
+            width = max(40, sum(widths) + spacing * max(0, len(widths) - 1) + margins.left() + margins.right())
+            current = self.width() if self.width() > 40 else width
+            return QSize(width, self._chip_layout.heightForWidth(current))
         combo_hint = self._combo.sizeHint()
         pill_hint = self._pill_container.sizeHint()
         return QSize(combo_hint.width(), max(combo_hint.height(), pill_hint.height()))
 
     def minimumSizeHint(self):  # type: ignore[override]
+        if self._chip_mode and self._chip_layout is not None:
+            return self._chip_layout.minimumSize()
         combo_hint = self._combo.minimumSizeHint()
         pill_hint = self._pill_container.minimumSizeHint()
         return QSize(combo_hint.width(), max(combo_hint.height(), pill_hint.height()))
@@ -346,6 +504,10 @@ class AdaptiveChoiceSelector(QWidget):
             if button is None:
                 continue
             self._apply_button_style(button, self._items[index])
+        if self._chip_mode:
+            self._apply_chip_container_style()
+            self.update()
+            return
         if self._mode == "pill":
             if self._lab_state_alert:
                 colors = lab_state_alert_colors()
@@ -367,6 +529,241 @@ class AdaptiveChoiceSelector(QWidget):
             else:
                 self._combo.setStyleSheet("")
         self.update()
+
+    def _apply_chip_container_style(self) -> None:
+        if self._chip_container is None:
+            return
+        tokens = get_design_tokens()
+        if self._lab_state_alert:
+            colors = lab_state_alert_colors()
+            border = f"1px solid {colors['border']}"
+            background = colors["background"]
+        else:
+            border = "1px solid transparent"
+            background = "transparent"
+        self._chip_container.setStyleSheet(
+            "QWidget#adaptiveChoiceChipContainer {"
+            f" background-color: {background}; border: {border}; border-radius: 10px;"
+            " }"
+        )
+        if self._more_chip is not None:
+            self._more_chip.setStyleSheet(
+                "QPushButton#adaptiveChoiceMoreChip {"
+                f" color: {tokens['text_dim']};"
+                f" border: 1px dashed {tokens['data_brd']};"
+                " border-radius: 10px;"
+                f" padding: {'4px 8px' if self._compact else '6px 10px'};"
+                " min-height: 0px; font-size: 10pt; font-weight: 600;"
+                " background-color: transparent;"
+                " }"
+                "QPushButton#adaptiveChoiceMoreChip:hover {"
+                f" background-color: {tokens['surface_hover']};"
+                " }"
+            )
+
+    # Inset of the chips inside their row's box (sides, top and bottom). Every
+    # chip row has it, set or not, so a chip never moves when the red "not
+    # set" fill and border appear or disappear: only the colours change.
+    _CHIP_INSET_X = 4
+    _CHIP_INSET_Y = 3
+
+    _CHIP_ACTIVATE_KEYS = (Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter)
+    _CHIP_MOVE_KEYS = (Qt.Key_Left, Qt.Key_Right)
+
+    def eventFilter(self, obj, event) -> bool:  # type: ignore[override]
+        """Chip keyboard: Left/Right move between chips, Space/Enter choose.
+
+        A focused chip claims these keys before window shortcuts (Live Lab
+        binds them to RAW review), and arrows never choose a chip: Qt's own
+        arrow handling in an exclusive group clicks the focused button, which
+        on the chosen chip would clear it.
+        """
+        if self._chip_mode and isinstance(obj, QPushButton):
+            event_type = event.type()
+            if event_type in (QEvent.ShortcutOverride, QEvent.KeyPress):
+                key = event.key()
+                plain = not (event.modifiers() & ~Qt.KeypadModifier)
+                if plain and key in self._CHIP_ACTIVATE_KEYS + self._CHIP_MOVE_KEYS:
+                    event.accept()
+                    if event_type == QEvent.KeyPress and not event.isAutoRepeat():
+                        if key in self._CHIP_MOVE_KEYS:
+                            self._move_chip_focus(obj, -1 if key == Qt.Key_Left else 1)
+                        else:
+                            obj.click()
+                    return True
+        return super().eventFilter(obj, event)
+
+    def _focusable_chips(self) -> list[QPushButton]:
+        if self._chip_layout is None:
+            return []
+        chips = []
+        for position in range(self._chip_layout.count()):
+            widget = self._chip_layout.itemAt(position).widget()
+            if isinstance(widget, QPushButton) and not widget.isHidden():
+                chips.append(widget)
+        return chips
+
+    def _move_chip_focus(self, current: QPushButton, step: int) -> None:
+        chips = self._focusable_chips()
+        if current not in chips:
+            return
+        target = chips[(chips.index(current) + step) % len(chips)]
+        target.setFocus(Qt.TabFocusReason)
+
+    def _place_chip(self, button: QPushButton) -> None:
+        """Put a choice button into the chip row, before the "+ N more" chip."""
+        button.installEventFilter(self)
+        button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        button.setMinimumWidth(0)
+        button.setMaximumWidth(16777215)
+        index = self._chip_layout.index_of_widget(self._more_chip)
+        self._chip_layout.insert_widget(index if index >= 0 else self._chip_layout.count(), button)
+        self._schedule_fit_update(0)
+
+    def _chip_clear_index(self) -> int:
+        return self.findData(self._chip_clear_value) if self._chip_clear_value is not None else -1
+
+    def _chip_is_hidden_choice(self, index: int) -> bool:
+        item = self._item_at(index)
+        if item is None:
+            return True
+        return index == self._chip_clear_index() or self._is_unset_choice_item(item)
+
+    def _expand_chips(self) -> None:
+        had_focus = self._more_chip is not None and self._more_chip.hasFocus()
+        self._chips_expanded = True
+        self._layout_chips()
+        self.updateGeometry()
+        if had_focus:
+            # The "+ N more" chip is now hidden; keep keyboard focus in the row.
+            chips = self._focusable_chips()
+            if chips:
+                chips[0].setFocus(Qt.TabFocusReason)
+
+    def _layout_chips(self) -> None:
+        """Show the chips that fit on one row (all of them when expanded).
+
+        Showing a chip can resize the selector synchronously (Qt activates the
+        parent layouts), which calls back in here; that nested fit runs after
+        this one instead of inside a half-finished ``setVisible``.
+        """
+        if self._chip_fit_running:
+            self._chip_fit_pending = True
+            return
+        self._chip_fit_running = True
+        try:
+            for _attempt in range(3):
+                self._chip_fit_pending = False
+                self._fit_chips()
+                if not self._chip_fit_pending:
+                    break
+        finally:
+            self._chip_fit_running = False
+        self._sync_form_label_height()
+
+    def set_form_label(self, label: QWidget | None) -> None:
+        """Keep the row's form label centred on the first line of chips.
+
+        QFormLayout top-aligns a label in a taller row, so the label gets the
+        height of one chip line (chips plus their inset) and centres its text
+        in that; the chip row's inset would otherwise leave it a few px high.
+        """
+        self._form_label = label
+        self._sync_form_label_height()
+
+    def _sync_form_label_height(self) -> None:
+        label = self._form_label
+        if label is None or self._chip_layout is None:
+            return
+        chips = [button for button in self._buttons if button is not None]
+        if self._more_chip is not None:
+            chips.append(self._more_chip)
+        if not chips:
+            return
+        margins = self._chip_layout.contentsMargins()
+        height = max(button.sizeHint().height() for button in chips) + margins.top() + margins.bottom()
+        try:
+            # Never shorter than the label's own text (a large app font).
+            height = max(height, label.sizeHint().height())
+            if label.minimumHeight() != height or label.maximumHeight() != height:
+                label.setFixedHeight(height)
+        except RuntimeError:  # the label was deleted with its form
+            self._form_label = None
+
+    def _fit_chips(self) -> None:
+        if not self._chip_mode or self._chip_layout is None or self._more_chip is None:
+            return
+        choices = [
+            index
+            for index, button in enumerate(self._buttons)
+            if button is not None and not self._chip_is_hidden_choice(index)
+        ]
+        for index, button in enumerate(self._buttons):
+            if button is not None and self._chip_is_hidden_choice(index):
+                button.setVisible(False)
+        visible = list(choices)
+        # The selector's own width: the chip container only follows it once
+        # the stacked layout has run, which can be after this.
+        margins = self._chip_layout.contentsMargins()
+        available = self.contentsRect().width() - margins.left() - margins.right()
+        if not self._chips_expanded and available > 40:
+            spacing = self._chip_layout.spacing()
+
+            def fits(indices: list[int], extra: int) -> bool:
+                widths = [self._buttons[i].sizeHint().width() for i in indices]
+                total = sum(widths) + spacing * max(0, len(widths) - 1)
+                if extra:
+                    total += spacing + extra
+                return total <= available
+
+            if not fits(choices, 0):
+                # The widest "+ N more" this row can show: digits differ in
+                # width, so the final count's chip can be wider than another's.
+                more_width = 0
+                for count in range(1, len(choices) + 1):
+                    self._more_chip.setText(self.tr("+ {count} more").format(count=count))
+                    more_width = max(more_width, self._more_chip.sizeHint().width())
+                keep: list[int] = []
+                for index in choices:
+                    if fits(keep + [index], more_width):
+                        keep.append(index)
+                    else:
+                        break
+                if not keep and choices:
+                    keep.append(choices[0])  # always show a choice; "+ N more" may wrap
+                # The selected chip (and, for a mixed selection, the chips
+                # present in it) always stay visible: they replace the last
+                # chips that fit.
+                wanted = [i for i in choices if i == self._current_index or self._index_is_mixed_present(i)]
+                for index in wanted:
+                    if index in keep:
+                        continue
+                    while keep and not fits(keep + [index], more_width):
+                        removable = [i for i in keep if i not in wanted]
+                        if not removable:
+                            break
+                        keep.remove(removable[-1])
+                    keep.append(index)
+                visible = sorted(keep)
+        hidden_count = len(choices) - len(visible)
+        changed = False
+        for index in choices:
+            show = index in visible
+            if self._buttons[index].isHidden() == show:
+                self._buttons[index].setVisible(show)
+                changed = True
+        more_text = self.tr("+ {count} more").format(count=hidden_count)
+        if self._more_chip.text() != more_text:
+            self._more_chip.setText(more_text)
+            changed = True
+        if self._more_chip.isHidden() == (hidden_count > 0):
+            self._more_chip.setVisible(hidden_count > 0)
+            changed = True
+        # Relayout only on a real change: invalidating posts a layout request,
+        # which must not start another round of this.
+        if changed:
+            self._chip_layout.invalidate()
+            self.updateGeometry()
 
     def _item_at(self, index: int) -> ChoiceItem | None:
         if index < 0 or index >= len(self._items):
@@ -418,12 +815,6 @@ class AdaptiveChoiceSelector(QWidget):
                 return True
         return False
 
-    def _selected_item_is_unset(self) -> bool:
-        item = self._item_at(self._current_index)
-        if item is None:
-            return False
-        return self._is_unset_choice_item(item)
-
     def _apply_button_style(self, button: QPushButton, item: ChoiceItem) -> None:
         tokens = get_design_tokens()
         base_text = tokens["text"]
@@ -435,7 +826,7 @@ class AdaptiveChoiceSelector(QWidget):
         border_fill = "transparent"
         selected_bg = alert_colors["border"] if is_unset else accent.name()
         selected_text = "#ffffff" if is_unset else self._contrast_text_color(accent)
-        selected_border = alert_colors["border"] if is_unset else border.name()
+        selected_border = alert_colors["border"] if is_unset else (objective_ring_outline(accent) or border.name())
         selected_hover = self._rgba(QColor(alert_colors["border"]), 48) if is_unset else hover_fill
         # Look up whether this button belongs to a value present in the
         # current mixed selection — if so, render dimmed to signal "some of
@@ -448,7 +839,7 @@ class AdaptiveChoiceSelector(QWidget):
         is_mixed_present = self._index_is_mixed_present(button_index)
         base_background = "transparent"
         base_color = base_text
-        base_border = border_fill
+        base_border = tokens["data_brd"] if self._chip_mode else border_fill
         if is_mixed_present:
             base_accent = QColor(alert_colors["border"]) if is_unset else accent
             base_background = self._rgba(base_accent, 70)
@@ -491,6 +882,9 @@ class AdaptiveChoiceSelector(QWidget):
             button.setChecked(index == self._current_index)
 
     def _refresh_mode_for_width(self) -> None:
+        if self._chip_mode:
+            self._layout_chips()
+            return
         desired_mode = self._desired_mode()
         if desired_mode == self._mode:
             if self._mode == "pill":
@@ -631,6 +1025,9 @@ class AdaptiveChoiceSelector(QWidget):
                 widget.blockSignals(False)
             if was_exclusive:
                 self._button_group.setExclusive(True)
+        if self._chip_mode:
+            self._layout_chips()
+        self._notify_display_listeners()
 
     def _on_combo_index_changed(self, index: int) -> None:
         if self._syncing_from_user():
@@ -643,10 +1040,17 @@ class AdaptiveChoiceSelector(QWidget):
             index = int(choice_index) if choice_index is not None else -1
         except Exception:
             index = -1
+        if self._chip_mode:
+            if index == self._current_index and self._chip_clear_index() >= 0:
+                index = self._chip_clear_index()
+            if self._chips_expanded:
+                self._chips_expanded = False
         if self.signalsBlocked():
             self._apply_index(index, emit=False)
-            return
-        self._apply_index(index, emit=True)
+        else:
+            self._apply_index(index, emit=True)
+        if self._chip_mode:
+            self._layout_chips()
 
     def _syncing_from_user(self) -> bool:
         return False
@@ -676,7 +1080,10 @@ def _parse_objective_magnification(obj: Any, fallback_key: str | None = None) ->
         try:
             return float(candidate)
         except (TypeError, ValueError):
-            match = re.search(r"(\d+(?:\.\d+)?)", str(candidate))
+            # Prefer an explicit "40X" over the first number, so a name that
+            # starts with its NA ("NA 0.65 40X Plan") still reads as 40x.
+            text = str(candidate)
+            match = re.search(r"(\d+(?:\.\d+)?)\s*[xX]", text) or re.search(r"(\d+(?:\.\d+)?)", text)
             if match:
                 try:
                     return float(match.group(1))
@@ -731,6 +1138,11 @@ def objective_short_label(obj: Any, fallback_key: str | None = None) -> str:
 
 
 def objective_color(obj: Any, fallback_key: str | None = None) -> str:
+    """Return an objective's tag colour: its stored colour, else its ISO 8578 ring colour.
+
+    Macro profiles are neutral grey; an objective with no known magnification
+    gets ``OBJECTIVE_RING_UNKNOWN``. The ring colours live in ``ui.styles``.
+    """
     if isinstance(obj, dict):
         for key in ("color", "colour", "plot_color", "tag_color", "objective_color", "band_color", "display_color"):
             value = obj.get(key)
@@ -740,25 +1152,10 @@ def objective_color(obj: Any, fallback_key: str | None = None) -> str:
                     return color.name()
     magnification = _parse_objective_magnification(obj, fallback_key)
     if objective_is_macro_profile(obj, fallback_key):
-        return "#6b7280"
+        return OBJECTIVE_RING_MACRO
     if magnification is None:
-        return "#3498db"
-    mag = int(round(float(magnification)))
-    if mag in (100,):
-        return "#f7f1e5"
-    if mag in (10,):
-        return "#f1c40f"
-    if mag in (16, 20, 25, 32):
-        return "#2ecc71"
-    if mag in (40, 50):
-        return "#3498db"
-    if mag in (63,):
-        return "#1f4ea8"
-    if mag in (4, 5):
-        return "#e74c3c"
-    if mag in (6,):
-        return "#f39c12"
-    return "#3498db"
+        return OBJECTIVE_RING_UNKNOWN
+    return objective_ring_color(magnification)
 
 
 def objective_is_macro_profile(obj: Any, fallback_key: str | None = None) -> bool:
@@ -782,13 +1179,4 @@ def stain_color(value: Any) -> str | None:
     if not text:
         return None
     normalized = re.sub(r"[\s_-]+", "", text)
-    mapping = {
-        "melzer": "#9c7b3b",
-        "congored": "#c0392b",
-        "cottonblue": "#2980b9",
-        "lactofuchsin": "#d46a9a",
-        "cresylblue": "#6f63c7",
-        "trypanblue": "#3b82f6",
-        "chlorazolblacke": "#2d3436",
-    }
-    return mapping.get(normalized)
+    return REAGENT_COLORS.get(normalized)

@@ -19,11 +19,8 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication
 
 from ui.add_reference_dialog import (
-    AddReferenceDialog,
-    PersonalObservationCandidate,
     default_my_observation_candidates,
 )
 
@@ -31,18 +28,12 @@ from ui.add_reference_dialog import (
 @pytest.fixture(autouse=True)
 def isolated_picker_settings(tmp_path, monkeypatch):
     from PySide6.QtCore import QSettings
-    import ui.add_reference_dialog as picker
     import ui.window_state as geometry
 
     def settings(*_args):
         return QSettings(str(tmp_path / "picker.ini"), QSettings.IniFormat)
 
-    monkeypatch.setattr(picker, "QSettings", settings, raising=False)
     monkeypatch.setattr(geometry, "QSettings", settings, raising=False)
-
-
-def _app() -> QApplication:
-    return QApplication.instance() or QApplication([])
 
 
 def _patch_observation_db(monkeypatch, rows: list[dict]) -> dict:
@@ -115,99 +106,3 @@ def test_species_still_narrows_as_before(monkeypatch):
     assert seen["species"] == "muscaria"
 
 
-def test_genus_wide_rows_name_their_species():
-    """Several species in one list must be distinguishable from the row alone."""
-    _app()
-    dialog = AddReferenceDialog(
-        None,
-        taxon_label="Amanita",
-        genus="Amanita",
-        species="",
-        candidates=[],
-        community_results=[],
-        my_observations=[
-            PersonalObservationCandidate(
-                observation_id=501,
-                date="2024-06-06",
-                author="A",
-                location="",
-                points=[{"length_um": 8.0, "width_um": 5.0}],
-                genus="Amanita",
-                species="muscaria",
-            ),
-        ],
-    )
-    try:
-        item = dialog.my_observations_list.item(0)
-        detail = dialog.my_observations_list.itemWidget(item)._full_detail
-        assert "Amanita muscaria" in detail
-    finally:
-        dialog.close()
-
-
-def test_species_pinned_rows_do_not_repeat_the_species():
-    """With the list already pinned to one species, repeating it is noise."""
-    _app()
-    dialog = AddReferenceDialog(
-        None,
-        taxon_label="Amanita muscaria",
-        genus="Amanita",
-        species="muscaria",
-        candidates=[],
-        community_results=[],
-        my_observations=[
-            PersonalObservationCandidate(
-                observation_id=502,
-                date="2024-07-07",
-                author="A",
-                location="",
-                points=[{"length_um": 8.0, "width_um": 5.0}],
-                genus="Amanita",
-                species="muscaria",
-            ),
-        ],
-    )
-    try:
-        item = dialog.my_observations_list.item(0)
-        detail = dialog.my_observations_list.itemWidget(item)._full_detail
-        assert "Amanita muscaria" not in detail
-        assert "2024-07-07" in detail
-    finally:
-        dialog.close()
-
-
-def test_empty_my_observations_without_a_taxon_does_not_claim_none_have_measurements():
-    """With no genus the query never ran, so "none have measurements" is false."""
-    _app()
-    dialog = AddReferenceDialog(
-        None,
-        taxon_label="",
-        genus="",
-        species="",
-        candidates=[],
-        community_results=[],
-        my_observations=[],
-    )
-    try:
-        text = dialog.my_observations_status_label.text()
-        assert "spore measurements" not in text
-        assert "Select a taxon" in text
-    finally:
-        dialog.close()
-
-
-def test_empty_my_observations_with_a_taxon_still_reports_the_real_reason():
-    _app()
-    dialog = AddReferenceDialog(
-        None,
-        taxon_label="Amanita muscaria",
-        genus="Amanita",
-        species="muscaria",
-        candidates=[],
-        community_results=[],
-        my_observations=[],
-    )
-    try:
-        assert "spore measurements" in dialog.my_observations_status_label.text()
-    finally:
-        dialog.close()

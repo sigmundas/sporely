@@ -1,10 +1,12 @@
 """Zoomable and pannable image widget with measurement overlays."""
 from PySide6.QtWidgets import QLabel, QWidget, QVBoxLayout
-from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QTransform, QPolygonF, QImageReader, QFont, QPainterPath
+from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QTransform, QPolygonF, QImageReader, QFont, QFontMetrics, QPainterPath
 from PySide6.QtCore import Qt, QPoint, QRect, QPointF, Signal, QRectF, QSize
 from PySide6.QtSvg import QSvgGenerator
 import math
 from app_identity import APP_NAME
+
+from .styles import objective_ring_outline
 
 from .measurement_overlay_style import (
     DEFAULT_RECTANGLE_STYLE,
@@ -16,6 +18,16 @@ from .measurement_overlay_style import (
     rectangle_thin_stroke_width,
     rectangle_corner_segments,
 )
+
+
+def _next_smaller_round(value: float) -> float:
+    """The next 1-2-5 step below ``value`` (10 → 5 → 2 → 1 → 0.5 …)."""
+    exponent = math.floor(math.log10(value))
+    mantissa = value / (10 ** exponent)
+    for step in (5.0, 2.0, 1.0):
+        if mantissa > step * (1 + 1e-9):
+            return step * (10 ** exponent)
+    return 5.0 * (10 ** (exponent - 1))
 
 
 class ZoomableImageLabel(QLabel):
@@ -210,10 +222,6 @@ class ZoomableImageLabel(QLabel):
             "glow": glow,
             "blend": str(chosen["blend"]),
         }
-
-    def _light_stroke_color(self):
-        """Backward-compatible glow color helper used by some preview/legacy paths."""
-        return QColor(self._measure_stroke_style().get("glow"))
 
     @staticmethod
     def _set_named_composition_mode(painter: QPainter, composition: str | None) -> None:
@@ -543,68 +551,6 @@ class ZoomableImageLabel(QLabel):
         decimals = max(0, 1 - mag)
         return f"{round(v, decimals):.{decimals}f}"
 
-    def _draw_text_with_outline(
-        self,
-        painter: QPainter,
-        x: float,
-        y: float,
-        text: str,
-        fill_color: QColor,
-        outline_color: QColor,
-        outline_opacity: float = 0.4,
-        outline_width_ratio: float = 0.4,
-    ) -> None:
-        """Draw text with a soft duplicate-text underlay."""
-        self._draw_text_with_underlay(
-            painter,
-            x,
-            y,
-            text,
-            fill_color=fill_color,
-            underlay_color=outline_color,
-            underlay_opacity=outline_opacity,
-            underlay_width_ratio=outline_width_ratio,
-        )
-
-    def _draw_text_with_underlay(
-        self,
-        painter: QPainter,
-        x: float,
-        y: float,
-        text: str,
-        fill_color: QColor,
-        underlay_color: QColor,
-        underlay_opacity: float = 0.4,
-        underlay_width_ratio: float = 0.4,
-    ) -> None:
-        """Draw editable text with a duplicate-text glow/shadow underneath."""
-        if not text:
-            return
-        metrics = painter.fontMetrics()
-        radius = max(1.0, float(metrics.height()) * float(underlay_width_ratio))
-        alpha = max(0, min(255, int(round(255 * float(underlay_opacity)))))
-        underlay = QColor(underlay_color)
-        underlay.setAlpha(alpha)
-        offsets = (
-            (-radius, 0.0),
-            (radius, 0.0),
-            (0.0, -radius),
-            (0.0, radius),
-            (-radius * 0.7, -radius * 0.7),
-            (-radius * 0.7, radius * 0.7),
-            (radius * 0.7, -radius * 0.7),
-            (radius * 0.7, radius * 0.7),
-        )
-        painter.save()
-        painter.setPen(underlay)
-        for dx, dy in offsets:
-            painter.drawText(int(round(x + dx)), int(round(y + dy)), text)
-        painter.restore()
-        painter.save()
-        painter.setPen(fill_color)
-        painter.drawText(int(round(x)), int(round(y)), text)
-        painter.restore()
-
     def _draw_text_with_shadow(
         self,
         painter: QPainter,
@@ -639,37 +585,6 @@ class ZoomableImageLabel(QLabel):
         font.setFamily(self.SVG_EXPORT_FONT_FAMILY)
         font.setStyleHint(QFont.SansSerif)
         painter.setFont(font)
-
-    def _label_positions_from_lines(self, line1, line2, center, offset):
-        """Return label positions using the same logic as the preview widget."""
-        corners = self._compute_corners_from_lines(line1, line2)
-        if not corners:
-            return None, None
-
-        def _offset_from_edge(a, b, center_point):
-            mid = QPointF((a.x() + b.x()) / 2, (a.y() + b.y()) / 2)
-            dx = b.x() - a.x()
-            dy = b.y() - a.y()
-            length = math.sqrt(dx * dx + dy * dy)
-            if length <= 0:
-                return mid
-            perp_x = -dy / length
-            perp_y = dx / length
-            candidate_a = QPointF(mid.x() + perp_x * offset, mid.y() + perp_y * offset)
-            candidate_b = QPointF(mid.x() - perp_x * offset, mid.y() - perp_y * offset)
-            dist_a = (candidate_a.x() - center_point.x()) ** 2 + (candidate_a.y() - center_point.y()) ** 2
-            dist_b = (candidate_b.x() - center_point.x()) ** 2 + (candidate_b.y() - center_point.y()) ** 2
-            chosen = candidate_a if dist_a >= dist_b else candidate_b
-            if self._point_in_polygon(chosen, corners):
-                chosen = QPointF(
-                    chosen.x() + perp_x * offset,
-                    chosen.y() + perp_y * offset
-                )
-            return chosen
-
-        left_mid = _offset_from_edge(corners[0], corners[3], center)
-        top_mid = _offset_from_edge(corners[0], corners[1], center)
-        return left_mid, top_mid
 
     def set_image(self, pixmap, preserve_view: bool = False):
         """Set the image to display, optionally preserving zoom/pan."""
@@ -755,12 +670,6 @@ class ZoomableImageLabel(QLabel):
             self.measure_rectangle_thickness = clamp_rectangle_thickness(thickness)
         self.update()
 
-    def set_measurement_rectangle_style(self, style):
-        self.set_measurement_rectangle_appearance(style=style)
-
-    def set_measurement_rectangle_thickness(self, thickness):
-        self.set_measurement_rectangle_appearance(thickness=thickness)
-
     def set_selected_rect_index(self, index):
         self.selected_rect_index = index if index is not None else -1
         self.update()
@@ -843,11 +752,6 @@ class ZoomableImageLabel(QLabel):
     def set_overlay_boxes(self, boxes):
         """Set extra overlay boxes drawn on top of the image."""
         self.overlay_boxes = boxes or []
-        self.update()
-
-    def clear_overlay_boxes(self):
-        """Clear overlay boxes."""
-        self.overlay_boxes = []
         self.update()
 
     def set_crop_mode(self, enabled):
@@ -1009,14 +913,73 @@ class ZoomableImageLabel(QLabel):
         self.preview_rect = None
         self.update()
 
-    def get_current_mouse_pos(self):
-        """Expose the current mouse position in image coordinates."""
-        return self.current_mouse_pos
-
     def set_objective_text(self, text):
         """Set the objective tag text."""
         self.objective_text = text
         self.update()
+
+    def scale_bar_screen_length(self, available_width: float | None = None) -> float:
+        """On-screen length of the scale bar in pixels at the current zoom.
+
+        ``scale_bar_um`` microns span ``scale_bar_um / microns_per_pixel`` image
+        pixels, shown at ``zoom_level``; never under 10 px, and capped at 60 %
+        of ``available_width`` when given. 0 without a scale.
+        """
+        if self.microns_per_pixel <= 0:
+            return 0.0
+        length = max(10.0, (float(self.scale_bar_um) / float(self.microns_per_pixel)) * float(self.zoom_level))
+        if available_width is not None:
+            length = min(length, float(available_width) * 0.6)
+        return length
+
+    def scale_bar_for_width(self, available_width: float | None = None) -> tuple[float, float]:
+        """``(microns, on-screen pixels)`` of the bar to draw in ``available_width``.
+
+        The configured length while it fits in 60 % of the width; otherwise
+        the longest round length (1-2-5 steps) below it that does, so the
+        label always says what the bar measures. Shortening a bar drawn under
+        an unchanged label made it lie when zoomed in.
+        """
+        bar_um = float(self.scale_bar_um)
+        length = self.scale_bar_screen_length()
+        if available_width is None or length <= 0 or self.microns_per_pixel <= 0:
+            return bar_um, length
+        limit = float(available_width) * 0.6
+        if length <= limit:
+            return bar_um, length
+        pixels_per_micron = float(self.zoom_level) / float(self.microns_per_pixel)
+        candidate = bar_um
+        for _ in range(40):
+            candidate = _next_smaller_round(candidate)
+            if candidate * pixels_per_micron <= limit:
+                break
+        return candidate, max(1.0, candidate * pixels_per_micron)
+
+    def bottom_left_readout_rect(self) -> QRect:
+        """Where the zoom readout (and a preview tag above it) are painted.
+
+        Overlays placed on the viewer use it to stay clear of them.
+        """
+        font = QFont(self.font())
+        font.setPointSize(9)
+        metrics = QFontMetrics(font)
+        margin, pad_x, pad_y = 10, 6, 3
+        zoom_text = f"Zoom: {self.zoom_level * 100:.0f}%"
+        height = metrics.height() + pad_y * 2
+        rect = QRect(margin, self.height() - height - margin, metrics.horizontalAdvance(zoom_text) + pad_x * 2, height)
+        if self._preview_tag_text:
+            bold = QFont(font)
+            bold.setBold(True)
+            bold_metrics = QFontMetrics(bold)
+            preview_height = bold_metrics.height() + pad_y * 2
+            preview = QRect(
+                margin,
+                max(margin, rect.top() - preview_height - 6),
+                bold_metrics.horizontalAdvance(self._preview_tag_text) + pad_x * 2,
+                preview_height,
+            )
+            rect = rect.united(preview)
+        return rect
 
     def set_objective_color(self, color):
         """Set the objective tag color."""
@@ -1573,15 +1536,6 @@ class ZoomableImageLabel(QLabel):
             new_x = max(0.0, min(w, new_x))
             new_y = max(0.0, min(h, new_y))
         return QPointF(new_x, new_y)
-
-    @staticmethod
-    def _point_in_crop_box(point: QPointF, crop_box: tuple[float, float, float, float]) -> bool:
-        x1, y1, x2, y2 = crop_box
-        left = min(x1, x2)
-        top = min(y1, y2)
-        right = max(x1, x2)
-        bottom = max(y1, y2)
-        return left <= point.x() <= right and top <= point.y() <= bottom
 
     def _point_on_crop_edge(
         self,
@@ -2943,7 +2897,8 @@ class ZoomableImageLabel(QLabel):
                 text_width + tag_padding * 2,
                 text_height + tag_padding
             )
-            painter.setPen(Qt.NoPen)
+            outline = objective_ring_outline(bg_color)
+            painter.setPen(QPen(QColor(outline), 1) if outline else Qt.NoPen)
             tag_color = QColor(bg_color)
             tag_color.setAlpha(200)
             text_color = QColor("#000000") if tag_color.isValid() and tag_color.lightness() >= 180 else QColor("#ffffff")
@@ -3000,7 +2955,8 @@ class ZoomableImageLabel(QLabel):
                 )
                 tag_color = QColor(bg_color)
                 tag_color.setAlpha(200)
-                painter.setPen(Qt.NoPen)
+                outline = objective_ring_outline(bg_color)
+                painter.setPen(QPen(QColor(outline), 1) if outline else Qt.NoPen)
                 painter.setBrush(tag_color)
                 painter.drawRoundedRect(tag_rect, 6, 6)
                 painter.setPen(
@@ -3069,12 +3025,10 @@ class ZoomableImageLabel(QLabel):
         # Draw scale bar in lower right corner
         scale_bar_box = None
         if self.show_scale_bar and self.microns_per_pixel > 0:
-            bar_um = self.scale_bar_um
-            bar_pixels = bar_um / self.microns_per_pixel
-            bar_screen = bar_pixels * self.zoom_level
-            bar_screen = max(10.0, bar_screen)
-            anchor_rect = visible_view_rect if preview_crop_active else QRectF(display_rect)
-            bar_screen = min(bar_screen, anchor_rect.width() * 0.6)
+            # The visible part of the image: zoomed in, the image runs past the
+            # view, and the bar stays in the view's lower right corner.
+            anchor_rect = visible_view_rect if not visible_view_rect.isEmpty() else QRectF(display_rect)
+            bar_um, bar_screen = self.scale_bar_for_width(anchor_rect.width())
 
             font = painter.font()
             font.setPointSize(9)

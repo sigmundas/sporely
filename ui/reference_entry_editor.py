@@ -40,10 +40,10 @@ from __future__ import annotations
 import json
 import math
 import re
-from dataclasses import asdict, replace as dc_replace
 
 from PySide6.QtCore import (
     QCoreApplication,
+    QPoint,
     Qt,
     QSignalBlocker,
     QSortFilterProxyModel,
@@ -68,7 +68,9 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QSizePolicy,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QToolButton,
@@ -91,7 +93,6 @@ from references.measurement_content import (
     MeasurementDetails,
     ScalarStatistic,
     clear_pair,
-    content_from_row,
     encode_measurement_details,
     legacy_projection_losses,
     swap_length_width as swap_content_length_width,
@@ -99,15 +100,6 @@ from references.measurement_content import (
 from references.measurement_content_gates import (
     blocking_projection_losses,
     enhanced_editing_enabled,
-)
-from references.reference_comparison import (
-    build_domains,
-    comparison_view,
-)
-from references.reference_display import (
-    display_from_content,
-    display_from_points,
-    display_from_row,
 )
 from references.reference_plotting import range_payload_is_plottable
 
@@ -255,15 +247,6 @@ class _PublicationSearchProxyModel(QSortFilterProxyModel):
         return super().data(index, role)
 
 
-def _qt_alive(widget) -> bool:
-    try:
-        from shiboken6 import isValid
-
-        return bool(widget is not None and isValid(widget))
-    except Exception:
-        return widget is not None
-
-
 class ReferenceEntryEditor(QWidget):
     """Paste/parse measurement editor + publication picker + Data section.
 
@@ -286,31 +269,26 @@ class ReferenceEntryEditor(QWidget):
         sporely_taxon_id: int | None = None,
         observation_taxon_id: int | None = None,
         require_explicit_publication_assignment: bool = False,
-        preview_pane=None,
-        comparison_view_factory=None,
+        staged: bool = False,
     ):
         super().__init__(parent)
+        # Two steps (``ReferenceCreateDialog``, redesign stage 7d): the
+        # publication on one page, the measurements on the next, and the
+        # value grid hidden until a string is parsed or "Fill in manually".
+        self._staged = bool(staged)
         self._result = None
         self._genus = genus
         self._species = species
         self._prefill_data = data or {}
         self._hint_controller: HintStatusController | None = None
         self._hint_registrations: list[tuple[QWidget, str, str]] = []
+        self._validation_labels: list[QLabel] = []
+        self._invalid_entry: tuple | None = None
         self._plot_color = None
         self._require_explicit_publication_assignment = bool(
             require_explicit_publication_assignment
         )
         self._default_hint_text = QCoreApplication.translate("ReferenceAddDialog", "Paste from Excel/csv or type values")
-        self._preview_pane = preview_pane
-        # How this editor's current entry becomes the shared preview's
-        # comparison model. The picker hands in its own factory so manual
-        # entry is drawn against the *same* frozen axes and the same
-        # observation baseline as the Library and Community tabs; a
-        # standalone editor (Quick add, tests, review scenarios) falls back
-        # to its own once-derived default axes rather than growing a second,
-        # divergent rendering path that nothing exercises.
-        self._comparison_view_factory = comparison_view_factory
-        self._fallback_domains = build_domains()
         # Normalized-library context: the observation this editor's result
         # will (if submitted) be attached to. ``_sporely_taxon_id`` is the
         # CURRENT comparison target's taxon id (may change via
@@ -345,6 +323,21 @@ class ReferenceEntryEditor(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
+        # Where each part goes: one column, or (staged) one page per step.
+        if self._staged:
+            self.steps = QStackedWidget(self)
+            self.source_page = QWidget(self.steps)
+            source_column = QVBoxLayout(self.source_page)
+            self.measurements_page = QWidget(self.steps)
+            measure_column = QVBoxLayout(self.measurements_page)
+            for column in (source_column, measure_column):
+                column.setContentsMargins(0, 0, 0, 0)
+                column.setSpacing(10)
+            self.steps.addWidget(self.source_page)
+            self.steps.addWidget(self.measurements_page)
+        else:
+            self.steps = None
+            source_column = measure_column = layout
 
         # Built before the sections so every field below can register its
         # own hint as it is constructed; the bar itself is added to the
@@ -391,15 +384,28 @@ class ReferenceEntryEditor(QWidget):
         paste_button_row.addWidget(self._parse_measurement_btn)
         minmax_layout.addLayout(paste_button_row)
 
+        self.fill_manually_btn = QPushButton(
+            QCoreApplication.translate("ReferenceAddDialog", "Fill in manually"), self
+        )
+        self.fill_manually_btn.setObjectName("linkButton")
+        self.fill_manually_btn.setCursor(Qt.PointingHandCursor)
+        self.fill_manually_btn.clicked.connect(self._on_fill_manually_clicked)
+        self.fill_manually_btn.setVisible(False)
+        if self._staged:
+            minmax_layout.addWidget(self.fill_manually_btn, 0, Qt.AlignLeft)
+
         # Parse sits with the field it acts on; the two corrective actions go
         # below. Keeping all three inline squeezed the paste field down to a
         # few visible characters at the dialog's ordinary width, which is the
         # one control the user is meant to read what they pasted in.
-        correction_row = QHBoxLayout()
+        # The corrections and the grid are widgets of their own so the staged
+        # editor can keep them hidden until there are values to show.
+        self._correction_row_widget = QWidget(self._measurement_group)
+        correction_row = QHBoxLayout(self._correction_row_widget)
         correction_row.setContentsMargins(0, 0, 0, 0)
         correction_row.addWidget(self._swap_lw_btn)
         correction_row.addStretch(1)
-        minmax_layout.addLayout(correction_row)
+        minmax_layout.addWidget(self._correction_row_widget)
 
         self._measurement_preview_label = QLabel("")
         self._measurement_preview_label.setWordWrap(True)
@@ -408,6 +414,12 @@ class ReferenceEntryEditor(QWidget):
             f"color: #7f8c8d; font-size: {pt(9)}pt; padding: 2px 0px;"
         )
         minmax_layout.addWidget(self._measurement_preview_label)
+
+        self.measurement_grid_panel = QWidget(self._measurement_group)
+        grid_panel_layout = QVBoxLayout(self.measurement_grid_panel)
+        grid_panel_layout.setContentsMargins(0, 0, 0, 0)
+        grid_panel_layout.setSpacing(minmax_layout.spacing())
+        minmax_layout.addWidget(self.measurement_grid_panel)
 
         # Reported statistics (contract version 1): what the source says about
         # the numbers in the table below. They sit with the rest of the parse
@@ -424,7 +436,7 @@ class ReferenceEntryEditor(QWidget):
         self.measurement_tags_label.setStyleSheet(
             f"font-size: {pt(9)}pt; padding: 2px 0px 0px 0px;"
         )
-        minmax_layout.addWidget(self.measurement_tags_label)
+        grid_panel_layout.addWidget(self.measurement_tags_label)
 
         self.reported_statistics_label = QLabel("")
         self.reported_statistics_label.setObjectName("referenceReportedStatistics")
@@ -433,7 +445,7 @@ class ReferenceEntryEditor(QWidget):
         self.reported_statistics_label.setStyleSheet(
             f"color: #7f8c8d; font-size: {pt(9)}pt;"
         )
-        minmax_layout.addWidget(self.reported_statistics_label)
+        grid_panel_layout.addWidget(self.reported_statistics_label)
 
         self._reported_statistics_notice_label = QLabel("")
         self._reported_statistics_notice_label.setObjectName(
@@ -444,7 +456,7 @@ class ReferenceEntryEditor(QWidget):
         self._reported_statistics_notice_label.setStyleSheet(
             f"color: #b58900; font-style: italic; font-size: {pt(9)}pt; padding: 0px 0px 2px 0px;"
         )
-        minmax_layout.addWidget(self._reported_statistics_notice_label)
+        grid_panel_layout.addWidget(self._reported_statistics_notice_label)
 
         self._raw_measurement_text: str = ""
         prefill_meta = self._prefill_data.get("metadata_json") if self._prefill_data else None
@@ -517,7 +529,7 @@ class ReferenceEntryEditor(QWidget):
             self.measurement_inputs.append(row_inputs)
         for col in range(5):
             grid.setColumnStretch(col + 1, 1)
-        minmax_layout.addLayout(grid)
+        grid_panel_layout.addLayout(grid)
 
         # Contract N24: the keyboard order is stated, not inherited. Qt's
         # default chain follows construction order, which happens to be
@@ -537,8 +549,12 @@ class ReferenceEntryEditor(QWidget):
         )
         measurement_footnote.setWordWrap(True)
         measurement_footnote.setStyleSheet(f"color: #7f8c8d; font-size: {pt(9)}pt;")
-        minmax_layout.addWidget(measurement_footnote)
-        layout.addWidget(self._measurement_group)
+        grid_panel_layout.addWidget(measurement_footnote)
+        self.measurement_validation_label = self._make_validation_label(
+            "referenceMeasurementValidationMessage"
+        )
+        minmax_layout.addWidget(self.measurement_validation_label)
+        measure_column.addWidget(self._measurement_group)
 
         # Correction is offered as *retraction*: a reader who knows a tag is
         # wrong can drop that metric's range interpretation, or discard the
@@ -578,9 +594,13 @@ class ReferenceEntryEditor(QWidget):
             self,
         )
         self.spore_table = SporeDataTable()
-        self.spore_table.itemChanged.connect(lambda *_: self._refresh_preview())
+        self.spore_table.itemChanged.connect(lambda *_: self._emit_data_changed())
         self._spore_section.body_layout().addWidget(self.spore_table)
-        layout.addWidget(self._spore_section)
+        self.points_validation_label = self._make_validation_label(
+            "referencePointsValidationMessage"
+        )
+        self._spore_section.body_layout().addWidget(self.points_validation_label)
+        measure_column.addWidget(self._spore_section)
 
         self._parmasto_section = CollapsibleSection(
             QCoreApplication.translate("ReferenceAddDialog", "Parmasto Biometrics"), self
@@ -612,11 +632,11 @@ class ReferenceEntryEditor(QWidget):
             line_edit = QLineEdit()
             line_edit.setPlaceholderText(description)
             line_edit.setToolTip(description)
-            line_edit.textChanged.connect(lambda *_: self._refresh_preview())
+            line_edit.textChanged.connect(lambda *_: self._emit_data_changed())
             parmasto_layout.addRow(_math_label(math_label, description), line_edit)
             self.parmasto_inputs[key] = line_edit
         self._parmasto_section.body_layout().addLayout(parmasto_layout)
-        layout.addWidget(self._parmasto_section)
+        measure_column.addWidget(self._parmasto_section)
 
         pub_group = QGroupBox(QCoreApplication.translate("ReferenceAddDialog", "Publication"))
         pub_layout = QVBoxLayout(pub_group)
@@ -644,6 +664,10 @@ class ReferenceEntryEditor(QWidget):
         self.new_publication_btn.clicked.connect(self._on_new_publication_clicked)
         pub_row.addWidget(self.new_publication_btn)
         pub_layout.addLayout(pub_row)
+        self.publication_validation_label = self._make_validation_label(
+            "referencePublicationValidationMessage"
+        )
+        pub_layout.addWidget(self.publication_validation_label)
 
         treatment_form = QFormLayout()
         # No read-only "Taxon" row here: both hosts already show the taxon
@@ -685,6 +709,14 @@ class ReferenceEntryEditor(QWidget):
                 "Choose a reference taxon above to link it; otherwise it is "
                 "saved under the name as published only."
             )
+            if not self._staged
+            # No taxon selector in the two-step dialog: the taxon is the
+            # observation's, so the way to link it is the observation's own.
+            else QCoreApplication.translate("ReferenceAddDialog",
+                "The observation's taxon is not linked to a species in the "
+                "database, so this reference is saved under the name as "
+                "published only. Link the taxon in Edit to connect it."
+            )
         )
         self._no_taxon_notice_label.setWordWrap(True)
         self._no_taxon_notice_label.setObjectName("referenceNoTaxonNotice")
@@ -700,9 +732,18 @@ class ReferenceEntryEditor(QWidget):
             bool(self._observation_id) and not self._sporely_taxon_id
         )
         pub_layout.addWidget(self._no_taxon_notice_label)
+        # Staged only: the drawer lists existing sets; this says they exist.
+        self.existing_sets_note = QLabel("", pub_group)
+        self.existing_sets_note.setObjectName("referenceExistingSetsNote")
+        self.existing_sets_note.setWordWrap(True)
+        self.existing_sets_note.setVisible(False)
+        pub_layout.addWidget(self.existing_sets_note)
         # Publication first: the mockup's information hierarchy is who
         # published it, then what they measured.
-        layout.insertWidget(0, pub_group)
+        if self._staged:
+            source_column.addWidget(pub_group)
+        else:
+            layout.insertWidget(0, pub_group)
 
         data_group = QGroupBox(QCoreApplication.translate("ReferenceAddDialog", "Data"))
         data_layout = QVBoxLayout(data_group)
@@ -752,16 +793,35 @@ class ReferenceEntryEditor(QWidget):
             self._on_existing_set_selection_changed
         )
         data_layout.addWidget(self._existing_sets_table)
+        self.data_validation_label = self._make_validation_label(
+            "referenceDataValidationMessage"
+        )
+        data_layout.addWidget(self.data_validation_label)
         self._existing_sets_cache: list[MeasurementSet] = []
         self._legacy_source_prefill: str | None = None
-        layout.addWidget(data_group)
+        source_column.addWidget(data_group)
         # Spare height goes below the form. Without this a host that scrolls
         # the editor at viewport height spreads it between the sections, and
         # the collapsed disclosures float in large empty gaps.
-        layout.addStretch(1)
+        if self._staged:
+            # Picking an existing set is the reference drawer's job; this
+            # editor only creates. A note on the first page says when the
+            # publication already has sets for this taxon.
+            data_group.setVisible(False)
+            source_column.addStretch(1)
+            measure_column.addStretch(1)
+            layout.addWidget(self.steps, 1)
+        else:
+            layout.addStretch(1)
 
         self.use_existing_radio.toggled.connect(self._on_data_choice_toggled)
         self.enter_new_radio.toggled.connect(self._on_data_choice_toggled)
+        # A validation message goes as soon as the entry changes (not when a
+        # field merely loses focus, which also reports data_changed).
+        self.data_changed.connect(self._clear_invalid_if_changed)
+        self.publication_combo.editTextChanged.connect(self._clear_invalid_if_changed)
+        self.publication_combo.currentIndexChanged.connect(self._clear_invalid_if_changed)
+        self.measurement_paste_input.textChanged.connect(self._clear_invalid_if_changed)
 
         # The hint/status row is its own widget so a host that scrolls this
         # editor can lift it out (take_hint_row) and pin it below the
@@ -779,7 +839,9 @@ class ReferenceEntryEditor(QWidget):
         self._populate_publication_combo()
         self._apply_prefill()
         self._on_data_choice_toggled()
-        self._refresh_preview()
+        # Not staged, or reopening values: the grid is there from the start.
+        self.set_grid_revealed(not self._staged or self._has_grid_values())
+        self._emit_data_changed()
 
     @staticmethod
     def _coerce_int_or_none(value) -> int | None:
@@ -837,272 +899,18 @@ class ReferenceEntryEditor(QWidget):
         self._no_taxon_notice_label.setVisible(
             bool(self._observation_id) and not self._sporely_taxon_id
         )
-        self._refresh_preview()
+        self._emit_data_changed()
 
     # ------------------------------------------------------------------
     # Preview
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _decoded_raw_points(raw_points_json: str | None) -> list | None:
-        """The individual measurements a stored set really holds.
-
-        ``None`` means *unreadable*, and is deliberately not the same answer
-        as the empty list. A set with no ``raw_points_json`` published no
-        individual measurements, which is a fact about the source; a set whose
-        stored blob is malformed establishes nothing about the source, only
-        that Sporely cannot read what is on file. The Raw spores tab words
-        those two differently, so collapsing them here would put a claim in
-        the author's mouth.
-        """
-        if not raw_points_json:
-            return []
-        try:
-            decoded = json.loads(raw_points_json)
-        except (TypeError, ValueError):
-            return None
-        return decoded if isinstance(decoded, list) else None
-
-    @staticmethod
-    def _measurement_set_content(ms) -> MeasurementContent | None:
-        """Typed content of a stored set, or ``None`` when it cannot be read.
-
-        A malformed stored details object must not stop the preview from
-        showing the measured values; the manager's detail pane and the
-        repository both surface that condition with a real error message.
-        """
-        try:
-            return content_from_row(asdict(ms))
-        except MeasurementContentError:
-            return None
-
-    @staticmethod
-    def _apply_reported_statistics_to_pane(pane, content: MeasurementContent | None) -> None:
-        """Show meaning tags and reported median / S.D. in the preview pane."""
-        if content is None:
-            pane.set_reported_statistics("")
-            return
-        notice = mcv.unsupported_details_notice(content)
-        if notice:
-            pane.set_reported_statistics(notice, notice)
-            return
-        entries = mcv.content_tags(content) + mcv.content_reported_statistics(content)
-        pane.set_reported_statistics(
-            mcv.compact_tag_text(entries), mcv.explanation_text(entries)
-        )
-
-    def sync_preview(self) -> None:
-        """Repopulate the shared preview pane from current editor state.
-
-        Called by the host picker when the Enter-manually tab becomes
-        active again, so a tab switch always shows the manual entry's own
-        current data rather than a stale or cleared preview.
-        """
-        self._refresh_preview()
-
-    def _comparison_for(self, *, display=None, source_points=None):
-        """One comparison model for whatever manual entry currently holds.
-
-        Delegates to the host's factory when there is one, so the manual tab
-        renders on the picker's frozen axes and against the picker's
-        observation baseline — the same two things the Library and Community
-        tabs compare against, which is what makes switching between them
-        meaningful (contract N19). Standalone, the editor has no observation
-        to compare with and falls back to the default axes derived once in
-        ``__init__``; the axes still never move while the user types.
-        """
-        factory = self._comparison_view_factory
-        if factory is not None:
-            return factory(display=display, source_points=source_points)
-        return comparison_view(
-            domains=self._fallback_domains,
-            baseline=None,
-            display=display,
-            source_points=source_points,
-        )
-
-    def _preview_content(self) -> MeasurementContent:
-        """Working content, plus any Parmasto species mean, for display only.
-
-        A Parmasto species mean is a figure the user transcribed from a
-        source, not a midpoint this editor invented, so the comparison shows
-        it as the metric's centre when the grid's own Mean cell is empty —
-        which is what the summary table it replaced did. It is added to a
-        copy: the stored payload's mean columns are built from the grid, and
-        this must not quietly widen what gets written.
-        """
-        content = self._current_measurement_content() or MeasurementContent()
-        updates: dict[str, float] = {}
-        for metric, parmasto_key in (
-            ("length", "parmasto_length_mean"),
-            ("width", "parmasto_width_mean"),
-            ("q", "parmasto_q_mean"),
-        ):
-            if mcv.format_mean_cell(content, metric):
-                continue
-            value = self._parmasto_value(parmasto_key)
-            if value is not None:
-                updates[f"{metric}_mean"] = value
-        return dc_replace(content, **updates) if updates else content
-
-    def _refresh_preview(self) -> None:
+    def _emit_data_changed(self) -> None:
         self.data_changed.emit()
-        pane = self._preview_pane
-        if pane is None:
-            return
-        if self.use_existing_radio.isChecked():
-            ms = next(
-                (
-                    c for c in self._existing_sets_cache
-                    if c.id == self._selected_measurement_set_id
-                ),
-                None,
-            ) if self._selected_measurement_set_id else None
-            if ms is None:
-                pane.clear()
-                return
-            title = self._current_source_label() or QCoreApplication.translate("ReferenceAddDialog", "Existing measurement set")
-            # Reopening a stored set shows what it actually says, including a
-            # mean reported as an interval, which has no scalar column. The
-            # projection keeps outer and core apart and names each, so the
-            # comparison can draw both rather than flattening them into a
-            # Min/Max pair the source never printed that way.
-            stored_content = self._measurement_set_content(ms)
-            stored_points = self._decoded_raw_points(ms.raw_points_json)
-            stored_display = display_from_row(asdict(ms), source_kind="library")
-            pane.set_header(title, "", ms.raw_text or "")
-            pane.set_comparison(
-                self._comparison_for(
-                    display=stored_display, source_points=stored_points
-                )
-            )
-            self._apply_reported_statistics_to_pane(pane, stored_content)
-            if stored_points:
-                pane.set_raw_spore_points(stored_points)
-            else:
-                pane.set_raw_spores_unavailable(
-                    plotted_as_band=stored_display.has_any_range,
-                    unreadable=stored_points is None,
-                )
-            pane.set_method(
-                {
-                    "mount": ms.mount_medium or "",
-                    "stain": ms.stain or "",
-                    "sample_type": ms.preparation or "",
-                    "objective": ms.measurement_method or "",
-                }
-            )
-            pane.set_calibration(ms.notes or QCoreApplication.translate("ReferenceAddDialog", "No calibration details recorded."))
-            treatment = TaxonTreatmentRepository.get(ms.taxon_treatment_id)
-            treatment_notes = (getattr(treatment, "treatment_notes", None) or "").strip()
-            pane.set_provenance(
-                QCoreApplication.translate("ReferenceAddDialog", "Source notes: {notes}").format(
-                    notes=treatment_notes or QCoreApplication.translate("ReferenceAddDialog", "Not reported")
-                )
-            )
-            work = (
-                ReferenceWorkRepository.get(treatment.reference_work_id)
-                if treatment is not None
-                else None
-            )
-            method_recorded = bool(ms.mount_medium or ms.stain or ms.preparation or ms.measurement_method)
-            not_reported = QCoreApplication.translate("ReferenceAddDialog", "not reported")
-            pane.set_provenance_summary(
-                QCoreApplication.translate(
-                    "ReferenceAddDialog", "Reported by: {work} ({year}) · sample size: {size} · method recorded: {method}"
-                ).format(
-                    work=(work.title if work is not None else None) or title,
-                    year=work.year if work is not None and work.year else not_reported,
-                    size=ms.sample_size if getattr(ms, "sample_size", None) else not_reported,
-                    method=QCoreApplication.translate("ReferenceAddDialog", "yes") if method_recorded else not_reported,
-                )
-            )
-            return
-        title = self._current_source_label() or QCoreApplication.translate("ReferenceAddDialog", "Manual entry")
-        points = self.spore_table.get_points()
-        if points:
-            # Individual measurements: the projection counts them and states
-            # nothing else. No min/mean/max is synthesised here -- summarising
-            # points is the comparison model's job, and a caption that printed
-            # a computed mean beside a published one would blur the two.
-            pane.set_header(
-                title,
-                "",
-                QCoreApplication.translate("ReferenceAddDialog", "n = {count} spore measurements").format(count=len(points)),
-            )
-            pane.set_comparison(
-                self._comparison_for(
-                    display=display_from_points(points, source_kind="manual"),
-                    source_points=points,
-                )
-            )
-            # Manually entered, not yet reported by any external source.
-            pane.set_provenance_summary("")
-            pane.set_reported_statistics("")
-            pane.set_raw_spore_points(points)
-            pane.set_method({"mount": "", "stain": "", "sample_type": "", "objective": ""})
-            pane.set_calibration(QCoreApplication.translate("ReferenceAddDialog", "Not applicable: entered manually."))
-            pane.set_provenance(
-                QCoreApplication.translate("ReferenceAddDialog", "Manually entered")
-                + "\n"
-                + QCoreApplication.translate("ReferenceAddDialog", "Source notes: {notes}").format(
-                    notes=QCoreApplication.translate("ReferenceAddDialog", "Not reported")
-                )
-            )
-            return
-        content = self._preview_content()
-        display = display_from_content(content, source_kind="manual")
-        if not display.has_any_range and not display.has_centre_statistic:
-            pane.clear()
-            return
-        # The grid drives the same projection every other tab is drawn from,
-        # so a typical range stays a typical range, an explicit 5-95%
-        # interval stays a percentile interval, and a range with no stated
-        # centre gets no centre mark. The summary table this replaced applied
-        # its own extreme-or-typical fallback, which is how an inner typical
-        # range came to be printed in a "Min"/"Max" column.
-        # The note names what the typed grid actually amounts to, taken from
-        # the same projection the Library rows are badged from. It used to
-        # read a fixed "Range summary", the label of a data-mode selector the
-        # one-column layout replaced, so an explicitly typed 5-95% interval
-        # was announced in the preview as an ordinary range.
-        pane.set_header(title, "", mcv.data_label_text(display.data_label))
-        pane.set_comparison(self._comparison_for(display=display))
-        # Manually entered, not yet reported by any external source.
-        pane.set_provenance_summary("")
-        self._apply_reported_statistics_to_pane(pane, self._measurement_content)
-        pane.set_raw_spores_unavailable(plotted_as_band=display.has_any_range)
-        pane.set_method({"mount": "", "stain": "", "sample_type": "", "objective": ""})
-        pane.set_calibration(QCoreApplication.translate("ReferenceAddDialog", "Not applicable: entered manually."))
-        pane.set_provenance(
-            QCoreApplication.translate("ReferenceAddDialog", "Manually entered")
-            + "\n"
-            + QCoreApplication.translate("ReferenceAddDialog", "Source notes: {notes}").format(
-                notes=QCoreApplication.translate("ReferenceAddDialog", "Not reported")
-            )
-        )
 
     # ------------------------------------------------------------------
     # Hints
     # ------------------------------------------------------------------
-
-    def attach_hint_controller(self, controller: HintStatusController) -> None:
-        """Publish this editor's hints to a host-owned (dialog-level) hint
-        bar instead of its own: every registered field, parser and
-        validation hint goes to ``controller``, and the editor's own hint
-        row is removed so no hint widget stays inside the scrolled form."""
-        if self._hint_controller is not None:
-            for widget, _hint, _tone in self._hint_registrations:
-                if _qt_alive(widget):
-                    widget.removeEventFilter(self._hint_controller)
-        self._hint_controller = controller
-        for widget, hint, tone in self._hint_registrations:
-            if _qt_alive(widget):
-                controller.register_widget(widget, hint, tone=tone)
-        row = self.take_hint_row()
-        row.hide()
-        row.deleteLater()
-        self.hint_bar = None
 
     def take_hint_row(self) -> QWidget:
         """Remove the hint/status row from this editor's layout and return
@@ -1129,6 +937,103 @@ class ReferenceEntryEditor(QWidget):
     def _set_hint(self, text: str | None, tone: str = "info") -> None:
         if self._hint_controller is not None:
             self._hint_controller.set_hint(text, tone=tone)
+
+    # Validation (stage 10e2): what keeps the entry from being saved is said
+    # in red by the part of the form it is about, instead of a message box,
+    # and goes when that part is changed.
+    def _make_validation_label(self, name: str) -> QLabel:
+        label = QLabel("", self)
+        label.setObjectName(name)
+        label.setWordWrap(True)
+        label.setStyleSheet("color: #c0392b;")
+        label.setVisible(False)
+        self._validation_labels.append(label)
+        return label
+
+    def _entry_state(self) -> tuple:
+        """What the user has entered, to tell a change from a focus change."""
+        table = self.spore_table
+        return (
+            self.publication_combo.currentText(),
+            self.measurement_paste_input.text(),
+            self._selected_work_id,
+            self._pending_reference_work is not None,
+            self.use_existing_radio.isChecked(),
+            self._selected_measurement_set_id,
+            tuple(field.text() for row in self.measurement_inputs for field in row),
+            tuple(field.text() for field in self.parmasto_inputs.values()),
+            tuple(
+                item.text() if item is not None else ""
+                for r in range(table.rowCount())
+                for c in range(table.columnCount())
+                for item in (table.item(r, c),)
+            ),
+            self._blocked_losses_text(),
+        )
+
+    def _blocked_losses_text(self) -> str:
+        try:
+            return repr(self._blocked_projection_losses())
+        except Exception:  # an unreadable entry: compared by its fields above
+            return ""
+
+    def _show_invalid(self, label: QLabel, field: QWidget | None, message: str) -> None:
+        self._clear_invalid()
+        label.setText(message)
+        label.setVisible(True)
+        if field is not None and field.isVisible():
+            # Moving the focus can finish an edit (a cell's 9 becomes 9.00),
+            # which reports a change: the entry is compared from after it.
+            field.setFocus(Qt.OtherFocusReason)
+        self._invalid_entry = self._entry_state()
+        # A host that scrolls the editor brings the message into view, its
+        # start included (ensureWidgetVisible centres a label wider than the
+        # view, cutting off the beginning of the sentence).
+        scroll = self.parentWidget()
+        while scroll is not None and not isinstance(scroll, QScrollArea):
+            scroll = scroll.parentWidget()
+        if scroll is not None and scroll.widget() is not None:
+            QApplication.sendPostedEvents()  # the label's new height
+            if scroll.widget().layout() is not None:
+                scroll.widget().layout().activate()
+            origin = label.mapTo(scroll.widget(), QPoint(0, 0))
+            view = scroll.viewport().size()
+            bar = scroll.verticalScrollBar()
+            bottom = origin.y() + label.sizeHint().height() + 8
+            if bottom > bar.value() + view.height():
+                bar.setValue(bottom - view.height())
+            if origin.y() < bar.value():
+                bar.setValue(max(0, origin.y() - 8))
+            hbar = scroll.horizontalScrollBar()
+            if origin.x() < hbar.value():
+                hbar.setValue(max(0, origin.x() - 8))
+
+    def _clear_invalid(self, *_args) -> None:
+        self._invalid_entry = None
+        for label in self._validation_labels:
+            label.clear()
+            label.setVisible(False)
+
+    def _clear_invalid_if_changed(self, *_args) -> None:
+        if self._invalid_entry is not None and self._entry_state() != self._invalid_entry:
+            self._clear_invalid()
+
+    def validation_message(self) -> str:
+        """The validation message showing, or "" (for hosts, tests and scenarios)."""
+        return next(
+            (label.text() for label in self._validation_labels if not label.isHidden()), ""
+        )
+
+    def explain_ambiguous_publication(self) -> None:
+        """Say, by the publication field, that the typed name matches several."""
+        self._show_invalid(
+            self.publication_validation_label,
+            self.publication_combo,
+            QCoreApplication.translate(
+                "ReferenceAddDialog",
+                "Several publications match this name — choose one from the list.",
+            ),
+        )
 
     # ------------------------------------------------------------------
     # The 3 x 5 measurement grid
@@ -1175,7 +1080,7 @@ class ReferenceEntryEditor(QWidget):
             return
         self._sync_measurement_content_from_table()
         self._refresh_measurement_content_view()
-        self._refresh_preview()
+        self._emit_data_changed()
 
     def _on_measurement_editing_finished(self, row: int, col: int) -> None:
         """Canonicalise one committed cell, then re-fold.
@@ -1221,7 +1126,7 @@ class ReferenceEntryEditor(QWidget):
                 self._formatting_minmax = False
         self._sync_measurement_content_from_table()
         self._refresh_measurement_content_view()
-        self._refresh_preview()
+        self._emit_data_changed()
 
     _MINMAX_ROW_BY_DIMENSION = {"length": 0, "width": 1, "q": 2}
 
@@ -1414,7 +1319,7 @@ class ReferenceEntryEditor(QWidget):
             ).format(metric=mcv.metric_label(metric)),
             tone="info",
         )
-        self._refresh_preview()
+        self._emit_data_changed()
 
     def _on_clear_reported_statistics_clicked(self) -> None:
         # Fold the table in first: otherwise the next sync would reinstate
@@ -1432,7 +1337,7 @@ class ReferenceEntryEditor(QWidget):
             ),
             tone="info",
         )
-        self._refresh_preview()
+        self._emit_data_changed()
 
     def _apply_parsed_dimension(self, row: int, dim, mean_text: str) -> None:
         """Write one parsed metric into its grid row.
@@ -1496,7 +1401,7 @@ class ReferenceEntryEditor(QWidget):
         # Parmasto biometric, so the value goes to the Q row's Mean cell.
         self._render_measurement_preview(result)
         self._refresh_measurement_content_view()
-        self._refresh_preview()
+        self._emit_data_changed()
 
     _MEASUREMENT_PREVIEW_NOISE_PREFIXES = (
         "Parsed first range as length.",
@@ -1587,7 +1492,75 @@ class ReferenceEntryEditor(QWidget):
             return
         self._raw_measurement_text = raw
         self._set_parsed_result(result)
+        self.set_grid_revealed(True)
         self._set_hint(QCoreApplication.translate("ReferenceAddDialog", "Parsed — review and edit before saving."), tone="info")
+
+    # ----- Two steps (staged) ------------------------------------------------
+
+    def is_staged(self) -> bool:
+        return self._staged
+
+    def show_step(self, index: int) -> None:
+        """Staged only: 0 is the publication, 1 the measurements."""
+        if self.steps is None:
+            return
+        self.steps.setCurrentIndex(max(0, min(int(index), self.steps.count() - 1)))
+        if self.steps.currentIndex() == 1 and not self.is_grid_revealed():
+            self.measurement_paste_input.setFocus(Qt.OtherFocusReason)
+
+    def current_step(self) -> int:
+        return self.steps.currentIndex() if self.steps is not None else 0
+
+    def is_grid_revealed(self) -> bool:
+        return not self.measurement_grid_panel.isHidden()
+
+    def set_grid_revealed(self, revealed: bool) -> None:
+        """Show or hide the value grid and its corrections (staged: hidden until needed)."""
+        revealed = bool(revealed) or not self._staged
+        self.measurement_grid_panel.setVisible(revealed)
+        self._correction_row_widget.setVisible(revealed)
+        self.fill_manually_btn.setVisible(self._staged and not revealed)
+
+    def _on_fill_manually_clicked(self) -> None:
+        self.set_grid_revealed(True)
+        self._measurement_input(0, 0).setFocus(Qt.OtherFocusReason)
+        self.data_changed.emit()
+
+    def has_publication(self) -> bool:
+        """A library publication is chosen, or a new one is waiting to be saved."""
+        return bool(self._selected_work_id or self._pending_reference_work is not None)
+
+    def bind_typed_publication(self) -> str | None:
+        """Select the work whose exact label was typed (see ``_resolve_typed_publication``)."""
+        return self._resolve_typed_publication()
+
+    def library_payload_ready(self) -> bool:
+        """Whether saving would store a measurement set: the payload builder's own answer.
+
+        A refusal (content this version cannot store) counts as ready, so the
+        click reaches validation, which explains it.
+        """
+        try:
+            return self.normalized_measurement_set_payload() is not None
+        except MeasurementContentError:
+            return True
+        except Exception:
+            return False
+
+    def _update_existing_sets_note(self) -> None:
+        count = len(self._existing_sets_cache)
+        note = getattr(self, "existing_sets_note", None)
+        if note is None:
+            return
+        note.setVisible(self._staged and count > 0)
+        if count:
+            note.setText(
+                QCoreApplication.translate(
+                    "ReferenceAddDialog",
+                    "Measurement sets for this taxon already in this publication: "
+                    "{count}. To use one, tick it in the Add reference list.",
+                ).format(count=count)
+            )
 
     def _on_swap_lw_clicked(self) -> None:
         row_a, row_b = 0, 1
@@ -1616,7 +1589,7 @@ class ReferenceEntryEditor(QWidget):
         self._sync_measurement_content_from_table()
         self._refresh_measurement_content_view()
         self._set_hint(QCoreApplication.translate("ReferenceAddDialog", "Length and width swapped."), tone="info")
-        self._refresh_preview()
+        self._emit_data_changed()
 
     def _parmasto_value(self, key: str):
         widget = self.parmasto_inputs.get(key)
@@ -1757,45 +1730,6 @@ class ReferenceEntryEditor(QWidget):
         """
         return bool(self._build_raw_points_json()) or self._has_grid_values()
 
-    def library_entry_fingerprint(self) -> tuple | None:
-        """A comparable snapshot of everything a library entry is built from.
-
-        Two equal fingerprints mean a measurement set saved earlier still
-        describes what this form holds, so a host can attach that set
-        rather than storing the same data a second time. ``None`` means
-        "cannot tell" — no storable content, or a payload this version
-        refuses to project — and a caller must treat it as changed rather
-        than as a match.
-
-        Derived from the real payload builders, not from a parallel reading
-        of the widgets, so it cannot drift away from what a save writes.
-
-        The Data mode is part of the identity. Switching to "Use an
-        existing measurement set" only disables the manual fields, it does
-        not clear them (see :meth:`_on_data_choice_toggled`), so the typed
-        values — and therefore the payload built from them — are unchanged
-        by the switch. Without the mode and the chosen set in here, an
-        entry saved manually would still look current while the form now
-        points at a different, already-stored set.
-        """
-        try:
-            payload = self.normalized_measurement_set_payload()
-        except Exception:
-            return None
-        if payload is None:
-            return None
-        pending = self.pending_reference_work()
-        treatment = self.quick_add_treatment_payload()
-        return (
-            bool(self.is_use_existing_set()),
-            str(self.selected_measurement_set_id() or ""),
-            str(self.selected_reference_work_id() or ""),
-            repr(sorted(asdict(pending).items())) if pending is not None else "",
-            str(treatment.get("name_as_published") or ""),
-            str(treatment.get("locator_text") or ""),
-            repr(sorted(asdict(payload).items())),
-        )
-
     def _blocked_projection_losses(self) -> list[tuple[str, str]]:
         """Scientific claims this entry cannot be saved without losing.
 
@@ -1821,22 +1755,15 @@ class ReferenceEntryEditor(QWidget):
         and returns ``False`` on invalid/incomplete input, or when the
         user declines an explicit legacy-only confirmation.
         """
+        self._clear_invalid()
         if self._resolve_typed_publication() == "ambiguous":
-            message = QCoreApplication.translate(
-                "ReferenceAddDialog",
-                "Several publications match this name — choose one from the list.")
-            self._set_hint(message, tone="warning")
-            QMessageBox.warning(
-                self,
-                QCoreApplication.translate("ReferenceAddDialog", "Choose a publication"),
-                message,
-            )
+            self.explain_ambiguous_publication()
             return False
         if self.use_existing_radio.isChecked():
             if not self._selected_measurement_set_id:
-                QMessageBox.warning(
-                    self,
-                    QCoreApplication.translate("ReferenceAddDialog", "Missing Data"),
+                self._show_invalid(
+                    self.data_validation_label,
+                    self._existing_sets_table,
                     QCoreApplication.translate("ReferenceAddDialog", "Select an existing measurement set or switch to \"Enter new data\"."),
                 )
                 return False
@@ -1853,9 +1780,9 @@ class ReferenceEntryEditor(QWidget):
         if self._entering_individual_points():
             data = self._points_data()
             if not data:
-                QMessageBox.warning(
-                    self,
-                    QCoreApplication.translate("ReferenceAddDialog", "Missing Data"),
+                self._show_invalid(
+                    self.points_validation_label,
+                    self.spore_table,
                     QCoreApplication.translate("ReferenceAddDialog", "Enter at least one length and width value."),
                 )
                 return False
@@ -1867,11 +1794,9 @@ class ReferenceEntryEditor(QWidget):
                 # showing the source's percentile interval or reported mean,
                 # and saving a row that no longer says those things would
                 # make the picture and the evidence disagree.
-                QMessageBox.warning(
-                    self,
-                    QCoreApplication.translate(
-                        "ReferenceAddDialog", "Reported statistics cannot be saved yet"
-                    ),
+                self._show_invalid(
+                    self.measurement_validation_label,
+                    self._clear_reported_statistics_btn,
                     QCoreApplication.translate(
                         "ReferenceAddDialog",
                         "This version cannot store everything this source "
@@ -1894,9 +1819,11 @@ class ReferenceEntryEditor(QWidget):
                 return False
             data = self._reference_record_data()
             if not data:
-                QMessageBox.warning(
-                    self,
-                    QCoreApplication.translate("ReferenceAddDialog", "Missing Data"),
+                self._show_invalid(
+                    self.measurement_validation_label,
+                    self._measurement_input(0, 1)
+                    if self.is_grid_revealed()
+                    else self.measurement_paste_input,
                     QCoreApplication.translate("ReferenceAddDialog", "Enter at least one reference or Parmasto value."),
                 )
                 return False
@@ -2026,7 +1953,15 @@ class ReferenceEntryEditor(QWidget):
         ):
             self._pending_reference_work = None
             self._pending_reference_work_label = None
-        if self._selected_work_id is not None:
+        # Picking another publication changes the text before Qt emits
+        # currentIndexChanged; that is a selection, not typing over one.
+        picked_row = self.publication_combo.currentIndex()
+        picking = (
+            picked_row > 0
+            and bool(self.publication_combo.itemData(picked_row))
+            and self.publication_combo.itemText(picked_row).strip() == current
+        )
+        if self._selected_work_id is not None and not picking:
             for row in range(self.publication_combo.count()):
                 if str(self.publication_combo.itemData(row) or "") == self._selected_work_id:
                     if self.publication_combo.itemText(row).strip() != current:
@@ -2167,10 +2102,10 @@ class ReferenceEntryEditor(QWidget):
         try:
             from .reference_library_manager_dialog import ReferenceWorkEditor
         except Exception as exc:
-            QMessageBox.warning(
-                self,
-                QCoreApplication.translate("ReferenceAddDialog", "New publication"),
-                QCoreApplication.translate("ReferenceAddDialog", "Reference library editor is unavailable: {error}").format(error=str(exc)),
+            self._hint_controller.show_notice(
+                QCoreApplication.translate("ReferenceAddDialog", "Could not open the publication editor."),
+                "error",
+                details=str(exc),
             )
             return
         editor = ReferenceWorkEditor(self, persist_on_accept=False)
@@ -2219,7 +2154,8 @@ class ReferenceEntryEditor(QWidget):
                     if ms.data_kind in SUPPORTED_ATTACHMENT_DATA_KINDS:
                         candidates.append(ms)
         self._existing_sets_cache = candidates
-        has_candidates = bool(candidates)
+        self._update_existing_sets_note()
+        has_candidates = bool(candidates) and not self._staged
         self.use_existing_radio.setEnabled(has_candidates)
         if not has_candidates and self.use_existing_radio.isChecked():
             self.enter_new_radio.setChecked(True)
@@ -2278,20 +2214,20 @@ class ReferenceEntryEditor(QWidget):
                     break
             else:
                 self._selected_measurement_set_id = None
-        self._refresh_preview()
+        self._emit_data_changed()
 
     def _on_existing_set_selection_changed(self) -> None:
         selected_rows = self._existing_sets_table.selectionModel().selectedRows()
         if not selected_rows:
             self._selected_measurement_set_id = None
-            self._refresh_preview()
+            self._emit_data_changed()
             return
         row = selected_rows[0].row()
         item = self._existing_sets_table.item(row, 0)
         self._selected_measurement_set_id = (
             str(item.data(Qt.UserRole)) if item else None
         )
-        self._refresh_preview()
+        self._emit_data_changed()
 
     def _on_data_choice_toggled(self, *_args) -> None:
         use_existing = self.use_existing_radio.isChecked()
@@ -2305,7 +2241,7 @@ class ReferenceEntryEditor(QWidget):
             section.setEnabled(not use_existing)
         if use_existing:
             self._refresh_existing_sets_table()
-        self._refresh_preview()
+        self._emit_data_changed()
 
     def _build_raw_points_json(self) -> str | None:
         points = self.spore_table.get_points()

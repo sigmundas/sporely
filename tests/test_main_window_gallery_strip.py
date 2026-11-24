@@ -232,7 +232,7 @@ def test_refresh_observation_images_skips_measure_gallery_rebuild_when_unchanged
     window.current_image_index = 0
     window.observation_images = list(images)
     window._measure_gallery_observation_id = 7
-    window._measure_gallery_signature = tuple((img["id"], img["filepath"]) for img in images)
+    window._measure_gallery_signature = window._measure_gallery_signature_for(images)
 
     monkeypatch.setattr(main_window.ImageDB, "get_images_for_observation", lambda observation_id: list(images))
     monkeypatch.setattr(window, "_apply_measure_gallery_publish_selection", lambda: None)
@@ -243,7 +243,7 @@ def test_refresh_observation_images_skips_measure_gallery_rebuild_when_unchanged
     assert window.measure_gallery.calls == [("select_image", 2)]
     assert window.current_image_index == 1
     assert window._measure_gallery_observation_id == 7
-    assert window._measure_gallery_signature == tuple((img["id"], img["filepath"]) for img in images)
+    assert window._measure_gallery_signature == window._measure_gallery_signature_for(images)
 
     window.deleteLater()
 

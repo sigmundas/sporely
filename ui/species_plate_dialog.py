@@ -50,7 +50,6 @@ _PREVIEW_SCALE = 0.40
 _TEXT_SCALE_DEFAULT = 1.0
 _BG_SLOTS_MAX = 3
 _EMPTY_SLOT_ID = "__empty__"
-_PUBLISH_EXCLUDED_SETTING_PREFIX = "artsobs_publish_excluded_image_ids_"
 
 _SLOT_KEYS = ["TL", "TC", "TR", "BL", "BR"]
 _OVERLAY_SLOT_KEYS = ["TL", "TC", "BR"]   # slots used by the 3_overlay layout
@@ -1581,11 +1580,6 @@ class PlatePreviewCanvas(QWidget):
             return self._dlg._background_crops.get(self._active)
         return self._dlg._crops.get(self._active)
 
-    def _active_label(self, key: str) -> str:
-        if key.startswith("bg:"):
-            return self._dlg._background_label(key)
-        return self._dlg._slot_labels.get(key, key)
-
     def show_label_overlay(self, slot: str) -> None:
         """Position and show the inline label editor over the circle's label box."""
         rect = self._label_rect_preview(slot)
@@ -1883,13 +1877,13 @@ class SpeciesPlateDialog(QDialog):
         # ── Load ALL images (no exclusion) ─────────────────────────────────
         # The plate is an observation-level summary, so its panels, its
         # gallery and its spore statistics start from every image of the
-        # observation.  Do not narrow this list with the publication
-        # exclusion set: `artsobs_publish_excluded_image_ids_<obs>` decides
-        # which source image *files* are uploaded to Artsobservasjoner or
-        # iNaturalist, and feeding it in here also dropped those images'
-        # measurements out of `_build_spore_stats()` — an analytical summary
-        # silently narrowed by an upload choice.  A plate that should show
-        # fewer panels needs its own explicit plate state.
+        # observation.  Do not narrow this list with the strip's photo
+        # selection: it decides which source image *files* are kept in
+        # Sporely Cloud and uploaded to Artsobservasjoner or iNaturalist, and
+        # an older publication exclusion fed in here also dropped those
+        # images' measurements out of `_build_spore_stats()` — an analytical
+        # summary silently narrowed by an upload choice.  A plate that should
+        # show fewer panels needs its own explicit plate state.
         all_imgs = list(ImageDB.get_images_for_observation(self._obs_id))
         self._all_images: list[dict] = all_imgs
         self._field_images = [i for i in all_imgs if i.get("image_type") == "field"]
@@ -2478,14 +2472,12 @@ class SpeciesPlateDialog(QDialog):
             self,
             show_delete=False,
             show_badges=True,
-            show_edit=True,
-            show_publish_checkbox=True,
-            publish_checkbox_hint=self.tr("Select image for external publishing"),
+            # Which photos are shared is chosen under the observation's
+            # image strip (Vis, Mål); the plate only composes.
+            show_publish_checkbox=False,
         )
         self._gallery.setMaximumHeight(190)
         self._gallery.imageClicked.connect(self._on_gallery_image_clicked)
-        self._gallery.editRequested.connect(self._on_species_plate_gallery_edit_requested)
-        self._gallery.publishSelectionChanged.connect(self._on_gallery_publish_selection_changed)
         right_layout.addWidget(self._gallery)
 
         main_row.addLayout(right_layout, 1)
@@ -2551,11 +2543,6 @@ class SpeciesPlateDialog(QDialog):
             "info")
 
     # ── Slot value handlers ───────────────────────────────────────────────────
-
-    def _on_size(self, v: int) -> None:
-        self._ins_r = v
-        _cover_cache.clear()
-        self._refresh_preview()
 
     def _on_inset_position(self, v: int) -> None:
         self._inset_position = max(0, min(100, int(v)))
@@ -2802,22 +2789,6 @@ class SpeciesPlateDialog(QDialog):
         # Refresh preview to update yellow/blue label rectangle highlight
         self._refresh_preview()
 
-    def _on_species_plate_gallery_edit_requested(self, _image_id, filepath: str) -> None:
-        # "Edit photo" bounces out to the parent window's Observations tab
-        # → Prepare Images, mirroring the other galleries.
-        path = (filepath or "").strip() or None
-        if not path:
-            return
-        parent = self.parent()
-        while parent is not None:
-            if hasattr(parent, "observations_tab"):
-                break
-            parent = parent.parent() if hasattr(parent, "parent") else None
-        observations_tab = getattr(parent, "observations_tab", None) if parent is not None else None
-        opener = getattr(observations_tab, "open_edit_images_direct", None) if observations_tab is not None else None
-        if callable(opener):
-            opener(selected_image_path=path)
-
     def _on_gallery_image_clicked(self, item_dict, filepath: str) -> None:
         """Assign the gallery image to the active slot/background."""
         active = self._canvas._active
@@ -2867,7 +2838,6 @@ class SpeciesPlateDialog(QDialog):
         """Rebuild gallery with reuse enabled and used/selected highlights."""
         from ui.image_gallery_widget import ImageGalleryWidget as _IGW
         in_use = self._in_use_image_ids()
-        publish_selected = self._publish_selected_image_ids()
         items = []
         for img in self._all_images:
             if not img.get("filepath"):
@@ -2908,52 +2878,9 @@ class SpeciesPlateDialog(QDialog):
                 # users can tell what's synced without leaving Species Plate.
                 "cloud_id": cloud_id or None,
                 "cloud_uploaded": bool(cloud_id),
-                "publish_selected": bool(img_id is not None and int(img_id) in publish_selected),
-                "publish_selected_default": image_type != "microscope",
             })
         self._gallery.set_items(items)
         self._sync_gallery_selection()
-
-    def _publish_excluded_image_ids(self) -> set[int]:
-        if not self._obs_id:
-            return set()
-        raw = SettingsDB.get_setting(f"{_PUBLISH_EXCLUDED_SETTING_PREFIX}{self._obs_id}", "[]")
-        try:
-            loaded = json.loads(raw or "[]")
-            if isinstance(loaded, list):
-                return {int(value) for value in loaded}
-        except Exception:
-            pass
-        return set()
-
-    def _set_publish_excluded_image_ids(self, excluded_ids: set[int]) -> None:
-        if not self._obs_id:
-            return
-        normalized = sorted({int(value) for value in (excluded_ids or set())})
-        SettingsDB.set_setting(
-            f"{_PUBLISH_EXCLUDED_SETTING_PREFIX}{self._obs_id}",
-            json.dumps(normalized),
-        )
-
-    def _publish_selected_image_ids(self) -> set[int]:
-        all_ids = {
-            int(img.get("id"))
-            for img in self._all_images
-            if img.get("id") is not None
-        }
-        return all_ids - self._publish_excluded_image_ids()
-
-    def _on_gallery_publish_selection_changed(self, selected_ids) -> None:
-        all_ids = {
-            int(img.get("id"))
-            for img in self._all_images
-            if img.get("id") is not None
-        }
-        try:
-            selected = {int(value) for value in (selected_ids or set())}
-        except Exception:
-            selected = set()
-        self._set_publish_excluded_image_ids(all_ids - selected)
 
     # ── Rendering ─────────────────────────────────────────────────────────────
 
@@ -3483,37 +3410,6 @@ class SpeciesPlateDialog(QDialog):
 
     # ── Background helpers ────────────────────────────────────────────────────
 
-    def _background_panels(self) -> list[tuple[str, str, QRectF]]:
-        rects = _background_panel_rects(self._bg_count)
-        panels: list[tuple[str, str, QRectF]] = []
-        for idx in range(self._bg_count):
-            img = self._bg_slots[idx] if idx < len(self._bg_slots) else None
-            if not img:
-                continue
-            filepath = img.get("filepath")
-            if not filepath or not os.path.isfile(filepath):
-                continue
-            if idx < len(rects):
-                panels.append((f"bg:{idx}", filepath, rects[idx]))
-        return panels
-
-    def _bg_slot_for_key(self, key: str) -> Optional[dict]:
-        try:
-            idx = int(key.split(":", 1)[1])
-        except (IndexError, ValueError):
-            return None
-        return self._bg_slots[idx] if 0 <= idx < len(self._bg_slots) else None
-
-    def _background_label(self, key: str) -> str:
-        try:
-            idx = int(key.split(":", 1)[1])
-        except (IndexError, ValueError):
-            return self.tr("Background")
-        img = self._bg_slots[idx] if 0 <= idx < len(self._bg_slots) else None
-        itype = (img.get("image_type") or "") if img else ""
-        if itype == "field":
-            return self.tr("Field photo {0}").format(idx + 1)
-        return self.tr("Background {0}").format(idx + 1)
 
     # ── Export folder helpers ─────────────────────────────────────────────────
 

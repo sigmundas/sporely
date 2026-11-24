@@ -268,6 +268,62 @@ scale-bar rescale refreshes the image overlay; the saved scale-bar width
 follows its cross tick; an out-of-range path coordinate no longer aborts the
 transform.
 
+### Merged into `ui/redesign` (2026-11-22)
+
+The merge of `main` into `ui/redesign` (`d6d1324`, PR into `ui/redesign`)
+left two rescale engines side by side:
+
+- The Measure tab (objective choice, the scale combo, the active-calibration
+  offer) uses the redesign engine, `MeasurementDB.apply_scale_changes`: it
+  recomputes each length from its drawn points or multiline path when those
+  match the stored length, otherwise it uses the ratio (redesign stage 8,
+  owner's choice). It keeps this plan's stored-scale denominator and the rule
+  that loading an image keeps its stored scale. On this tab a multiline row
+  now follows its path, not the ratio (`MULTILINE_FROM_PATH` in
+  `tests/test_measurement_rescale_rules.py`).
+- Prepare Images, the Measure tab's scale-bar edit and the calibration
+  dialog's recalculation still use the ratio
+  (`rescale_image_measurements`, `recalculate_measurements_for_calibration`).
+
+Next step (not started; changes what Prepare Images and recalibration write,
+so it is its own reviewed change): make `rescale_image_measurements` and
+`recalculate_measurements_for_calibration` call `_apply_scale_changes_in`,
+delete `_rescale_measurements_on_cursor`, and align `rescalable_count` with
+the ratio path's `length_um IS NOT NULL` filter.
+
+The Codex challenge review of the merge found one problem the merge caused,
+fixed in `c1c1b7e`: the active-calibration offer said "Measurements change by
+X%", but X is the scale ratio, and a point-recomputed length can move by a
+different amount; it now says "The image scale changes by X%". Its other
+findings exist on both parents (or on the one named) and are still open:
+
+10. Recalculating measurements from Kalibrer objektiv does not refresh an
+    image open in Mål (`CalibrationDialog.calibration_saved` is never
+    emitted), so a line drawn next is saved at the old scale and its save
+    writes the old scale back.
+11. Choosing "Not set" in Mål writes scale 0 without asking; the next
+    objective then finds no old scale and leaves the measurements unscaled.
+12. Opening an image whose objective is not in the local catalogue (from
+    another desktop) goes through `set_custom_scale`, which saves
+    `objective_name="Custom"` and clears `calibration_id`.
+13. Prepare Images: Save gives an image left on an older calibration the
+    active calibration's id while it keeps the old scale; accepting a rescale
+    and then Discard leaves the new scale and lengths with the old objective.
+14. Prepare Images: cancelling the rescale prompt after a scale-bar edit
+    still replaces the calibration measurement with the new length
+    (`_apply_scale_bar_inline` ignores the cancel).
+15. The active-calibration offer takes the calibration id from SQLite and the
+    scale from `objectives.json`; if saving the JSON failed they disagree.
+16. Redesign side: the Mål rescale prompt reads the image before the modal
+    and writes to `current_image_id` after it; an explicit `old_scale`
+    (used when nothing was stored) wins over a scale another writer stored
+    meanwhile; `apply_objective` writes the image row again after the
+    engine's transaction, which marks it dirty even when nothing changed.
+    Each needs a concurrent writer or a queued image switch during the
+    prompt; not reproduced in the app.
+17. A measurement type stored as `" Calibration "` counts as calibration in
+    Python but not in the SQL filters (no such rows seen in real data).
+
 ## Sequencing
 
 Do this before redesign Stage 9 retires `ImageImportDialog`; that stage then

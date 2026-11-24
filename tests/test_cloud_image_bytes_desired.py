@@ -722,12 +722,13 @@ def test_recheck_before_sync_cancels_delete_and_removes_from_storage_excluded(
 # ---------------------------------------------------------------------------
 # 12. Fresh-DB headless sync must not upload every microscope frame: the
 #     cloud-storage-desired initializer runs as a sync prerequisite, seeds
-#     the storage-excluded set, and only the sparse per-magnification default
-#     is byte-uploaded even when the gallery has never been opened.
+#     the storage-excluded set, and no microscope frame is byte-uploaded
+#     (none is picked per magnification) even when the gallery has never
+#     been opened; field photos are.
 # ---------------------------------------------------------------------------
 
 
-def test_headless_sync_seeds_sparse_microscope_default_before_byte_upload(
+def test_headless_sync_seeds_unchecked_microscope_default_before_byte_upload(
     monkeypatch, tmp_path
 ):
     """Fix 1 regression: sync-driven initialization.
@@ -764,21 +765,31 @@ def test_headless_sync_seeds_sparse_microscope_default_before_byte_upload(
             image_type="microscope",
             objective_name="40x objective",
         )
+    # A field photo: desired by default, so the upload path (and its
+    # identity kwargs) is still exercised end to end.
+    field_id = 31
+    _seed_image(
+        db_path,
+        image_id=field_id,
+        obs_id=900,
+        filepath=str(_write_image(tmp_path / f"field-{field_id}.jpg")),
+        image_type="field",
+    )
 
     # Precondition: neither the excluded set nor the sentinel exists yet.
     assert cloud_sync._cloud_image_storage_excluded_image_ids(900) == set()
     assert cloud_sync._cloud_image_storage_initialized(900) is False
     # Also assert the naive precondition that motivated Fix 1: without the
     # initializer the byte-gate predicate would say "everything desired".
-    for image_id in (*group_10x_ids, *group_40x_ids):
+    for image_id in (*group_10x_ids, *group_40x_ids, field_id):
         assert cloud_image_bytes_desired(900, image_id) is True
 
     # The observation is private so
     # ``_ensure_metadata_anchors_for_public_spore_observation`` no-ops
     # cleanly. The sync path uses the ``prepare_images_cb`` we pass to
     # emit every microscope image as an upload candidate; the desired-state
-    # gate must then filter out the four that were seeded excluded.
-    all_ids = tuple(sorted((*group_10x_ids, *group_40x_ids)))
+    # gate must then filter out the five that were seeded excluded.
+    all_ids = tuple(sorted((*group_10x_ids, *group_40x_ids, field_id)))
 
     def prepare_all(_obs, _progress_cb):
         rows = models.ImageDB.get_images_for_observation(900)
@@ -905,15 +916,14 @@ def test_headless_sync_seeds_sparse_microscope_default_before_byte_upload(
     # setting for this observation.
     assert cloud_sync._cloud_image_storage_initialized(900) is True
     excluded_after = cloud_sync._cloud_image_storage_excluded_image_ids(900)
-    # Sparse default: one desired per group. Group order follows sort_order,
-    # which was seeded to equal the image_id, so the keepers are the
-    # lowest-id image in each group: 11 (10x) and 21 (40x).
-    assert excluded_after == {12, 13, 22}
+    # Every microscope frame starts unchecked: none is picked per
+    # magnification group (owner 2026-11-15). The field photo stays desired.
+    assert excluded_after == {11, 12, 13, 21, 22}
 
-    # And only the sparse default was byte-uploaded — the rest are filtered
+    # And only the field photo was byte-uploaded — the frames are filtered
     # by the sync path (either dropped from prepared_items or gated at the
     # client boundary; the observable outcome is identical).
-    assert sorted(upload_attempts) == [11, 21]
+    assert sorted(upload_attempts) == [field_id]
     # Original upload is disabled globally by monkeypatch above.
     assert original_upload_attempts == []
 

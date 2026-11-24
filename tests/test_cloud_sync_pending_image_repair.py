@@ -692,6 +692,40 @@ def _setting(db_path: Path, key: str) -> str | None:
     return None if row is None else row[0]
 
 
+def test_repair_scan_finds_nothing_stranded_when_no_microscope_image_is_checked(
+    tmp_path, monkeypatch
+):
+    """Nothing is picked per objective: uninitialized local microscope rows
+    all default unchecked, so the repair scan has no backlog to re-dirty."""
+    db_path = _create_sync_db(tmp_path)
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO observations (id, cloud_id, sync_status, synced_at) VALUES (?, ?, ?, ?)",
+            (605, "cloud-obs-605", "synced", "2026-05-01T00:00:00Z"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    for image_id, sort_order in ((11, 0), (12, 1)):
+        path = tmp_path / f"micro-{image_id}.jpg"
+        path.write_bytes(b"micro")
+        _insert_image(
+            db_path, id=image_id, observation_id=605, cloud_id=None, filepath=str(path),
+            source_role="local_canonical", file_purpose="microscope", image_type="microscope",
+            sort_order=sort_order,
+        )
+    _patch_db_connections(monkeypatch, db_path)
+
+    assert cloud_sync._mark_cloud_observations_dirty_for_pending_local_images(
+        include_pending_local_media_uploads=True,
+    ) is True
+    assert _sync_status(db_path, 605) == "synced"
+    assert json.loads(
+        _setting(db_path, "sporely_cloud_image_storage_excluded_ids_605") or "[]"
+    ) == [11, 12]
+
+
 def test_repair_generation_rescues_stranded_microscope_media_once(tmp_path, monkeypatch):
     """The 604-shaped case: a `synced` observation whose desired microscope
     media never reached the cloud must be re-dirtied by the repair scan, and
@@ -717,8 +751,8 @@ def test_repair_generation_rescues_stranded_microscope_media_once(tmp_path, monk
     finally:
         conn.close()
 
-    # Two uninitialized microscope rows in the same (unknown-objective) group:
-    # the initializer keeps the first by (sort_order, id) and excludes the rest.
+    # Two microscope rows; the user checked image 1 and left image 2
+    # unchecked (nothing is picked by default since 2026-11-15).
     _insert_image(
         db_path, id=1, observation_id=604, cloud_id=None, filepath=str(keeper_file),
         source_role="local_canonical", file_purpose="microscope", image_type="microscope",
@@ -729,6 +763,18 @@ def test_repair_generation_rescues_stranded_microscope_media_once(tmp_path, monk
         source_role="local_canonical", file_purpose="microscope", image_type="microscope",
         sort_order=1,
     )
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.executemany(
+            "INSERT INTO settings (key, value) VALUES (?, ?)",
+            [
+                ("sporely_cloud_image_storage_intent_ids_604", "[1, 2]"),
+                ("sporely_cloud_image_storage_excluded_ids_604", "[2]"),
+            ],
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
     _patch_db_connections(monkeypatch, db_path)
 
@@ -737,7 +783,7 @@ def test_repair_generation_rescues_stranded_microscope_media_once(tmp_path, monk
         include_pending_local_media_uploads=True,
     ) is True
     assert _sync_status(db_path, 604) == "dirty", (
-        "Image 1 is the initialized, desired, uploadable microscope keeper "
+        "Image 1 is the initialized, checked, uploadable microscope image "
         "with cloud_id IS NULL — the repair scan must re-dirty observation 604."
     )
     assert _setting(db_path, "sporely_cloud_image_storage_intent_ids_604") == "[1, 2]"

@@ -29,6 +29,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 import ui.observations_tab as observations_tab
+import ui.observation_details_dialog as observation_details_dialog
 from ui.image_import_dialog import ImageImportResult
 from utils.taxon_identity import IDENTITY_COLUMNS, STATE_NONE, TaxonIdentity
 
@@ -90,6 +91,7 @@ def _patch_dialog_collaborators(monkeypatch) -> None:
         lambda key, default=None: "no" if key == "vernacular_language" else default,
     )
     monkeypatch.setattr(observations_tab, "resolve_vernacular_db_path", lambda _lang: None)
+    monkeypatch.setattr(observation_details_dialog, "resolve_vernacular_db_path", lambda _lang: None)
     Dialog = observations_tab.ObservationDetailsDialog
     monkeypatch.setattr(Dialog, "_load_objectives", lambda self: {"default": {"is_default": True}})
     monkeypatch.setattr(Dialog, "_load_tag_options", lambda self, category: [f"{category}-default"])

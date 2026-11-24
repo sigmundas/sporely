@@ -266,7 +266,7 @@ def test_live_session_start_capture_and_stop_are_logged(qtbot, profile):
 
     _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
     session_id = tab._session_id
-    assert tab.start_stop_btn.text() == "Stop Session"
+    assert tab.start_stop_btn.text() == "End session"
     assert _watcher().isRunning()
     assert _watcher().directory_to_watch == str(profile.watch_dir)
 
@@ -501,3 +501,1202 @@ def test_raw_section_is_hidden_without_raw_and_not_remembered(qtbot, profile):
     restarted = _make_tab(qtbot)
     assert not restarted.raw_processing_toggle_btn.isChecked()
     assert not restarted.raw_processing_card.isVisible()
+
+
+# ---------------------------------------------------------------------------
+# Stage 1: collapsible Preparation and Notes sections with summary lines
+# ---------------------------------------------------------------------------
+
+
+def _settle(qtbot, section) -> None:
+    qtbot.waitUntil(lambda: section._animation.state() != section._animation.State.Running, timeout=2000)
+
+
+def test_preparation_summary_follows_each_choice_immediately(qtbot, profile):
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    assert tab.slide_prep_group.summary() == "KOH · Dried · Melzer · Hymenium"
+    assert tab.slide_prep_group.summary_alert() == ""
+    _choose(qtbot, tab.mount_combo, "Water")
+    assert tab.slide_prep_group.summary() == "Water · Dried · Melzer · Hymenium"
+    _choose(qtbot, tab.sample_source_combo, "Stipe")
+    assert tab.slide_prep_group.summary() == "Water · Dried · Melzer · Stipe"
+
+
+def test_preparation_summary_follows_changes_made_with_signals_blocked(qtbot, profile):
+    """Selecting gallery images fills the sidebar with signals blocked."""
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    blocked = tab.mount_combo.blockSignals(True)
+    try:
+        tab.mount_combo.setCurrentIndex(tab.mount_combo.findData("L4"))
+    finally:
+        tab.mount_combo.blockSignals(blocked)
+    assert tab.slide_prep_group.summary().startswith("L4 · ")
+    tab.stain_combo.set_mixed_values(["Melzer", "Congo_Red"])
+    assert "Stain: mixed" in tab.slide_prep_group.summary()
+
+
+def test_preparation_summary_names_an_unset_value_as_a_warning(qtbot, profile):
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _choose(qtbot, tab.stain_combo, "Not_set")
+    assert tab.slide_prep_group.summary() == "KOH · Dried · Hymenium"
+    assert tab.slide_prep_group.summary_alert() == "Stain not set"
+    _choose(qtbot, tab.mount_combo, "Not_set")
+    assert tab.slide_prep_group.summary() == "Dried · Hymenium"
+    assert tab.slide_prep_group.summary_alert() == "2 not set"
+    _choose(qtbot, tab.stain_combo, "Melzer")
+    _choose(qtbot, tab.mount_combo, "KOH")
+    assert tab.slide_prep_group.summary_alert() == ""
+
+
+def test_sections_open_state_survives_a_restart(qtbot, profile):
+    tab = _make_tab(qtbot)
+    assert tab.slide_prep_group.is_expanded() and tab.notes_group.is_expanded()
+    qtbot.mouseClick(tab.slide_prep_group.header, Qt.LeftButton)
+    tab.notes_group.header.setFocus(Qt.TabFocusReason)
+    qtbot.waitUntil(tab.notes_group.header.hasFocus, timeout=1000)
+    qtbot.keyClick(tab.notes_group.header, Qt.Key_Space)
+    _settle(qtbot, tab.slide_prep_group)
+    _settle(qtbot, tab.notes_group)
+    assert not tab.slide_prep_group.body.isVisible() and not tab.notes_group.body.isVisible()
+    assert tab.mount_combo.isHidden() or not tab.mount_combo.isVisible()
+    tab.close()
+
+    restarted = _make_tab(qtbot)
+    assert not restarted.slide_prep_group.is_expanded()
+    assert not restarted.notes_group.is_expanded()
+    assert not restarted.slide_prep_group.body.isVisible()
+    qtbot.mouseClick(restarted.slide_prep_group.header, Qt.LeftButton)
+    _settle(qtbot, restarted.slide_prep_group)
+    assert restarted.mount_combo.isVisible()
+    restarted.close()
+
+    again = _make_tab(qtbot)
+    assert again.slide_prep_group.is_expanded() and not again.notes_group.is_expanded()
+
+
+def test_notes_summary_shows_session_notes_and_the_selected_images_note(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    assert tab.notes_group.summary() == "No notes"
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_OFFLINE)  # timestamped notes are for offline sessions
+
+    tab.session_note_input.setText("Spores Melzer-negative")
+    qtbot.keyClick(tab.session_note_input, Qt.Key_Return)
+    first = tab.notes_group.summary()
+    assert first.startswith("1 line · ") and first.endswith(" Spores Melzer-negative")
+
+    tab.session_note_input.setText("Basidia 4-spored")
+    qtbot.mouseClick(tab.add_note_btn, Qt.LeftButton)
+    second = tab.notes_group.summary()
+    assert second.startswith("2 lines · last ") and second.endswith(" Basidia 4-spored")
+    _stop_session(qtbot, tab)
+
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    image = _capture(qtbot, profile, obs, "P1010001.JPG")
+    tab._on_session_gallery_clicked(image["id"], image.get("filepath") or "")
+    qtbot.waitUntil(lambda: tab._selected_session_image_id == image["id"], timeout=3000)
+    tab.image_note_input.setPlainText("Clamp at septum")
+    assert tab.notes_group.summary() == "Image: Clamp at septum"  # live: the image note only
+
+    _stop_session(qtbot, tab)
+    # A new session starts with nothing selected: the note field may still hold
+    # the last image's text, but the summary must not present it as current.
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_OFFLINE)
+    assert tab._selected_session_image_id is None
+    assert tab.notes_group.summary() == "No notes"
+
+
+def test_enter_on_a_section_header_toggles_it_and_triggers_no_review_shortcut(qtbot, profile):
+    """Live Lab binds Return/Enter to "save current" in RAW review; a focused
+    section header must take those keys itself."""
+    tab = _make_tab(qtbot)
+    calls: list[str] = []
+    tab._handle_raw_review_shortcut = lambda action: calls.append(action)
+    header = tab.slide_prep_group.header
+    header.setFocus(Qt.TabFocusReason)
+    qtbot.waitUntil(header.hasFocus, timeout=1000)
+    for key in (Qt.Key_Return, Qt.Key_Enter):
+        before = tab.slide_prep_group.is_expanded()
+        qtbot.keyClick(header, key)
+        _settle(qtbot, tab.slide_prep_group)
+        assert tab.slide_prep_group.is_expanded() is not before
+    assert calls == []
+    # The same key elsewhere in the tab still reaches the review shortcut.
+    tab.setFocus(Qt.OtherFocusReason)
+    qtbot.keyClick(tab, Qt.Key_Return)
+    assert calls == ["save"]
+
+
+# ---------------------------------------------------------------------------
+# Stage 1b: Preparation as chip rows
+# ---------------------------------------------------------------------------
+
+
+def _chip(selector, value):
+    button = selector.button_for_value(value)
+    assert button is not None and button.isVisible(), (value, selector.visible_chip_values())
+    return button
+
+
+def test_preparation_rows_are_chips_without_a_not_set_chip(qtbot, profile):
+    tab = _make_tab(qtbot)
+    for selector in (tab.mount_combo, tab.stain_combo, tab.sample_combo, tab.sample_source_combo):
+        assert selector.is_chip_mode()
+        assert "Not_set" not in selector.visible_chip_values()
+        assert not selector.combo().isVisible()
+
+
+def test_clicking_a_chip_chooses_it_and_clicking_it_again_clears_it(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_OFFLINE)
+
+    qtbot.mouseClick(_chip(tab.mount_combo, "Water"), Qt.LeftButton)
+    assert tab.mount_combo.selected_value() == "Water"
+    assert tab.slide_prep_group.summary().startswith("Water · ")
+
+    qtbot.mouseClick(_chip(tab.mount_combo, "Water"), Qt.LeftButton)
+    assert tab.mount_combo.selected_value() == "Not_set"
+    assert not any(button.isChecked() for button in tab.mount_combo.buttons() if button.isVisible())
+    assert tab.slide_prep_group.summary_alert() == "Mount not set"
+
+    changes = [
+        (event.get("attribute_name"), event.get("value"))
+        for event in _events(obs)
+        if event.get("event_type") == "dropdown_change"
+    ]
+    assert changes[-2:] == [("mount_medium", "Water"), ("mount_medium", "Not_set")]
+
+
+def test_a_chip_row_keeps_its_geometry_when_it_toggles_between_unset_and_set(qtbot, profile):
+    """Only the red "not set" fill and border come and go: the chips, the row's
+    height, the label and the rows below stay exactly where they are."""
+    from ui.combo_alerts import combo_is_unset
+
+    tab = _make_tab(qtbot)
+    stain = tab.stain_combo
+    form = tab.slide_prep_group.body_layout
+    if not combo_is_unset(stain):
+        qtbot.mouseClick(_chip(stain, stain.selected_value()), Qt.LeftButton)  # click again to clear
+
+    def geometry():
+        QApplication.processEvents()
+        chips = {
+            button.text(): (button.geometry().x(), button.geometry().y(), button.geometry().height())
+            for button in stain.buttons() + [stain.more_chip()]
+            if button.isVisible()
+        }
+        label = form.labelForField(stain).geometry()
+        below = tab.sample_combo.geometry()
+        return chips, stain.height(), (label.y(), label.height()), below.y()
+
+    qtbot.waitUntil(lambda: stain.property("labStateAlert") is True, timeout=2000)
+    unset = geometry()
+    chips, row_height, _label, _below = unset
+    chip_x, chip_y, chip_height = chips[min(chips, key=lambda text: chips[text][0])]
+    assert chip_x > 0 and chip_y > 0  # inset inside the box
+    assert {(y, height) for _x, y, height in chips.values()} == {(chip_y, chip_height)}  # "+ N more" too
+    assert row_height - chip_y - chip_height == chip_y  # even top and bottom, no gap under the chips
+
+    qtbot.mouseClick(_chip(stain, "Melzer"), Qt.LeftButton)
+    qtbot.waitUntil(lambda: stain.property("labStateAlert") is False, timeout=2000)
+    assert geometry() == unset
+
+    qtbot.mouseClick(_chip(stain, "Melzer"), Qt.LeftButton)  # clear it again
+    qtbot.waitUntil(lambda: stain.property("labStateAlert") is True, timeout=2000)
+    assert geometry() == unset
+
+
+def test_more_chip_shows_the_rest_in_place_and_folds_after_a_choice(qtbot, profile):
+    tab = _make_tab(qtbot, width=1100, height=720)  # narrow side panel: stains do not fit
+    stain = tab.stain_combo
+    _choose(qtbot, stain, "Melzer")
+    more = stain.more_chip()
+    assert more.isVisible()
+    folded = stain.visible_chip_values()
+    hidden = [v for v in ("Congo_Red", "Cotton_Blue", "Lactofuchsin", "Cresyl_Blue", "Trypan_Blue", "Chlorazol_Black_E") if v not in folded]
+    assert hidden and more.text() == f"+ {len(hidden)} more"
+    folded_height = stain.height()
+
+    qtbot.mouseClick(more, Qt.LeftButton)
+    qtbot.waitUntil(lambda: set(hidden) <= set(stain.visible_chip_values()), timeout=2000)
+    assert stain.chips_expanded() and not more.isVisible()
+    qtbot.waitUntil(lambda: stain.height() > folded_height, timeout=2000)  # wrapped onto more rows
+
+    qtbot.mouseClick(_chip(stain, hidden[-1]), Qt.LeftButton)
+    assert stain.selected_value() == hidden[-1]
+    qtbot.waitUntil(lambda: not stain.chips_expanded() and more.isVisible(), timeout=2000)
+    assert hidden[-1] in stain.visible_chip_values()  # the choice stays visible when folded
+    qtbot.waitUntil(lambda: stain.height() == folded_height, timeout=2000)
+
+
+def test_a_restored_choice_from_the_folded_part_is_visible(qtbot, profile):
+    tab = _make_tab(qtbot, width=1100, height=720)
+    _choose(qtbot, tab.stain_combo, "Chlorazol_Black_E")
+    tab.close()
+
+    restarted = _make_tab(qtbot, width=1100, height=720)
+    assert restarted.stain_combo.selected_value() == "Chlorazol_Black_E"
+    assert "Chlorazol_Black_E" in restarted.stain_combo.visible_chip_values()
+    assert _chip(restarted.stain_combo, "Chlorazol_Black_E").isChecked()
+
+
+def test_chip_keyboard_moves_and_chooses_without_review_shortcuts(qtbot, profile):
+    """Arrows move between chips, Space/Enter choose; Live Lab's RAW review
+    shortcuts (Left/Right/Return) never see keys meant for a focused chip."""
+    tab = _make_tab(qtbot, width=1100, height=720)
+    calls: list[str] = []
+    tab._handle_raw_review_shortcut = lambda action: calls.append(action)
+    mount = tab.mount_combo
+    _choose(qtbot, mount, "KOH")
+    koh = _chip(mount, "KOH")
+    koh.setFocus(Qt.TabFocusReason)
+    qtbot.waitUntil(koh.hasFocus, timeout=1000)
+
+    qtbot.keyClick(koh, Qt.Key_Right)
+    next_chip = QApplication.focusWidget()
+    assert next_chip is not koh and next_chip in mount.buttons()
+    assert mount.selected_value() == "KOH"  # moving never chooses (or clears)
+    qtbot.keyClick(next_chip, Qt.Key_Left)
+    assert QApplication.focusWidget() is koh
+
+    qtbot.keyClick(koh, Qt.Key_Right)
+    target = QApplication.focusWidget()
+    qtbot.keyClick(target, Qt.Key_Return)
+    assert mount.selected_value() == mount.itemData(int(target.property("choiceIndex")))
+    qtbot.keyClick(target, Qt.Key_Space)
+    assert mount.selected_value() == "Not_set"  # Space on the chosen chip clears it
+
+    more = tab.stain_combo.more_chip()
+    more.setFocus(Qt.TabFocusReason)
+    qtbot.waitUntil(more.hasFocus, timeout=1000)
+    qtbot.keyClick(more, Qt.Key_Return)
+    assert tab.stain_combo.chips_expanded()
+    assert QApplication.focusWidget() in tab.stain_combo.buttons()
+    assert calls == []
+
+
+def test_chip_rows_are_quiet_when_nothing_changes(qtbot, profile):
+    tab = _make_tab(qtbot)
+    qtbot.wait(100)
+    counts = {"layouts": 0}
+    original = tab.stain_combo._layout_chips
+
+    def counting():
+        counts["layouts"] += 1
+        original()
+
+    tab.stain_combo._layout_chips = counting
+    for _ in range(40):
+        qtbot.wait(5)
+    assert counts["layouts"] <= 2
+
+
+# ---------------------------------------------------------------------------
+# Stage 2: capture-state bar, live-view label and shortcuts
+# ---------------------------------------------------------------------------
+
+
+def _bar_button(tab, kind: str, value: str):
+    segments = tab.capture_state_bar.objective_segments if kind == "objective" else tab.capture_state_bar.contrast_segments
+    button = segments.button_for_value(value)
+    assert button is not None and button.isVisible(), (kind, value, list(segments.buttons()))
+    return button
+
+
+def test_bar_buttons_choose_and_log_objective_and_contrast(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_OFFLINE)
+
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "Phase"), Qt.LeftButton)
+    assert tab.objective_combo.selected_value() == "40X"
+    assert tab.contrast_combo.selected_value() == "Phase"
+    assert _bar_button(tab, "objective", "40X").property("selected") is True
+    assert _bar_button(tab, "objective", "100X").property("selected") is False
+    assert tab.live_state_label.text() == "40x · Phase · KOH"
+    changes = [
+        (event.get("attribute_name"), event.get("value"))
+        for event in _events(obs)
+        if event.get("event_type") == "dropdown_change"
+    ]
+    assert changes[-2:] == [("objective_name", "40X"), ("contrast", "Phase")]
+    assert SettingsDB.get_setting(tab.SETTING_LAST_OBJECTIVE) == "40X"
+
+
+def test_bar_label_and_thumbnail_badge_share_the_objective_colour(qtbot, profile):
+    from ui.adaptive_choice_selector import objective_color
+    from database.schema import load_objectives
+
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "63X"})
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    _capture(qtbot, profile, obs, "P1010001.JPG")
+    qtbot.waitUntil(lambda: bool(tab.session_gallery._items), timeout=3000)
+
+    ring = objective_color(load_objectives()["63X"], "63X")
+    assert f"background-color: {ring};" in tab.live_state_label.styleSheet()
+    assert ring in _bar_button(tab, "objective", "63X").styleSheet()
+    badge_colors = {item.get("microscope_tag_color") for item in tab.session_gallery._items}
+    assert badge_colors == {ring}
+
+
+def test_the_microscope_card_is_gone_and_its_choices_live_on_the_bar(qtbot, profile):
+    tab = _make_tab(qtbot)
+    assert getattr(tab, "microscope_group", None) is None
+    assert not tab.objective_combo.isVisible() and not tab.contrast_combo.isVisible()
+    assert tab.capture_state_bar.isVisible()
+    assert list(tab.capture_state_bar.objective_segments.buttons()) == ["40X", "63X", "100X"]
+
+
+def test_number_and_letter_shortcuts_choose_objective_and_contrast(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_OFFLINE)
+    # A Kun logg session shows its page instead of the viewer (stage 9e).
+    target = tab.log_page
+    assert tab.viewer_stack.currentWidget() is target
+    target.setFocus(Qt.OtherFocusReason)
+    qtbot.waitUntil(target.hasFocus, timeout=1000)
+
+    for key, expected in ((Qt.Key_1, "40X"), (Qt.Key_2, "63X"), (Qt.Key_3, "100X")):
+        qtbot.keyClick(target, key)
+        assert tab.objective_combo.selected_value() == expected
+    qtbot.keyClick(target, Qt.Key_6)  # no sixth objective: nothing happens
+    assert tab.objective_combo.selected_value() == "100X"
+    for key, expected in ((Qt.Key_B, "BF"), (Qt.Key_D, "DF"), (Qt.Key_P, "Phase"), (Qt.Key_I, "DIC")):
+        qtbot.keyClick(target, key)
+        assert tab.contrast_combo.selected_value() == expected
+    assert _bar_button(tab, "objective", "63X").toolTip().endswith("(2)")
+    assert _bar_button(tab, "contrast", "DIC").toolTip().endswith("(I)")
+    changes = [e.get("value") for e in _events(obs) if e.get("event_type") == "dropdown_change"]
+    assert changes[-7:] == ["40X", "63X", "100X", "BF", "DF", "Phase", "DIC"]
+
+
+def test_shortcut_letters_type_into_text_fields(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_OFFLINE)
+    tab.session_note_input.setFocus(Qt.OtherFocusReason)
+    qtbot.waitUntil(tab.session_note_input.hasFocus, timeout=1000)
+    qtbot.keyClicks(tab.session_note_input, "Bip 12")
+    assert tab.session_note_input.text() == "Bip 12"
+    assert tab.contrast_combo.selected_value() == "DIC"
+    assert tab.objective_combo.selected_value() == "100X"
+
+
+def test_overlays_stack_without_overlapping(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    qtbot.waitUntil(tab.live_state_label.isVisible, timeout=2000)
+    label = tab.live_state_label.geometry()
+    bar = tab.capture_state_bar.geometry()
+    calibration = tab.calibration_action_frame.geometry()
+    assert (label.left(), label.top()) == (8, 8)  # top-left: the session button is not on the image
+    assert not label.intersects(calibration)
+    viewer = tab.live_image_label.rect()
+    assert viewer.contains(bar)
+    assert abs(bar.center().x() - viewer.center().x()) <= 1  # bottom centre
+    tab.pending_raw_frame.setVisible(True)
+    tab._reposition_pending_raw_floating_tab()
+    assert tab.pending_raw_frame.geometry().bottom() < bar.top()  # pending bar sits above it
+
+
+def test_bar_stacks_its_groups_when_the_viewer_is_narrow(qtbot, profile):
+    tab = _make_tab(qtbot)
+    bar = tab.capture_state_bar
+    tab._reposition_pending_raw_floating_tab()
+    assert not bar.is_stacked()
+    wide = bar.sizeHint().width()
+    bar.fit_to_width(wide - 20)
+    assert bar.is_stacked()
+    assert bar.sizeHint().width() < wide
+    bar.fit_to_width(wide + 20)
+    assert not bar.is_stacked()
+
+
+def test_bar_shows_an_unset_contrast_as_a_warning_and_a_mixed_selection(qtbot, profile):
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _choose(qtbot, tab.contrast_combo, "Not_set")
+    segments = tab.capture_state_bar.contrast_segments
+    assert "Not_set" not in segments.buttons()
+    assert not any(button.property("selected") for button in segments.buttons().values())
+    assert "#d64545" in segments.styleSheet() or "#d65a63" in segments.styleSheet()
+    tab.objective_combo.set_mixed_values(["40X", "100X"])
+    objective_buttons = tab.capture_state_bar.objective_segments.buttons()
+    assert "dashed" in objective_buttons["40X"].styleSheet()
+    assert "dashed" not in objective_buttons["63X"].styleSheet()
+
+
+def test_bar_follows_a_changed_choice_list_and_forwards_wheel_events_from_new_buttons(qtbot, profile, monkeypatch):
+    from PySide6.QtCore import QPoint, QPointF
+    from PySide6.QtGui import QWheelEvent
+
+    tab = _make_tab(qtbot)
+    bar = tab.capture_state_bar
+    before = bar.width()
+    tab.contrast_combo.addItem("Extra wide contrast method", "Extra_wide", pillText="Extra wide contrast method")
+    qtbot.waitUntil(lambda: bar.width() > before, timeout=2000)  # repositioned after the rebuild
+    assert bar.geometry().width() == bar.sizeHint().width()
+
+    anchors: list[QPointF] = []
+    monkeypatch.setattr(tab.live_image_label, "_apply_zoom_around", lambda pos, factor: anchors.append(QPointF(pos)))
+    from PySide6.QtGui import QPixmap
+
+    pixmap = QPixmap(64, 48)
+    pixmap.fill(Qt.white)
+    tab.live_image_label.set_image(pixmap)
+    button = bar.contrast_segments.button_for_value("Extra_wide")  # created after the tab was built
+    local = QPoint(5, 5)
+    event = QWheelEvent(
+        QPointF(local), QPointF(button.mapToGlobal(local)), QPoint(0, 0), QPoint(0, 120),
+        Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False,
+    )
+    QApplication.sendEvent(button, event)
+    assert anchors, "the wheel event did not reach the viewer"
+    expected = tab.live_image_label.mapFromGlobal(button.mapToGlobal(local))
+    assert (round(anchors[0].x()), round(anchors[0].y())) == (expected.x(), expected.y())
+
+
+def test_a_narrow_viewer_gets_a_stacked_compact_bar_clear_of_the_zoom_readout(qtbot, profile):
+    tab = _make_tab(qtbot, width=900, height=720)
+    label = tab.live_image_label
+    bar = tab.capture_state_bar
+    for value in ("Extra_1", "Extra_2"):
+        tab.objective_combo.addItem(value, value, pillText="999x")
+    label.resize(360, label.height())
+    tab._reposition_pending_raw_floating_tab()
+    assert bar.is_stacked()
+    assert bar.geometry().right() <= label.width() or bar.is_compact()
+    assert not bar.geometry().intersects(label.bottom_left_readout_rect())
+
+
+# ---------------------------------------------------------------------------
+# Stage 3: scale bar and calibration notice for what the viewer shows
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("zoom", "expected"), [(0.25, 25.0), (0.5, 50.0), (1.0, 100.0), (2.0, 200.0), (0.05, 10.0)])
+def test_scale_bar_length_follows_the_zoom(qtbot, zoom, expected):
+    from ui.zoomable_image_widget import ZoomableImageLabel
+
+    label = ZoomableImageLabel()
+    qtbot.addWidget(label)
+    label.set_microns_per_pixel(0.1)  # 10 µm = 100 image pixels
+    label.set_scale_bar(True, 10.0)
+    label.zoom_level = zoom
+    assert label.scale_bar_screen_length() == pytest.approx(expected)  # never under 10 px
+    assert label.scale_bar_screen_length(available_width=100) == pytest.approx(min(expected, 60.0))
+
+
+def test_a_capture_keeps_its_own_label_and_scale_when_the_objective_changes(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)  # 100X, calibrated
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    image = _capture(qtbot, profile, obs, "P1010001.JPG")
+    qtbot.waitUntil(lambda: tab._viewer_subject == ("image", image["id"]), timeout=3000)
+    label = tab.live_image_label
+    assert label.show_scale_bar and label.microns_per_pixel == pytest.approx(image["scale_microns_per_pixel"])
+    assert tab.live_state_label.text().startswith("100x · DIC")
+
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)  # the next capture's objective
+    assert tab.objective_combo.selected_value() == "40X"
+    assert tab.live_state_label.text().startswith("100x · DIC")  # still the image on screen
+    assert label.microns_per_pixel == pytest.approx(image["scale_microns_per_pixel"])
+    assert not tab.calibration_notice.isVisible()
+
+
+def test_an_empty_viewer_warns_at_once_when_the_chosen_objective_is_not_calibrated(qtbot, profile):
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    assert tab._viewer_subject is None
+    assert not tab.calibration_notice.isVisible()
+    tab.live_image_label.setFocus(Qt.OtherFocusReason)
+    qtbot.waitUntil(tab.live_image_label.hasFocus, timeout=1000)
+    qtbot.keyClick(tab.live_image_label, Qt.Key_2)  # 63X has no calibration
+    assert tab.objective_combo.selected_value() == "63X"
+    assert tab.calibration_notice.isVisible()
+    assert tab.calibration_notice_label.text() == "Not calibrated · 63x"
+    assert tab.live_state_label.text().startswith("63x")
+    qtbot.keyClick(tab.live_image_label, Qt.Key_1)
+    assert not tab.calibration_notice.isVisible()
+
+
+def test_an_uncalibrated_capture_shows_the_notice_and_no_scale_bar(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "63X"})
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    image = _capture(qtbot, profile, obs, "P1010002.JPG")
+    qtbot.waitUntil(lambda: tab._viewer_subject == ("image", image["id"]), timeout=3000)
+    assert not tab.live_image_label.show_scale_bar
+    assert tab.calibration_notice.isVisible()
+    notice = tab.calibration_notice.geometry()
+    assert not notice.intersects(tab.live_image_label.bottom_left_readout_rect())
+    assert not notice.intersects(tab.capture_state_bar.geometry())
+
+
+def test_calibrate_link_opens_calibration_for_that_objective(qtbot, profile):
+    tab = _make_tab(qtbot)
+    opened: list[dict] = []
+    tab._main_window.open_calibration_dialog = lambda **kwargs: opened.append(kwargs) or False
+    _choose(qtbot, tab.objective_combo, "63X")
+    assert tab.calibration_notice.isVisible()
+    qtbot.mouseClick(tab.calibrate_link_btn, Qt.LeftButton)
+    assert opened == [{"objective_key": "63X"}]
+
+
+def _show_unscaled_image(qtbot, profile, tab, obs, *, objective_name):
+    """A saved image with no stored scale, shown in the viewer."""
+    image = _capture(qtbot, profile, obs, f"P10{abs(hash(objective_name)) % 10000:04d}.JPG")
+    ImageDB.update_image(image["id"], objective_name=objective_name, scale=0.0)
+    tab._show_session_image(image["id"])
+    qtbot.waitUntil(lambda: tab._viewer_subject == ("image", image["id"]), timeout=3000)
+    return image
+
+
+def test_calibrating_from_the_notice_keeps_the_current_selection(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "63X"})
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    _capture(qtbot, profile, obs, "P1010003.JPG")
+    SettingsDB.set_setting(tab.SETTING_LAST_OBJECTIVE, "100X")  # a different stored choice
+    opened: list[dict] = []
+    tab._main_window.open_calibration_dialog = lambda **kwargs: opened.append(kwargs) or False
+    assert tab.calibration_notice.isVisible()
+    qtbot.mouseClick(tab.calibrate_link_btn, Qt.LeftButton)  # the dialog is "cancelled"
+    assert opened == [{"objective_key": "63X"}]
+    assert tab.objective_combo.selected_value() == "63X"
+
+
+def test_the_notice_offers_calibrate_only_for_a_known_objective(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    _show_unscaled_image(qtbot, profile, tab, obs, objective_name="Removed 20X")
+    assert tab.calibration_notice.isVisible()
+    assert not tab.calibrate_link_btn.isVisible()
+    # A legacy image row with neither an objective nor a scale.
+    tab._viewer_subject = ("image", 999999)
+    tab._update_calibration_notice({"id": 999999, "image_type": "microscope"})
+    assert tab.calibration_notice.isVisible()
+    assert tab.calibration_notice_label.text() == "Not calibrated"
+    assert not tab.calibrate_link_btn.isVisible()
+
+
+def test_control_changes_do_not_read_the_shown_image_again(qtbot, profile, monkeypatch):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    image = _capture(qtbot, profile, obs, "P1010004.JPG")
+    qtbot.waitUntil(lambda: tab._viewer_subject == ("image", image["id"]), timeout=3000)
+    reads: list[int] = []
+    original = ImageDB.get_image
+    monkeypatch.setattr(ImageDB, "get_image", staticmethod(lambda image_id: reads.append(image_id) or original(image_id)))
+    for value in ("40X", "63X", "100X"):
+        qtbot.mouseClick(_bar_button(tab, "objective", value), Qt.LeftButton)
+    _choose(qtbot, tab.contrast_combo, "Phase")
+    assert reads == []
+    assert tab.live_state_label.text().startswith("100x · DIC")
+
+
+def test_the_notice_clears_the_pending_bar_in_a_narrow_viewer(qtbot, profile):
+    tab = _make_tab(qtbot)
+    _choose(qtbot, tab.objective_combo, "63X")  # empty viewer, uncalibrated: notice shown
+    label = tab.live_image_label
+    label.resize(620, 400)
+    tab.pending_raw_frame.setVisible(True)
+    tab._reposition_pending_raw_floating_tab()
+    notice = tab.calibration_notice.geometry()
+    for widget in (tab.capture_state_bar, tab.pending_raw_frame):
+        assert not notice.intersects(widget.geometry()), widget.objectName()
+
+
+def test_the_drawn_scale_bar_uses_the_length_helper(qtbot, monkeypatch):
+    from PySide6.QtGui import QPixmap
+    from ui.zoomable_image_widget import ZoomableImageLabel
+
+    label = ZoomableImageLabel()
+    qtbot.addWidget(label)
+    pixmap = QPixmap(400, 300)
+    pixmap.fill(Qt.white)
+    label.resize(500, 400)
+    label.set_image(pixmap)
+    label.set_microns_per_pixel(0.1)
+    label.set_scale_bar(True, 10.0)
+    calls: list[float] = []
+    original = label.scale_bar_screen_length
+    monkeypatch.setattr(label, "scale_bar_screen_length", lambda width=None: calls.append(width) or original(width))
+    label.grab()
+    assert calls, "painting did not ask the helper for the bar length"
+
+
+# ---------------------------------------------------------------------------
+# Stage 4: contrast memory per objective and change lines in Notes
+# ---------------------------------------------------------------------------
+
+
+def test_switching_objective_brings_back_its_last_contrast_also_after_a_restart(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_OFFLINE)
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "objective", "100X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "DIC"), Qt.LeftButton)
+
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)
+    assert tab.contrast_combo.selected_value() == "BF"
+    qtbot.mouseClick(_bar_button(tab, "objective", "63X"), Qt.LeftButton)  # nothing remembered yet
+    assert tab.contrast_combo.selected_value() == "BF"
+    changes = [
+        (e.get("attribute_name"), e.get("value"), bool((e.get("metadata_json") or {}).get("remembered")))
+        for e in _events(obs) if e.get("event_type") == "dropdown_change"
+    ]
+    assert changes[-3:] == [("objective_name", "40X", False), ("contrast", "BF", True), ("objective_name", "63X", False)]
+    _stop_session(qtbot, tab)
+    tab.close()
+
+    restarted = _make_tab(qtbot)
+    _choose(qtbot, restarted.objective_combo, "100X")
+    assert restarted.contrast_combo.selected_value() == "DIC"
+    _choose(qtbot, restarted.objective_combo, "40X")
+    assert restarted.contrast_combo.selected_value() == "BF"
+
+
+def test_contrast_memory_leaves_selected_images_alone(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "objective", "100X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "DIC"), Qt.LeftButton)
+    image = _capture(qtbot, profile, obs, "P1010011.JPG")  # 100X · DIC
+    memory_before = SettingsDB.get_setting(tab.SETTING_CONTRAST_BY_OBJECTIVE)
+
+    # A click on the thumbnail binds the side panel to that image (the real path).
+    qtbot.waitUntil(lambda: bool(tab.session_gallery._frames), timeout=3000)
+    frame = tab.session_gallery._frames[-1]
+    qtbot.mouseClick(frame, Qt.LeftButton, pos=frame.rect().center())
+    qtbot.waitUntil(lambda: tab._sidebar_binds_to_selection, timeout=2000)
+    assert tab._selected_session_image_id == image["id"]
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)  # an edit of the image
+    qtbot.mouseClick(_bar_button(tab, "contrast", "Phase"), Qt.LeftButton)
+    stored = ImageDB.get_image(image["id"])
+    assert stored["objective_name"] == "40X"
+    assert _lab_metadata(stored)["contrast"] == "Phase"  # not replaced by 40X's remembered BF
+    assert SettingsDB.get_setting(tab.SETTING_CONTRAST_BY_OBJECTIVE) == memory_before
+
+
+def test_choosing_the_shown_contrast_again_remembers_it(qtbot, profile):
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "40X", "contrast_combo": "BF"})
+    qtbot.mouseClick(_bar_button(tab, "objective", "63X"), Qt.LeftButton)  # nothing remembered: stays BF
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)   # chosen again for 63X
+    qtbot.mouseClick(_bar_button(tab, "objective", "100X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "DIC"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "objective", "63X"), Qt.LeftButton)
+    assert tab.contrast_combo.selected_value() == "BF"
+
+
+def test_notes_lists_the_sessions_changes_and_notes_newest_first(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    assert not tab.session_log_list.isVisible()
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_OFFLINE)
+    assert tab.session_log_list.count() == 0  # the starting state is not a change
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)
+    _choose(qtbot, tab.mount_combo, "Water")
+    tab.session_note_input.setText("Spores Melzer-negative")
+    qtbot.keyClick(tab.session_note_input, Qt.Key_Return)
+    _choose(qtbot, tab.stain_combo, "Congo_Red")
+    lines = [tab.session_log_list.item(i).text().split("  ", 1)[1] for i in range(tab.session_log_list.count())]
+    assert lines == [
+        "Stain Melzer → Congo Red",
+        "Spores Melzer-negative",
+        "Mount KOH → Water",
+        "Objective 100x → 40x",
+    ]
+    assert tab.session_log_list.isVisible()
+    assert tab.notes_group.summary().startswith("4 lines · last ")
+    assert tab.notes_group.summary().endswith(" Stain Melzer → Congo Red")
+    # The lines are the session log itself: rebuilt from the database.
+    tab._session_log_cache = None
+    assert [text for _t, text in tab._session_log_lines()][-1] == "Stain Melzer → Congo Red"
+
+
+def test_notes_log_lines_never_hide_and_removed_objectives_keep_their_name(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_OFFLINE)
+    tab.session_note_input.setText("A very long observation about the spores " * 6)
+    qtbot.keyClick(tab.session_note_input, Qt.Key_Return)
+    log_list = tab.session_log_list
+    assert log_list.viewport().height() >= log_list.sizeHintForRow(0)  # the line is visible
+    assert log_list.horizontalScrollBar().isHidden() or not log_list.horizontalScrollBar().isVisible()
+    assert log_list.item(0).toolTip().endswith("about the spores")
+
+    # An objective that is no longer defined keeps the name it was logged with.
+    SessionLogDB.add_event(
+        obs, tab._session_id, "dropdown_change", session_kind="offline",
+        attribute_name="objective_name", value="custom-objective-2025",
+        metadata_json={"display_value": "Custom 2025 objective"},
+    )
+    tab._update_notes_summary(refresh_log=True)
+    assert tab.session_log_list.item(0).text().endswith("Objective 100x → Custom 2025 objective")
+
+
+# ---------------------------------------------------------------------------
+# Stage 5a: RAW settings follow the objective + contrast combination
+# ---------------------------------------------------------------------------
+
+
+def _wb(tab) -> str:
+    return tab.raw_controls.white_balance_selector.selected_value()
+
+
+def test_raw_settings_follow_the_objective_and_contrast_combination(qtbot, profile):
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "40X", "contrast_combo": "BF"})
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "auto")  # a manual tweak for 40X · BF
+    qtbot.mouseClick(_bar_button(tab, "objective", "100X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "DIC"), Qt.LeftButton)
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "camera")  # and for 100X · DIC
+    assert _wb(tab) == "camera"
+
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)
+    assert _wb(tab) == "auto"  # 40X · BF's settings came back
+    assert tab._current_raw_render_settings().white_balance_mode == "auto"
+    tab.close()
+
+    restarted = _make_tab(qtbot)
+    _choose(qtbot, restarted.objective_combo, "100X")
+    _choose(qtbot, restarted.contrast_combo, "DIC")
+    assert _wb(restarted) == "camera"
+
+
+def test_settings_saved_before_stage_5_still_apply(qtbot, profile):
+    from utils.raw_render import RawRenderSettings
+
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "40X", "contrast_combo": "BF"})
+    context = {**tab._raw_processing_preset_context(), "objective_name": "63X", "contrast": "Phase"}
+    legacy = RawRenderSettings.default()
+    legacy = RawRenderSettings.from_dict({**legacy.to_dict(), "white_balance_mode": "auto"})
+    SettingsDB.set_setting(tab._raw_processing_settings_key(context), json.dumps(legacy.to_dict()))
+    qtbot.mouseClick(_bar_button(tab, "objective", "63X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "Phase"), Qt.LeftButton)
+    assert _wb(tab) == "auto"
+
+
+def test_a_new_raw_capture_gets_its_combinations_settings(qtbot, profile):
+    obs = create_observation(profile)
+    SettingsDB.set_setting(LiveLabTab_SETTING_RAW_CAPTURE_MODE(), "review")
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "40X", "contrast_combo": "BF"})
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "auto")
+    qtbot.mouseClick(_bar_button(tab, "contrast", "DIC"), Qt.LeftButton)
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "camera")
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    _watcher().drop(profile.raw("P1010101.ORF"))
+    qtbot.waitUntil(lambda: len(tab._pending_raw_captures) == 1, timeout=5000)
+    assert tab._pending_raw_captures[0].raw_settings.white_balance_mode == "auto"
+    qtbot.waitUntil(tab.pending_raw_frame.isVisible, timeout=5000)  # its preview is done
+    qtbot.mouseClick(tab.pending_raw_save_btn, Qt.LeftButton)
+    qtbot.waitUntil(lambda: not tab._pending_raw_captures and not tab._pending_raw_commit_is_busy(), timeout=10000)
+    _stop_session(qtbot, tab)
+
+
+def test_raw_settings_leave_a_selected_image_alone(qtbot, profile):
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "40X", "contrast_combo": "BF"})
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "auto")
+    qtbot.mouseClick(_bar_button(tab, "contrast", "DIC"), Qt.LeftButton)
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "camera")
+    tab._sidebar_binds_to_selection = True  # the side panel edits a selected image
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)
+    assert _wb(tab) == "camera"
+
+
+def LiveLabTab_SETTING_RAW_CAPTURE_MODE():
+    from ui.live_lab_tab import LiveLabTab
+
+    return LiveLabTab.SETTING_RAW_CAPTURE_MODE
+
+
+# ---------------------------------------------------------------------------
+# Stage 5b: a slimmer RAW panel
+# ---------------------------------------------------------------------------
+
+
+def _is_inside(widget, ancestor) -> bool:
+    parent = widget
+    while parent is not None:
+        if parent is ancestor:
+            return True
+        parent = parent.parentWidget()
+    return False
+
+
+def test_raw_panel_keeps_the_essentials_in_view_and_the_rest_under_more(qtbot, profile):
+    tab = _make_tab(qtbot)
+    controls = tab.raw_controls
+    more = controls.more_section
+    assert more is not None and not more.is_expanded()  # closed by default
+    for essential in (controls.white_balance_selector, controls.light_slider, controls.dark_slider, controls.contrast_slider):
+        assert not _is_inside(essential, more.body)
+    for advanced in (controls.auto_levels_toggle, controls.tone_curve_checkbox, controls.curve_strength_slider, tab.raw_curve_preview_widget):
+        assert _is_inside(advanced, more.body)
+
+
+def test_more_summary_follows_the_settings_and_its_open_state_is_remembered(qtbot, profile):
+    tab = _make_tab(qtbot)
+    tab.raw_processing_toggle_btn.setChecked(True)
+    more = tab.raw_controls.more_section
+    before = more.summary()
+    tab.raw_controls.tone_curve_checkbox.setChecked(not tab.raw_controls.tone_curve_checkbox.isChecked())
+    qtbot.waitUntil(lambda: more.summary() != before, timeout=2000)
+    assert "Camera WB" not in more.summary() and "Auto WB" not in more.summary()
+    qtbot.mouseClick(more.header, Qt.LeftButton)
+    qtbot.waitUntil(more.is_expanded, timeout=1000)
+    tab.close()
+    restarted = _make_tab(qtbot)
+    assert restarted.raw_controls.more_section.is_expanded()
+
+
+def test_copy_settings_is_in_the_raw_panel_not_on_the_image(qtbot, profile):
+    tab = _make_tab(qtbot)
+    assert _is_inside(tab.pending_raw_copy_btn, tab.raw_processing_card)
+    assert _is_inside(tab.pending_raw_paste_btn, tab.raw_processing_card)
+    assert not _is_inside(tab.pending_raw_copy_btn, tab.live_image_label)
+    assert _is_inside(tab.pending_raw_save_btn, tab.pending_raw_frame)  # saving stays until stage 9
+
+
+# ---------------------------------------------------------------------------
+# Stage 5: review fixes (Codex)
+# ---------------------------------------------------------------------------
+
+
+def _stored_wb(tab, objective, contrast):
+    context = {**tab._raw_processing_preset_context(), "objective_name": objective, "contrast": contrast}
+    settings = tab._stored_raw_settings_for_context(context)
+    return None if settings is None else settings.white_balance_mode
+
+
+def _drop_pending_raw(qtbot, tab, profile, name):
+    before = len(tab._pending_raw_captures)
+    _watcher().drop(profile.raw(name))
+    qtbot.waitUntil(lambda: len(tab._pending_raw_captures) == before + 1, timeout=5000)
+    qtbot.waitUntil(lambda: not tab._pending_raw_preview_has_request_for_capture(tab._pending_raw_captures[-1]), timeout=5000)
+
+
+def test_save_all_stores_each_captures_settings_under_its_own_combination(qtbot, profile):
+    obs = create_observation(profile)
+    SettingsDB.set_setting(LiveLabTab_SETTING_RAW_CAPTURE_MODE(), "review")
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "63X", "contrast_combo": "Phase"})
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "auto")  # 63X · Phase: auto
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "camera")  # 40X · BF: camera
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    _drop_pending_raw(qtbot, tab, profile, "P1010201.ORF")  # captured at 40X · BF
+    qtbot.mouseClick(_bar_button(tab, "objective", "63X"), Qt.LeftButton)  # preparing the next one
+    qtbot.mouseClick(_bar_button(tab, "contrast", "Phase"), Qt.LeftButton)
+
+    qtbot.mouseClick(tab.pending_raw_save_all_btn, Qt.LeftButton)
+    qtbot.waitUntil(lambda: not tab._pending_raw_captures and not tab._pending_raw_commit_is_busy(), timeout=10000)
+    assert _stored_wb(tab, "63X", "Phase") == "auto"  # not overwritten by the 40X · BF capture
+    assert _stored_wb(tab, "40X", "BF") == "camera"
+    _stop_session(qtbot, tab)
+
+
+def test_a_new_capture_uses_its_own_combination_while_an_older_image_is_selected(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "100X", "contrast_combo": "DIC"})
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "camera")  # 100X · DIC: camera
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "auto")  # 40X · BF: auto
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    image = _capture(qtbot, profile, obs, "P1010202.JPG")  # captured at 40X · BF
+    ImageDB.update_image(image["id"], objective_name="100X")
+    # Select it: the side panel now shows (and edits) that image's 100X state.
+    tab._sidebar_binds_to_selection = True
+    blocked = tab.objective_combo.blockSignals(True)
+    tab.objective_combo.setCurrentIndex(tab.objective_combo.findData("100X"))
+    tab.objective_combo.blockSignals(blocked)
+    blocked = tab.contrast_combo.blockSignals(True)
+    tab.contrast_combo.setCurrentIndex(tab.contrast_combo.findData("DIC"))
+    tab.contrast_combo.blockSignals(blocked)
+    assert tab._capture_time_metadata()["objective_name"] == "40X"
+    assert tab._current_raw_render_settings().white_balance_mode == "auto"  # 40X · BF's
+
+
+def test_the_new_key_wins_over_settings_saved_before_stage_5(qtbot, profile):
+    from utils.raw_render import RawRenderSettings
+
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "40X", "contrast_combo": "BF"})
+    context = tab._raw_processing_preset_context()
+    old = RawRenderSettings.from_dict({**RawRenderSettings.default().to_dict(), "white_balance_mode": "auto"})
+    new = RawRenderSettings.from_dict({**RawRenderSettings.default().to_dict(), "white_balance_mode": "camera"})
+    SettingsDB.set_setting(tab._raw_processing_settings_key(context), json.dumps(old.to_dict()))
+    SettingsDB.set_setting(tab._raw_processing_combo_key(context), json.dumps(new.to_dict()))
+    assert tab._stored_raw_settings_for_context(context).white_balance_mode == "camera"
+
+
+def test_pasting_white_balance_re_renders_the_preview_with_it(qtbot, profile):
+    from ui.live_lab_raw import _pending_raw_settings_signature
+
+    obs = create_observation(profile)
+    SettingsDB.set_setting(LiveLabTab_SETTING_RAW_CAPTURE_MODE(), "review")
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    _drop_pending_raw(qtbot, tab, profile, "P1010301.ORF")
+    _drop_pending_raw(qtbot, tab, profile, "P1010302.ORF")
+    tab._show_pending_raw_capture(1)
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "auto")
+    qtbot.waitUntil(lambda: tab._pending_raw_captures[1].raw_settings.white_balance_mode == "auto", timeout=3000)
+    qtbot.mouseClick(tab.pending_raw_copy_btn, Qt.LeftButton)
+    tab._show_pending_raw_capture(0)
+    target = tab._pending_raw_captures[0]
+    assert target.raw_settings.white_balance_mode == "camera"
+    qtbot.mouseClick(tab.pending_raw_paste_btn, Qt.LeftButton)
+    assert target.raw_settings.white_balance_mode == "auto"
+    expected = _pending_raw_settings_signature(target.raw_settings)
+    qtbot.waitUntil(
+        lambda: target.rendered_settings is not None
+        and _pending_raw_settings_signature(target.rendered_settings) == expected,
+        timeout=5000,
+    )
+    qtbot.mouseClick(tab.pending_raw_save_all_btn, Qt.LeftButton)
+    qtbot.waitUntil(lambda: not tab._pending_raw_captures and not tab._pending_raw_commit_is_busy(), timeout=10000)
+    _stop_session(qtbot, tab)
+
+
+# ---------------------------------------------------------------------------
+# After the pilot: the owner's first session (2026-11-09)
+# ---------------------------------------------------------------------------
+
+
+def _clipping(tab):
+    return tab.raw_controls.auto_levels_clipping_selector.selected_value()
+
+
+def _stored_clipping(tab, objective, contrast):
+    context = {**tab._raw_processing_preset_context(), "objective_name": objective, "contrast": contrast}
+    settings = tab._stored_raw_settings_for_context(context)
+    return None if settings is None else settings.auto_levels_clipping
+
+
+def _review_and_save(qtbot, tab, profile, name, *, clipping):
+    _drop_pending_raw(qtbot, tab, profile, name)
+    assert tab._visible_raw_processing_target()[0] == "pending"  # the panel edits the capture
+    tab.raw_controls.auto_levels_clipping_selector.set_selected_value(clipping, emit=True)
+    assert tab._pending_raw_captures[-1].raw_settings.auto_levels_clipping is clipping
+    qtbot.mouseClick(tab.pending_raw_save_btn, Qt.LeftButton)
+    qtbot.waitUntil(lambda: not tab._pending_raw_captures and not tab._pending_raw_commit_is_busy(), timeout=10000)
+
+
+def test_switching_back_shows_and_edits_the_combinations_settings_while_an_image_is_shown(qtbot, profile):
+    obs = create_observation(profile)
+    SettingsDB.set_setting(LiveLabTab_SETTING_RAW_CAPTURE_MODE(), "review")
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "40X", "contrast_combo": "DIC"})
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    _review_and_save(qtbot, tab, profile, "P1010301.ORF", clipping=False)  # DIC: clipping off
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)
+    _review_and_save(qtbot, tab, profile, "P1010302.ORF", clipping=True)  # BF: clipping on
+    bf_image = _images(obs)[-1]
+    assert _clipping(tab) is True  # the saved BF image is on screen
+
+    qtbot.mouseClick(_bar_button(tab, "contrast", "DIC"), Qt.LeftButton)
+    assert _clipping(tab) is False  # DIC's settings, although the BF image is still shown
+    assert tab.raw_processing_card.isVisible()
+    # An edit now is for the next DIC capture, not the BF image on screen.
+    _choose(qtbot, tab.raw_controls.white_balance_selector, "auto")
+    assert tab._raw_edit_session is None
+    assert _lab_metadata(ImageDB.get_image(bf_image["id"]))["raw_processing"] == _lab_metadata(bf_image)["raw_processing"]
+    assert _stored_wb(tab, "40X", "DIC") == "auto" and _stored_clipping(tab, "40X", "DIC") is False
+    assert _stored_clipping(tab, "40X", "BF") is True
+
+    _drop_pending_raw(qtbot, tab, profile, "P1010303.ORF")
+    capture = tab._pending_raw_captures[-1]
+    assert (capture.raw_settings.auto_levels_clipping, capture.raw_settings.white_balance_mode) == (False, "auto")
+    tab.raw_controls.auto_levels_clipping_selector.set_selected_value(True, emit=True)
+    assert capture.raw_settings.auto_levels_clipping is True  # the panel follows the new capture again
+    _stop_session(qtbot, tab)
+
+
+def test_clicking_an_image_after_a_switch_edits_that_image_again(qtbot, profile):
+    obs = create_observation(profile)
+    SettingsDB.set_setting(LiveLabTab_SETTING_RAW_CAPTURE_MODE(), "review")
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "40X", "contrast_combo": "BF"})
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    _review_and_save(qtbot, tab, profile, "P1010304.ORF", clipping=True)
+    image_id = int(_images(obs)[-1]["id"])
+    qtbot.mouseClick(_bar_button(tab, "contrast", "DIC"), Qt.LeftButton)
+    assert tab._selected_raw_processing_targets() == []
+    tab._on_session_gallery_clicked(image_id, ImageDB.get_image(image_id)["filepath"])
+    assert [kind for kind, *_rest in tab._selected_raw_processing_targets()] == ["image"]
+    _stop_session(qtbot, tab)
+
+
+def test_a_live_session_shows_only_the_image_note(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, LAB_STATE)
+    _choose(qtbot, tab.session_mode_selector, tab.SESSION_MODE_OFFLINE)
+    assert tab.session_note_row.isVisible()  # an offline session is coming: timestamped notes
+    _choose(qtbot, tab.session_mode_selector, tab.SESSION_MODE_LIVE)
+    assert not tab.session_note_row.isVisible()
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    qtbot.mouseClick(_bar_button(tab, "objective", "40X"), Qt.LeftButton)
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)
+    _choose(qtbot, tab.mount_combo, "Water")
+    assert not tab.session_note_row.isVisible() and not tab.session_log_list.isVisible()
+    assert tab.image_note_input.isVisible()
+    assert tab.notes_group.summary() == "No notes"
+    logged = {e.get("attribute_name") for e in _events(obs) if e.get("event_type") == "dropdown_change"}
+    assert {"objective_name", "contrast", "mount_medium"} <= logged  # the session log is still written
+    _stop_session(qtbot, tab)
+
+
+def test_the_image_note_is_the_images_own_note_as_mal_shows_it(qtbot, profile):
+    obs = create_observation(profile)
+    SettingsDB.set_setting(LiveLabTab_SETTING_RAW_CAPTURE_MODE(), "review")
+    tab = _make_tab(qtbot)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    jpeg = _capture(qtbot, profile, obs, "P1010401.JPG")
+    qtbot.waitUntil(lambda: tab._viewer_subject == ("image", jpeg["id"]), timeout=3000)
+    tab.image_note_input.setPlainText("Clamp at septum")  # the image on screen
+    assert ImageDB.get_image(jpeg["id"])["notes"] == "Clamp at septum"
+
+    _drop_pending_raw(qtbot, tab, profile, "P1010402.ORF")
+    tab.image_note_input.setPlainText("Spores in Melzer")  # the pending capture, not the JPEG
+    assert ImageDB.get_image(jpeg["id"])["notes"] == "Clamp at septum"
+    qtbot.mouseClick(tab.pending_raw_save_btn, Qt.LeftButton)
+    qtbot.waitUntil(lambda: not tab._pending_raw_captures and not tab._pending_raw_commit_is_busy(), timeout=10000)
+    raw_image = _images(obs)[-1]
+    assert raw_image["notes"] == "Spores in Melzer"
+
+    # Clicking the JPEG again shows its note; clearing it clears the image's note.
+    tab._on_session_gallery_clicked(jpeg["id"], jpeg.get("filepath") or "")
+    qtbot.waitUntil(lambda: tab.image_note_input.toPlainText() == "Clamp at septum", timeout=3000)
+    tab.image_note_input.setPlainText("")
+    assert ImageDB.get_image(jpeg["id"])["notes"] is None
+    assert ImageDB.get_image(raw_image["id"])["notes"] == "Spores in Melzer"
+    _stop_session(qtbot, tab)
+
+
+def test_the_session_button_is_in_the_observation_card(qtbot, profile):
+    tab = _make_tab(qtbot)
+    assert not tab.live_image_label.isAncestorOf(tab.start_stop_btn)
+    card = tab.current_observation_name_label.parentWidget()
+    assert card.isAncestorOf(tab.start_stop_btn) and tab.start_stop_btn.isVisible()
+
+
+def test_a_switch_while_a_capture_is_on_screen_leaves_it_and_its_preview_alone(qtbot, profile):
+    obs = create_observation(profile)
+    SettingsDB.set_setting(LiveLabTab_SETTING_RAW_CAPTURE_MODE(), "review")
+    tab = _make_tab(qtbot)
+    _set_lab_state(qtbot, tab, {**LAB_STATE, "objective_combo": "40X", "contrast_combo": "BF"})
+    tab.raw_controls.auto_levels_clipping_selector.set_selected_value(True, emit=True)  # BF: clipping on
+    qtbot.mouseClick(_bar_button(tab, "contrast", "DIC"), Qt.LeftButton)
+    tab.raw_controls.auto_levels_clipping_selector.set_selected_value(False, emit=True)  # DIC: clipping off
+    qtbot.mouseClick(_bar_button(tab, "contrast", "BF"), Qt.LeftButton)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    _watcher().drop(profile.raw("P1010305.ORF"))
+    qtbot.waitUntil(lambda: len(tab._pending_raw_captures) == 1, timeout=5000)
+    capture = tab._pending_raw_captures[0]
+    assert tab._raw_processing_pick_target() == "pending"
+    # Switch before its preview has finished rendering.
+    qtbot.mouseClick(_bar_button(tab, "contrast", "DIC"), Qt.LeftButton)
+    assert _clipping(tab) is False and tab._raw_processing_pick_target() is None
+    qtbot.waitUntil(lambda: not tab._pending_raw_preview_has_request_for_capture(capture), timeout=5000)
+    assert _clipping(tab) is False  # the finished preview did not take the panel back
+    assert tab._raw_render_settings.auto_levels_clipping is False
+    assert capture.raw_settings.auto_levels_clipping is True  # the BF capture keeps its own
+    _stop_session(qtbot, tab)
+
+
+def test_an_image_note_saved_in_one_tab_shows_in_the_other(qtbot, profile):
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    measure = tab._main_window
+    measure.current_image_id = None
+    shown: list = []
+    measure._set_measure_image_note_text = lambda text, *, enabled: shown.append(text)
+    measure.on_live_lab_image_note_changed = lambda ids, note: MainWindow_on_note(measure, ids, note)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    image = _capture(qtbot, profile, obs, "P1010403.JPG")
+    qtbot.waitUntil(lambda: tab._viewer_subject == ("image", image["id"]), timeout=3000)
+
+    measure.current_image_id = image["id"]  # Mål has the same image open
+    tab.image_note_input.setPlainText("From Live Lab")
+    assert shown == ["From Live Lab"]
+    tab.reload_image_note(image["id"], "From Mål")  # what Mål calls after saving
+    assert tab.image_note_input.toPlainText() == "From Mål"
+    tab.reload_image_note(image["id"] + 999, "Another image")
+    assert tab.image_note_input.toPlainText() == "From Mål"
+    _stop_session(qtbot, tab)
+
+
+def MainWindow_on_note(window, ids, note):
+    from ui.main_window import MainWindow
+
+    window._measure_image_note_save_timer = None
+    return MainWindow.on_live_lab_image_note_changed(window, ids, note)
+
+
+def test_a_note_saved_in_mal_reaches_live_lab(qtbot, profile):
+    from types import SimpleNamespace
+
+    from PySide6.QtWidgets import QPlainTextEdit
+    from ui.main_window import MainWindow
+
+    obs = create_observation(profile)
+    tab = _make_tab(qtbot)
+    _start_session(qtbot, tab, obs, mode=tab.SESSION_MODE_LIVE, watch_dir=profile.watch_dir)
+    image = _capture(qtbot, profile, obs, "P1010404.JPG")
+    qtbot.waitUntil(lambda: tab._viewer_subject == ("image", image["id"]), timeout=3000)
+    editor = QPlainTextEdit()
+    qtbot.addWidget(editor)
+    editor.setPlainText("Written in Mål")
+    mal = SimpleNamespace(
+        _loading_measure_image_note=False,
+        current_image_id=image["id"],
+        measure_image_note_input=editor,
+        live_lab_tab=tab,
+    )
+    MainWindow._commit_measure_image_note(mal)
+    assert ImageDB.get_image(image["id"])["notes"] == "Written in Mål"
+    assert tab.image_note_input.toPlainText() == "Written in Mål"
+    _stop_session(qtbot, tab)

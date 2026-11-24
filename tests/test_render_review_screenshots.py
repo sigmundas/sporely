@@ -25,75 +25,30 @@ PYTHON = ROOT / ".venv" / "bin" / "python"
 REFERENCE_IDS = {
     "reference.analysis-panel-five-rows",
     "reference.add-range",
+    "reference.add-missing-values", "reference.add-missing-values-dark", "reference.add-missing-values-small-de",
     "reference.reported-statistics",
     "reference.measurement-set-form-enhanced",
     "reference.raw-points",
     "reference.existing-measurement-set",
     "reference.new-publication",
     "reference.library-manager",
+    "reference.library-technical-details", "reference.library-delete-failed",
+    "reference.library-delete-failed-dark", "reference.library-delete-failed-small-de",
+    "reference.my-shared-failed", "reference.my-shared-failed-de",
     "reference.no-taxon",
     "reference.parmasto",
-    "reference.attach-taxon-filter",
     "reference.nb-no",
-    "reference.dark",
-    "reference.community-preview",
-    "reference.community-preview-dark",
     "reference.comparison-list",
     "reference.comparison-list-dark",
     "reference.comparison-list-overflow",
     "reference.comparison-list-longnames",
-    "reference.add-dialog-library",
-    "reference.add-dialog-library-dark",
-    "reference.add-dialog-library-empty",
-    "reference.add-dialog-library-empty-dark",
-    "reference.add-dialog-myobs",
-    "reference.add-dialog-myobs-dark",
-    "reference.add-dialog-community",
-    "reference.add-dialog-community-dark",
-    "reference.add-dialog-community-points",
-    "reference.add-dialog-community-empty",
     "reference.comparison-list-suppressed",
     "reference.comparison-list-colors",
-    "reference.add-dialog-default-size",
-    "reference.add-dialog-taxon-selector",
-    "reference.add-dialog-taxon-evidence",
-    "reference.add-dialog-taxon-link",
-    "reference.add-dialog-taxon-search-ambiguous",
-    "reference.add-dialog-taxon-search-settled",
     "reference.fix2-suppressed-light",
     "reference.fix2-suppressed-dark",
     "reference.fix2-colors-light",
     "reference.fix2-colors-dark",
-    "reference.fix2-natural-light",
-    "reference.fix2-natural-dark",
-    "reference.fix2-popup-light",
-    "reference.fix2-popup-dark",
     "reference.fix2-hint-nb-no",
-    "reference.fix2-selector-nb-no",
-    "reference.add-dialog-baseline",
-    "reference.add-dialog-baseline-dark",
-    "reference.add-dialog-preview-published-range",
-    "reference.add-dialog-preview-published-range-dark",
-    "reference.add-dialog-preview-raw-data",
-    "reference.add-dialog-preview-percentile",
-    "reference.add-dialog-preview-percentile-nb-no",
-    "reference.add-dialog-narrow",
-    "reference.add-dialog-manual-range",
-    "reference.add-dialog-manual-range-dark",
-    "reference.add-dialog-manual-saveable",
-    "reference.add-dialog-manual-saveable-dark",
-    "reference.add-dialog-manual-saved",
-    "reference.add-dialog-manual-saved-dark",
-    "reference.add-dialog-manual-points",
-    "reference.add-dialog-manual-points-dark",
-    "reference.add-dialog-manual-invalid",
-    "reference.add-dialog-manual-invalid-dark",
-    "reference.add-dialog-manual-nb-no",
-    "reference.add-dialog-manual-species-mean",
-    "reference.provenance-preview",
-    "reference.provenance-preview-method",
-    "reference.provenance-preview-nb-no",
-    "reference.provenance-preview-dark",
     "reference.analysis-panel-empty",
     "reference.analysis-panel-populated",
     "reference.analysis-panel-suppressed",
@@ -129,6 +84,9 @@ OTHER_UI_IDS = {
     "raw-processing.methods",
     "portable-import.all-selected",
     "portable-import.subset",
+    "archive-messages.import-failed", "archive-messages.import-failed-de",
+    "archive-messages.full-backup-for-import", "archive-messages.full-backup-for-import-de",
+    "archive-messages.import-failed-details", "archive-messages.restore-complete",
     "portable-import.nb",
     "portable-import.de",
 }
@@ -162,9 +120,68 @@ LIVE_LAB_IDS = {
         "uncalibrated",
         "camera-import-empty",
         "camera-import-scanned",
+        "prep-unset",
+        "sections-collapsed",
     )
     for suffix in ("", "-dark")
-} | {"live-lab.idle-small"}
+} | {"live-lab.idle-small", "live-lab.idle-de", "live-lab.sections-collapsed-de"}
+STYLE_TOKEN_IDS = {"style-tokens.objective-rings", "style-tokens.objective-rings-dark"}
+MEASURE_TAB_IDS = {
+    f"measure.{state}{suffix}"
+    for state in ("tab", "view-drawer", "info-drawer")
+    for suffix in ("", "-dark")
+} | {"measure.tab-de", "measure.tab-small", "measure.view-drawer-de"} | {
+    "measure.microscope-settings", "measure.microscope-settings-dark", "measure.microscope-settings-de",
+    "measure.image-failed", "measure.image-failed-dark", "measure.image-failed-small-de",
+    "measure.microscope-settings-failed", "measure.microscope-settings-failed-de",
+}
+ANALYSIS_TAB_IDS = {
+    "analysis.tab", "analysis.tab-dark", "analysis.tab-small",
+    "analysis.reference-drawer", "analysis.reference-drawer-dark", "analysis.reference-drawer-de",
+    "analysis.reference-drawer-community", "analysis.reference-drawer-my-observations",
+    "analysis.reference-drawer-bars", "analysis.reference-drawer-bars-dark",
+    "analysis.reference-drawer-bars-de", "analysis.reference-drawer-bars-small",
+    "analysis.reference-compare-picker", "analysis.reference-compare-picker-dark",
+    "analysis.reference-compare-picker-de", "analysis.reference-compare-other",
+    "analysis.reference-compare-other-de",
+    "analysis.create-reference-source", "analysis.create-reference-measurements",
+    "analysis.create-reference-parsed", "analysis.create-reference-parsed-dark",
+    "analysis.create-reference-parsed-de", "analysis.create-reference-unlinked",
+    "analysis.reference-update-failed", "analysis.reference-update-failed-dark", "analysis.reference-update-failed-de",
+    "analysis.create-reference-ambiguous", "analysis.create-reference-ambiguous-de",
+}
+MODE_BAR_IDS = {
+    "mode-bar.view", "mode-bar.view-dark", "mode-bar.measure", "mode-bar.measure-dark",
+    "mode-bar.view-de", "mode-bar.small-de",
+    "observation-list.rail", "observation-list.rail-dark", "observation-list.drawer",
+    "observation-list.drawer-dark", "observation-list.drawer-de",
+    "image-strip.staged", "image-strip.staged-dark",
+    "images.live", "images.live-dark",
+    "images.files", "images.files-dark", "images.files-small-de",
+    "images.files-microscope", "images.files-info",
+    "images.preferences-image-import", "images.preferences-image-import-de",
+    "edit.rediger", "edit.rediger-dark", "edit.rediger-small-de", "edit.map-menu", "edit.map-menu-small-de",
+    "edit.sync-progress", "edit.sync-progress-dark", "edit.sync-progress-small-de",
+    "images.new", "images.new-dark", "images.new-empty", "images.new-small-de",
+    "edit.cloud", "edit.cloud-dark", "edit.cloud-small-de",
+}
+NOTICE_IDS = {
+    "notice.error", "notice.error-dark", "notice.error-details", "notice.error-details-dark",
+    "notice.undo", "notice.error-details-small-de", "notice.analysis-details",
+    "notice.update-available", "notice.update-available-de",
+}
+CALIBRATION_IDS = {
+    "calibration.no-image", "calibration.no-image-dark", "calibration.export-failed",
+    "calibration.export-failed-de", "calibration.new-objective-missing",
+}
+PREFERENCES_IDS = {
+    "preferences.profile", "preferences.profile-not-synced", "preferences.profile-not-synced-dark",
+    "preferences.profile-not-synced-de",
+    "preferences.publishing-login-failed", "preferences.publishing-login-failed-dark",
+    "preferences.cloud-login-failed", "preferences.credential-prompt-missing-nb",
+    "preferences.credential-prompt-missing-de", "preferences.profile-not-loaded-nb",
+    "preferences.profile-not-loaded-de",
+}
 RECALIBRATION_IDS = {
     "recalibration.update-existing",
     "recalibration.update-recent",
@@ -180,6 +197,13 @@ ALL_IDS = (
     | TAXON_PICKER_IDS
     | QUICK_FIX_IDS
     | LIVE_LAB_IDS
+    | STYLE_TOKEN_IDS
+    | MEASURE_TAB_IDS
+    | ANALYSIS_TAB_IDS
+    | MODE_BAR_IDS
+    | NOTICE_IDS
+    | CALIBRATION_IDS
+    | PREFERENCES_IDS
     | RECALIBRATION_IDS
 )
 
@@ -203,8 +227,9 @@ def test_registry_has_unique_semantic_ids_and_expected_groups() -> None:
     ids = [scenario.id for scenario in registry.all()]
     assert len(ids) == len(set(ids))
     assert set(registry.groups()) == {
-        "conflict", "live-lab", "measure", "observations", "portable-import",
-        "quick-fixes", "raw-processing", "recalibration", "reference-library", "taxon-picker",
+        "analysis", "archive-messages", "calibration", "conflict", "live-lab", "measure", "mode-bar", "notices", "observations",
+        "portable-import", "preferences", "quick-fixes", "raw-processing", "recalibration", "reference-library",
+        "style-tokens", "taxon-picker",
     }
     assert {scenario.id for scenario in registry.all()} == ALL_IDS
 
@@ -216,12 +241,13 @@ def test_group_and_explicit_scenario_selection() -> None:
         s.id for s in registry.select(groups=("reference-library",))
     } == REFERENCE_IDS
     assert {s.id for s in registry.select(groups=("live-lab",))} == LIVE_LAB_IDS
+    assert {s.id for s in registry.select(groups=("style-tokens",))} == STYLE_TOKEN_IDS
     assert [
         s.id
         for s in registry.select(
-            scenario_ids=("reference.add-range", "reference.dark")
+            scenario_ids=("reference.add-range", "reference.nb-no")
         )
-    ] == ["reference.add-range", "reference.dark"]
+    ] == ["reference.add-range", "reference.nb-no"]
 
 
 @pytest.mark.parametrize(

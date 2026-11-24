@@ -488,12 +488,16 @@ def test_storage_intent_is_initialized_before_pending_state_is_evaluated(
     With no ledger entries, `_pending_cloud_pushable_image_ids` reports nothing
     pending (fail-closed on unknown intent) and the fast path would be taken.
     Seeding first is what makes image 12 visible as pending, so the full-prep
-    outcome below is only reachable if initialization ran first.
+    outcome below is only reachable if initialization ran first. Image 12 is
+    a local field photo, desired by default (no microscope photo is checked
+    by default since 2026-11-15).
     """
     db_path, tmp_path, _field_image = db
-    micro = tmp_path / "micro.jpg"
-    micro.write_bytes(b"microscope-bytes")
-    _add_local_image(db_path, image_id=12, filepath=micro)
+    field = tmp_path / "field-12.jpg"
+    field.write_bytes(b"field-bytes")
+    _add_local_image(
+        db_path, image_id=12, filepath=field, image_type="field", objective_name=None,
+    )
 
     # Nothing seeded: the pending predicate must refuse to guess.
     assert cloud_sync._cloud_image_storage_intent_initialized_ids(1) == set()
@@ -522,7 +526,7 @@ def test_storage_intent_is_initialized_before_pending_state_is_evaluated(
     assert result["errors"] == []
     assert order[0] == "initialize:1"
     assert order.index("initialize:1") < order.index("pending:1")
-    # Seeding made the deterministic keeper desired, so it is genuinely pending.
+    # Seeding made the field photo desired, so it is genuinely pending.
     assert cloud_sync._pending_cloud_pushable_image_ids(1) == [12]
     assert harness.ran_full_image_prep, harness.image_prep_calls
 

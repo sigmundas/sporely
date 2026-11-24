@@ -13,10 +13,9 @@ Invariants enforced:
    had been committed).
 6. Load-time programmatic writes (inside `_taxon_controller._suspended()`)
    MUST NOT clear the red-list a `_load_observation_values` call restored.
-7. Manual genus/species entry that unambiguously resolves to a single
-   canonical concept must commit the taxonomy snapshot immediately (so
-   the Red List badge refreshes without a Save + Reopen round trip).
-   Ambiguous / unresolved edits stay unbound.
+7. Typed genus/species text never binds identity: finishing an edit
+   commits no snapshot and keeps a snapshot an explicit selection
+   committed. (The form's typed-name Red List badge went in stage 10a6.)
 """
 from __future__ import annotations
 
@@ -27,7 +26,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtWidgets import QApplication, QLineEdit
 
-from database.taxon_lookup import ManualScientificResolution
 from ui.taxon_input_controller import TaxonInputController
 
 
@@ -36,12 +34,8 @@ def _app() -> QApplication:
 
 
 class _Lookup:
-    def __init__(self, suggestions=None, manual_resolutions=None):
+    def __init__(self, suggestions=None):
         self._suggestions = suggestions or []
-        # ``manual_resolutions`` maps (genus.casefold(), species.casefold())
-        # to a ManualScientificResolution — same contract as the real
-        # ``TaxonLookupService.resolve_manual_scientific``.
-        self._manual_resolutions = dict(manual_resolutions or {})
         self.vernacular_db = object()
         self.language_code = "en"
 
@@ -55,11 +49,6 @@ class _Lookup:
         return [s for s in self._suggestions
                 if str(s["scientific_name"]).lower().startswith(p)]
 
-    def resolve_manual_scientific(self, genus, species):
-        key = (str(genus or "").strip().casefold(),
-               str(species or "").strip().casefold())
-        return self._manual_resolutions.get(key)
-
 
 class _Host:
     """Minimal stand-in for ObservationTab that mirrors the two red-list
@@ -70,8 +59,6 @@ class _Host:
     - controller callbacks (invalidated / committed) → helper
     - genus/species/scientific textChanged (gated by controller suspension)
       → helper (unless red-list is already empty).
-    - genus/species editingFinished → manual (genus, species) resolve
-      when no snapshot is committed (Stage 3B.5 badge-refresh follow-up).
     """
 
     def __init__(self, controller: TaxonInputController,
@@ -92,8 +79,6 @@ class _Host:
         genus.textChanged.connect(self._on_taxon_identity_field_edited)
         species.textChanged.connect(self._on_taxon_identity_field_edited)
         scientific.textChanged.connect(self._on_taxon_identity_field_edited)
-        genus.editingFinished.connect(self._on_taxon_manual_editing_finished)
-        species.editingFinished.connect(self._on_taxon_manual_editing_finished)
 
     def _set_red_list_category(self, code: str | None, categories: dict | None) -> None:
         self._red_list_category = str(code or "").strip().upper()
@@ -127,37 +112,6 @@ class _Host:
             return
         self._clear_red_list_for_identity_change()
 
-    def _on_taxon_manual_editing_finished(self) -> None:
-        controller = self._taxon_controller
-        if controller._is_suspended():
-            return
-        if controller.committed_snapshot() is not None:
-            return
-        genus = str(self.genus_input.text() or "").strip()
-        species = str(self.species_input.text() or "").strip()
-        if not genus or not species:
-            return
-        lookup = self._taxon_lookup
-        if lookup is None:
-            return
-        resolver = getattr(lookup, "resolve_manual_scientific", None)
-        if not callable(resolver):
-            return
-        resolution = resolver(genus, species)
-        if resolution is None:
-            # Taxonomy-v2 closeout Stage 2: an unresolved pair must also drop
-            # any previous display-only match, or the old taxon's badge stays
-            # available to the deferred resolve.
-            controller.clear_display_only_name_match()
-            return
-        # DISPLAY ONLY, mirroring production. This mirror used to call
-        # `commit_manual_resolution`, minting artifact proof from a
-        # genus/species NAME match — the transition Stage 2 forbids. That
-        # method no longer exists; typed text may refresh the Red List badge
-        # but may never bind identity.
-        controller.set_display_only_name_match(resolution.sporely_taxon_id)
-
-
 @pytest.fixture
 def env():
     _app()
@@ -186,21 +140,7 @@ def env():
             "family": "Amanitaceae",
         },
     ]
-    manual_resolutions = {
-        # Unique manual resolution — Cortinarius limonius binds a single
-        # canonical concept.
-        ("cortinarius", "limonius"): ManualScientificResolution(
-            sporely_taxon_id=624905,
-            genus="Cortinarius",
-            species="limonius",
-            scientific_name="Cortinarius limonius",
-            taxon_rank_snapshot="species",
-            canonical_scientific_name="Cortinarius limonius",
-            canonical_rank="species",
-            link_kind="canonical",
-        ),
-    }
-    lookup = _Lookup(suggestions, manual_resolutions=manual_resolutions)
+    lookup = _Lookup(suggestions)
     controller = TaxonInputController(
         lookup, genus, species, vern, None,
         scientific_name_input=sci,
@@ -332,45 +272,12 @@ def test_edit_with_no_red_list_is_a_noop(env):
 
 
 # ---------------------------------------------------------------- invariant 7
-def test_manual_genus_species_edit_resolves_for_display_only(env):
-    """EXPECTATION FLIP — taxonomy-v2 closeout Stage 2.
-
-    This asserted that typing a (genus, species) pair which the taxonomy
-    service pins to a single canonical concept COMMITS a snapshot carrying
-    `sporely_taxon_id`. That is a genus/species name match becoming identity,
-    which the stage forbids: identity binding must stay explicit, and identity
-    must not be inferred from name equality.
-
-    The reason the hook exists — refreshing the Red List badge without a
-    Save + Reopen — is preserved through the display-only channel, which the
-    save path never reads. So the badge still resolves and nothing
-    identity-bearing is committed.
-    """
-    controller, host, widgets, _sugs = env
-    genus, species, _v, _sci = widgets
-    # Preload widgets as the user would after typing both fields.
-    genus.setText("Cortinarius")
-    species.setText("limonius")
-    # Then the user tabs away → editingFinished fires on the species
-    # widget (its editingFinished handler is what triggers the manual
-    # resolve). Emit it explicitly, matching Qt's real signal path.
-    species.editingFinished.emit()
-
-    # NO identity was created.
-    assert controller.committed_snapshot() is None
-    assert controller.committed_identity().is_proven_sporely is False
-    # But the resolved id is available for display, so the badge can refresh.
-    assert controller.display_only_name_match() == 624905
-
-
 def test_manual_genus_species_edit_ambiguous_does_not_bind_badge(env):
     """Ambiguous (genus, species) pairs (multiple canonical concepts) must
     NOT commit a snapshot — the picker is the only path that can bind
     identity for ambiguous inputs."""
     controller, host, widgets, _sugs = env
     genus, species, _v, _sci = widgets
-    # `Amanita muscaria` is NOT in the manual_resolutions map — mirrors
-    # the real service returning None for ambiguous pairs.
     genus.setText("Amanita")
     species.setText("muscaria")
     species.editingFinished.emit()
@@ -394,7 +301,7 @@ def test_manual_editing_finished_does_not_overwrite_prior_snapshot(env):
     """Regression guard: when the observer has already committed a
     specific snapshot via the picker (e.g. a synonym_of_accepted choice),
     a subsequent editingFinished for the same visible genus/species must
-    NOT overwrite the prior identity with the canonical resolution."""
+    NOT overwrite the prior identity."""
     controller, host, widgets, sugs = env
     genus, species, _v, sci = widgets
     # First, use the picker to commit a specific taxon_id.
@@ -402,8 +309,7 @@ def test_manual_editing_finished_does_not_overwrite_prior_snapshot(env):
     committed_before = controller.committed_snapshot()
     assert committed_before is not None
     prior_id = committed_before["sporely_taxon_id"]
-    # Even if the lookup would return a different manual resolution for
-    # (Amanita, muscaria), the snapshot-present guard must skip it.
+    # Finishing an edit with the same text must keep it.
     species.editingFinished.emit()
     committed_after = controller.committed_snapshot()
     assert committed_after is not None
@@ -411,9 +317,8 @@ def test_manual_editing_finished_does_not_overwrite_prior_snapshot(env):
 
 
 def test_manual_editing_finished_ignored_during_suspend(env):
-    """Load-time programmatic writes inside `_suspended()` must not
-    trigger a manual resolution (otherwise a reload would immediately
-    re-commit the manual snapshot and refresh the badge unnecessarily)."""
+    """Load-time programmatic writes inside `_suspended()` must not commit
+    a snapshot or refresh the badge, even when editingFinished fires."""
     controller, host, widgets, _sugs = env
     genus, species, _v, _sci = widgets
     with controller._suspended():

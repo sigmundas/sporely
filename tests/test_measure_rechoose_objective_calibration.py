@@ -255,7 +255,7 @@ def test_rechoosing_the_objective_moves_the_image_to_the_active_calibration(wind
         (
             "Use active calibration",
             "Move this image from the 2026-06-01 calibration to the active 2026-11-21 calibration? "
-            "Measurements change by +0.5%.",
+            "The image scale changes by +0.5%.",
         )
     ]
     _assert_moved_to_active(window, scene, item)
@@ -271,7 +271,7 @@ def test_rechoosing_clears_the_older_calibration_warning(window, scene, box, qtb
     _choose_in_combo(qtbot, window.scale_combo, OBJECTIVE_KEY)
 
     assert len(box.asked) == 1
-    assert "Measurements change by +5.8%." in box.asked[0][1]
+    assert "The image scale changes by +5.8%." in box.asked[0][1]
     assert _state(scene.db, item)["scale"] == pytest.approx(NEW_SCALE)
     assert window.measure_status_label.text() == ""
 

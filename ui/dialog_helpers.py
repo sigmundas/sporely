@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLayout,
+    QMessageBox,
     QSizePolicy,
     QStyle,
     QToolButton,
@@ -101,6 +102,52 @@ def make_github_help_button(parent: QWidget | None, doc_filename: str) -> QToolB
     button.setFixedSize(28, 28)
     button.clicked.connect(lambda: open_github_doc(doc_filename))
     return button
+
+
+def build_message_box(
+    parent: QWidget | None,
+    kind: str,
+    title: str,
+    text: str,
+    *,
+    informative: str | None = None,
+    details: str | None = None,
+) -> QMessageBox:
+    """The box :func:`show_message_box` shows, not yet shown (the review
+    renderer draws it). macOS shows no window title on a message box, so
+    ``text`` must say what happened on its own."""
+    icons = {
+        "information": QMessageBox.Information,
+        "warning": QMessageBox.Warning,
+        "critical": QMessageBox.Critical,
+    }
+    box = QMessageBox(parent)
+    box.setIcon(icons.get(kind, QMessageBox.Warning))
+    box.setWindowTitle(str(title))
+    box.setText(str(text))
+    if informative:
+        box.setInformativeText(str(informative))
+    if details:
+        box.setDetailedText(str(details))
+    box.setStandardButtons(QMessageBox.Ok)
+    return box
+
+
+def show_message_box(
+    parent: QWidget | None,
+    kind: str,
+    title: str,
+    text: str,
+    *,
+    informative: str | None = None,
+    details: str | None = None,
+) -> None:
+    """A modal message that says what happened (``text``), what to do next
+    (``informative``) and keeps the technical error under Show Details
+    (``details``). ``kind`` is "information", "warning" or "critical"."""
+    box = build_message_box(parent, kind, title, text, informative=informative, details=details)
+    box.exec()
+    box.deleteLater()
 
 
 def ask_wrapped_yes_no(

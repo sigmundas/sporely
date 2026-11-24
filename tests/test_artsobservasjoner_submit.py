@@ -417,7 +417,7 @@ def test_collect_artsobs_image_paths_prefers_smallest_candidate(tmp_path, monkey
     legacy_field_path.write_bytes(b"123")
 
     fake_tab = SimpleNamespace(
-        _publish_excluded_image_ids=lambda observation_id: set(),
+        _shared_image_ids=lambda observation_id, image_ids: {int(v) for v in image_ids},
     )
     monkeypatch.setattr(
         observations_tab,

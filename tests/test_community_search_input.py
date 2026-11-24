@@ -21,7 +21,6 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 import ui.cloud_reference_dialog as mod
-from ui.reference_preview_pane import ReferencePreviewPane
 
 
 def _app() -> QApplication:
@@ -81,7 +80,7 @@ def _make_pane(monkeypatch, genus="Amanita", species="muscaria"):
 
     monkeypatch.setattr(mod, "_CloudSearchWorker", make_search_worker)
     pane = mod.CommunityResultsPane(
-        genus=genus, species=species, preview_pane=ReferencePreviewPane()
+        genus=genus, species=species
     )
     _LIVE_PANES.append(pane)
     return pane, searches

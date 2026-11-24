@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from database.models import SettingsDB
 from database.schema import (
+    APP_SETTINGS_LOCK,
     DATABASE_PATH,
     get_app_settings,
     save_app_settings,
@@ -355,41 +356,42 @@ class DatabaseSettingsDialog(QDialog):
     def _save_settings(self):
         if self._loading_settings:
             return
-        settings = get_app_settings()
         db_folder = self.db_path_input.text().strip()
         images_dir = self.images_dir_input.text().strip()
         previous_db = get_database_path()
 
-        old_db_path = settings.get("database_path")
-        old_ref_path = settings.get("reference_database_path")
-        if db_folder:
-            settings["database_folder"] = db_folder
-            settings.pop("database_path", None)
-            settings.pop("reference_database_path", None)
-        else:
-            settings.pop("database_folder", None)
+        with APP_SETTINGS_LOCK:  # no other write may land between the read and the save
+            settings = get_app_settings()
+            old_db_path = settings.get("database_path")
+            old_ref_path = settings.get("reference_database_path")
+            if db_folder:
+                settings["database_folder"] = db_folder
+                settings.pop("database_path", None)
+                settings.pop("reference_database_path", None)
+            else:
+                settings.pop("database_folder", None)
 
-        if images_dir:
-            settings["images_dir"] = images_dir
-        else:
-            settings.pop("images_dir", None)
+            if images_dir:
+                settings["images_dir"] = images_dir
+            else:
+                settings.pop("images_dir", None)
 
-        if db_folder:
-            new_db_path = Path(db_folder) / "mushrooms.db"
-        elif settings.get("database_path"):
-            new_db_path = Path(settings["database_path"])
-        else:
-            new_db_path = DATABASE_PATH
-        will_move_db = bool(
-            db_folder and old_db_path and Path(old_db_path).exists() and Path(old_db_path) != new_db_path
-        )
-        if not will_move_db and not _same_file_path(previous_db, new_db_path):
-            # Another database: its owner must be checked again before sync.
-            from utils.cloud_sync import drop_linked_cloud_user_id
+            if db_folder:
+                new_db_path = Path(db_folder) / "mushrooms.db"
+            elif settings.get("database_path"):
+                new_db_path = Path(settings["database_path"])
+            else:
+                new_db_path = DATABASE_PATH
+            will_move_db = bool(
+                db_folder and old_db_path and Path(old_db_path).exists() and Path(old_db_path) != new_db_path
+            )
+            if not will_move_db and not _same_file_path(previous_db, new_db_path):
+                # Another database: its owner must be checked again before sync.
+                from utils.cloud_sync import drop_linked_cloud_user_id
 
-            drop_linked_cloud_user_id(settings)
+                drop_linked_cloud_user_id(settings)
 
-        save_app_settings(settings)
+            save_app_settings(settings)
 
         if db_folder:
             try:

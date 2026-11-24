@@ -7,6 +7,7 @@ import uuid
 import os
 import time
 import math
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 from datetime import datetime
@@ -20,6 +21,7 @@ from .schema import (
     LEGACY_RECOVERY_MARKER_COLUMN,
     new_sync_key,
     save_app_settings,
+    APP_SETTINGS_LOCK,
 )
 from utils.exif_reader import get_image_datetime
 from utils.calibration_assets import (
@@ -43,6 +45,153 @@ _UNSET = object()
 # local creation, which mints a fresh key. An explicit value (including None
 # for a pulled cloud row without a key) is stored as given and never minted.
 MINT_SYNC_KEY = object()
+
+
+# Public name for "leave this field as it is" in :class:`ScaleChange`.
+KEEP_FIELD = _UNSET
+
+
+@dataclass(frozen=True)
+class ScaleChange:
+    """A new scale for one image, for :meth:`MeasurementDB.apply_scale_changes`.
+
+    ``objective_name`` and ``calibration_id`` are written only when given
+    (``_UNSET`` leaves them alone; ``None`` clears them).
+    """
+
+    image_id: int
+    scale: float
+    objective_name: Any = _UNSET
+    calibration_id: Any = _UNSET
+    # The scale the measurements were made at, when the caller knows it
+    # better than the image row (Mål's scale in use); else the row's.
+    old_scale: Any = _UNSET
+
+
+def _point_distance(x1, y1, x2, y2) -> float:
+    return math.hypot(float(x2) - float(x1), float(y2) - float(y1))
+
+
+def _multiline_points(notes) -> list | None:
+    """The polyline a multi-line measurement keeps in its notes, or None."""
+    if not isinstance(notes, str) or "multiline" not in notes:
+        return None
+    try:
+        points = json.loads(notes).get("multiline")
+    except (ValueError, AttributeError):
+        return None
+    if not isinstance(points, list) or len(points) < 2:
+        return None
+    result = []
+    for point in points:
+        if (
+            not isinstance(point, (list, tuple))
+            or len(point) < 2
+            or not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in point[:2])
+        ):
+            return None
+        result.append((float(point[0]), float(point[1])))
+    return result
+
+
+@dataclass(frozen=True)
+class ObjectiveChoice:
+    """An objective for :meth:`ImageDB.apply_microscope_settings`: its key, scale and calibration."""
+
+    key: str
+    scale: float
+    calibration_id: Any = None
+
+
+@dataclass(frozen=True)
+class MicroscopeSettingsOutcome:
+    """What a batch change does (preview) or did (apply)."""
+
+    image_ids: tuple[int, ...]  # microscope images that change
+    measurements: int  # measurements recalculated for a new scale
+    skipped_field_images: int  # selected images that are not microscope images
+
+
+# Batch-editable image columns besides the objective (stage 8).
+MICROSCOPE_SETTING_COLUMNS = ("contrast", "mount_medium", "stain")
+MICROSCOPE_SETTINGS_EVENT = "microscope_settings_changed"
+# Session-log kind for edits made after the fact: not a microscopy session,
+# so the offline time matcher (which reads "offline") never sees it.
+EDIT_SESSION_KIND = "edit"
+
+
+def _same_value(a, b) -> bool:
+    if a is None or b is None:
+        return a is b
+    return math.isclose(float(a), float(b), rel_tol=1e-9, abs_tol=1e-12)
+
+
+# Points that no longer give the stored length at the old scale (by more than
+# this) are not trusted: the stored µm value is scaled by the ratio instead.
+_POINTS_MATCH_TOLERANCE = 0.01
+
+
+def rescaled_measurement_size(row: dict, old_scale, new_scale: float):
+    """``(length_um, width_um)`` for ``row`` at ``new_scale`` (µm per pixel), or None.
+
+    Recomputed from what was clicked whenever that is stored, the same way the
+    measurement was made: a multi-line measurement from the polyline in its
+    notes (width stays empty), two crossing lines from all four points (longer
+    is the length), a single line from two points. The points are used only
+    while they still give the stored length at the old scale: resizing an
+    image scales the point columns but not the polyline in the notes, and a
+    multi-line measurement pulled from the cloud keeps only its first two
+    points. Otherwise, and for a row without points, the stored values are
+    scaled by the ratio of the scales, which needs the old one. ``None``
+    means the row cannot be rescaled and is left alone.
+    """
+    try:
+        new_scale = float(new_scale)
+    except (TypeError, ValueError):
+        return None
+    if not new_scale > 0:
+        return None
+    try:
+        old_scale = float(old_scale) if old_scale is not None else None
+    except (TypeError, ValueError):
+        old_scale = None
+    if old_scale is not None and not old_scale > 0:
+        old_scale = None
+
+    def _by_ratio(value):
+        if value is None or old_scale is None:
+            return value
+        return float(value) * new_scale / old_scale
+
+    stored_length = row.get("length_um")
+
+    def _points_match(length_pixels: float) -> bool:
+        if old_scale is None or stored_length is None:
+            return old_scale is None  # nothing to check against: trust the points
+        stored = float(stored_length)
+        if stored <= 0:
+            return False
+        return abs(length_pixels * old_scale - stored) <= _POINTS_MATCH_TOLERANCE * stored
+
+    polyline = _multiline_points(row.get("notes"))
+    keys = [f"p{i}_{axis}" for i in range(1, 5) for axis in ("x", "y")]
+    values = [row.get(key) for key in keys]
+    if polyline is not None:
+        pixels = sum(_point_distance(*a, *b) for a, b in zip(polyline, polyline[1:]))
+        if _points_match(pixels):
+            return pixels * new_scale, _by_ratio(row.get("width_um"))
+    elif all(value is not None for value in values):
+        first = _point_distance(*values[0:4])
+        second = _point_distance(*values[4:8])
+        if _points_match(max(first, second)):
+            return max(first, second) * new_scale, min(first, second) * new_scale
+    elif all(value is not None for value in values[0:4]):
+        pixels = _point_distance(*values[0:4])
+        if _points_match(pixels):
+            return pixels * new_scale, _by_ratio(row.get("width_um"))
+    if old_scale is None or stored_length is None:
+        return None
+    return _by_ratio(stored_length), _by_ratio(row.get("width_um"))
 
 
 def _resolve_sync_key(sync_key: object) -> str | None:
@@ -522,14 +671,15 @@ def reset_cloud_sync_state() -> dict[str, int]:
     finally:
         conn.close()
 
-    app_settings = get_app_settings()
     removed_app_settings = 0
-    for key in sorted(_CLOUD_APP_SETTING_KEYS):
-        if key in app_settings:
-            removed_app_settings += 1
-            app_settings.pop(key, None)
-    if removed_app_settings:
-        save_app_settings(app_settings)
+    with APP_SETTINGS_LOCK:  # no other write may land between the read and the save
+        app_settings = get_app_settings()
+        for key in sorted(_CLOUD_APP_SETTING_KEYS):
+            if key in app_settings:
+                removed_app_settings += 1
+                app_settings.pop(key, None)
+        if removed_app_settings:
+            save_app_settings(app_settings)
 
     return {
         "observations": observation_count,
@@ -3391,31 +3541,29 @@ class ImageDB:
         return [dict(row) for row in rows]
 
     @staticmethod
-    def get_pending_artsobs_web_upload_count_for_observation(observation_id: int) -> int:
-        """Return number of pending Artsobservasjoner web image uploads for one observation."""
+    def get_pending_artsobs_web_upload_image_ids_for_observation(observation_id: int) -> list[int]:
+        """Return the image ids pending an Artsobservasjoner web upload for one observation."""
         try:
             obs_id = int(observation_id)
         except (TypeError, ValueError):
-            return 0
+            return []
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute(
             '''
-            SELECT COUNT(*)
+            SELECT i.id
             FROM images i
             JOIN observations o ON o.id = i.observation_id
             WHERE i.observation_id = ?
               AND COALESCE(i.artsobs_web_unpublished, 0) = 1
               AND COALESCE(o.artsdata_id, 0) > 0
+            ORDER BY i.id
             ''',
             (obs_id,),
         )
-        row = cursor.fetchone()
+        rows = cursor.fetchall()
         conn.close()
-        try:
-            return int(row[0] if row else 0)
-        except Exception:
-            return 0
+        return [int(row[0]) for row in rows]
 
     @staticmethod
     def mark_images_artsobs_web_uploaded(image_ids: List[int]) -> None:
@@ -3969,9 +4117,344 @@ class SessionLogDB:
         return deleted
 
 
+class MicroscopeSettingsChanged(ValueError):
+    """The images changed between the preview the user confirmed and Apply."""
+
+
+def _setting_key(value):
+    """Stored settings compare without case ("dic" is "DIC")."""
+    text = str(value).strip() if value is not None else ""
+    return text.casefold() or None
+
+
+def _objective_scale_for(objective: "ObjectiveChoice", resample_scale_factor) -> float:
+    """The objective's scale for an image stored resized (as the import dialog does)."""
+    scale = float(objective.scale)
+    try:
+        factor = float(resample_scale_factor) if resample_scale_factor is not None else None
+    except (TypeError, ValueError):
+        factor = None
+    if factor is not None and 0 < factor < 0.999:
+        scale /= factor
+    return scale
+
+
+class MicroscopeSettingsDB:
+    """Change objective, contrast, mount or stain on many images at once (redesign plan stage 8)."""
+
+    @staticmethod
+    def _plan(cursor, image_ids, objective, fields: dict) -> tuple[list, int]:
+        """(planned changes, field images skipped).
+
+        Each planned change is the image row plus ``target_scale`` (the
+        objective's scale for that image, ``None`` without a new objective).
+        """
+        ids = sorted({int(i) for i in image_ids})
+        if not ids:
+            return [], 0
+        placeholders = ",".join("?" for _ in ids)
+        rows = [
+            dict(row) for row in cursor.execute(
+                f"SELECT id, observation_id, image_type, objective_name, scale_microns_per_pixel, "
+                f"calibration_id, resample_scale_factor, sync_key, {', '.join(MICROSCOPE_SETTING_COLUMNS)} "
+                f"FROM images WHERE id IN ({placeholders})",
+                ids,
+            ).fetchall()
+        ]
+        skipped = sum(1 for row in rows if row["image_type"] != "microscope")
+        planned = []
+        for row in (row for row in rows if row["image_type"] == "microscope"):
+            differs = any(_setting_key(row[column]) != _setting_key(value) for column, value in fields.items())
+            row["target_scale"] = None
+            if objective is not None:
+                target = _objective_scale_for(objective, row["resample_scale_factor"])
+                current = row["scale_microns_per_pixel"]
+                row["target_scale"] = target
+                differs = (
+                    differs
+                    or current is None
+                    or not math.isclose(float(current), target, rel_tol=1e-9)
+                    or row["objective_name"] != objective.key
+                    or row["calibration_id"] != objective.calibration_id
+                )
+            if differs:
+                planned.append(row)
+        return planned, skipped
+
+    @staticmethod
+    def _fields(contrast, mount_medium, stain) -> dict:
+        given = dict(zip(MICROSCOPE_SETTING_COLUMNS, (contrast, mount_medium, stain)))
+        return {column: value for column, value in given.items() if value is not _UNSET}
+
+    @staticmethod
+    def preview(image_ids, *, objective: ObjectiveChoice | None = None, contrast=_UNSET,
+                mount_medium=_UNSET, stain=_UNSET) -> MicroscopeSettingsOutcome:
+        """What :meth:`apply` would change, without writing: for the confirmation.
+
+        Counts exactly the measurements apply would rewrite.
+        """
+        conn = get_connection()
+        conn.row_factory = sqlite3.Row
+        try:
+            cursor = conn.cursor()
+            fields = MicroscopeSettingsDB._fields(contrast, mount_medium, stain)
+            planned, skipped = MicroscopeSettingsDB._plan(cursor, image_ids, objective, fields)
+            measurements = sum(
+                len(MeasurementDB._rescaled_rows(cursor, row["id"], row["scale_microns_per_pixel"], row["target_scale"]))
+                for row in planned
+                if row["target_scale"] is not None
+            )
+        finally:
+            conn.close()
+        return MicroscopeSettingsOutcome(tuple(row["id"] for row in planned), measurements, skipped)
+
+    @staticmethod
+    def apply(image_ids, *, objective: ObjectiveChoice | None = None, contrast=_UNSET,
+              mount_medium=_UNSET, stain=_UNSET, expected: MicroscopeSettingsOutcome | None = None,
+              ) -> MicroscopeSettingsOutcome:
+        """Change the settings in one transaction, and log it.
+
+        Only microscope images change. A new objective goes through the one
+        rescale path (``MeasurementDB._apply_scale_changes_in``), at the
+        objective's scale for each image (divided by its resize factor). Each
+        changed observation is marked for sync and gets one session-log event
+        (kind ``"edit"``) with each image's old and new values. With
+        ``expected`` (the preview the user confirmed), nothing is written and
+        :class:`MicroscopeSettingsChanged` is raised if the images changed
+        since. Nothing is written if any part fails.
+        """
+        fields = MicroscopeSettingsDB._fields(contrast, mount_medium, stain)
+        conn = get_connection()
+        conn.row_factory = sqlite3.Row
+        try:
+            cursor = conn.cursor()
+            if conn.in_transaction:
+                conn.commit()
+            cursor.execute("BEGIN IMMEDIATE")
+            planned, skipped = MicroscopeSettingsDB._plan(cursor, image_ids, objective, fields)
+            if expected is not None:
+                measurements = sum(
+                    len(MeasurementDB._rescaled_rows(
+                        cursor, row["id"], row["scale_microns_per_pixel"], row["target_scale"]))
+                    for row in planned if row["target_scale"] is not None
+                )
+                now = MicroscopeSettingsOutcome(tuple(row["id"] for row in planned), measurements, skipped)
+                if now != expected:
+                    raise MicroscopeSettingsChanged("The images changed since the preview")
+            touched: set[int] = set()
+            recalculated: dict[int, int] = {}
+            if objective is not None and planned:
+                recalculated = MeasurementDB._apply_scale_changes_in(
+                    cursor,
+                    [
+                        ScaleChange(row["id"], row["target_scale"], objective_name=objective.key,
+                                    calibration_id=objective.calibration_id)
+                        for row in planned
+                    ],
+                    touched,
+                )
+            for row in planned:
+                assignments = [
+                    (column, value) for column, value in fields.items()
+                    if _setting_key(row[column]) != _setting_key(value)
+                ]
+                if assignments:
+                    cursor.execute(
+                        f"UPDATE images SET {', '.join(f'{c} = ?' for c, _v in assignments)} WHERE id = ?",
+                        (*(v for _c, v in assignments), row["id"]),
+                    )
+                    if row["observation_id"] is not None:
+                        touched.add(int(row["observation_id"]))
+            for observation_id in touched:
+                _touch_observation(cursor, observation_id, mark_dirty=True)
+            MicroscopeSettingsDB._log(cursor, planned, objective, fields, recalculated)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return MicroscopeSettingsOutcome(
+            tuple(row["id"] for row in planned), sum(recalculated.values()), skipped,
+        )
+
+    @staticmethod
+    def _log(cursor, planned: list, objective, fields: dict, recalculated: dict) -> None:
+        """One event per observation; each image by its sync key with its old and new values.
+
+        Images are named by ``sync_key``, not the local id: an archive import
+        reads ``image_id(s)`` in log metadata as references that must exist,
+        and an image deleted later would make the archive unimportable.
+        """
+        by_observation: dict[int, list] = {}
+        for row in planned:
+            if row["observation_id"] is not None:
+                by_observation.setdefault(int(row["observation_id"]), []).append(row)
+        if not by_observation:
+            return
+        session_id = f"settings-{uuid.uuid4().hex}"
+        now = _sqlite_now_text()
+        logged = list(fields)
+        if objective is not None:
+            logged = ["objective_name", "scale_microns_per_pixel", "calibration_id", *logged]
+        summary_values = dict(fields)
+        if objective is not None:
+            summary_values = {"objective_name": objective.key, **summary_values}
+        summary = "; ".join(f"{column}={value}" for column, value in summary_values.items())
+        for observation_id, rows in by_observation.items():
+            images = []
+            for row in rows:
+                after = cursor.execute(
+                    f"SELECT {', '.join(logged)} FROM images WHERE id = ?", (row["id"],)
+                ).fetchone()
+                images.append({
+                    "sync_key": row["sync_key"],
+                    "before": {column: row[column] for column in logged},
+                    "after": {column: after[column] for column in logged},
+                    "measurements_recalculated": recalculated.get(row["id"], 0),
+                })
+            cursor.execute(
+                """
+                INSERT INTO session_logs (
+                    observation_id, session_id, session_kind, event_type,
+                    attribute_name, value, metadata_json, recorded_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    observation_id, session_id, EDIT_SESSION_KIND, MICROSCOPE_SETTINGS_EVENT,
+                    None, summary,
+                    _serialize_json_object({
+                        "images": images,
+                        "measurements_recalculated": sum(image["measurements_recalculated"] for image in images),
+                    }),
+                    now,
+                ),
+            )
+
+
 class MeasurementDB:
     """Handle spore measurement database operations"""
-    
+
+    @staticmethod
+    def rescalable_count(image_id: int) -> int:
+        """Measurements on the image that a scale change would recalculate (calibration excluded)."""
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM spore_measurements WHERE image_id = ? "
+                "AND LOWER(COALESCE(measurement_type, '')) != 'calibration'",
+                (int(image_id),),
+            ).fetchone()
+        finally:
+            conn.close()
+        return int(row[0] or 0) if row else 0
+
+    @staticmethod
+    def apply_scale_changes(changes) -> dict[int, int]:
+        """Give images a new scale and recalculate their measurements, in one transaction.
+
+        The one rescale path for a changed objective or scale (redesign plan
+        stage 8). Each measurement is recomputed with
+        :func:`rescaled_measurement_size`; calibration measurements are left
+        alone. The image's scale (and, when given, objective and calibration)
+        is written in the same transaction, and each changed observation is
+        marked for sync. Returns the number of measurements updated per image.
+        Nothing is written if any part fails.
+        """
+        changes = list(changes or [])
+        if not changes:
+            return {}
+        conn = get_connection()
+        conn.row_factory = sqlite3.Row
+        try:
+            cursor = conn.cursor()
+            # Hold the write lock from the first read, so a sync running at
+            # the same time cannot change the rows between read and write.
+            if conn.in_transaction:
+                conn.commit()
+            cursor.execute("BEGIN IMMEDIATE")
+            touched: set[int] = set()
+            updated = MeasurementDB._apply_scale_changes_in(cursor, changes, touched)
+            for observation_id in touched:
+                _touch_observation(cursor, observation_id, mark_dirty=True)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return updated
+
+    @staticmethod
+    def _rescaled_rows(cursor, image_id: int, old_scale, new_scale: float) -> list[tuple]:
+        """(id, length_um, width_um) for each measurement a new scale would change."""
+        if old_scale is not None and math.isclose(float(old_scale), float(new_scale), rel_tol=1e-9):
+            return []
+        result = []
+        for row in cursor.execute(
+            "SELECT * FROM spore_measurements WHERE image_id = ? "
+            "AND LOWER(COALESCE(measurement_type, '')) != 'calibration'",
+            (int(image_id),),
+        ).fetchall():
+            size = rescaled_measurement_size(dict(row), old_scale, new_scale)
+            if size is None:
+                continue
+            length_um, width_um = size
+            if _same_value(length_um, row["length_um"]) and _same_value(width_um, row["width_um"]):
+                continue
+            result.append((row["id"], length_um, width_um))
+        return result
+
+    @staticmethod
+    def _apply_scale_changes_in(cursor, changes, touched: set) -> dict[int, int]:
+        """``apply_scale_changes`` inside the caller's transaction (rows as ``sqlite3.Row``).
+
+        Adds each observation it changed to ``touched``; the caller marks them.
+        """
+        updated: dict[int, int] = {}
+        for change in changes:
+            image_id = int(change.image_id)
+            image = cursor.execute(
+                "SELECT observation_id, scale_microns_per_pixel, objective_name, calibration_id "
+                "FROM images WHERE id = ?",
+                (image_id,),
+            ).fetchone()
+            if image is None:
+                continue
+            new_scale = float(change.scale)
+            if not new_scale > 0:
+                raise ValueError(f"Invalid scale {change.scale!r} for image {image_id}")
+            old_scale = image["scale_microns_per_pixel"] if change.old_scale is _UNSET else change.old_scale
+            rescaled = MeasurementDB._rescaled_rows(cursor, image_id, old_scale, new_scale)
+            for measurement_id, length_um, width_um in rescaled:
+                cursor.execute(
+                    "UPDATE spore_measurements SET length_um = ?, width_um = ? WHERE id = ?",
+                    (length_um, width_um, measurement_id),
+                )
+            count = len(rescaled)
+            assignments: list[str] = []
+            values: list = []
+            current_scale = image["scale_microns_per_pixel"]
+            if current_scale is None or not math.isclose(float(current_scale), new_scale, rel_tol=1e-9):
+                assignments.append("scale_microns_per_pixel = ?")
+                values.append(new_scale)
+            if change.objective_name is not _UNSET and image["objective_name"] != change.objective_name:
+                assignments.append("objective_name = ?")
+                values.append(change.objective_name)
+            if change.calibration_id is not _UNSET and image["calibration_id"] != change.calibration_id:
+                assignments.append("calibration_id = ?")
+                values.append(change.calibration_id)
+            if assignments:
+                cursor.execute(
+                    f"UPDATE images SET {', '.join(assignments)} WHERE id = ?",
+                    (*values, image_id),
+                )
+            updated[image_id] = count
+            # Only a real change is pushed (no no-op sync writes).
+            if (assignments or count) and image["observation_id"] is not None:
+                touched.add(int(image["observation_id"]))
+        return updated
+
     @staticmethod
     def add_measurement(image_id: int, length: float, width: float = None,
                        measurement_type: str = 'manual', notes: str = None,
@@ -4745,46 +5228,6 @@ class ReferenceDB:
                 WHERE genus = ? AND species = ?
                 ORDER BY source
             ''', (genus, species))
-        rows = cursor.fetchall()
-        conn.close()
-        return [row[0] for row in rows if row and row[0]]
-
-    @staticmethod
-    def list_mount_mediums(genus: str, species: str, source: str, prefix: str = "") -> List[str]:
-        conn = get_reference_connection()
-        cursor = conn.cursor()
-        if prefix:
-            cursor.execute('''
-                SELECT DISTINCT mount_medium FROM reference_values
-                WHERE genus = ? AND species = ? AND source = ? AND mount_medium LIKE ?
-                ORDER BY mount_medium
-            ''', (genus, species, source, f"{prefix}%"))
-        else:
-            cursor.execute('''
-                SELECT DISTINCT mount_medium FROM reference_values
-                WHERE genus = ? AND species = ? AND source = ?
-                ORDER BY mount_medium
-            ''', (genus, species, source))
-        rows = cursor.fetchall()
-        conn.close()
-        return [row[0] for row in rows if row and row[0]]
-
-    @staticmethod
-    def list_stains(genus: str, species: str, source: str, prefix: str = "") -> List[str]:
-        conn = get_reference_connection()
-        cursor = conn.cursor()
-        if prefix:
-            cursor.execute('''
-                SELECT DISTINCT stain FROM reference_values
-                WHERE genus = ? AND species = ? AND source = ? AND stain LIKE ?
-                ORDER BY stain
-            ''', (genus, species, source, f"{prefix}%"))
-        else:
-            cursor.execute('''
-                SELECT DISTINCT stain FROM reference_values
-                WHERE genus = ? AND species = ? AND source = ?
-                ORDER BY stain
-            ''', (genus, species, source))
         rows = cursor.fetchall()
         conn.close()
         return [row[0] for row in rows if row and row[0]]

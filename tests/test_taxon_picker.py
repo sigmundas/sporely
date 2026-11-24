@@ -194,8 +194,13 @@ def test_unfinished_text_can_be_discarded_or_kept(qtbot, setup):
     picker.discard_unfinished()
     assert picker.unfinished_text() == "" and picker.selection() == (row, concept)
     picker.begin_edit()
-    qtbot.keyClicks(picker.search_input, "Russula sp. A")
-    assert picker.keep_unfinished_as_name()
+    type_query(qtbot, picker, "Russula sp. A")
+    for _ in range(len(picker.results())):  # down to the last row: keep the text as a name
+        if picker.current_entry() is not None and picker.current_entry().kind == "free":
+            break
+        qtbot.keyClick(picker.search_input, Qt.Key_Down)
+    assert picker.current_entry().kind == "free"
+    qtbot.keyClick(picker.search_input, Qt.Key_Return)
     assert free == ["Russula sp. A"] and picker.selection() is None
 
 
@@ -205,21 +210,6 @@ def test_source_hint_follows_the_keyboard_mode(qtbot, setup):
     assert "←/→" in picker.source_hint() and picker.source_hint() != "←/→ switch source"
     qtbot.keyClick(picker.search_input, Qt.Key_Down)
     assert picker.source_hint() == "←/→ switch source"
-
-
-def test_ai_handler_receives_resolved_chips(qtbot, setup):
-    picker, _other, picked, _free, _cleared = setup
-    handled = []
-    picker.set_ai_suggestion_handler(handled.append)
-    key = {"prediction": 1}
-    picker.set_ai_suggestions([
-        AiSuggestion("vintersopp", "Flammulina velutipes", 0.8, 625621, key=key),
-        AiSuggestion("Gymnopus", "Gymnopus", 0.1, None),
-    ])
-    picker.ai_buttons[0].click()
-    assert [s.key for s in handled] == [key] and picked == []
-    picker.ai_buttons[1].click()
-    assert len(handled) == 1 and picker.is_popup_visible()
 
 
 def test_programmatic_text_never_searches(qtbot, setup):

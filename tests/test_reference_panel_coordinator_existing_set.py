@@ -24,9 +24,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtWidgets import (
     QApplication,
-    QComboBox,
-    QLabel,
-    QLineEdit,
     QTableWidget,
 )
 
@@ -94,30 +91,31 @@ def _build_minimal_window(monkeypatch, qapp):
     monkeypatch.setattr(main_window.MainWindow, "load_default_objective", lambda self: None)
     monkeypatch.setattr(main_window.MainWindow, "_restore_geometry", lambda self: None)
     window = main_window.MainWindow()
-    window.ref_vernacular_input = QLineEdit()
-    window.ref_vernacular_label = QLabel()
-    window.ref_genus_input = QLineEdit()
-    window.ref_species_input = QLineEdit()
-    window.ref_source_input = QComboBox()
-    window.ref_source_input.setEditable(True)
-    window.ref_source_input.addItem("")
     window.table = QTableWidget(3, 5)
-    window.ref_table = window.table
     window.reference_values = {}
     window.reference_series = []
-    window.species_availability = _EmptySpeciesAvailability()
     window.active_observation_id = None
     # Neutralize UI-only branches that would otherwise require full init.
-    window._refresh_reference_species_availability = lambda: None
-    window._populate_reference_panel_sources = lambda auto_select_single=True: None
-    window._apply_reference_panel_values = lambda data: None
-    window._update_reference_add_state = lambda: None
-    window._maybe_load_reference_panel_reference = lambda: None
     window._active_sporely_taxon_id = lambda: 7
     window._clean_ref_genus_text = lambda text: (text or "").strip()
     window._clean_ref_species_text = lambda text: (text or "").strip()
     return window
 
+
+
+def _add_through_live_path(window, dialog):
+    """What “Add to plot” in Analyse's create dialog does (stage 10a2).
+
+    ``_on_reference_picker_new_reference``'s ``add_callback`` hands the
+    accepted editor to ``_submit_reference_editor_result`` without syncing
+    the retired reference panel. These tests drove the removed panel's Add
+    button, which ran the same submission.
+    """
+    from PySide6.QtWidgets import QDialog
+
+    if dialog.exec() != QDialog.Accepted:
+        return False
+    return window._submit_reference_editor_result(dialog)
 
 def test_add_existing_set_does_not_append_empty_envelope(monkeypatch, qapp):
     """When the dialog returns ``source_kind=existing_measurement_set``
@@ -126,8 +124,6 @@ def test_add_existing_set_does_not_append_empty_envelope(monkeypatch, qapp):
     translated attachment row appended by the attach helper.
     """
     window = _build_minimal_window(monkeypatch, qapp)
-    window.ref_genus_input.setText("Agaricus")
-    window.ref_species_input.setText("bisporus")
 
     dialog_payload = {
         "genus": "Agaricus",
@@ -160,12 +156,8 @@ def test_add_existing_set_does_not_append_empty_envelope(monkeypatch, qapp):
     )
     window._add_reference_series_entry = _fake_add_series
 
-    monkeypatch.setattr(
-        main_window,
-        "ReferenceAddDialog",
-        lambda *a, **kw: _StubDialog(dialog_payload),
-    )
-    window._on_reference_panel_add_clicked()
+    _dialog_factory = lambda *a, **kw: _StubDialog(dialog_payload)
+    _add_through_live_path(window, _dialog_factory())
 
     # The attach helper produced its translated entry, but the
     # coordinator must not have re-added the raw envelope.
@@ -177,14 +169,22 @@ def test_add_existing_set_does_not_append_empty_envelope(monkeypatch, qapp):
 
 
 def test_edit_existing_set_routes_through_attach_and_skips_envelope(monkeypatch, qapp):
-    """Selecting ``existing_measurement_set`` in edit mode must attach
-    the set through the shared helper and skip the blank envelope
-    push so no phantom row appears in the panel.
+    """Selecting ``existing_measurement_set`` when editing a comparison row
+    must attach the set through the shared helper and skip the blank
+    envelope push so no phantom row appears.
+
+    The comparison list's “Edit measurement set…” (``_edit_reference_series_row``)
+    is the live edit path; the retired panel's Edit button ran the same branch.
     """
     window = _build_minimal_window(monkeypatch, qapp)
-    window.ref_genus_input.setText("Agaricus")
-    window.ref_species_input.setText("bisporus")
-    window.ref_source_input.setCurrentText("Petersen 1990 (1990)")
+    row = {
+        "genus": "Agaricus",
+        "species": "bisporus",
+        "source": "Petersen 1990 (1990)",
+        "source_kind": "reference",
+    }
+    key = window._reference_series_key(row)
+    window.reference_series = [{"key": key, "data": dict(row), "enabled": True}]
 
     dialog_payload = {
         "genus": "Agaricus",
@@ -209,20 +209,38 @@ def test_edit_existing_set_routes_through_attach_and_skips_envelope(monkeypatch,
         _fake_persist,
     )
     window._add_reference_series_entry = _fake_add_series
+    monkeypatch.setattr(main_window, "ReferenceAddDialog", lambda *a, **kw: _StubDialog(dialog_payload))
 
-    monkeypatch.setattr(
-        main_window,
-        "ReferenceAddDialog",
-        lambda *a, **kw: _StubDialog(dialog_payload),
-    )
-    # Edit mode caller path.
-    window._on_reference_panel_edit_clicked()
+    window._edit_reference_series_row(key)
 
     assert attach_calls == [("set-999", "compared")]
-    # No blank envelope pushed into the panel.
+    # No blank envelope pushed into the comparison list.
     assert envelope_calls == []
-    # ``reference_values`` was not clobbered with the empty envelope
-    # (the reviewer's F-016 concern was that the selection was silently
-    # dropped; here we verify the attach happened AND the envelope was
-    # not pushed).
-    assert window.reference_values == {}
+
+
+def test_comparison_visibility_toggle_flips_one_row_and_saves_once(monkeypatch, qapp):
+    """The comparison list's eye (``visibility_toggled``) shows or hides one row.
+
+    Only a real change redraws the plots and saves; an unknown key or an
+    unchanged state does nothing. (Its only tests went with the retired
+    reference dialogs, stage 10a2.)
+    """
+    window = _build_minimal_window(monkeypatch, qapp)
+    window.reference_series = [
+        {"key": "a", "data": {"genus": "Agaricus"}, "enabled": True},
+        {"key": "b", "data": {"genus": "Boletus"}, "enabled": True},
+    ]
+    calls: list[str] = []
+    window.update_graph_plots_only = lambda: calls.append("plot")
+    window._save_gallery_settings = lambda: calls.append("save")
+
+    window._set_reference_series_enabled("b", False)
+    assert [e["enabled"] for e in window.reference_series] == [True, False]
+    assert calls == ["plot", "save"]
+
+    calls.clear()
+    window._set_reference_series_enabled("b", False)  # already hidden
+    window._set_reference_series_enabled("missing", True)
+    window._set_reference_series_enabled("", True)
+    assert calls == []
+    assert [e["enabled"] for e in window.reference_series] == [True, False]

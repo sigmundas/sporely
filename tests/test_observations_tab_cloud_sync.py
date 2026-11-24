@@ -649,7 +649,6 @@ def test_prepare_cloud_sync_image_uploads_respects_gallery_checkmarks(tmp_path, 
         tr=lambda text: text,
         _is_main_gui_thread=lambda: True,
         _cloud_sync_upload_policy=lambda: {"uploadMode": "full"},
-        _publish_excluded_image_ids=lambda observation_id: {2},
         _publish_path_key=observations_tab.ObservationsTab._publish_path_key,
         _prepare_clean_cloud_image_file=_fake_prepare_clean_cloud_image_file,
         _cleanup_publish_temp_dir=lambda temp_dir: None,
@@ -701,7 +700,7 @@ def test_cloud_sync_collector_includes_persisted_checked_unmeasured_microscope(t
         lambda observation_id: {},
     )
 
-    fake_tab = SimpleNamespace(_publish_excluded_image_ids=lambda observation_id: set())
+    fake_tab = SimpleNamespace()
     rows = observations_tab.ObservationsTab._collect_cloud_sync_image_rows(fake_tab, 631)
 
     assert [row["id"] for row in rows] == [2]
@@ -741,7 +740,6 @@ def test_prepare_cloud_sync_image_uploads_prefixes_progress_messages(tmp_path, m
         tr=lambda text: text,
         _is_main_gui_thread=lambda: True,
         _cloud_sync_upload_policy=lambda: {"uploadMode": "full"},
-        _publish_excluded_image_ids=lambda observation_id: set(),
         _publish_path_key=observations_tab.ObservationsTab._publish_path_key,
         _prepare_clean_cloud_image_file=_fake_prepare_clean_cloud_image_file,
         _cleanup_publish_temp_dir=lambda temp_dir: None,
@@ -822,6 +820,77 @@ def test_cloud_sync_finished_success_uses_neutral_completion_text():
     assert status_kwargs["level"] == "success"
 
 
+@pytest.mark.parametrize(
+    ("original_sync", "expected_line"),
+    [
+        (
+            {
+                "enabled": True,
+                "uploaded": 2,
+                "skipped_disabled": 0,
+                "skipped_ineligible": 1,
+                "skipped_too_large": 0,
+                "failed_uploads": 1,
+            },
+            "Original uploads: 2 uploaded, 1 skipped, 1 failed.",
+        ),
+        (
+            {
+                "enabled": False,
+                "uploaded": 0,
+                "skipped_disabled": 3,
+                "skipped_ineligible": 0,
+                "skipped_too_large": 0,
+                "failed_uploads": 0,
+            },
+            None,
+        ),
+    ],
+)
+def test_cloud_sync_finished_reports_original_uploads_only_when_enabled(original_sync, expected_line):
+    calls: dict[str, object] = {}
+    fake_tab = SimpleNamespace(
+        tr=lambda text: text,
+        refresh_observations=lambda show_status=False: None,
+        _cloud_sync_run_refresh_flow=False,
+        _cloud_sync_show_status=True,
+        _set_status_progress_visible=lambda visible: None,
+        _set_status_progress_cancel_visible=lambda visible: None,
+        _reset_status_progress=lambda: None,
+        _set_status_progress=lambda *args, **kwargs: None,
+        _finish_manual_refresh_flow=lambda: None,
+        _record_cloud_sync_status=lambda *args, **kwargs: calls.setdefault("record", (args, kwargs)),
+        _refresh_cloud_sync_idle_hint=lambda: None,
+        _show_cloud_conflict_dialog=lambda *args, **kwargs: None,
+        _prompt_for_deleted_cloud_observations=lambda *args, **kwargs: None,
+        set_status_message=lambda *args, **kwargs: calls.setdefault("status_message", (args, kwargs)),
+    )
+    summary = cloud_sync._new_sync_summary()
+    summary["observations_patched"] = 1
+
+    observations_tab.ObservationsTab._on_cloud_sync_finished(
+        fake_tab,
+        {
+            "pushed": 1,
+            "pulled": 0,
+            "errors": [],
+            "deleted_remote": [],
+            "sync_summary": summary,
+            "original_sync": original_sync,
+        },
+    )
+
+    shown = calls["status_message"][0][0]
+    recorded = calls["record"][0][0]
+    assert shown.splitlines()[0] == "Cloud sync complete."
+    if expected_line is None:
+        assert "Original uploads:" not in shown
+        assert "Original uploads:" not in recorded
+    else:
+        assert expected_line in shown.splitlines()
+        assert expected_line in recorded.splitlines()
+
+
 def test_cloud_sync_finished_proven_noop_skips_observation_refresh():
     calls: dict[str, object] = {}
     fake_tab = SimpleNamespace(
@@ -888,14 +957,20 @@ def test_gallery_publish_uncheck_routes_through_cloud_lifecycle(monkeypatch, ima
         "set_image_cloud_selected",
         lambda image_id, selected: calls["transition"].append((int(image_id), bool(selected))),
     )
+    # The handler reads the stored set and records only the changed photo
+    # (set_image_cloud_selected); it never rewrites the set from its view.
+    monkeypatch.setattr(cloud_sync, "_cloud_image_storage_excluded_image_ids", lambda observation_id: set())
+    monkeypatch.setattr(
+        cloud_sync,
+        "_set_cloud_image_storage_excluded_image_ids",
+        lambda obs_id, excluded: calls["excluded"].append(
+            (int(obs_id), tuple(sorted(int(v) for v in excluded)))
+        ),
+    )
     tab = SimpleNamespace(
         selected_observation_id=7,
-        _cloud_image_storage_excluded_image_ids=lambda observation_id: set(),
-        _set_cloud_image_storage_excluded_image_ids=lambda obs_id, excluded: calls[
-            "excluded"
-        ].append((int(obs_id), tuple(sorted(int(v) for v in excluded)))),
-        _publish_seeded_microscope_ids=lambda observation_id: set(),
-        _set_publish_seeded_microscope_ids=lambda observation_id, image_ids: None,
+        _apply_strip_checkbox_change=observations_tab.ObservationsTab._apply_strip_checkbox_change,
+        gallery_widget=SimpleNamespace(last_publish_change=lambda: {1: False}, refresh_cloud_states=lambda ids: 0),
         window=lambda: None,
         parent=lambda: None,
     )
@@ -905,7 +980,7 @@ def test_gallery_publish_uncheck_routes_through_cloud_lifecycle(monkeypatch, ima
     assert calls["queue"] == []
     assert calls["clear"] == []
     assert calls["cloud"] == []
-    assert calls["excluded"] == [(7, (1,))]
+    assert calls["excluded"] == []
     assert calls["dirty"] == []
     assert calls["transition"] == [(1, False)]
 
@@ -946,14 +1021,20 @@ def test_gallery_publish_uncheck_does_not_touch_public_spore_anchor(monkeypatch)
         "set_image_cloud_selected",
         lambda image_id, selected: calls["transition"].append((int(image_id), bool(selected))),
     )
+    # The handler reads the stored set and records only the changed photo
+    # (set_image_cloud_selected); it never rewrites the set from its view.
+    monkeypatch.setattr(cloud_sync, "_cloud_image_storage_excluded_image_ids", lambda observation_id: set())
+    monkeypatch.setattr(
+        cloud_sync,
+        "_set_cloud_image_storage_excluded_image_ids",
+        lambda obs_id, excluded: calls["excluded"].append(
+            (int(obs_id), tuple(sorted(int(v) for v in excluded)))
+        ),
+    )
     tab = SimpleNamespace(
         selected_observation_id=7,
-        _cloud_image_storage_excluded_image_ids=lambda observation_id: set(),
-        _set_cloud_image_storage_excluded_image_ids=lambda obs_id, excluded: calls[
-            "excluded"
-        ].append((int(obs_id), tuple(sorted(int(v) for v in excluded)))),
-        _publish_seeded_microscope_ids=lambda observation_id: set(),
-        _set_publish_seeded_microscope_ids=lambda observation_id, image_ids: None,
+        _apply_strip_checkbox_change=observations_tab.ObservationsTab._apply_strip_checkbox_change,
+        gallery_widget=SimpleNamespace(last_publish_change=lambda: {1: False}, refresh_cloud_states=lambda ids: 0),
         window=lambda: None,
         parent=lambda: None,
     )
@@ -962,7 +1043,7 @@ def test_gallery_publish_uncheck_does_not_touch_public_spore_anchor(monkeypatch)
 
     assert calls["queue"] == []
     assert calls["clear"] == []
-    assert calls["excluded"] == [(7, (1,))]
+    assert calls["excluded"] == []
     assert calls["dirty"] == []
     assert calls["transition"] == [(1, False)]
 
@@ -1027,14 +1108,20 @@ def test_gallery_publish_recheck_detaches_tombstoned_cloud_state_and_marks_dirty
         lambda image_id, selected: calls["transition"].append((int(image_id), bool(selected))),
     )
 
+    # The handler reads the stored set and records only the changed photo
+    # (set_image_cloud_selected); it never rewrites the set from its view.
+    monkeypatch.setattr(cloud_sync, "_cloud_image_storage_excluded_image_ids", lambda observation_id: {1})
+    monkeypatch.setattr(
+        cloud_sync,
+        "_set_cloud_image_storage_excluded_image_ids",
+        lambda obs_id, excluded: calls["excluded"].append(
+            (int(obs_id), tuple(sorted(int(v) for v in excluded)))
+        ),
+    )
     tab = SimpleNamespace(
         selected_observation_id=7,
-        _cloud_image_storage_excluded_image_ids=lambda observation_id: {1},
-        _set_cloud_image_storage_excluded_image_ids=lambda obs_id, excluded: calls[
-            "excluded"
-        ].append((int(obs_id), tuple(sorted(int(v) for v in excluded)))),
-        _publish_seeded_microscope_ids=lambda observation_id: set(),
-        _set_publish_seeded_microscope_ids=lambda observation_id, image_ids: None,
+        _apply_strip_checkbox_change=observations_tab.ObservationsTab._apply_strip_checkbox_change,
+        gallery_widget=SimpleNamespace(last_publish_change=lambda: {1: True}, refresh_cloud_states=lambda ids: 0),
         window=lambda: None,
         parent=lambda: None,
     )
@@ -1045,7 +1132,7 @@ def test_gallery_publish_recheck_detaches_tombstoned_cloud_state_and_marks_dirty
     assert calls["clear"] == []
     assert calls["cloud"] == []
     assert calls["restore"] == []
-    assert calls["excluded"] == [(7, ())]
+    assert calls["excluded"] == []
     assert calls["dirty"] == []
     assert calls["transition"] == [(1, True)]
 
@@ -1075,14 +1162,20 @@ def test_gallery_publish_recheck_never_uploaded_image_routes_through_cloud_lifec
         "set_image_cloud_selected",
         lambda image_id, selected: calls["transition"].append((int(image_id), bool(selected))),
     )
+    # The handler reads the stored set and records only the changed photo
+    # (set_image_cloud_selected); it never rewrites the set from its view.
+    monkeypatch.setattr(cloud_sync, "_cloud_image_storage_excluded_image_ids", lambda observation_id: {1})
+    monkeypatch.setattr(
+        cloud_sync,
+        "_set_cloud_image_storage_excluded_image_ids",
+        lambda obs_id, excluded: calls["excluded"].append(
+            (int(obs_id), tuple(sorted(int(v) for v in excluded)))
+        ),
+    )
     tab = SimpleNamespace(
         selected_observation_id=7,
-        _cloud_image_storage_excluded_image_ids=lambda observation_id: {1},
-        _set_cloud_image_storage_excluded_image_ids=lambda obs_id, excluded: calls[
-            "excluded"
-        ].append((int(obs_id), tuple(sorted(int(v) for v in excluded)))),
-        _publish_seeded_microscope_ids=lambda observation_id: set(),
-        _set_publish_seeded_microscope_ids=lambda observation_id, image_ids: None,
+        _apply_strip_checkbox_change=observations_tab.ObservationsTab._apply_strip_checkbox_change,
+        gallery_widget=SimpleNamespace(last_publish_change=lambda: {1: True}, refresh_cloud_states=lambda ids: 0),
         window=lambda: None,
         parent=lambda: None,
     )
@@ -1090,7 +1183,7 @@ def test_gallery_publish_recheck_never_uploaded_image_routes_through_cloud_lifec
     observations_tab.ObservationsTab._on_gallery_publish_selection_changed(tab, {1, 2})
 
     assert calls["cloud"] == []
-    assert calls["excluded"] == [(7, ())]
+    assert calls["excluded"] == []
     assert calls["dirty"] == []
     assert calls["transition"] == [(1, True)]
 
@@ -1121,74 +1214,6 @@ def test_context_menu_cloud_delete_uses_same_selection_transition(monkeypatch):
     assert calls["transition"] == [(1, False)]
     assert calls["pending"] == [(1,)]
     assert calls["status"]
-
-
-def test_default_publish_selection_selects_one_microscope_image_per_magnification():
-    selected_groups: set[str] = set()
-
-    selected0, selected_groups = observations_tab._default_publish_selected_for_new_image(
-        "microscope",
-        "40x",
-        selected_groups,
-    )
-    selected1, selected_groups = observations_tab._default_publish_selected_for_new_image(
-        "microscope",
-        "40x",
-        selected_groups,
-    )
-    selected2, selected_groups = observations_tab._default_publish_selected_for_new_image(
-        "microscope",
-        "63x",
-        selected_groups,
-    )
-    selected3, selected_groups = observations_tab._default_publish_selected_for_new_image(
-        "field",
-        None,
-        selected_groups,
-    )
-
-    assert selected0 is True
-    assert selected1 is False
-    assert selected2 is True
-    assert selected3 is True
-    assert selected_groups == {"40x", "63x"}
-
-
-def test_ensure_microscope_publish_defaults_selects_first_image_in_each_magnification_group(monkeypatch):
-    state = {
-        "excluded": set(),
-        "seeded": set(),
-    }
-
-    def _publish_excluded_image_ids(_observation_id):
-        return set(state["excluded"])
-
-    def _set_publish_excluded_image_ids(_observation_id, excluded_ids):
-        state["excluded"] = {int(v) for v in excluded_ids}
-
-    def _publish_seeded_microscope_ids(_observation_id):
-        return set(state["seeded"])
-
-    def _set_publish_seeded_microscope_ids(_observation_id, seeded_ids):
-        state["seeded"] = {int(v) for v in seeded_ids}
-
-    monkeypatch.setattr(observations_tab.ObservationsTab, "_publish_excluded_image_ids", _publish_excluded_image_ids)
-    monkeypatch.setattr(observations_tab.ObservationsTab, "_set_publish_excluded_image_ids", _set_publish_excluded_image_ids)
-    monkeypatch.setattr(observations_tab.ObservationsTab, "_publish_seeded_microscope_ids", _publish_seeded_microscope_ids)
-    monkeypatch.setattr(observations_tab.ObservationsTab, "_set_publish_seeded_microscope_ids", _set_publish_seeded_microscope_ids)
-
-    images = [
-        {"id": 1, "image_type": "microscope", "objective_name": "40x Plan"},
-        {"id": 2, "image_type": "microscope", "objective_name": "40x Plan"},
-        {"id": 3, "image_type": "microscope", "objective_name": "63x Plan"},
-        {"id": 4, "image_type": "microscope", "objective_name": "63x Plan"},
-        {"id": 5, "image_type": "microscope", "objective_name": "100x Plan"},
-    ]
-
-    observations_tab.ObservationsTab._ensure_microscope_publish_defaults(91, images)
-
-    assert state["excluded"] == {2, 4}
-    assert state["seeded"] == {1, 2, 3, 4, 5}
 
 
 def test_refresh_image_gallery_summary_marks_microscope_items_unchecked_by_default(monkeypatch):
@@ -1389,6 +1414,7 @@ def test_pending_artsobs_upload_status_auto_clears(monkeypatch, tmp_path):
         set_status_message=lambda message, level="info", auto_clear_ms=8000: calls.append(
             (str(message), str(level), int(auto_clear_ms))
         ),
+        _shared_image_ids=lambda observation_id, image_ids: {int(v) for v in image_ids},
     )
 
     result = observations_tab.ObservationsTab._upload_pending_artsobs_web_images(fake_tab)
@@ -1867,10 +1893,8 @@ def test_on_cloud_login_failure_toast_survives_idle_hint_refresh(monkeypatch, qa
         observations_tab=observations_tab_fake,
         _refresh_cloud_sync_ui=lambda: None,
         parent=lambda: None,
+        _show_cloud_notice=lambda *args, **kwargs: None,  # the Sporely Cloud card's notice (stage 10d2)
     )
-
-    # Bypass the modal QMessageBox to keep the test headless.
-    monkeypatch.setattr(main_window.QMessageBox, "warning", lambda *args, **kwargs: 0)
 
     main_window.ArtsobservasjonerSettingsDialog._on_cloud_login_failure(dialog, "Bad creds")
 
@@ -1963,7 +1987,7 @@ def _make_observation_table_render_tab(*, dead_map=None, public_map=None, search
         gallery_widget=SimpleNamespace(clear=lambda: None),
         _update_publish_controls=lambda: None,
         set_status_message=lambda *args, **kwargs: None,
-        show_map_service_dialog=lambda *args, **kwargs: None,
+        show_map_service_menu=lambda *args, **kwargs: None,
         _artsobs_dead_by_observation_id=dead_map or {},
         _artsobs_public_published_by_observation_id=public_map or {},
     )
@@ -1993,7 +2017,7 @@ def test_render_observations_table_places_status_before_map_and_external(qapp):
         gallery_widget=SimpleNamespace(clear=lambda: None),
         _update_publish_controls=lambda: None,
         set_status_message=lambda *args, **kwargs: None,
-        show_map_service_dialog=lambda *args, **kwargs: None,
+        show_map_service_menu=lambda *args, **kwargs: None,
         _render_publish_cell=lambda row, observation_or_links: table.setItem(
             row,
             9,

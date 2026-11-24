@@ -926,5 +926,6 @@ def test_the_removed_name_binder_is_gone():
     from ui.taxon_input_controller import TaxonInputController
 
     assert not hasattr(TaxonInputController, "commit_manual_resolution")
-    # The display-only channel remains, and it cannot produce identity.
-    assert hasattr(TaxonInputController, "set_display_only_name_match")
+    # The display-only name channel went too (stage 10a6): nothing fed it
+    # once the taxon picker hid the typed genus and species fields.
+    assert not hasattr(TaxonInputController, "set_display_only_name_match")

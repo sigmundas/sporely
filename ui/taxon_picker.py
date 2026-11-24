@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import os
 import sys
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from html import escape
 from typing import Callable
 
@@ -61,6 +61,8 @@ from database.taxon_search import (
     TaxonSearchRow,
 )
 
+from .flow_layout import FlowLayout
+
 SOURCE_NOTE_SETTING = "taxon_picker_source_note_dismissed"
 
 ROLE_ENTRY = Qt.UserRole + 41
@@ -84,9 +86,6 @@ class AiSuggestion:
     scientific_name: str
     score: float | None = None
     taxon_id: int | None = None
-    # The host's own record of the candidate (a provider prediction), handed
-    # back to the host's suggestion handler.
-    key: object = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -506,7 +505,6 @@ class TaxonPicker(QWidget):
         self._uncertain = False
         self._editing = False
         self._chip_click_pending = False
-        self._ai_handler: Callable[[AiSuggestion], None] | None = None
         # The name Endre put into the field; unchanged, it is not new input.
         self._edit_seed = ""
 
@@ -522,15 +520,13 @@ class TaxonPicker(QWidget):
         layout.addWidget(self.card)
         self.ai_strip = QWidget()
         self.ai_strip.setObjectName("taxonPickerAiStrip")
-        ai_layout = QHBoxLayout(self.ai_strip)
-        ai_layout.setContentsMargins(0, 0, 0, 0)
-        ai_layout.setSpacing(5)
+        # The chips wrap: a narrow host (the reference drawer) has room for few.
+        ai_layout = FlowLayout(self.ai_strip, spacing=5)
         self.ai_label = QLabel()
         self.ai_label.setObjectName("taxonPickerAiLabel")
         ai_layout.addWidget(self.ai_label)
         self._ai_layout = ai_layout
         self.ai_buttons: list[QToolButton] = []
-        ai_layout.addStretch(1)
         self.ai_strip.setVisible(False)
         layout.addWidget(self.ai_strip)
         # A crowded host must not squash the card or the chips: the picker
@@ -623,15 +619,9 @@ class TaxonPicker(QWidget):
                 " padding: 1px 9px; background: palette(base); color: palette(text); }"
             )
             button.clicked.connect(lambda _checked=False, s=suggestion: self._on_ai_chip(s))
-            self._ai_layout.insertWidget(1 + i, button)
+            self._ai_layout.insert_widget(1 + i, button)
             self.ai_buttons.append(button)
         self.ai_strip.setVisible(bool(self.ai_buttons))
-
-    def set_ai_suggestion_handler(self, handler: Callable[[AiSuggestion], None] | None) -> None:
-        """Let the host apply a chip whose identifier resolved to a concept
-        (its own provider-identity path). Without a handler the picker
-        commits the resolved concept itself."""
-        self._ai_handler = handler
 
     def set_uncertain(self, uncertain: bool) -> None:
         self._uncertain = bool(uncertain)
@@ -695,14 +685,6 @@ class TaxonPicker(QWidget):
             self._end_edit()
         else:
             self.search_input.clear()
-
-    def keep_unfinished_as_name(self) -> bool:
-        """Keep the typed search text as a name without a taxon."""
-        text = self.unfinished_text()
-        if not text:
-            return False
-        self._commit_free_text(text)
-        return True
 
     def begin_edit(self) -> None:
         """Endre: back to the search field, with the current name selected."""
@@ -1100,9 +1082,6 @@ class TaxonPicker(QWidget):
         self.cleared.emit()
 
     def _on_ai_chip(self, suggestion: AiSuggestion) -> None:
-        if suggestion.taxon_id is not None and self._ai_handler is not None:
-            self._ai_handler(suggestion)
-            return
         if suggestion.taxon_id is not None:
             lookup = self._lookup
             searcher = getattr(lookup, "search_taxa", None) if lookup is not None else None

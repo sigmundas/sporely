@@ -449,39 +449,6 @@ def test_manager_attach_requested_signal_emits_when_observation_active(libs, qap
         dialog.deleteLater()
 
 
-def test_attach_dialog_refresh_candidates_picks_up_new_sets(libs, qapp):
-    """AC-09 sub-check: after new measurement sets are added to the
-    library (e.g. inside the manager), calling ``refresh_candidates()``
-    re-queries and repopulates the chooser table."""
-    from ui.reference_library_attach_dialog import ReferenceLibraryAttachDialog
-
-    _, treatment = _seed_work_treatment(libs)
-    dialog = ReferenceLibraryAttachDialog(None)
-    try:
-        assert hasattr(dialog, "manage_library_btn")
-        assert dialog.table.rowCount() == 0
-
-        # Create a new measurement set outside the dialog.
-        MeasurementSetRepository.create(
-            MeasurementSet(
-                id="",
-                taxon_treatment_id=treatment.id,
-                character="spore_size",
-                data_kind="range",
-                raw_text="8–10 × 5–6 µm",
-                length_core_min=8.0,
-                length_core_max=10.0,
-                width_core_min=5.0,
-                width_core_max=6.0,
-            )
-        )
-
-        dialog.refresh_candidates()
-        assert dialog.table.rowCount() == 1
-    finally:
-        dialog.deleteLater()
-
-
 def test_measurement_set_form_hides_raw_points_for_range(libs, qapp):
     """AC-07: the measurement-set form only shows raw-points editing when
     the selected data_kind is ``raw_points``; blank numeric fields never
@@ -824,14 +791,8 @@ def test_manager_surfaces_in_use_delete_error_without_removing_set(
         )
     )
     ObservationReferenceUseRepository.attach(observation_id, ms.id)
-    warnings: list[str] = []
     monkeypatch.setattr(
         QMessageBox, "question", lambda *args, **kwargs: QMessageBox.Yes
-    )
-    monkeypatch.setattr(
-        QMessageBox,
-        "warning",
-        lambda _parent, _title, message, *args, **kwargs: warnings.append(message),
     )
 
     dialog = ReferenceLibraryManagerDialog(None, active_observation_id=None)
@@ -841,8 +802,9 @@ def test_manager_surfaces_in_use_delete_error_without_removing_set(
         dialog._on_delete_selected_clicked()
 
         assert MeasurementSetRepository.get(ms.id) is not None
-        assert warnings
-        assert "attached" in warnings[0].lower()
+        notice = dialog._hint_controller._notice  # the bottom bar (stage 10e)
+        assert notice is not None and notice.tone == "error"
+        assert "attached" in notice.text.lower()
         assert dialog.current_selection_kind() == "measurement_set"
     finally:
         dialog.deleteLater()
@@ -966,72 +928,11 @@ def test_plot_hint_rejects_infinity_and_negative_values(libs):
         MeasurementSetRepository.create(nan_mean)
 
 
-def test_attach_dialog_manage_button_opens_manager_and_refreshes(libs, qapp, monkeypatch):
-    """F-007 regression: the chooser now owns the "Manage library…"
-    lifecycle. Clicking it opens the manager as a child modal AND calls
-    ``refresh_candidates()`` on close — even without any external
-    signal wiring from a parent MainWindow."""
-    from ui import reference_library_attach_dialog as attach_module
-    from ui.reference_library_attach_dialog import ReferenceLibraryAttachDialog
-
-    _, treatment = _seed_work_treatment(libs)
-    # Stub the manager so exec() returns immediately without a modal loop,
-    # but simulates the "user created a new set inside the manager" case
-    # by inserting a candidate into the database during exec().
-    exec_calls: list[int] = []
-
-    class _StubManager:
-        def __init__(self, parent, *, active_observation_id=None):
-            self._parent = parent
-            exec_calls.append(1)
-
-        def exec(self):
-            MeasurementSetRepository.create(
-                MeasurementSet(
-                    id="",
-                    taxon_treatment_id=treatment.id,
-                    character="spore_size",
-                    data_kind="range",
-                    raw_text="stub",
-                    length_core_min=1.0,
-                    length_core_max=2.0,
-                    width_core_min=1.0,
-                    width_core_max=2.0,
-                )
-            )
-            return 1
-
-        def deleteLater(self):
-            pass
-
-    monkeypatch.setattr(
-        "ui.reference_library_manager_dialog.ReferenceLibraryManagerDialog",
-        _StubManager,
-        raising=True,
-    )
-
-    dialog = ReferenceLibraryAttachDialog(None)
-    fired: list[bool] = []
-    dialog.manage_library_requested.connect(lambda: fired.append(True))
-    try:
-        assert dialog.table.rowCount() == 0
-        dialog.manage_library_btn.click()
-        # The manager was opened by the dialog itself...
-        assert exec_calls == [1]
-        # ...the manage_library_requested signal was still emitted for
-        # external observers...
-        assert fired == [True]
-        # ...and the chooser refreshed its candidate table without any
-        # external caller invoking refresh_candidates.
-        assert dialog.table.rowCount() == 1
-    finally:
-        dialog.deleteLater()
-
-
 def test_main_window_shared_attach_helper_is_reachable_from_both_dialogs(qapp):
     """Regression: MainWindow exposes a single private helper for the
-    post-selection attach path so the attachment chooser and the manager
-    signal enter identical rollback/warning-row semantics."""
+    post-selection attach path so the manager signal (and formerly the
+    attachment chooser, removed in stage 10a2) enters identical
+    rollback/warning-row semantics."""
     from ui import main_window as main_window_module
 
     assert hasattr(
@@ -1040,10 +941,6 @@ def test_main_window_shared_attach_helper_is_reachable_from_both_dialogs(qapp):
     )
     assert hasattr(
         main_window_module.MainWindow, "_on_manage_reference_library_clicked"
-    )
-    assert hasattr(
-        main_window_module.MainWindow,
-        "_on_manage_reference_library_from_attach",
     )
     assert hasattr(
         main_window_module.MainWindow,
@@ -1225,51 +1122,6 @@ def test_attach_race_returns_existing_row_instead_of_raw_sqlite_error(libs):
     assert second.id == first.id
 
 
-def test_attach_dialog_manage_signal_emits_after_manager_closes(
-    libs, qapp, monkeypatch
-):
-    """Adversarial T-7 (external_api): the ``manage_library_requested``
-    signal must fire exactly once and AFTER the manager closes, so a
-    consumer that also opens a manager in the slot cannot open a second
-    window while the chooser's own manager is already displayed."""
-    from ui.reference_library_attach_dialog import ReferenceLibraryAttachDialog
-
-    exec_order: list[str] = []
-
-    class _StubManager:
-        def __init__(self, *args, **kwargs):
-            exec_order.append("manager_ctor")
-
-        def exec(self):
-            exec_order.append("manager_exec")
-            return 1
-
-        def deleteLater(self):
-            exec_order.append("manager_delete")
-
-    monkeypatch.setattr(
-        "ui.reference_library_manager_dialog.ReferenceLibraryManagerDialog",
-        _StubManager,
-        raising=True,
-    )
-
-    dialog = ReferenceLibraryAttachDialog(None)
-    dialog.manage_library_requested.connect(
-        lambda: exec_order.append("signal")
-    )
-    try:
-        dialog.manage_library_btn.click()
-        # Manager was constructed, exec'd, then deleted BEFORE the signal.
-        assert exec_order == [
-            "manager_ctor",
-            "manager_exec",
-            "manager_delete",
-            "signal",
-        ]
-    finally:
-        dialog.deleteLater()
-
-
 def test_main_window_refuses_attach_when_observation_drifted(libs, qapp):
     """Adversarial T-5 (authorization): if the active observation drifts
     between the manager opening and the attach click, MainWindow's
@@ -1302,13 +1154,7 @@ def test_main_window_refuses_attach_when_observation_drifted(libs, qapp):
     stub.tr = MethodType(stub.tr, stub)
 
     warnings: list[tuple[str, ...]] = []
-
-    class _FakeMessageBox:
-        @staticmethod
-        def warning(*args, **kwargs):
-            warnings.append(("warning", args, kwargs))
-
-    monkey_qmb = _FakeMessageBox
+    stub._show_reference_notice = lambda text, tone="error", details=None: warnings.append((tone, text))
 
     # Also stub the shared attach helper to assert it is NOT called.
     attach_calls: list[tuple] = []
@@ -1324,13 +1170,7 @@ def test_main_window_refuses_attach_when_observation_drifted(libs, qapp):
         stub,
     )
 
-    # Patch QMessageBox in the module namespace.
-    original_qmb = main_window_module.QMessageBox
-    main_window_module.QMessageBox = monkey_qmb
-    try:
-        stub._attach_normalized_reference_from_manager(ms.id, "compared", int(a))
-    finally:
-        main_window_module.QMessageBox = original_qmb
+    stub._attach_normalized_reference_from_manager(ms.id, "compared", int(a))
 
     # The mismatched observation must NOT have triggered the shared helper.
     assert attach_calls == []

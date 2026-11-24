@@ -89,6 +89,7 @@ def test_load_image_record_merges_existing_and_ingest_lab_metadata(monkeypatch, 
     fake_self.update_measurements_table = lambda: None
     fake_self.measurements_table = SimpleNamespace(clearSelection=lambda: None)
     fake_self.spore_preview = SimpleNamespace(clear=lambda: None)
+    fake_self._sync_export_image_enabled = lambda: None
     fake_self._set_measure_category_for_current_image = lambda: None
     fake_self._suppress_gallery_update = True
     fake_self.schedule_gallery_refresh = lambda: None

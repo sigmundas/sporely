@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 from PySide6.QtGui import QColor, QPixmap
 
-from ui import observations_tab
+from ui import observation_details_dialog, observations_tab
 
 from ..context import ReviewContext
 from ..registry import ReviewScenario, ScenarioRegistry
@@ -84,6 +84,7 @@ def _observation_editor(context: ReviewContext, *, draft: dict, with_ai: bool):
         (observations_tab.SettingsDB, "get_setting",
          lambda key, default=None: "no" if key == "vernacular_language" else default),
         (observations_tab, "resolve_vernacular_db_path", lambda _lang: artifact),
+        (observation_details_dialog, "resolve_vernacular_db_path", lambda _lang: artifact),
         (dialog_cls, "_load_objectives", lambda self: {"default": {"is_default": True}}),
         (dialog_cls, "_load_tag_options", lambda self, category: []),
         (dialog_cls, "_load_habitat_tree", lambda self, filename: []),

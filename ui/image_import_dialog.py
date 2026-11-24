@@ -46,7 +46,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
-    QListView,
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
@@ -190,7 +189,7 @@ from .adaptive_choice_selector import (
 )
 from .section_card import create_section_card
 from .segmented_selector import SegmentedSelector
-from .styles import pt, _is_dark
+from .styles import STAGING_BORDER, pt
 from .window_state import GeometryMixin
 
 SUPPORTED_IMAGE_EXTENSIONS = {
@@ -366,7 +365,6 @@ class ImageImportResult:
     raw_preview_path: Optional[str] = None
     raw_unsaved_changes: bool = False
     processing_status: Optional[str] = None
-
 
 
 @dataclass
@@ -865,11 +863,6 @@ class ScaleBarImportDialog(QDialog):
         width_px = max(2.0, length_px * 0.1) if length_px > 0 else 2.0
         self.preview.set_spore(pixmap, points, length_px, width_px, 1.0, measurement_id=1)
 
-    def apply_scale(self, distance_pixels: float):
-        self.set_calibration_distance(distance_pixels)
-        if self._pending_distance_px:
-            self._on_apply()
-
     def closeEvent(self, event):
         if not self.scale_applied and self.image_dialog:
             self.image_dialog._populate_objectives(selected_key=self.previous_key)
@@ -880,6 +873,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
     """Prepare images before creating or editing an observation."""
 
     continueRequested = Signal(list)
+    # In place in Bilder (stage 9f): unsaved changes or new images changed.
+    unsavedChanged = Signal()
     _geometry_key = "ImageImportDialog"
     _gallery_splitter_key = "splitter/ImageImportDialogBottom"
     CUSTOM_OBJECTIVE_KEY = "__custom__"
@@ -1373,27 +1368,6 @@ class ImageImportDialog(GeometryMixin, QDialog):
         elif hasattr(self, "preview_stack") and self.preview_stack.currentWidget() != self.preview:
             self.preview_stack.setCurrentWidget(self.preview)
 
-    def _apply_combo_popup_style(self, combo: QComboBox) -> None:
-        dark = _is_dark("auto")
-        view = QListView()
-        view.setSpacing(0)
-        view.setUniformItemSizes(True)
-        if dark:
-            view.setStyleSheet(
-                "QListView { background: #2b2b2d; color: #e8e8e8; }"
-                "QListView::item { color: #e8e8e8; background: #2b2b2d; padding: 4px 8px; min-height: 24px; margin: 0px; }"
-                "QListView::item:hover { background: #1c3a5e; color: #c0deff; }"
-                "QListView::item:selected { background: #4a90d9; color: white; }"
-            )
-        else:
-            view.setStyleSheet(
-                "QListView { background: white; color: #2c3e50; }"
-                "QListView::item { color: #2c3e50; background: white; padding: 4px 8px; min-height: 24px; margin: 0px; }"
-                "QListView::item:hover { background: #d9e9f8; color: #2c3e50; }"
-                "QListView::item:selected { background: #3498db; color: white; }"
-            )
-        combo.setView(view)
-
     def _load_tag_options(self, category: str) -> list[str]:
         setting_key = DatabaseTerms.setting_key(category)
         defaults = DatabaseTerms.default_values(category)
@@ -1631,6 +1605,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         add_btn_grid.setColumnStretch(0, 1)
         add_btn_grid.setColumnStretch(1, 1)
         outer.addWidget(add_btn_row)
+        self._add_images_row = add_btn_row
 
         self.scale_group, scale_layout = create_section_card(self.tr("Scale"))
         self.scale_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
@@ -2349,19 +2324,6 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if indices:
             self._apply_settings_to_indices(indices, action="scale")
 
-    def _on_calibration_saved(self, objective: dict) -> None:
-        if not isinstance(objective, dict):
-            return
-        custom_scale = objective.get("microns_per_pixel")
-        if isinstance(custom_scale, (int, float)):
-            self._custom_scale = float(custom_scale)
-            if hasattr(self, "scale_bar_mode_checkbox"):
-                self.scale_bar_mode_checkbox.blockSignals(True)
-                self.scale_bar_mode_checkbox.setChecked(True)
-                self.scale_bar_mode_checkbox.blockSignals(False)
-            self._update_scalebar_controls_visibility()
-            self._update_objective_selector_state()
-
     def _load_objectives(self):
         return load_objectives()
 
@@ -2514,10 +2476,325 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 return True
         return False
 
+    # -- in place in Bilder › Files and SD card (stage 9f) ---------------------
+
+    _IN_PLACE_FIELDS = (
+        "filepath", "image_type", "objective", "custom_scale", "contrast", "mount_medium", "stain",
+        "sample_type", "sample_source", "notes", "gps_latitude", "gps_longitude", "calibration_id",
+        "ai_crop_box", "crop_mode", "pending_image_crop_offset", "resample_scale_factor",
+        "resize_to_optimal", "store_original", "lab_metadata",
+    )
+
+    def set_in_place(self) -> None:
+        """Show as a page in Bilder rather than a window: save and discard stay
+        on the page, and Esc does not throw the work away."""
+        self._in_place = True
+        self.setWindowFlags(Qt.Widget)
+        try:
+            self.finished.disconnect(self._save_geometry)  # a page has no window geometry to remember
+        except (RuntimeError, TypeError):
+            pass
+        self._apply_in_place_layout()
+        self.mark_in_place_baseline()
+        self._update_action_buttons_state()
+
+    @classmethod
+    def _result_signature(cls, result) -> str:
+        values = [repr(getattr(result, name, None)) for name in cls._IN_PLACE_FIELDS]
+        captured = getattr(result, "captured_at", None)
+        values.append(captured.toString(Qt.ISODate) if captured is not None and hasattr(captured, "toString") else "")
+        return "|".join(values)
+
+    def mark_in_place_baseline(self) -> None:
+        """What the saved images look like now; changes are measured from here."""
+        self._baseline_by_id = {
+            int(result.image_id): self._result_signature(result)
+            for result in self.import_results
+            if isinstance(result, ImageImportResult) and result.image_id is not None
+        }
+        self._baseline_order = [
+            int(result.image_id) for result in self.import_results
+            if isinstance(result, ImageImportResult) and result.image_id is not None
+        ]
+        self._baseline_gps = self.get_observation_gps()
+        self._time_used_for_observation = None
+
+    def time_used_for_observation(self) -> str | None:
+        """The photo time “Use for the observation” chose (``yyyy-MM-dd HH:mm:ss``), or None.
+
+        Only that press writes the observation's time (owner, 2026-11-11):
+        a time the editor seeded or round-tripped through its hidden input
+        never does.
+        """
+        return getattr(self, "_time_used_for_observation", None)
+
+    def changed_existing_ids(self) -> set[int]:
+        """Saved images edited here (any of their fields), by image id."""
+        baseline = getattr(self, "_baseline_by_id", {})
+        return {
+            int(result.image_id)
+            for result in self.import_results
+            if isinstance(result, ImageImportResult)
+            and result.image_id is not None
+            and baseline.get(int(result.image_id)) != self._result_signature(result)
+        }
+
+    def gps_changed_since_baseline(self) -> bool:
+        return self.get_observation_gps() != getattr(self, "_baseline_gps", self.get_observation_gps())
+
+    def is_in_place(self) -> bool:
+        return bool(getattr(self, "_in_place", False))
+
+    # -- Bilder › Files and SD card's layout (stage 9f2, mockup Bilder-Filer) --
+
+    _HUD_MARGIN = 14
+
+    def _apply_in_place_layout(self) -> None:
+        """The per-image controls go onto the image; the details panel goes.
+
+        Field or Microscope (F/M) at the top left, a field photo's time and
+        GPS under it with “Use for the observation”, Info (the EXIF, in a
+        drawer) at the top right, the image tools at the bottom, and the
+        objective and contrast as Live Lab's bar above them, for microscope
+        images only. Optimal-sampling resizing is a preference now (Preferences
+        › Image import), and adding files is “Choose files…” beside Bilder's
+        source switch. The editor's own controls stay the source of truth: the
+        bars only show and drive them, and the hidden panel keeps working.
+        """
+        from .capture_state_bar import CaptureStateBar
+        from .image_hud import ImageTypeHud, TimeGpsHud, ToolsHud
+        from .side_drawer import SideDrawer
+
+        host = self.center_panel
+        self.setMinimumSize(0, 0)  # the dialog's window minimum; the page's scroll area handles small windows
+        for widget in (
+            getattr(self, "details_panel", None),
+            getattr(self, "image_type_selector", None),
+            getattr(self, "_add_images_row", None),
+            getattr(self, "micro_settings_group", None),
+        ):
+            if widget is not None:
+                widget.hide()
+
+        self.type_hud = ImageTypeHud(host)
+        self.type_hud.chosen.connect(self._apply_image_type_shortcut)
+        self.time_gps_hud = TimeGpsHud(host)
+        self.time_gps_hud.useRequested.connect(self._use_image_time_and_gps)
+        self.info_btn = QPushButton(self.tr("Info"), host)
+        self.info_btn.setObjectName("imageInfoButton")
+        self.info_btn.setCheckable(True)
+        self.info_btn.setToolTip(self.tr("The photo's EXIF data"))
+        self.info_btn.setStyleSheet(
+            "QPushButton#imageInfoButton {"
+            " background-color: rgba(18, 18, 18, 210); color: #e8e8e8;"
+            " border: 1px solid rgba(255, 255, 255, 60); border-radius: 7px; padding: 6px 12px; font-weight: 600;"
+            " }"
+            "QPushButton#imageInfoButton:hover { background-color: rgba(48, 48, 48, 220); }"
+            "QPushButton#imageInfoButton:checked { background-color: #e8e8e8; color: #111111; }"
+        )
+        self.info_btn.clicked.connect(self._toggle_info_drawer)
+
+        self.tools_hud = ToolsHud(host)
+        for button in (self.image_crop_btn, self.ai_crop_btn):
+            self.tools_hud.add_tool(button)
+        rotate = self.rotate_preview_btn
+        rotate.setStyleSheet("")
+        rotate.setIcon(QIcon())
+        rotate.setText(self.tr("Rotate"))
+        rotate.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        rotate.setMinimumSize(0, 0)
+        rotate.setMaximumSize(16777215, 16777215)
+        self.tools_hud.add_tool(rotate)
+
+        self.microscope_bar = CaptureStateBar(self.objective_combo, self.contrast_combo, parent=host)
+        self.microscope_bar.rebuilt.connect(self._position_in_place_overlays)
+
+        # EXIF: the “Current image” card's form, in a drawer over the image.
+        self.info_drawer = SideDrawer(host, width=320, escape_anywhere=True)
+        page = QWidget()
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(14, 4, 14, 14)
+        self.current_image_stack.removeWidget(self.current_image_form_widget)
+        page_layout.addWidget(self.current_image_form_widget)
+        self.current_image_form_widget.show()
+        page_layout.addStretch(1)
+        self.info_drawer.add_page("info", self.tr("Photo info"), page)
+        self.info_drawer.closed.connect(lambda: self.info_btn.setChecked(False))
+
+        host.installEventFilter(self)
+        for widget in (self.type_hud, self.time_gps_hud, self.info_btn, self.tools_hud, self.microscope_bar):
+            widget.raise_()
+        self.info_drawer.raise_()
+        self._update_micro_settings_state()  # the selection made before: Slide/prep and the bars
+
+    def add_files(self) -> None:
+        """“Choose files…” beside Bilder's source switch."""
+        self._on_add_images_clicked()
+
+    def _use_image_time_and_gps(self) -> None:
+        taken = getattr(self, "_current_exif_datetime", None)
+        self._set_observation_gps_from_image()
+        if taken is not None and taken.isValid():
+            self._time_used_for_observation = taken.toString("yyyy-MM-dd HH:mm:ss")
+        self._update_in_place_overlays()
+
+    def _photo_matches_observation(self) -> bool:
+        """The selected photo's time and GPS are the observation's already."""
+        taken = getattr(self, "_current_exif_datetime", None)
+        if taken is not None and taken.isValid():
+            used = self.time_used_for_observation()
+            if used is not None:
+                if used != taken.toString("yyyy-MM-dd HH:mm:ss"):
+                    return False
+            elif not self._matches_observation_datetime(taken):
+                return False
+        lat = getattr(self, "_current_exif_lat", None)
+        lon = getattr(self, "_current_exif_lon", None)
+        if lat is not None and lon is not None:
+            obs_lat, obs_lon = self.get_observation_gps()
+            if obs_lat is None or obs_lon is None:
+                return False
+            if abs(float(obs_lat) - float(lat)) > 1e-6 or abs(float(obs_lon) - float(lon)) > 1e-6:
+                return False
+        return True
+
+    def _toggle_info_drawer(self) -> None:
+        drawer = getattr(self, "info_drawer", None)
+        if drawer is None:
+            return
+        if drawer.is_open():
+            drawer.close_drawer()
+        else:
+            drawer.open_page("info")
+        self.info_btn.setChecked(drawer.is_open())
+
+    def _selected_image_types(self) -> set[str]:
+        return {
+            "microscope" if self.import_results[idx].image_type == "microscope" else "field"
+            for idx in self._current_selection_indices()
+            if 0 <= idx < len(self.import_results)
+        }
+
+    def _time_gps_text(self) -> str:
+        parts = []
+        dt = getattr(self, "_current_exif_datetime", None)
+        if dt is not None and dt.isValid():
+            parts.append(dt.toString("yyyy-MM-dd HH:mm"))
+        lat = getattr(self, "_current_exif_lat", None)
+        lon = getattr(self, "_current_exif_lon", None)
+        if lat is not None and lon is not None:
+            parts.append(f"{float(lat):.4f}, {float(lon):.4f}")
+        return " · ".join(parts)
+
+    def _update_in_place_overlays(self) -> None:
+        if not hasattr(self, "type_hud"):
+            return
+        types = self._selected_image_types()
+        if not types:
+            self.type_hud.hide()
+        else:
+            self.type_hud.show()
+            self.type_hud.set_current(("micro" if types == {"microscope"} else "field") if len(types) == 1 else None)
+
+        single = self._current_single_index()
+        field_photo = single is not None and types == {"field"}
+        text = self._time_gps_text() if field_photo else ""
+        if text:
+            self.time_gps_hud.set_values(text, used=self._photo_matches_observation())
+            self.time_gps_hud.show()
+        else:
+            self.time_gps_hud.hide()
+
+        has_exif = single is not None and bool(getattr(self, "_current_exif_present", False))
+        self.info_btn.setVisible(has_exif)
+        if not has_exif and self.info_drawer.is_open():
+            self.info_drawer.close_drawer()
+
+        self.tools_hud.setVisible(single is not None)
+        self.microscope_bar.setVisible(types == {"microscope"})
+        # Owner 2026-11-11: field photos need no microscope controls, so the
+        # Scale card (macro scale, scale bar) shows for microscope images only.
+        # Hiding keeps any scale a field photo already carries.
+        self.scale_group.setVisible(types == {"microscope"})
+        self._position_in_place_overlays()
+
+    def _position_in_place_overlays(self) -> None:
+        if not hasattr(self, "type_hud"):
+            return
+        host = self.center_panel
+        margin = self._HUD_MARGIN
+        width, height = host.width(), host.height()
+        self.type_hud.adjustSize()
+        self.type_hud.move(margin, margin)
+        self.time_gps_hud.adjustSize()
+        self.time_gps_hud.move(margin, margin + self.type_hud.height() + 8)
+        self.info_btn.adjustSize()
+        self.info_btn.move(max(margin, width - self.info_btn.width() - margin), margin)
+        self.tools_hud.adjustSize()
+        tools_y = height - self.tools_hud.height() - margin
+        self.tools_hud.move(max(margin, (width - self.tools_hud.width()) // 2), tools_y)
+        bar = self.microscope_bar
+        bar.fit_to_width(max(1, width - 2 * margin))
+        bar.adjustSize()
+        bar_bottom = tools_y - 8 if self.tools_hud.isVisible() else height - margin
+        bar.move(max(margin, (width - bar.width()) // 2), max(margin, bar_bottom - bar.height()))
+        for widget in (self.type_hud, self.time_gps_hud, self.info_btn, self.tools_hud, bar):
+            widget.raise_()
+        self.info_drawer.raise_()
+
+    def has_unsaved_changes(self) -> bool:
+        """New images, edited fields, removed or reordered saved images, or a new GPS."""
+        if bool(getattr(self, "_is_dirty", False)) or self.unsaved_new_results():
+            return True
+        if not hasattr(self, "_baseline_by_id"):
+            return False
+        order = [
+            int(result.image_id) for result in self.import_results
+            if isinstance(result, ImageImportResult) and result.image_id is not None
+        ]
+        return (
+            order != self._baseline_order
+            or bool(self.changed_existing_ids())
+            or self.gps_changed_since_baseline()
+            or self.time_used_for_observation() is not None
+        )
+
+    def save_in_place(self) -> None:
+        """Save, as the dialog's Save button does (Bilder's save row)."""
+        self._accept_and_close()
+
+    def results_to_save(self) -> list:
+        """The images a save would keep, with the shown photo's edits applied (stage 9g4b).
+
+        Ny observasjon's form is built from these before saving, as it was
+        after the dialog's Continue; failed and skipped imports are left out.
+        """
+        self._apply_to_selected()
+        return self._accepted_import_results()
+
+    def unsaved_new_results(self) -> list:
+        """Images added here and not saved to the observation yet."""
+        return [
+            result for result in self.import_results
+            if isinstance(result, ImageImportResult) and result.image_id is None
+        ]
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if self.is_in_place() and event.key() == Qt.Key_Escape:
+            event.accept()  # a page in Bilder: Esc keeps the work
+            return
+        super().keyPressEvent(event)
+
     def _update_action_buttons_state(self) -> None:
         if not hasattr(self, "next_btn") or not hasattr(self, "cancel_btn"):
             return
         dirty = bool(getattr(self, "_is_dirty", False))
+        if self.is_in_place():
+            # Bilder's page has its own save row, outside the scrolled editor.
+            self.next_btn.setVisible(False)
+            self.cancel_btn.setVisible(False)
+            self.unsavedChanged.emit()
+            return
         if self._continue_to_observation_details:
             self.cancel_btn.setVisible(True)
             self.cancel_btn.setText(self.tr("Discard") if dirty else self.tr("Cancel"))
@@ -2567,6 +2844,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if hasattr(self, "slide_prep_group"):
             self.slide_prep_group.setEnabled(enable)
         self._sync_field_tag_display(not enable and bool(getattr(self, "field_radio", None) and self.field_radio.isChecked()))
+        if getattr(self, "_in_place", False):
+            if hasattr(self, "slide_prep_group"):
+                self.slide_prep_group.setVisible(bool(enable))  # microscope images only
+            self._update_in_place_overlays()
 
     def _sync_scale_bar_length_unit_for_image_type(self) -> None:
         if not hasattr(self, "scale_bar_length_input"):
@@ -2586,6 +2867,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.scale_bar_length_input.blockSignals(False)
 
     def _update_set_from_image_button_state(self) -> None:
+        self._update_set_from_image_button_state_now()
+        if getattr(self, "_in_place", False):
+            self._update_in_place_overlays()
+
+    def _update_set_from_image_button_state_now(self) -> None:
         if not hasattr(self, "set_from_image_btn"):
             return
         indices = self._current_selection_indices()
@@ -2639,8 +2925,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.rotate_preview_btn.setVisible(self.preview_stack.currentWidget() is self.preview)
 
     def _position_rotate_button(self) -> None:
-        if not hasattr(self, "rotate_preview_btn"):
-            return
+        if not hasattr(self, "rotate_preview_btn") or getattr(self, "_in_place", False):
+            return  # in place it sits in the tools bar
         self.rotate_preview_btn.move(8, 8)
 
     def _matches_observation_datetime(self, dt: QDateTime | None) -> bool:
@@ -4157,6 +4443,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
 
     def add_images(self, paths: list[str]) -> None:
         start_time = time.perf_counter()
+        if getattr(self, "_in_place", False):
+            # A page may stay open across a change in Preferences › Image import.
+            self.resize_to_optimal_default = bool(SettingsDB.get_setting("resize_to_optimal_sampling", False))
         import_dir = get_images_dir() / "imports"
         import_dir.mkdir(parents=True, exist_ok=True)
         default_image_type = "microscope" if self.micro_radio.isChecked() else "field"
@@ -4269,6 +4558,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
             self._select_image(target_index)
         elif self.selected_index is None and self.import_results:
             self._select_image(0)
+        if getattr(self, "_in_place", False):
+            self._update_action_buttons_state()  # new images are unsaved: Save shows, Bilder mirrors them
 
     def select_image_by_path(self, path: str) -> None:
         """Select and preview a specific image by its file path."""
@@ -4429,6 +4720,11 @@ class ImageImportDialog(GeometryMixin, QDialog):
         old_results = list(self.import_results)
         if len(old_results) < 2:
             return
+        if getattr(self, "_own_gallery", None) is not None:
+            # The strip shows new images first; they are still saved after the others.
+            new_keys = {self._image_result_key(result) for result in old_results if result.image_id is None}
+            keys = list(ordered_keys or [])
+            ordered_keys = [key for key in keys if key not in new_keys] + [key for key in keys if key in new_keys]
 
         ordered_results: list[ImageImportResult] = []
         seen: set[object] = set()
@@ -4755,6 +5051,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if obj is getattr(self, "preview", None) and event.type() == QEvent.Resize:
             self._position_rotate_button()
             self._position_raw_convert_button()
+            return False
+        if obj is getattr(self, "center_panel", None) and event.type() in (QEvent.Resize, QEvent.Show) and getattr(self, "_in_place", False):
+            self._position_in_place_overlays()
             return False
         if (
             obj is getattr(self, "target_sampling_input", None)
@@ -5316,11 +5615,6 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self._cache_pixmap(path)
         return self._pixmap_cache.get(path)
 
-    def _apply_to_all(self) -> None:
-        if not self.import_results:
-            return
-        self._apply_settings_to_indices(list(range(len(self.import_results))))
-
     def _apply_to_selected(self) -> None:
         indices = self.selected_indices or ([self.selected_index] if self.selected_index is not None else [])
         if not indices:
@@ -5404,23 +5698,15 @@ class ImageImportDialog(GeometryMixin, QDialog):
         paths = sorted(self._missing_exif_paths)
         self._missing_exif_paths.clear()
         names = [Path(p).name for p in paths if p]
-        preview = "\n".join(f"- {name}" for name in names[:5])
-        extra = ""
-        if len(names) > 5:
-            extra = self.tr("\n...and {count} more.").format(count=len(names) - 5)
-        QMessageBox.warning(
-            self,
-            self.tr("Missing image files"),
+        # A notice in this page's bar (stage 10f1), the files under Details.
+        self._hint_controller.show_notice(
             self.tr(
                 "Some image files are missing or were moved. EXIF data could not be read."
             )
-            + "\n\n"
-            + self.tr("Missing files:")
-            + "\n"
-            + preview
-            + extra
-            + "\n\n"
+            + " "
             + self.tr("Please relink or remove the missing images."),
+            "warning",
+            details=self.tr("Missing files:") + "\n" + "\n".join(f"- {name}" for name in names),
         )
 
     def _update_current_image_exif(self, result: ImageImportResult) -> None:
@@ -5472,6 +5758,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.exif_lat_label.setText(lat_text)
         self.exif_lon_label.setText(lon_text)
         self.exif_map_btn.setEnabled(lat is not None and lon is not None)
+        self._current_exif_present = bool(
+            dt or camera or iso or exposure_text or fnum_text or lat is not None or lon is not None
+        )
         self._update_set_from_image_button_state()
         self._update_current_image_sampling(result)
 
@@ -5818,8 +6107,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
         )
         self.scale_warning_label.setVisible(True)
 
-
     def _clear_current_image_exif(self) -> None:
+        self._current_exif_present = False
         self._current_exif_path = None
         self._current_exif_datetime = None
         self._current_exif_lat = None
@@ -5832,7 +6121,7 @@ class ImageImportDialog(GeometryMixin, QDialog):
         self.exif_lat_label.setText("Lat: --")
         self.exif_lon_label.setText("Lon: --")
         self.exif_map_btn.setEnabled(False)
-        if hasattr(self, "current_image_stack"):
+        if hasattr(self, "current_image_stack") and not getattr(self, "_in_place", False):
             self.current_image_stack.setCurrentWidget(self.current_image_form_widget)
         if hasattr(self, "exif_sampling_label"):
             self._set_hintable_label_text(self.exif_sampling_label, "--", "")
@@ -5977,12 +6266,66 @@ class ImageImportDialog(GeometryMixin, QDialog):
         from .observations_tab import MapServiceHelper
         if not hasattr(self, "_map_helper"):
             self._map_helper = MapServiceHelper(self)
-        self._map_helper.show_map_service_dialog(
-            self._current_exif_lat, self._current_exif_lon
+        self._map_helper.show_map_service_menu(
+            self._current_exif_lat, self._current_exif_lon, anchor=self.exif_map_btn
         )
 
+    # -- Bilder's shared strip (stage 9f3) ------------------------------------
+
+    def attach_strip(self, strip) -> None:
+        """Show the images in Bilder's shared strip instead of the editor's own gallery.
+
+        The page routes the strip's clicks, selection, removal and reordering
+        to this editor; the editor stays the source of truth and renders its
+        images there, its new (unsaved) ones first, as Live does.
+        """
+        if strip is None or self.holds_strip():
+            return
+        own = self.gallery
+        splitter = self.dialog_gallery_splitter
+        height = splitter.sizes()[1] if splitter.count() == 2 else 0
+        self._own_gallery = own
+        self.gallery = strip
+        # The strip takes the gallery's place under the image, at its height.
+        splitter.replaceWidget(splitter.indexOf(own), strip)
+        own.hide()
+        strip.show()
+        if height > 0:
+            sizes = splitter.sizes()
+            splitter.setSizes([max(1, sum(sizes) - height), height])
+        # The editor's selection comes along (the strip holds the last page's).
+        self._pending_gallery_selection = own.selected_paths()
+        self._refresh_gallery()
+
+    def detach_strip(self) -> None:
+        """Another page takes the strip: the editor's own gallery comes back."""
+        own = getattr(self, "_own_gallery", None)
+        if own is None:
+            return
+        strip = self.gallery
+        self._own_gallery = None
+        self.gallery = own
+        self._pending_gallery_selection = strip.selected_paths()  # what was chosen in the strip
+        splitter = self.dialog_gallery_splitter
+        index = splitter.indexOf(strip)
+        if index >= 0:
+            splitter.replaceWidget(index, own)
+        strip.hide()  # out of the editor; the page that takes it shows it again
+        strip.setParent(None)
+        own.show()
+        self._refresh_gallery()
+
+    def holds_strip(self) -> bool:
+        return getattr(self, "_own_gallery", None) is not None
+
     def _refresh_gallery(self) -> None:
-        selected = self.gallery.selected_paths() if hasattr(self, "gallery") else []
+        # A gallery swap (Bilder's shared strip, stage 9f3) hands over the selection.
+        pending = getattr(self, "_pending_gallery_selection", None)
+        self._pending_gallery_selection = None
+        if pending is not None:
+            selected = list(pending)
+        else:
+            selected = self.gallery.selected_paths() if hasattr(self, "gallery") else []
         image_ids = [
             int(result.image_id)
             for result in self.import_results
@@ -6114,8 +6457,18 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     "frame_border_color": "#e74c3c" if raw_source_kind == "camera_raw" else None,
                 }
             )
+        if getattr(self, "_own_gallery", None) is not None:
+            # New images first, orange and in their own order, as Live's
+            # captures are; saved ones keep their order after them.
+            for item, result in zip(items, self.import_results):
+                if result.image_id is None:
+                    item["staged"] = True
+                    item["frame_border_color"] = STAGING_BORDER
+            items = [item for item in items if item.get("staged")] + [
+                item for item in items if not item.get("staged")
+            ]
         self.gallery.set_items(items, reveal="preserve")
-        if selected:
+        if selected or pending is not None:
             self.gallery.select_paths(selected, center=False)
         self._update_action_buttons_state()
 
@@ -6748,6 +7101,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
         # placement.
         x = max(margin, (self.preview.width() - frame_width) // 2)
         y = max(margin, self.preview.height() - frame_height - margin)
+        if getattr(self, "_in_place", False):
+            y = margin  # the bottom holds the image tools and the microscope bar
         frame.move(x, y)
 
     def _update_raw_panel_for_result(self, result: ImageImportResult | None) -> None:
@@ -7428,18 +7783,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
             if result.preview_path:
                 result.raw_preview_path = result.preview_path
 
-    def _pending_raw_indices(self) -> list[int]:
-        return [
-            idx
-            for idx, result in enumerate(self.import_results)
-            if self._result_is_raw_backed(result)
-            and (bool(getattr(result, "raw_pending", False)) or bool(getattr(result, "raw_unsaved_changes", False)))
-        ]
-
     def done(self, result: int) -> None:  # noqa: N802 - Qt API
         self._cleanup_dialog_threads()
         super().done(result)
-
 
     def closeEvent(self, event):
         dialog = getattr(self, "_scale_bar_dialog", None)

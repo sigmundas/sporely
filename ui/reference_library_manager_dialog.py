@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, fields
-from typing import Any, Iterable
+from typing import Any
 
 from PySide6.QtCore import QT_TRANSLATE_NOOP, QObject, QThread, Qt, Signal, Slot
 from PySide6.QtGui import QColor
@@ -96,6 +96,7 @@ from references.measurement_parser import parse_measurement_string
 
 from . import measurement_content_view as mcv
 from .dialog_helpers import CollapsibleSection
+from .hint_status import HintBar, HintStatusController
 
 
 # --- Completeness hints ----------------------------------------------------
@@ -576,27 +577,6 @@ class _PersonListEditor(QWidget):
         if mark_dirty:
             self._on_row_changed()
         return row
-
-    def load_entries(
-        self, entries: Iterable[dict[str, Any]] | None
-    ) -> None:
-        """Clear and repopulate rows from a list of dicts.
-
-        Does NOT mark the editor dirty. Used both when loading from an
-        existing work and when re-populating after external edits.
-        """
-        self._clear_rows()
-        for entry in (entries or []):
-            if not isinstance(entry, dict):
-                continue
-            self.add_row(
-                family=str(entry.get("family") or ""),
-                given=str(entry.get("given") or ""),
-                organization=str(entry.get("literal") or ""),
-                mark_dirty=False,
-            )
-        self._dirty = False
-        self._refresh_empty_state()
 
     def load_json(self, raw: str | None) -> None:
         """Load from a canonical JSON string.
@@ -2225,7 +2205,21 @@ class ReferenceLibraryManagerDialog(QDialog):
         buttons = QDialogButtonBox(Qt.Horizontal, self)
         buttons.addButton(self.tr("Close"), QDialogButtonBox.RejectRole)
         buttons.rejected.connect(self.reject)
-        outer.addWidget(buttons)
+        # Notices (failures, a copied contribution) show in the bottom bar
+        # beside Close, not in message boxes (stage 10e).
+        bottom = QHBoxLayout()
+        bottom.setSpacing(8)
+        self.hint_bar = HintBar(self)
+        bottom.addWidget(self.hint_bar, 1)
+        bottom.addWidget(buttons, 0, Qt.AlignRight | Qt.AlignVCenter)
+        outer.addLayout(bottom)
+        self._hint_controller = HintStatusController(self.hint_bar, self)
+
+    def _show_notice(self, text: str, tone: str = "error", *, details: str | None = None) -> None:
+        """A non-blocking notice in the bottom bar (stage 10e)."""
+        controller = getattr(self, "_hint_controller", None)
+        if controller is not None:
+            controller.show_notice(text, tone, details=details)
 
     def _build_works_pane(self) -> QWidget:
         pane = QWidget()
@@ -2325,6 +2319,17 @@ class ReferenceLibraryManagerDialog(QDialog):
         self.detail_view.setReadOnly(True)
         layout.addWidget(self.detail_view, 1)
 
+        # Identifiers (UUID, revision, citation key, taxon id) are kept out of
+        # the details and behind a closed section (stage 10e).
+        self.technical_section = CollapsibleSection(self.tr("Technical details"), expanded=False)
+        self.technical_label = QLabel()
+        self.technical_label.setWordWrap(True)
+        self.technical_label.setTextFormat(Qt.PlainText)
+        self.technical_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.technical_section.body_layout().addWidget(self.technical_label)
+        self.technical_section.setVisible(False)
+        layout.addWidget(self.technical_section)
+
         self.plot_hint_label = QLabel()
         self.plot_hint_label.setWordWrap(True)
         self.plot_hint_label.setStyleSheet("QLabel { color: #b45309; }")
@@ -2369,16 +2374,30 @@ class ReferenceLibraryManagerDialog(QDialog):
 
     # --- Data refresh helpers ---
 
+    def focus_measurement_set(self, work_id: str, treatment_id: str, measurement_set_id: str) -> None:
+        """Select one measurement set (the reference drawer's "Details…" link)."""
+        self.refresh_works(select_id=work_id)
+        if self._current_work is None or str(self._current_work.id) != str(work_id):
+            # Not among the first search results: search for that publication.
+            work = ReferenceWorkRepository.get(str(work_id))
+            if work is not None and hasattr(self, "search_input"):
+                blocked = self.search_input.blockSignals(True)
+                self.search_input.setText(str(work.title or work.short_label or ""))
+                self.search_input.blockSignals(blocked)
+                self.refresh_works(select_id=work_id)
+        if self._current_work is not None and str(self._current_work.id) == str(work_id):
+            self._refresh_hierarchy_for_current_work(
+                select_treatment_id=treatment_id, select_set_id=measurement_set_id,
+            )
+
     def refresh_works(self, *, select_id: str | None = None) -> None:
         query = self.search_input.text().strip() if hasattr(self, "search_input") else ""
+        self._works_load_error: str | None = None
         try:
             works = ReferenceWorkRepository.search(query or None, limit=200)
         except ReferenceLibraryError as exc:
-            QMessageBox.warning(
-                self,
-                self.tr("Reference Library"),
-                self.tr("Could not load publications: {error}").format(error=str(exc)),
-            )
+            self._works_load_error = str(exc)
+            self._show_notice(self.tr("Could not load the publications."), details=str(exc))
             works = []
         self._works = works
         self.works_table.setRowCount(0)
@@ -2417,11 +2436,6 @@ class ReferenceLibraryManagerDialog(QDialog):
             self._clear_hierarchy()
             self._clear_detail()
 
-    def _completeness_hints_for(self, work: ReferenceWork) -> list[str]:
-        """Public accessor for tests + subclasses. Returns the derived,
-        non-persisted list of missing bibliographic fields for a work."""
-        return reference_work_completeness_hints(work)
-
     def _add_hierarchy_placeholder(self, text: str) -> None:
         """Insert a disabled placeholder item into the hierarchy tree so
         the empty state is visible instead of an unlabelled blank pane."""
@@ -2445,11 +2459,7 @@ class ReferenceLibraryManagerDialog(QDialog):
                 self._current_work.id
             )
         except ReferenceLibraryError as exc:
-            QMessageBox.warning(
-                self,
-                self.tr("Reference Library"),
-                self.tr("Could not load treatments: {error}").format(error=str(exc)),
-            )
+            self._show_notice(self.tr("Could not load the treatments."), details=str(exc))
             treatments = []
         if not treatments:
             self._add_hierarchy_placeholder(
@@ -2569,9 +2579,14 @@ class ReferenceLibraryManagerDialog(QDialog):
             self.tr("Select a publication to see its treatments.")
         )
 
+    def _set_technical_details(self, lines: list[str]) -> None:
+        self.technical_label.setText("\n".join(lines))
+        self.technical_section.setVisible(bool(lines))
+
     def _clear_detail(self) -> None:
         self.detail_title.setText("")
         self.detail_view.setPlainText("")
+        self._set_technical_details([])
         self.completeness_hint_label.set_hints([])
         self.edit_selected_btn.setEnabled(False)
         self.delete_selected_btn.setEnabled(False)
@@ -2588,8 +2603,6 @@ class ReferenceLibraryManagerDialog(QDialog):
         ]
         if work.year is not None:
             lines.append(self.tr("Year: {year}").format(year=work.year))
-        if work.citation_key:
-            lines.append(self.tr("Citation key: {value}").format(value=work.citation_key))
         if work.container_title:
             lines.append(self.tr("Container: {value}").format(value=work.container_title))
         if work.edition:
@@ -2614,9 +2627,13 @@ class ReferenceLibraryManagerDialog(QDialog):
             lines.append(self.tr("Language: {value}").format(value=work.language))
         if work.citation_override:
             lines.append(self.tr("Citation override: {value}").format(value=work.citation_override))
-        lines.append(self.tr("Revision: {value}").format(value=work.revision or 1))
-        lines.append(self.tr("UUID: {value}").format(value=work.id))
         self.detail_view.setPlainText("\n".join(lines))
+        technical = []
+        if work.citation_key:
+            technical.append(self.tr("Citation key: {value}").format(value=work.citation_key))
+        technical.append(self.tr("Revision: {value}").format(value=work.revision or 1))
+        technical.append(self.tr("UUID: {value}").format(value=work.id))
+        self._set_technical_details(technical)
         self.plot_hint_label.setVisible(False)
         self.edit_selected_btn.setEnabled(False)
         self.delete_selected_btn.setEnabled(True)
@@ -2637,8 +2654,6 @@ class ReferenceLibraryManagerDialog(QDialog):
         lines = [
             self.tr("Name as published: {value}").format(value=treatment.name_as_published or ""),
         ]
-        if treatment.taxon_id:
-            lines.append(self.tr("Taxon id: {value}").format(value=treatment.taxon_id))
         if treatment.page_from is not None or treatment.page_to is not None:
             lines.append(
                 self.tr("Pages: {a}-{b}").format(
@@ -2650,9 +2665,13 @@ class ReferenceLibraryManagerDialog(QDialog):
             lines.append(self.tr("Locator: {value}").format(value=treatment.locator_text))
         if treatment.treatment_notes:
             lines.append(self.tr("Notes: {value}").format(value=treatment.treatment_notes))
-        lines.append(self.tr("Revision: {value}").format(value=treatment.revision or 1))
-        lines.append(self.tr("UUID: {value}").format(value=treatment.id))
         self.detail_view.setPlainText("\n".join(lines))
+        technical = []
+        if treatment.taxon_id:
+            technical.append(self.tr("Taxon id: {value}").format(value=treatment.taxon_id))
+        technical.append(self.tr("Revision: {value}").format(value=treatment.revision or 1))
+        technical.append(self.tr("UUID: {value}").format(value=treatment.id))
+        self._set_technical_details(technical)
         self.plot_hint_label.setVisible(False)
 
     def _reported_statistics_lines(self, ms: MeasurementSet) -> list[str]:
@@ -2748,9 +2767,11 @@ class ReferenceLibraryManagerDialog(QDialog):
             if ms.raw_text:
                 lines.append(self.tr("Raw expression: {value}").format(value=ms.raw_text))
         lines.extend(self._reported_statistics_lines(ms))
-        lines.append(self.tr("Revision: {value}").format(value=ms.revision or 1))
-        lines.append(self.tr("UUID: {value}").format(value=ms.id))
         self.detail_view.setPlainText("\n".join(lines))
+        self._set_technical_details([
+            self.tr("Revision: {value}").format(value=ms.revision or 1),
+            self.tr("UUID: {value}").format(value=ms.id),
+        ])
 
         if _measurement_set_is_plottable_hint(ms):
             self.plot_hint_label.setVisible(False)
@@ -2865,13 +2886,9 @@ class ReferenceLibraryManagerDialog(QDialog):
         try:
             delete()
         except ReferenceLibraryError as exc:
-            QMessageBox.warning(
-                self,
-                self.tr("Reference Library"),
-                self.tr(
-                    "Could not delete this library item. It may be attached to "
-                    "an observation.\n\n{error}"
-                ).format(error=str(exc)),
+            self._show_notice(
+                self.tr("Could not delete this library item. It may be attached to an observation."),
+                details=str(exc),
             )
             return
 
@@ -2931,6 +2948,17 @@ class ReferenceLibraryManagerDialog(QDialog):
         )
         dialog.copied.connect(lambda _set_id: self.refresh_works())
         dialog.exec()
+        if not dialog.copy_result_message:
+            return
+        if self._works_load_error is not None:
+            # The copy worked but the list did not reload: say both, keeping
+            # the reload's error under Details.
+            self._show_notice(
+                f"{dialog.copy_result_message} {self.tr('Could not load the publications.')}",
+                details=self._works_load_error,
+            )
+        else:
+            self._show_notice(dialog.copy_result_message, "success")
 
     def _update_attach_button_visibility(self) -> None:
         has_observation = self._active_observation_id is not None

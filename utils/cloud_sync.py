@@ -38,6 +38,7 @@ import time
 
 from app_identity import app_data_dir, runtime_profile_scope, using_isolated_profile
 from database.schema import (
+    APP_SETTINGS_LOCK,
     get_app_settings,
     get_connection,
     get_images_dir,
@@ -256,7 +257,9 @@ from utils.cloud_sync_impl.sync_state import (  # noqa: F401  (facade re-export)
     remember_explicit_image_restore_source,
 )
 from utils.cloud_sync_impl.image_policy import (  # noqa: F401  (facade re-export)
+    _STORAGE_INTENT_LOCK,
     _add_cloud_image_storage_excluded_image_id,
+    _carry_cloud_image_storage_intent_locked,
     _cloud_explicit_media_upload_selection,
     _cloud_image_storage_excluded_image_ids,
     _cloud_image_storage_initialized,
@@ -268,10 +271,10 @@ from utils.cloud_sync_impl.image_policy import (  # noqa: F401  (facade re-expor
     _is_local_metadata_only_microscope_anchor,
     _is_metadata_only_microscope_cloud_image,
     _mark_cloud_image_storage_intent_initialized,
-    _microscope_group_key_from_row,
     _remove_cloud_image_storage_excluded_image_id,
     _set_cloud_image_storage_excluded_image_ids,
     _set_cloud_image_storage_intent_initialized_ids,
+    carry_cloud_image_storage_intent,
     cloud_image_bytes_desired,
     cloud_image_storage_intent_initialized,
     measurement_qualifies_for_public_spore_anchor,
@@ -2083,10 +2086,11 @@ def drop_linked_cloud_user_id(settings: dict) -> None:
 
 def forget_linked_cloud_user_id() -> None:
     """Drop the stored account link (see :func:`drop_linked_cloud_user_id`)."""
-    settings = get_app_settings()
-    if _SETTING_LINKED_CLOUD_USER_ID in settings:
-        drop_linked_cloud_user_id(settings)
-        save_app_settings(settings)
+    with APP_SETTINGS_LOCK:  # no other write may land between the read and the save
+        settings = get_app_settings()
+        if _SETTING_LINKED_CLOUD_USER_ID in settings:
+            drop_linked_cloud_user_id(settings)
+            save_app_settings(settings)
 
 
 _FIRST_LINK_OWNERSHIP_SAMPLE = 50
@@ -7009,17 +7013,23 @@ class SporelyCloudClient(
             else:
                 return client
         if refresh_text:
-            try:
-                client = _persist_loaded_session(
-                    cls.refresh_login(str(refresh_text)), session_generation
-                )
-                if client is not None:
-                    client._from_stored_session = True
-                return client
-            except CloudTemporarilyUnavailableError:
-                raise
-            except CloudSyncError:
-                pass
+            # Under the refresh lock, so two loaders never spend the same
+            # refresh token: one that waited finds the session written
+            # meanwhile and loads it instead.
+            with _CLOUD_REFRESH_LOCK:
+                if _current_cloud_session_generation() == session_generation:
+                    try:
+                        client = _persist_loaded_session(
+                            cls.refresh_login(str(refresh_text)), session_generation
+                        )
+                        if client is not None:
+                            client._from_stored_session = True
+                        return client
+                    except CloudTemporarilyUnavailableError:
+                        raise
+                    except CloudSyncError:
+                        return None
+            return cls.from_stored_credentials()  # load what is stored now
         return None
 
     def fetch_current_user_id(self) -> str:
@@ -9445,17 +9455,25 @@ class OAuthSporelyCloudClient(SporelyCloudClient):
             else:
                 return client
         if refresh_text:
-            try:
-                client = _persist_loaded_session(cls.refresh_login(refresh_text), session_generation)
-                if client is not None:
-                    client._from_stored_session = True
-                return client
-            except CloudTemporarilyUnavailableError:
-                raise
-            except CloudReauthRequiredError:
-                raise  # propagate; caller surfaces reauth_required status
-            except CloudSyncError:
-                return None
+            # Under the refresh lock, so two loaders never spend the same
+            # refresh token: one that waited finds the session written
+            # meanwhile and loads it instead.
+            with _CLOUD_REFRESH_LOCK:
+                if _current_cloud_session_generation() == session_generation:
+                    try:
+                        client = _persist_loaded_session(
+                            cls.refresh_login(refresh_text), session_generation
+                        )
+                        if client is not None:
+                            client._from_stored_session = True
+                        return client
+                    except CloudTemporarilyUnavailableError:
+                        raise
+                    except CloudReauthRequiredError:
+                        raise  # propagate; caller surfaces reauth_required status
+                    except CloudSyncError:
+                        return None
+            return cls.from_stored_credentials()  # load what is stored now
         return None
 
     @classmethod

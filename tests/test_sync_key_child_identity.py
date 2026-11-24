@@ -287,9 +287,15 @@ def _observation(**values) -> int:
 
 
 def _image(obs_id: int, tmp: Path, *, image_type: str = "field", name: str = "a.jpg", **values) -> int:
-    return ImageDB.add_image(
+    image_id = ImageDB.add_image(
         obs_id, _photo(tmp, name), image_type, copy_to_folder=False, **values,
     )
+    if image_type == "microscope":
+        # These scenarios sync a photo the user keeps in Sporely Cloud: no
+        # microscope photo is checked by default (2026-11-15), so check it
+        # as the strip's checkbox does.
+        cloud_sync.set_image_cloud_selected(image_id, True)
+    return image_id
 
 
 class _Point:

@@ -276,16 +276,18 @@ def test_measure_gallery_publish_uncheck_routes_through_cloud_lifecycle(monkeypa
         "set_image_cloud_selected",
         lambda image_id, selected: calls["transition"].append((int(image_id), bool(selected))),
     )
-    # Stage 1: the Measure gallery handler now writes to the cloud-storage
-    # desired-state key. The Artsobs publication key is intentionally
-    # untouched — do not fail the test on legacy publication method calls.
-    window._get_cloud_image_storage_excluded_ids_for_observation = (
-        lambda observation_id: set()
-    )
-    window._set_cloud_image_storage_excluded_ids_for_observation = (
+    # The handler records only the changed photo (set_image_cloud_selected);
+    # it never rewrites the stored set from the strip's view.
+    monkeypatch.setattr(cloud_sync, "_cloud_image_storage_excluded_image_ids", lambda observation_id: set())
+    monkeypatch.setattr(
+        cloud_sync,
+        "_set_cloud_image_storage_excluded_image_ids",
         lambda obs_id, excluded: calls["excluded"].append(
             (int(obs_id), tuple(sorted(int(v) for v in excluded)))
-        )
+        ),
+    )
+    window.measure_gallery = SimpleNamespace(
+        last_publish_change=lambda: {1: False}, refresh_cloud_states=lambda ids: 0,
     )
     window._sync_observations_tab_publish_state = lambda *args, **kwargs: None
 
@@ -294,7 +296,7 @@ def test_measure_gallery_publish_uncheck_routes_through_cloud_lifecycle(monkeypa
     assert calls["queue"] == []
     assert calls["clear"] == []
     assert calls["cloud"] == []
-    assert calls["excluded"] == [(7, (1,))]
+    assert calls["excluded"] == []
     assert calls["dirty"] == []
     assert calls["transition"] == [(1, False)]
     window.deleteLater()
@@ -358,14 +360,17 @@ def test_measure_gallery_publish_recheck_detaches_tombstoned_cloud_state_and_mar
         "set_image_cloud_selected",
         lambda image_id, selected: calls["transition"].append((int(image_id), bool(selected))),
     )
-    # Stage 1: same as above — write to the cloud-storage-desired key.
-    window._get_cloud_image_storage_excluded_ids_for_observation = (
-        lambda observation_id: {1}
-    )
-    window._set_cloud_image_storage_excluded_ids_for_observation = (
+    # Same as above: only the changed photo is recorded.
+    monkeypatch.setattr(cloud_sync, "_cloud_image_storage_excluded_image_ids", lambda observation_id: {1})
+    monkeypatch.setattr(
+        cloud_sync,
+        "_set_cloud_image_storage_excluded_image_ids",
         lambda obs_id, excluded: calls["excluded"].append(
             (int(obs_id), tuple(sorted(int(v) for v in excluded)))
-        )
+        ),
+    )
+    window.measure_gallery = SimpleNamespace(
+        last_publish_change=lambda: {1: True}, refresh_cloud_states=lambda ids: 0,
     )
     window._sync_observations_tab_publish_state = lambda *args, **kwargs: None
 
@@ -375,7 +380,7 @@ def test_measure_gallery_publish_recheck_detaches_tombstoned_cloud_state_and_mar
     assert calls["clear"] == []
     assert calls["cloud"] == []
     assert calls["restore"] == []
-    assert calls["excluded"] == [(7, ())]
+    assert calls["excluded"] == []
     assert calls["dirty"] == []
     assert calls["transition"] == [(1, True)]
     window.deleteLater()

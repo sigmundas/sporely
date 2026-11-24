@@ -32,6 +32,13 @@ import ui.observations_tab as observations_tab
 OLD_SCALE = 0.1
 NEW_SCALE = 0.2
 MULTILINE_PATH = [[0, 0], [50, 30], [100, 0]]
+# The multiline row stores 11.66 um (rounded); its path is 116.62 px. The Measure
+# tab's rescale recomputes a measurement from what was drawn (redesign stage 8,
+# owner 2026-11-10), so it gives the path's length at the new scale; Prepare
+# Images still rescales by the ratio of the scales.
+MULTILINE_PATH_PX = 2 * (50**2 + 30**2) ** 0.5
+MULTILINE_BY_RATIO = 23.32
+MULTILINE_FROM_PATH = MULTILINE_PATH_PX * NEW_SCALE
 
 
 @pytest.fixture
@@ -140,12 +147,12 @@ def _calibration_rows(db_path, image_id):
     ]
 
 
-def _assert_rescaled_by_two(db_path, seed):
+def _assert_rescaled_by_two(db_path, seed, multiline_um=MULTILINE_BY_RATIO):
     assert _measurement(db_path, seed.spore_id) == pytest.approx(
         {"length_um": 20.0, "width_um": 8.0, "notes": "Q=2.5", "measurement_type": "manual"}
     )
     multiline = _measurement(db_path, seed.multiline_id)
-    assert multiline["length_um"] == pytest.approx(23.32)
+    assert multiline["length_um"] == pytest.approx(multiline_um)
     assert multiline["width_um"] is None
     assert json.loads(multiline["notes"]) == {"multiline": MULTILINE_PATH}
     assert _measurement(db_path, seed.calibration_id) == pytest.approx(
@@ -314,6 +321,7 @@ def _main_window_stub(image_id):
         load_measurement_lines=lambda: calls.append("lines"),
         update_measurements_table=lambda: calls.append("table"),
         update_statistics=lambda: calls.append("stats"),
+        _notify_measurements_changed=lambda: None,
         calls=calls,
     )
 
@@ -327,7 +335,7 @@ def test_measure_tab_objective_change(real_db, monkeypatch):
 
     assert ok is True
     # Multiline measurements were previously skipped and kept the old scale.
-    _assert_rescaled_by_two(real_db, seed)
+    _assert_rescaled_by_two(real_db, seed, MULTILINE_FROM_PATH)
     assert _image_scale(real_db, seed.image_id) == pytest.approx(NEW_SCALE)
     assert stub.calls == ["lines", "table", "stats"]
 
@@ -356,7 +364,7 @@ def test_measure_tab_asks_for_an_image_with_only_multiline_measurements(real_db,
     main_window.MainWindow._maybe_rescale_current_image(_main_window_stub(seed.image_id), OLD_SCALE, NEW_SCALE)
 
     assert _AcceptingMessageBox.prompts == 1
-    assert _measurement(real_db, seed.multiline_id)["length_um"] == pytest.approx(23.32)
+    assert _measurement(real_db, seed.multiline_id)["length_um"] == pytest.approx(MULTILINE_FROM_PATH)
 
 
 def test_measure_tab_does_not_ask_for_a_calibration_only_image(real_db, monkeypatch):
