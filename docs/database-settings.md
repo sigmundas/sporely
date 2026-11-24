@@ -1,16 +1,17 @@
 # Database Settings
 
-The **Database Settings** dialog controls where Sporely stores its databases and image folder, and it also lets you manage the built-in microscopy tag lists:
+The **Database** page in **Settings › Preferences** (Ctrl+, / ⌘,) controls where Sporely stores its databases and image folder, and it also lets you manage the built-in microscopy tag lists:
 
 - contrast methods
 - mount media
 - stains
-- sample types
+- sample types (specimen condition, for example fresh or dried)
+- sample sources (for example spore print, hymenium, stipe)
 - measure categories
 
 The mount and stain lists are meant as practical lab tags, not as a formal ontology. You can disable built-in items or add your own custom tags.
 
-Hovering built-in tags in the dialog shows a short hint in the status area and as a tooltip. The longer notes below are the reference version of those hints.
+Hovering built-in tags on the page shows a short hint in the status area and as a tooltip. The longer notes below are the reference version of those hints.
 
 ## Mount Media
 

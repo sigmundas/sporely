@@ -20,7 +20,7 @@
 
 ---
 
-## Prepare Images
+## Images › Files and SD card (the Prepare Images editor)
 
 | # | Scenario | Expected outcome | Status |
 |---|----------|-----------------|--------|
@@ -32,7 +32,7 @@
 
 ---
 
-## Ingestion Hub
+## Camera import (formerly Ingestion Hub)
 
 | # | Scenario | Expected outcome | Status |
 |---|----------|-----------------|--------|
