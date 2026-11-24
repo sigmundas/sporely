@@ -1,17 +1,20 @@
-# Analysis Tab
+# Analysis
 
-The Analysis tab (Alt+A) is the primary tool for visualizing and exploring spore measurements. It combines an interactive scatter/histogram plot with a thumbnail gallery, reference data overlay, and statistics export.
+**Analysis** (Alt+A, Option+A on macOS) is the primary tool for visualizing and exploring spore measurements. It combines an interactive scatter/histogram plot with a thumbnail gallery, reference data overlay, and statistics export.
 
-Figure placeholder: overview of the Analysis tab.
+![Analysis comparing measurements with reference data](images/readme/analysis.jpg)
 
 ---
 
 ## Layout
 
-The tab is split into two main areas:
+Analysis is split into three areas:
 
-- **Left panel (fixed width):** Controls for the plot, reference data, gallery, and sharing.
-- **Right panel:** Collapsible splitter with the plot canvas on top and the thumbnail gallery below.
+- **Left panel:** the category filter, **Plot settings** (collapsed by default), **Reference values**, and the **Gallery** controls.
+- **Centre:** the plot canvas on top and the thumbnail gallery below, with **Export Plot**, **Clear filter** and **Reset plot** above them.
+- **Right:** the statistics text, with **Include details**, **Export statistics** and **Save statistics** above it.
+
+The observation list folds into a thin rail on the left; click it to switch observations without leaving Analysis.
 
 ---
 
@@ -59,7 +62,7 @@ Available in the Plot Settings section (collapsed by default):
 | Bins | Number of histogram bins (3–50) |
 | Image color | Color scatter points by source image |
 | Plot Avg Q | Overlay the mean Q line |
-| Plot Q 90% range | Overlay 5th–95th percentile Q lines |
+| Plot Q inner range | Overlay inner-percentile Q lines |
 | Plot Q min/max | Overlay absolute min/max Q lines |
 | Axis equal | Force square aspect ratio on scatter plot |
 
@@ -90,19 +93,21 @@ A dropdown at the top of the left panel filters measurements by category (Spores
 
 ## Reference Data
 
-The Reference Values section (expanded by default) allows overlaying published or custom spore reference data on the scatter plot.
+The **Reference values** section (expanded by default) lists this observation and the reference datasets plotted with it. Each row has a checkbox to show or hide it, its colour, and range bars that compare its length and width with this observation's spores.
 
-### Loading Reference Data
+### Adding reference data
 
-1. Search by common name, genus, or species.
-2. Select a source from the dropdown, or use "Cloud..." to search community data.
-3. Click "Plot" to overlay the reference on the scatter plot.
+1. Click **Add reference…**. A drawer opens over the plot, comparing with the observation's taxon (**Change…** picks another).
+2. Choose a source: **Library** (your reference library), **Community** (shared data in Sporely Cloud) or **My observations**. Search by publication, taxon or measurements; **Only this taxon** limits the list.
+3. Tick the datasets to plot. **New reference…** adds a dataset that is not in the library yet; see [Reference data](reference-data-dialog.md).
 
-### Reference Series Table
+### Row menu
 
-All loaded reference datasets are listed in a table with columns: Plot (visibility toggle), Icon, Label, and Color. Each series can be shown or hidden independently.
+The **…** menu on a reference row offers **Change color…**, **Edit measurement set…** (library datasets), **Update from library** when the library copy has changed, and **Remove**.
 
 ### Reference Shape Options
+
+In **Plot settings**:
 
 | Option | Description |
 |---|---|
@@ -110,10 +115,7 @@ All loaded reference datasets are listed in a table with columns: Plot (visibili
 | Square | Draw reference bounds as a rectangle |
 | Min/Max | Show min/max boundary lines in addition to the main shape |
 
-### Adding/Editing Reference Data
-
-- **Add:** Opens the Add/Edit Reference Data dialog. See [Reference Data Dialogs](reference-data-dialog.md).
-- **Edit:** Opens the dialog for the currently selected reference record.
+**Manage reference library…** opens the Reference Library window, where datasets and publications are edited.
 
 ---
 
@@ -126,8 +128,8 @@ Thumbnail images of each measured spore are shown below the plot. The gallery up
 | Control | Description |
 |---|---|
 | Orient | Rotate thumbnails so the long axis is vertical |
-| Uniform scale | Scale all thumbnails to the same apparent spore length |
 | Sort | Order by: Images, Width, Length, or Q |
+| Export gallery | Save the thumbnail grid as an image |
 
 ---
 
@@ -146,16 +148,6 @@ A plain-text stats preview shows per-measurement details for the active selectio
 
 ---
 
-## Spore Data Sharing
-
-Controls who can find your measurements when others search community data:
-
-- Public (share with everyone)
-- Friends only
-- Private (keep to myself)
-
----
-
 ## Settings Persistence
 
-All plot and gallery settings are saved per observation and restored automatically when switching back to the Analysis tab. This includes plot style, coverage values, reference series, sort order, filter state, and splitter positions.
+All plot and gallery settings are saved per observation and restored automatically when you return to Analysis. This includes plot style, coverage values, reference series, sort order, filter state, and splitter positions.

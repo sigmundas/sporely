@@ -2,16 +2,16 @@
 
 ## Objectives and Macro Profiles
 
-Go to **Settings** → **Calibration** and pick an existing profile, or create **New Objective**:
+Open **Settings › Calibration** (Ctrl+K, ⌘K on macOS) and pick an existing objective, or click **New Objective...**:
 
-![Ojbective](images/calibrate-objective.png)
+![Objective row of the Calibrate Objective dialog](images/calibration-objective.jpg)
 
 **Microscope objectives** are defined by:
 - Magnification
 - Numerical Aperture (NA)
 - Objective name/camera setup
 
-**Macro lens profiles** (select profile type **Macro** in the New Objective dialog) are defined by:
+**Macro lens profiles** (select profile type **Macro lens** in the New Objective dialog) are defined by:
 - Magnification entered as a 1:X ratio divisor (e.g. 1 for 1:1, 2 for 1:2, 4 for 1:4)
 - Sensor width (mm) and image width (px) for a provisional scale
 
@@ -42,10 +42,10 @@ Check the deviation on three different measurements and check that the deviation
 Sporely recognizes horizontal or vertical lines. All you have to do is specify the line distance, then click ***Calibrate***.
 
 You may have to select a cropped area if the lines are not uniform. Like here:
-![auto calibration](images/autocalibrate.png)
+![Automatic calibration of a stage micrometer with a crop](images/calibration-automatic.jpg)
 You will get some quality metrics, like MAD and IQR, that depend on the quality of the slide and your optics. If these numbers are way off (in red), the auto-calibration algorithm probably failed. Try cropping the image, or do manual calibration.
 
-You could also check the overlay to 
+Zoom in to check the overlay:
 
 ![line overlay](images/autocalibrate-overlay.png)
 The yellow lines show where the line edges have been detected. The red center lines are in the middle, between the edge lines. With poor contrast or insufficient resolution, the edge detect algorithm may fail.
@@ -55,21 +55,21 @@ This is handy if you change things in your setup, and you want to document past 
 - Camera model (from exif data)
 - Megapixels
 - Calibration scale and statistics
+- How many observations use each calibration
 
-You can export the calibration image with overlays for documentation purposes.
+**Set as Active** chooses the calibration that new images use. You can export the calibration image with overlays (**Export Image**) for documentation purposes.
 
-## Prepare Images (Microscope)
+### Ideal sampling per objective
 
-In **Prepare Images**, set image type to **Micro** (keyboard shortcut: M) and pick the objective (or **Scale bar**) in the **Scale** group.
+Each objective has an **Ideal sampling (% Nyquist)** value in the **Image resize** section of the calibration dialog. The same section shows the sampling of the current calibration image and the ideal resolution for that objective.
 
-To set the same image type or scale on multiple images at once, **Ctrl+click** (or **Shift+click**) to select them in the gallery, then change the setting — it applies to all selected images.
+## Adding microscope images (Images › Files and SD card)
 
-For microscope images, the right panel shows:
-- **Current resolution** (current MP and pixel dimensions)
-- **Ideal sampling (% Nyquist)** (target sampling)
-- **Ideal resolution** (target MP and pixel dimensions when resize is enabled)
+In **Images › Files and SD card**, mark an image as **Microscope** (keyboard shortcut: M). For microscope images, the bars on the image choose the objective (for example 40x, 63x, 100x) and the contrast method (BF, DF, DIC, Oblique, Phase, HMC). Mount, stain, condition and sample source are set in the **Slide / prep** card on the left. For an image without an objective profile, tick **Scale bar** in the **Scale** card and use **Set from scalebar** (S).
 
-Use **Resize to optimal sampling (R)** to preview and apply downsampling based on objective scale + NA + target sampling.
+To set the same image type or scale on multiple images at once, **Ctrl+click** (or **Shift+click**) to select them in the strip, then change the setting: it applies to all selected images.
+
+To downsample new microscope images to the objective's ideal sampling, turn on **Resize new microscope images to optimal sampling** in **Settings › Preferences › Image import**. It applies to images added in Images › Files and SD card; an image that was already resized is marked **Already resized**.
 
 ### Nyquist Sampling
 
@@ -110,47 +110,49 @@ Sporely compares calibration megapixels with the image megapixels and accounts f
 A mismatch can be expected for heavily cropped images.
 
 You may see this warning in both:
-- **Measure** tab (Scale group)
-- **Prepare Images** (Scale group)
+- **Measure**, in the **Scale** section above the image (its summary line turns red)
+- **Images › Files and SD card**, in the **Scale** card
 
-## Prepare Images Shortcuts
+## Images › Files and SD card shortcuts
 
 - **F**: Set image type to Field
-- **M**: Set image type to Micro
-- **R**: Toggle "Resize to optimal sampling"
-- **C**: Toggle AI crop mode
-- **S**: Open "Set from scalebar"
-- **Delete**: Remove selected image(s)
+- **M**: Set image type to Microscope
+- **C**: Crop
+- **S**: Set from scalebar
+- **N** / **P** or **→** / **←**: Next / previous image
+- **Delete** (or Ctrl+D / ⌘D): Remove selected image(s)
 
-## Tab Navigation Shortcuts
+## Mode shortcuts
 
-Navigate between tabs from anywhere in the app:
+Switch modes from anywhere in the app:
 
 | Action | Windows / Linux | macOS |
 |--------|----------------|-------|
-| Go to Observations | Alt+O | Option+O |
-| Go to Measure | Alt+M | Option+M |
-| Go to Analysis | Alt+A | Option+A |
+| View | Alt+O | Option+O |
+| Edit the selected observation | Ctrl+E | ⌘E |
+| Images | Alt+L | Option+L |
+| Measure | Alt+M | Option+M |
+| Analysis | Alt+A | Option+A |
+| Camera import | Alt+C | Option+C |
 
 ## Appearance
 
-The app follows the system dark/light mode automatically when **Settings → Appearance** is set to **Auto**. Changes take effect immediately without restarting.
+The app follows the system dark/light mode automatically when **Settings › Preferences › Appearance** is set to **Auto (follow system)**. Changes take effect immediately without restarting.
 
-## Working with Scale
+## Working with scale in Measure
 
-- Select an objective in the Scale dropdown.
-- Use **Set scale...** for custom scale bars.
-- For microscope images, ensure the correct objective is applied before measuring.
+- Open the **Scale** section above the image and choose the objective in the dropdown. Its summary line names the objective and calibration while the section is closed.
+- For microscope images, make sure the correct objective is applied before measuring.
 
-## Scale Bar Calibration (Manual)
+## Scale bar calibration (manual)
 
 If you need a custom scale (field images or slides without an objective profile):
 
-1. Choose **Scale bar** in the Scale dropdown.
-2. Click **Set scale...** and enter the real-world length.
-3. Click two points on the scale bar in the image.
+1. In Measure, open the **Scale** section and click **Set from scalebar**.
+2. Enter the real-world length of the scale bar (µm). Tick **Horizontal** to keep the line level.
+3. Click the two ends of the scale bar in the image.
 
-You can also trigger this dialog from the **No Scale Set** prompt when you start measuring.
+The image's scale is then **From scalebar**. If you start measuring an image without a scale, the status line asks you to set one with **Set from scalebar** first.
 
 ## See also
 

@@ -1,8 +1,8 @@
 # Species plate dialog
 
-Figure 1 placeholder: overview of the Species Plate dialog.
+Select one observation in **View** and click **Plate** to open this dialog. Use it to build a presentation plate from that observation, combining field photos, microscope images, labels, and measurements.
 
-Use this dialog to build a presentation plate from one observation, combining field photos, microscope images, labels, and measurements.
+![A species plate for Pholiotina rugosa, with field photos and microscope insets](images/readme/species-plate.jpg)
 
 ## Main areas
 
@@ -22,8 +22,6 @@ Use this dialog to build a presentation plate from one observation, combining fi
 ## Notes
 
 - Saved layouts store presentation settings so they can be reused later.
-- Equal scale makes microscope inset circles share the same physical scale when possible.
-- Export creates the final plate file; closing the dialog does not export automatically.
-
-Figure 2 placeholder: left settings panel.
-Figure 3 placeholder: preview canvas with assigned images.
+- **Same scale** makes microscope inset circles share the same physical scale when possible.
+- **Export…** creates the final plate file; closing the dialog does not export automatically.
+- Saved layouts are `.mplate` files in a `plate_layouts` folder next to the database. The current plate is also remembered for each observation.
