@@ -38,9 +38,11 @@ matches species by name alone.
 Since release `tax-2026.10.31-01` (in the cloud since 2026-11-04, and in the
 desktop app since 0.9.30) there is one exception to the last rule: when
 NorTaxa or Dyntaxa use the same scientific name as one Catalogue of Life
-species, Sporely treats them as one species and shows one entry, with the
+species (or a unique synonym of it), Sporely shows one entry, with the
 Norwegian and Swedish names, numbers and Red List category on it. Nobody's
-Sporely numbers change. Unclear cases stay separate, and a wrong match can be
+Sporely numbers change: both numbers are kept, new choices use the
+Catalogue of Life entry, and existing observations keep the number they
+have. Unclear cases stay separate, and a wrong match can be
 undone in a later release. See
 [ADR 0006](architecture/decisions/0006-name-associations.md).
 
@@ -50,16 +52,17 @@ undone in a later release. See
 |---|---|---|---|
 | **Catalogue of Life**, extended release (COL XR) | Catalogue of Life partnership | The worldwide list of fungi: accepted scientific names, synonyms and classification | 2026-09-25 |
 | **NorTaxa** (Artsnavnebasen) | Artsdatabanken (Norway) | Norwegian species, Norwegian and Sámi common names, and Artsdatabanken species numbers | 1.292 (2026-09-11) |
-| **Dyntaxa** | SLU Artdatabanken (Sweden) | Swedish species, Swedish common names and Dyntaxa species numbers | 2026-09-30 |
+| **Dyntaxa** | SLU Artdatabanken (Sweden) | Swedish species, Swedish common names and Dyntaxa species numbers | 2026-10-23 |
 | **Norsk rødliste for arter 2021** | Artsdatabanken | Red List categories for Norwegian species | 2021 edition |
 | **Older Sporely names database** | Sporely (from Artportalen and iNaturalist) | Swedish and other common names, Artportalen and iNaturalist species numbers | frozen 2026-05 |
 | **Reviewed Artportalen list** | Sporely maintainers | Artportalen numbers for species the older database had none for, each one approved by a person | 2026-09-26 |
 | **iNaturalist check** | iNaturalist | Species numbers re-checked where the older database was contradictory | fetched 2026-09-26 |
 
 The desktop app contains the full list: every fungus in the Catalogue of Life
-plus the Norwegian NorTaxa and Swedish Dyntaxa species (about 635,000 entries). The web and phone
-app use a smaller cloud copy, limited to mushroom-forming and other
-larger fungi ("macrofungi", about 53,000 species). Both copies come from the
+plus the Norwegian NorTaxa and Swedish Dyntaxa species (about 204,000 taxa,
+183,000 of them species). The web and phone app use a smaller cloud copy,
+limited to mushroom-forming and other larger fungi ("macrofungi", about
+53,000 taxa including the genera and families above them). Both copies come from the
 same build.
 
 ### Older names database
@@ -185,9 +188,10 @@ one Sporely number, and the national list is linked to it.
 
 - **A few same-name species are still listed twice.** Release
   `tax-2026.10.31-01` joined the Norwegian and Swedish entries that share a
-  scientific name with a Catalogue of Life species (36,779 links, 5,660 of
-  them Norwegian species entries). That closed most of the earlier gap of
-  about 7,300 duplicate Norwegian species: species such as *Cantharellus
+  scientific name with a Catalogue of Life entry (36,779 links at all ranks;
+  5,660 of them link a Norwegian entry, 3,537 of those at species rank).
+  That closed most of the earlier gap of about 7,300 duplicate Norwegian
+  entries: species such as *Cantharellus
   cibarius* now show *kantarell* on the web and phone app too. A few hundred names per list were left separate on purpose,
   because the match was unclear (several possible species, a name that means
   a group such as "coll." or "s.lat.", or a name under a reviewed hold).

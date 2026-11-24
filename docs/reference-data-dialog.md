@@ -2,10 +2,11 @@
 
 Reference data is spore data from the literature, from other Sporely users,
 or from your own observations, plotted next to an observation's measurements
-in **Analysis**. It is stored in the normalized reference library
+in **Analysis**. Library data is stored in the normalized reference library
 (`reference_works`, `reference_taxon_treatments`,
-`reference_measurement_sets`), and the references plotted with an
-observation are recorded in `observation_reference_uses`.
+`reference_measurement_sets`), and Library references attached to an
+observation are recorded in `observation_reference_uses`. Community and
+My observations data is added to the plot as series.
 
 ![Analysis with reference ranges in the Reference values section](images/readme/analysis.jpg)
 
@@ -16,14 +17,15 @@ over the plot. It compares with the observation's taxon (**Change…** picks
 another) and has three sources:
 
 - **Library**: your reference library. Search by publication, taxon or
-  measurements; **Only this taxon** limits the list to the observation's
-  taxon. Badges show how each entry relates to it (for example *Same taxon*)
+  measurements; **Only this taxon** limits the list to the taxon you
+  compare with. Range bars compare each entry with this observation. Badges show how each entry relates to it (for example *Same taxon*)
   and what it holds (*Raw data*, *Published range*).
 - **Community**: reference data shared in Sporely Cloud.
 - **My observations**: your own measured observations of the taxon.
 
-Tick an entry to plot it. An expanded entry shows its citation, values and a
-**Role** (**Compared**, **Supports identification** or **Contradicts**).
+Tick an entry to plot it. An expanded, attached Library entry shows its
+citation, values and a **Role** (**Compared**, **Supports identification**
+or **Contradicts**).
 
 ## New reference dialog
 
@@ -43,7 +45,8 @@ the current observation. The dialog closes only when the save succeeded.
 ## Editing a plotted reference
 
 The **…** menu on a row under **Reference values** offers **Change color…**,
-**Edit measurement set…** for library data, **Update from library** when the
+**Edit measurement set…** for older single-record references (library
+datasets are edited in the Reference Library), **Update from library** when the
 library copy has changed since it was plotted, and **Remove**.
 
 ## Reference Library manager

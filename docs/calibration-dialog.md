@@ -22,7 +22,7 @@ Open it with **Settings › Calibration** (Ctrl+K, ⌘K on macOS). Use it to cre
 ## Notes
 
 - The active calibration is the one used for new images with that objective.
-- When you save a new calibration for an objective whose images still use the previous one, **Update Measurements?** asks how far back it applies: **New calibration only** (existing images keep the previous calibration), **Update existing images** (rescale every image on the previous calibration), or **Update recent images** (only images taken today and the previous number of days you choose).
+- When you save a new calibration for an objective whose images still use the previous one, and the scale changed by 0.2% or more, **Update Measurements?** asks how far back it applies: **New calibration only** (existing images keep the previous calibration), **Update existing images** (rescale every image on the previous calibration), or **Update recent images** (only images taken today and the previous number of days you choose; an image without a capture time counts by the day it was added).
 - If a calibration is already used by images or measurements, the dialog warns before deletion.
 
 See [Microscopy workflow](microscopy-workflow.md) for calibration technique, Nyquist sampling and scale bars.

@@ -45,8 +45,8 @@ The current Sync Shot flow is implemented as a QR-based clock-calibration helper
 2. Sporely shows a live QR code that encodes the current UTC time with 1-second precision plus a Sync Shot session id.
 3. The QR refreshes every 2 seconds, with a 0.1 second blank frame between codes.
 4. Photograph that screen with the camera used for the batch.
-5. After scanning the batch folder, Sporely first auto-checks the first and last image from each folder for that QR.
-6. If auto-detect misses, use **Choose QR image...** to choose the photographed time code manually. **Clear** removes the offset.
+5. When you close the time-code window, Sporely checks the first and last image of each folder in the batch already scanned for that QR.
+6. If the batch was scanned later, or auto-detect misses, use **Choose QR image...** to choose the photographed time code manually. **Clear** removes the offset.
 7. Sporely decodes the QR from the image, compares the decoded time to the chosen image EXIF capture time, and applies the resulting batch offset.
 
 The timestamp read itself is automatic. Only the fallback image choice is manual.

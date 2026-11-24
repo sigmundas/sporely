@@ -124,12 +124,12 @@ You may see this warning in both:
 
 ## Mode shortcuts
 
-Switch modes from anywhere in the app:
+Switch modes from View, Images, Measure, Analysis or Camera import (not from Edit; use the mode bar there). **Images** opens the source you used last, Live or Files and SD card.
 
 | Action | Windows / Linux | macOS |
 |--------|----------------|-------|
 | View | Alt+O | Option+O |
-| Edit the selected observation | Ctrl+E | ⌘E |
+| Edit the selected observation (from View) | Ctrl+E | ⌘E |
 | Images | Alt+L | Option+L |
 | Measure | Alt+M | Option+M |
 | Analysis | Alt+A | Option+A |
@@ -149,7 +149,7 @@ The app follows the system dark/light mode automatically when **Settings › Pre
 If you need a custom scale (field images or slides without an objective profile):
 
 1. In Measure, open the **Scale** section and click **Set from scalebar**.
-2. Enter the real-world length of the scale bar (µm). Tick **Horizontal** to keep the line level.
+2. Enter the real-world length of the scale bar: in µm for a microscope image, in mm for a field image. Tick **Horizontal** to keep the line level.
 3. Click the two ends of the scale bar in the image.
 
 The image's scale is then **From scalebar**. If you start measuring an image without a scale, the status line asks you to set one with **Set from scalebar** first.

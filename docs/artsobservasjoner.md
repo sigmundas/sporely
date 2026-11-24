@@ -52,7 +52,7 @@ The verified mapping comes from the local species database. See [Species databas
 
 ### Artportalen
 
-Click **Log in** and enter your Artportalen email and password; **Save password on this device** works as for Artsobservasjoner. Artportalen numbers come from the reviewed list in the species database.
+Click **Log in** and enter your Artportalen email and password; **Save password on this device** works as for Artsobservasjoner. Artportalen numbers come from the species database (the older names database and the reviewed list).
 
 ### iNaturalist
 
@@ -64,7 +64,7 @@ Click **Log in** and enter your Mushroom Observer user API key.
 
 ### Sporely Cloud
 
-Go to **Settings › Preferences › Profile & Cloud**, click **Log in**, and sign in with your Sporely Cloud account. If you enable **Save password on this device**, Sporely stores the password securely in the OS keyring.
+Go to **Settings › Preferences › Profile & Cloud** and click **Log in**. Sporely opens your browser to sign in with your Sporely Cloud account and keeps the session afterwards.
 
 Sporely Cloud and Artsobservasjoner are separate services with separate login/session handling.
 
@@ -95,13 +95,13 @@ When that happens, Sporely opens a conflict review dialog with a side-by-side co
 ## Publishing an observation
 
 1. In **View**, select one or more rows.
-2. Click **Publish** and choose a target.
+2. Click **Publish** and choose a target. With only one service enabled, Publish starts it directly.
 
 You can also publish one observation from **Status and publishing** in [Edit](observation-dialog.md).
 
 Artsobservasjoner targets are greyed out for observations that have already been uploaded there. iNaturalist and Mushroom Observer can still be used for those.
 
-Sporely Cloud sync runs automatically on startup and when you click **Sync now** in View, as long as you are logged in.
+Sporely Cloud sync runs when you click **Sync now** in View or in Profile & Cloud, as long as you are logged in.
 
 ## Requirements
 

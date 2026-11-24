@@ -6,11 +6,11 @@
 
 ## Main areas
 
-- **Top row**: the source switch (**Live (microscope)** / **Files and SD card**), **Choose files…**, and **From SD card (new photos)**, which adds the photos on the camera's card that are not in Sporely yet and were taken on the observation's day.
+- **Top row**: the source switch (**Live (microscope)** / **Files and SD card**), **Choose files…**, and **From SD card (new photos)**, which adds the photos on the camera's card that are not in Sporely yet and were taken on the observation's day (for a new observation, the newest day on the card).
 - **Left column**: for microscope images, the **Scale** card (**Scale bar** for an image without an objective profile) and the **Slide / prep** card (mount, stain, condition, source); for every image, the **Image note**; for RAW files, **RAW processing**.
 - **On the image**: **Field** / **Microscope** at the top left. For a field photo, its date, time and GPS with **Use for the observation**. For a microscope image, the objective and contrast bars. **Crop (C)**, **AI crop** (field photos) and **Rotate** at the bottom, and **Info** at the top right for the photo's EXIF.
 - **Image strip**: the observation's images, new ones first. Click to select, Ctrl/Shift+click to select several, drag to reorder.
-- **Bottom row**: **Discard changes** and **Save to observation** (**Save new observation** for a new one). Unsaved images are marked in the strip and the observation list, and stay with their observation until you save or discard them.
+- **Bottom row**: **Discard changes** and **Save to observation** (**Discard** and **Save new observation** for a new one). Unsaved images are marked in the strip and the observation list, and stay with their observation until you save or discard them.
 
 ## Typical workflow
 
@@ -40,7 +40,7 @@ Copies the selected field photo's EXIF GPS and `DateTimeOriginal` into the obser
 
 Images synced from the web app (app.sporely.no) may have no EXIF because the cloud pipeline re-encodes uploads in the browser, which strips all EXIF. The public cloud image tier is still described as 20 MP, but the client only downsizes when a source image exceeds `21 MP` or `5300 px` on the longest edge. The desktop app mitigates missing EXIF by writing the observation's stored GPS and date back into the JPEG EXIF when downloading cloud images. This means **Use for the observation** works for cloud images as long as the observation itself has GPS/date recorded.
 
-If a cloud-synced field image still shows no time or GPS, trigger a cloud sync — the backfill runs automatically on each sync pass.
+If a cloud-synced field image still shows no time or GPS, check that the observation has GPS and date; the backfill runs during a normal sync (not in Download from Cloud mode) and skips files it has already checked.
 
 ## Notes
 

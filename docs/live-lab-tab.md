@@ -1,6 +1,6 @@
 # Images › Live (microscope)
 
-**Images › Live (microscope)** (Alt+L, Option+L on macOS) turns Sporely into a live microscope-ingestion workspace. It watches your microscope camera's capture folder, imports new captures into the current observation, and shows the latest one in a large viewer.
+**Images › Live (microscope)** (Alt+L / Option+L opens Images with the source you used last) turns Sporely into a live microscope-ingestion workspace. It watches your microscope camera's capture folder, imports new captures into the current observation, and shows the latest one in a large viewer.
 
 This implements the "Microscope Live Lab Mode" described in [Hardware sync and camera import](hardware-sync.md).
 
@@ -23,7 +23,7 @@ Live always saves captures to the observation shown in the card ("Session's obse
 
 ## Capture folder
 
-Live watches the folder that the microscope camera software saves into. Choose it with **Browse** in **Settings › Preferences › Image import** (Live Lab section), or with **Change…** next to the folder in Live. A session can start only when the folder exists.
+A **Camera connected** session watches the folder that the microscope camera software saves into. Choose it with **Browse** in **Settings › Preferences › Image import** (Live Lab section), or with **Change…** next to the folder in Live. Such a session can start only when the folder exists; a **Log only** session needs no folder.
 
 ---
 
@@ -48,7 +48,7 @@ They stay editable during a running session, so you can switch setup without sto
 - **End session** stops the watcher. Unsaved RAW captures are saved when the session ends.
 - **Log only** (instead of **Camera connected**) records a session without a connected camera: its preparation settings and notes are logged with their times, so [Camera import](hardware-sync.md) can match the photos later. The default session type is set in **Settings › Preferences › Image import**.
 
-If no observation is selected or the folder is missing, the session cannot start.
+A session cannot start without an observation, and a Camera connected session also needs an existing folder.
 
 ---
 
@@ -56,7 +56,7 @@ If no observation is selected or the folder is missing, the session cannot start
 
 Live keeps a RAW processing panel when RAW-backed captures are active. The capture mode (**Auto-save RAW** or **Review RAW**) and the RAW source (**Prefer RAW** or **Use camera JPEG**) are set in **Settings › Preferences › Image import**.
 
-- RAW capture settings are persisted per microscope context in the local SQLite `settings` table, so Live can remember different RAW presets for different objective / contrast / mount / stain / source combinations.
+- RAW capture settings are persisted per microscope context in the local SQLite `settings` table, so Live can remember a RAW preset for each objective and contrast combination.
 - In review mode, incoming RAW files wait in the strip with an orange border until you choose **Save current** or **Save to observation**, or end the session. In auto-save mode, the rendered JPEG derivative is committed immediately.
 - RAW sources are decoded with `rawpy` and shown in the viewer as compressed working copies, not as live raw sensor data.
 - When you change the RAW settings of a committed RAW-backed image, Sporely reopens the source RAW file and replaces the current JPEG derivative in place.
@@ -71,12 +71,11 @@ The large viewer behaves like the image area in Measure:
 
 - Mouse wheel / trackpad scroll to zoom
 - Drag to pan
-- **Reset view** fits the image back into view
 - Zoom percentage is drawn directly on the image
 - A scale bar is shown automatically when the imported image has calibrated microns-per-pixel metadata
 
 The viewer always shows the newest imported image by default, but clicking any thumbnail in the strip swaps the main viewer to that image.
-- **Use for calibration** opens the shown image in the Calibration dialog, and **Full screen** shows it on its own.
+- **Use for calibration** opens the shown image in the Calibration dialog.
 
 ## Import Flow
 

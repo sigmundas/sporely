@@ -11,7 +11,7 @@ The **Database** page in **Settings › Preferences** (Ctrl+, / ⌘,) controls w
 
 The mount and stain lists are meant as practical lab tags, not as a formal ontology. You can disable built-in items or add your own custom tags.
 
-Hovering built-in tags on the page shows a short hint in the status area and as a tooltip. The longer notes below are the reference version of those hints.
+Hovering a built-in contrast, mount or stain tag on the page shows a short hint in the status area. The longer notes below are the reference version of those hints.
 
 ## Mount Media
 

@@ -93,17 +93,17 @@ A dropdown at the top of the left panel filters measurements by category (Spores
 
 ## Reference Data
 
-The **Reference values** section (expanded by default) lists this observation and the reference datasets plotted with it. Each row has a checkbox to show or hide it, its colour, and range bars that compare its length and width with this observation's spores.
+The **Reference values** section (expanded by default) lists this observation and the reference datasets plotted with it. Each reference row has a checkbox to show or hide it and its colour.
 
 ### Adding reference data
 
 1. Click **Add reference…**. A drawer opens over the plot, comparing with the observation's taxon (**Change…** picks another).
-2. Choose a source: **Library** (your reference library), **Community** (shared data in Sporely Cloud) or **My observations**. Search by publication, taxon or measurements; **Only this taxon** limits the list.
+2. Choose a source: **Library** (your reference library), **Community** (shared data in Sporely Cloud) or **My observations**. In Library, search by publication, taxon or measurements; **Only this taxon** limits the list to the taxon you compare with, and range bars compare each entry's length and width with this observation's spores.
 3. Tick the datasets to plot. **New reference…** adds a dataset that is not in the library yet; see [Reference data](reference-data-dialog.md).
 
 ### Row menu
 
-The **…** menu on a reference row offers **Change color…**, **Edit measurement set…** (library datasets), **Update from library** when the library copy has changed, and **Remove**.
+The **…** menu on a reference row offers **Change color…**, **Edit measurement set…** (older single-record references; edit library datasets with **Manage reference library…**), **Update from library** when the library copy has changed, and **Remove**.
 
 ### Reference Shape Options
 
@@ -150,4 +150,4 @@ A plain-text stats preview shows per-measurement details for the active selectio
 
 ## Settings Persistence
 
-All plot and gallery settings are saved per observation and restored automatically when you return to Analysis. This includes plot style, coverage values, reference series, sort order, filter state, and splitter positions.
+All plot and gallery settings are saved per observation and restored automatically when you return to Analysis. This includes plot style, coverage values, reference series, sort order, the category filter, and splitter positions. Point and histogram selections and zoom are not kept.
