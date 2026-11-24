@@ -1,98 +1,59 @@
-# Reference data dialogs
+# Reference data
 
-> **Scope:** Sporely desktop now ships two parallel reference-data
-> workflows that intentionally coexist:
->
-> 1. The legacy **Reference Values** panel/dialog, backed by the
->    single-row-per-species `reference_values` table (documented in the
->    "Reference Values dialog" and "Add/Edit reference data dialog"
->    sections below). Unchanged in this pass.
-> 2. The normalized **Reference Library manager**
->    (`ui/reference_library_manager_dialog.py`) backed by
->    `reference_works`, `reference_taxon_treatments`,
->    `reference_measurement_sets`, and the observation-side
->    `observation_reference_uses` link table (documented in the
->    "Reference Library manager" and "Attach Library Reference"
->    sections below).
->
-> Both workflows are available side-by-side. The legacy panel remains
-> the default for single-record edits; the normalized manager is used
-> to curate multi-treatment publications and to attach a shared
-> measurement set to one or many observations.
+Reference data is spore data from the literature, from other Sporely users,
+or from your own observations, plotted next to an observation's measurements
+in **Analysis**. Library data is stored in the normalized reference library
+(`reference_works`, `reference_taxon_treatments`,
+`reference_measurement_sets`), and Library references attached to an
+observation are recorded in `observation_reference_uses`. Community and
+My observations data is added to the plot as series.
 
-Figure 1 placeholder: overview of the Reference Values dialog.
+![Analysis with reference ranges in the Reference values section](images/readme/analysis.jpg)
 
-These dialogs are used to review, add, edit, and plot stored spore reference data.
+## Adding a reference to the plot
 
-## Reference Values dialog
+**Add reference…** under **Reference values** in Analysis opens a drawer
+over the plot. It compares with the observation's taxon (**Change…** picks
+another) and has three sources:
 
-- Use this dialog to browse an existing reference record for a genus/species.
-- You can edit source, mount medium, stain, and percentile values.
-- `Plot` sends the current values to the analysis plot.
+- **Library**: your reference library. Search by publication, taxon or
+  measurements; **Only this taxon** limits the list to the taxon you
+  compare with. Range bars compare each entry with this observation. Badges show how each entry relates to it (for example *Same taxon*)
+  and what it holds (*Raw data*, *Published range*).
+- **Community**: reference data shared in Sporely Cloud.
+- **My observations**: your own measured observations of the taxon.
 
-## Add/Edit reference data dialog
+Tick an entry to plot it. An expanded, attached Library entry shows its
+citation, values and a **Role** (**Compared**, **Supports identification**
+or **Contradicts**).
 
-Figure 2 placeholder: overview of the Add/Edit Reference Data dialog.
+## New reference dialog
 
-- **Publication** picker (top): search existing works from the normalized
-  Reference Library by title, author, container, short label, or citation
-  key. Click **New publication…** to open the canonical work editor and
-  select the freshly created work.
-- **Data** section: choose **Use existing measurement set** (enabled when
-  the selected work has ≥1 supported measurement set for the active
-  observation's taxon; the visible list is filtered in-memory by the
-  search field), or **Enter new data** (default) which enables:
-  - `Min/max` tab: enter stored percentile values for length, width, and Q.
-  - `Spore data` tab: paste raw measurements to create a custom point set.
-  - `Parmasto Biometrics` tab: enter species-level summary values if available.
+**New reference…** at the bottom of the drawer opens **New reference**, in
+two steps:
 
-When the active observation has no `sporely_taxon_id`, an inline notice
-explains that the reference will be saved to the legacy list only — the
-normalized library needs a taxon key to bind the treatment.
+1. **Source**: the publication, the name as published and the locator (page,
+   figure). Choose an existing publication from the library or create one.
+2. **Measurements**: paste the measurement string from the literature, for
+   example `(8.1–)8.5–10.8(–11.4) × (4.2–)4.5–5.8(–6.1) µm`, and press
+   **Parse**, or choose **Fill in manually**. Individual spore rows and
+   **Parmasto Biometrics** are behind their own disclosures.
 
-## Typical workflow
+**Save to library** stores the reference; **Add to plot** also plots it with
+the current observation. The dialog closes only when the save succeeded.
 
-1. Open the dialog from an observation's Reference panel.
-2. Pick an existing publication or create a new one.
-3. Either select an existing measurement set for this taxon, or enter
-   new range/raw-point data.
-4. Save. The dialog writes the legacy `reference_values` row (preserving
-   plot colour and Q typical bounds), and — when a taxon and publication
-   are present — also creates a normalized `TaxonTreatment` /
-   `MeasurementSet` and attaches it to the active observation with
-   role `compared`. Reopening the observation restores the attachment.
+## Editing a plotted reference
 
-### Parmasto fallback
-
-Parmasto values do not have a normalized representation yet, so a
-Parmasto-only save writes the legacy row but does not create a
-`MeasurementSet` or an observation attachment. Add Min/max or Spore
-data alongside Parmasto values to also produce a normalized entry.
-
-### Multi-treatment ambiguity
-
-If the selected publication already has more than one `TaxonTreatment`
-matching the observation's taxon, the dialog refuses to guess and asks
-you to pick the correct treatment through the Reference Library manager
-before attaching. The legacy row is still written in that case.
-
-## Notes
-
-- `Min/max` is for stored summary ranges.
-- `Spore data` is for a custom measured point set.
-- The add/edit dialog is compact by design and is mainly for fast data entry.
-- Legacy-only fields (plot colour, Q typical percentiles, Parmasto
-  statistics, averages) are preserved in `reference_values`; the
-  normalized `MeasurementSet` links back via `legacy_reference_value_id`.
-
-Figure 3 placeholder: spore-data entry tab.
+The **…** menu on a row under **Reference values** offers **Change color…**,
+**Edit measurement set…** for older single-record references (library
+datasets are edited in the Reference Library), **Update from library** when the
+library copy has changed since it was plotted, and **Remove**.
 
 ## Reference Library manager
 
-The Reference Library manager (`ReferenceLibraryManagerDialog`) is a
-standalone top-level dialog opened from the reference panel via
-**Manage reference library…** or from the Attach Library Reference
-chooser via **Manage library…**.
+The Reference Library manager (`ReferenceLibraryManagerDialog`, window
+title **Reference Library**) is a standalone top-level dialog opened from
+**Manage reference library…** in Analysis.
 
 It presents three panes:
 
@@ -107,8 +68,8 @@ It presents three panes:
    `reference_taxon_treatments` under the selected work, with each
    treatment's `reference_measurement_sets` shown as children.
 3. **Details** — the selected record's fields plus context actions
-   (Edit, New treatment, New measurement set, Attach to active
-   observation when applicable). Measurement-set details are composed
+   (edit, new treatment, new measurement set, and attach to the active
+   observation when one is open). Measurement-set details are composed
    through `build_observation_reference_snapshot`, so no UI-side
    fabrication of missing values occurs.
 
@@ -134,18 +95,3 @@ Rules:
   selected measurement set has no drawable geometry (mirroring the
   translator's finite-positive rule so the desktop plot layer would
   reject it).
-
-## Attach Library Reference
-
-The Attach Library Reference dialog (`ReferenceLibraryAttachDialog`)
-lists unattached measurement-set candidates and lets the user pick a
-role (`Compared`, `Supports identification`, `Contradicts`) before
-attaching to the active observation.
-
-- The **Manage library…** button opens the Reference Library manager as
-  a child modal; on close the candidate list refreshes automatically so
-  newly-created measurement sets appear immediately.
-- The chooser only lists kinds the desktop can plot; a persisted use
-  whose snapshot cannot be plotted appears in the reference-series
-  table as a visible warning row with a working Detach action
-  (see `references/reference_plotting.py`).

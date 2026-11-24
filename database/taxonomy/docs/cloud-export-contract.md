@@ -501,9 +501,13 @@ For the pinned release the exporter refuses to publish if any of these fails.
 | Web UX + service copy                       | W4 |
 | Validation and cutover                      | W5 |
 
-## Current-release measurements
+## Measurements of the first exported release (historical)
 
-Pinned release: `tax-2026.07.30-02`.
+Measured on release `tax-2026.07.30-02`, the release pinned when this contract
+was written. Later releases differ. The release bundled with a desktop checkout is
+recorded in `database/reference_data/generated/taxonomy_v2/manifest.json`;
+the release active in the cloud is recorded by each production import's
+evidence (for example `evidence/name-associations/tax-2026.10.31-01/import-execution.md`).
 
 | Dataset | Rows |
 |---|---:|

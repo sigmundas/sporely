@@ -190,7 +190,9 @@ To audit or repair broken media rows:
 - [Field photography](docs/field-photography.md)
 - [Microscopy workflow](docs/microscopy-workflow.md)
 - [Spore measurements](docs/spore-measurements.md)
-- [Live Lab](docs/live-lab-tab.md) and [hardware sync and camera import](docs/hardware-sync.md)
+- [Edit](docs/observation-dialog.md), [Images › Files and SD card](docs/prepare-images-dialog.md), [Images › Live (microscope)](docs/live-lab-tab.md) and [hardware sync and camera import](docs/hardware-sync.md)
+- [Analysis](docs/analysis-tab.md), [reference data](docs/reference-data-dialog.md), [calibration dialog](docs/calibration-dialog.md) and [species plate](docs/species-plate-dialog.md)
+- [Database settings](docs/database-settings.md)
 - [Species database](docs/taxonomy-database.md): where species names come from, how releases are updated, adding a country
 - [Taxonomy identity repair runbook](docs/taxonomy-identity-repair-runbook.md): observation identity audit, migration gate and rollback
 - [Database structure](docs/database-structure.md)

@@ -2,8 +2,11 @@
 
 ## Measurement Modes
 
+Choose the tool in the toolbar above the image in **Measure**:
+
 - **Rectangle**: four clicks to define length and width for spores.
 - **Line**: two clicks to measure length only.
+- **Multi-line**: a path of several segments, for curved or bent structures.
 
 ## Categories
 
@@ -11,13 +14,13 @@ Common categories include **Spores** and **Field**. Categories determine how mea
 
 ## Reviewing Measurements
 
-- Select a row in the measurements table to preview.
-- Adjust lines and apply changes in the preview pane.
+- Select a row in the **Measurements** table to preview it.
+- Adjust the rectangle or line in the **Fine tune** pane above the table (for spores, **Spores fine tune**).
 - Delete unwanted measurements from the table.
 
-Drag the lines you want to adjust - the spore dimensions are updated instantly 
+Drag the lines you want to adjust, or the arrows to rotate: the spore dimensions are updated instantly.
 
-![Spore-preiew](images/spore-preview.png)
+![The Spores fine tune pane in Measure](images/measure-fine-tune.jpg)
 
 ## Analysis
 
@@ -162,17 +165,17 @@ This mode is useful for comparing one specimen against stored species-level refe
 
 - Add multiple reference datasets and toggle them in the plot table.
 - Legend labels include genus initial and source, e.g. `G. marginata (Pedersen)`.
-- Use **Add** and **Edit** to manage reference datasets.
+- Use **Add reference…** to add a dataset from your library or the community, and **Manage reference library…** to edit the library.
 
 ## Export
 
 ### Observation Export
 
-- **Export plot**: saves the current analysis plot (scatter + optional histograms).
+- **Export Plot**: saves the current analysis plot (scatter + optional histograms).
 - **Export gallery**: creates an annotated thumbnail mosaic for the active observation.
-- **Copy stats / Save stats**: exports summary statistics plus a tab-separated table of raw measurements.
+- **Export statistics** / **Save statistics**: copies to the clipboard, or saves to a text file, the summary statistics plus a tab-separated table of the individual measurements.
 
-These actions live in the **Output** section of the Analysis tab and use the currently selected observation and category.
+These buttons are in **Analysis** and use the currently selected observation and category.
 
 ## See also
 

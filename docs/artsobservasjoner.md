@@ -1,12 +1,14 @@
 # Online Publishing
 
-Publish observations from Sporely to Artsobservasjoner, iNaturalist, Mushroom Observer, and Sporely Cloud via **Settings → Online publishing**.
+Publish observations from Sporely to Artsobservasjoner, Artportalen, iNaturalist and Mushroom Observer. Log in to them in **Settings › Preferences › Online publishing**. Sporely Cloud has its own page, **Profile & Cloud** (see [Sporely Cloud](#sporely-cloud)).
 
 ## Logging in
 
-1. Open **Settings → Online publishing**.
-2. Select a service in the table.
-3. Click **Log in**.
+1. Open **Settings › Preferences › Online publishing**.
+2. Tick **Use** for the services you report to, and select one in the table.
+3. Click **Log in**. **Remove saved passwords…** forgets the stored logins.
+
+![The Online publishing page in Preferences](images/online-publishing.png)
 
 ## Publishing options
 You can set the image license for uploaded images and choose which generated media to include.
@@ -18,6 +20,7 @@ Available content options:
 - include measure plot
 - include thumbnail gallery
 - include plate
+- include watermark
 
 For image uploads, only the images with checked boxes in the observation gallery are used. That choice applies to the image files themselves. It does not change which measurements the generated summary media are built from: the thumbnail mosaic, the plate and the spore statistics still draw on the observation's whole eligible measurement sample, whichever images you ticked for upload. The analytical filters that do apply — measurement category, calibration rows, incomplete geometry, a missing source file — are unaffected either way (see the standing invariant in [Engineering history](./engineering-history.md#source-publication-selection--analytical-measurement-selection)).
 
@@ -37,11 +40,9 @@ media id, file size, and nanosecond modification time. Normal edits and file
 replacement invalidate the cache. A file deliberately replaced while preserving
 both its size and modification time may require clearing the disposable cache.
 
-![artsobs login](images/publisering.png)
-
 ### Artsobservasjoner
 
-Logging in to either Artsobservasjoner target logs in to both (mobile and web) in one step. Enter your username and password when prompted. Tick **Save login info on this device** to avoid being asked again — credentials are stored securely via the OS keyring.
+Enter your username and password when prompted. Tick **Save password on this device** to avoid being asked again — credentials are stored securely via the OS keyring.
 
 If your session expires, Sporely will silently re-authenticate in the background using saved credentials.
 
@@ -49,7 +50,11 @@ Sporely only publishes Artsobservasjoner with a verified Artsobservasjoner-compa
 
 The verified mapping comes from the local species database. See [Species database](./taxonomy-database.md).
 
-### iNaturalist (awaiting approval)
+### Artportalen
+
+Click **Log in** and enter your Artportalen email and password; **Save password on this device** works as for Artsobservasjoner. Artportalen numbers come from the species database (the older names database and the reviewed list).
+
+### iNaturalist
 
 Click **Log in** and complete sign-in in your browser. Sporely keeps you signed in afterwards.
 
@@ -59,7 +64,7 @@ Click **Log in** and enter your Mushroom Observer user API key.
 
 ### Sporely Cloud
 
-Go to **Settings → Profile & Cloud**, click **Log in**, and sign in with your Sporely Cloud account. If you enable **Save password on this device**, Sporely stores the password securely in the OS keyring.
+Go to **Settings › Preferences › Profile & Cloud** and click **Log in**. Sporely opens your browser to sign in with your Sporely Cloud account and keeps the session afterwards.
 
 Sporely Cloud and Artsobservasjoner are separate services with separate login/session handling.
 
@@ -83,19 +88,20 @@ Set `SPORELY_CLOUD_SYNC_PROFILE=1` if you also want cloud-sync profiler output. 
 
 If the same linked observation changed on both desktop and web since the last synced snapshot, Sporely now skips the automatic overwrite and reports a conflict instead of silently replacing one side.
 
-When that happens, Sporely opens a conflict review dialog with a side-by-side comparison of the changed fields plus desktop/cloud change summaries. You can then choose **Keep desktop** or **Keep cloud** for each conflicted observation.
+When that happens, Sporely opens a conflict review dialog with a side-by-side comparison of the changed fields plus change summaries for this device and the cloud. For each conflict you choose which side to keep (for example **Keep this device value**, **Keep this device metadata** or **Keep Sporely Cloud metadata**), then **Apply selected changes**.
 
-The cloud visibility level is set globally in Profile & Cloud with **Default sharing**. It is stored in the cloud as the `visibility` field.
+**Default sharing** in Profile & Cloud sets the visibility of new observations. Each observation's visibility (**Private**, **Friends**, **Public**) and location precision are set in Edit under **Status and publishing**. It is stored in the cloud as the `visibility` field.
 
 ## Publishing an observation
 
-1. Go to **Observations**.
-2. Select one or more rows.
-3. Click **Publish** and choose a target.
+1. In **View**, select one or more rows.
+2. Click **Publish** and choose a target. With only one service enabled, Publish starts it directly.
+
+You can also publish one observation from **Status and publishing** in [Edit](observation-dialog.md).
 
 Artsobservasjoner targets are greyed out for observations that have already been uploaded there. iNaturalist and Mushroom Observer can still be used for those.
 
-Sporely Cloud sync runs automatically on startup and when you click **Refresh** in the Observations tab, as long as you are logged in.
+Sporely Cloud sync runs when you click **Sync now** in View or in Profile & Cloud, as long as you are logged in.
 
 ## Requirements
 

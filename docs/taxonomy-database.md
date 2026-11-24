@@ -35,28 +35,34 @@ Other systems have their own numbers. For example, Artsdatabanken's number for
 two identical numbers from different systems mean the same thing, and it never
 matches species by name alone.
 
-A candidate release, `tax-2026.10.31-01` (not yet released), changes the last
-rule: when NorTaxa or Dyntaxa use the same scientific name as one Catalogue of
-Life species, Sporely treats them as one species and shows one entry, without
-changing anyone's Sporely numbers. Unclear cases stay separate, and a wrong
-match can be undone in a later release. See
+Since release `tax-2026.10.31-01` (in the cloud since 2026-11-04, and in the
+desktop app since 0.9.30) there is one exception to the last rule: when
+NorTaxa or Dyntaxa use the same scientific name as one Catalogue of Life
+species (or a unique synonym of it), Sporely shows one entry, with the
+Norwegian and Swedish names, numbers and Red List category on it. Nobody's
+Sporely numbers change: both numbers are kept, new choices use the
+Catalogue of Life entry, and existing observations keep the number they
+have. Unclear cases stay separate, and a wrong match can be
+undone in a later release. See
 [ADR 0006](architecture/decisions/0006-name-associations.md).
 
 ## Where the names come from
 
 | Source | Who publishes it | What Sporely takes from it | Version in use |
 |---|---|---|---|
-| **Catalogue of Life**, extended release (COL XR) | Catalogue of Life partnership | The worldwide list of fungi: accepted scientific names, synonyms and classification | 2026-07-17 |
-| **NorTaxa** (Artsnavnebasen) | Artsdatabanken (Norway) | Norwegian species, Norwegian and Sámi common names, and Artsdatabanken species numbers | 1.284 (2026-07-17) |
+| **Catalogue of Life**, extended release (COL XR) | Catalogue of Life partnership | The worldwide list of fungi: accepted scientific names, synonyms and classification | 2026-09-25 |
+| **NorTaxa** (Artsnavnebasen) | Artsdatabanken (Norway) | Norwegian species, Norwegian and Sámi common names, and Artsdatabanken species numbers | 1.292 (2026-09-11) |
+| **Dyntaxa** | SLU Artdatabanken (Sweden) | Swedish species, Swedish common names and Dyntaxa species numbers | 2026-10-23 |
 | **Norsk rødliste for arter 2021** | Artsdatabanken | Red List categories for Norwegian species | 2021 edition |
 | **Older Sporely names database** | Sporely (from Artportalen and iNaturalist) | Swedish and other common names, Artportalen and iNaturalist species numbers | frozen 2026-05 |
 | **Reviewed Artportalen list** | Sporely maintainers | Artportalen numbers for species the older database had none for, each one approved by a person | 2026-09-26 |
 | **iNaturalist check** | iNaturalist | Species numbers re-checked where the older database was contradictory | fetched 2026-09-26 |
 
 The desktop app contains the full list: every fungus in the Catalogue of Life
-plus the Norwegian NorTaxa species (about 635,000 entries). The web and phone
-app use a smaller cloud copy, limited to mushroom-forming and other
-larger fungi ("macrofungi", about 53,000 species). Both copies come from the
+plus the Norwegian NorTaxa and Swedish Dyntaxa species (about 204,000 taxa,
+183,000 of them species). The web and phone app use a smaller cloud copy,
+limited to mushroom-forming and other larger fungi ("macrofungi", about
+53,000 taxa including the genera and families above them). Both copies come from the
 same build.
 
 ### Older names database
@@ -83,7 +89,7 @@ Two kinds of species number are handled with extra care:
 ## Releases
 
 Each version of the database is a **release**, named by its build date, for
-example `tax-2026.09.23-01`. A release is never changed after it is published.
+example `tax-2026.10.31-01`, the release in use today. A release is never changed after it is published.
 A correction becomes a new release.
 
 - **Desktop:** the release is packed inside the app. The first time a new
@@ -129,9 +135,9 @@ decision.
 
 ## Adding another country's species list
 
-Norway's list is the first national list in Sporely. The process is designed
-so that other countries, for example Sweden (Dyntaxa), Denmark or Finland,
-can be added the same way. A national list adds:
+Sporely has two national lists: Norway's (NorTaxa) and Sweden's (Dyntaxa,
+added in release `tax-2026.09.30-01`). The process is designed so that other
+countries, for example Denmark or Finland, can be added the same way. A national list adds:
 
 - common names in that country's languages;
 - that country's species numbers, so Sporely can understand results from, and
@@ -166,7 +172,7 @@ one Sporely number, and the national list is linked to it.
 3. **Connect it to the builder.** A developer registers the new source with
    the builder: what its species numbers are called, and in which order it is
    trusted relative to the others. Today this is a small, reviewed code change,
-   because only NorTaxa has been added so far.
+   because only NorTaxa and Dyntaxa have been added so far.
 4. **Review the matches.** The builder links each national species to a
    Sporely species using the source's own references, never by name alone.
    Species it cannot match are listed for review. Reviewed decisions are
@@ -180,13 +186,16 @@ one Sporely number, and the national list is linked to it.
 
 ## Known gaps
 
-- **Duplicate species entries.** About 7,300 Norwegian species were not
-  merged with their worldwide Catalogue of Life entry, usually because the
-  author citation is written differently (for example "Fr." and
-  "Fr. : Fr."). The desktop app shows their names and numbers correctly, but
-  the web and phone app use the Catalogue of Life entry, so species such as
-  *Cantharellus cibarius* (kantarell) have no common name there. Merging them
-  changes species identity and needs a reviewed plan.
+- **A few same-name species are still listed twice.** Release
+  `tax-2026.10.31-01` joined the Norwegian and Swedish entries that share a
+  scientific name with a Catalogue of Life entry (36,779 links at all ranks;
+  5,660 of them link a Norwegian entry, 3,537 of those at species rank).
+  That closed most of the earlier gap of about 7,300 duplicate Norwegian
+  entries: species such as *Cantharellus
+  cibarius* now show *kantarell* on the web and phone app too. A few hundred names per list were left separate on purpose,
+  because the match was unclear (several possible species, a name that means
+  a group such as "coll." or "s.lat.", or a name under a reviewed hold).
+  *Mycena pearsoniana* is one example.
 - **Artportalen species still under review.** 448 proposed Artportalen
   matches (mostly species Artportalen splits, or numbers already used for a
   differently named species) were left out until they are reviewed.
