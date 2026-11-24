@@ -33,7 +33,7 @@ Every find is a row in **View**, as a table or with large image previews, and it
 
 ### Edit
 
-**Edit** opens the selected observation in the main window, and changes save as you go. It holds the species, date, coordinates, place name and comments. Search for a scientific or common name in one field, or ask Artsorakel or iNaturalist to suggest the species from your photos. Habitat (NiN2 biotope), substrate and host (Grows on) have their own tabs. **Status and publishing** takes the observation from draft to finished to published, and sets who can see it in Sporely Cloud and how precisely its location is shown.
+**Edit** opens the selected observation in the main window, and changes save as you go. It holds the species, date, coordinates, place name and comments. Search for a scientific or common name in one field, or ask Artsorakel or iNaturalist to suggest the species from your photos. Host (Grows on) has its own tab, and so do habitat and substrate where the region's reporting service uses them (NiN2 biotope in Norway). **Status and publishing** shows whether the observation is a draft, finished or published, publishes it to the reporting services you use, and sets who can see it in Sporely Cloud and how precisely its location is shown.
 
 ![Edit mode for an observation](docs/images/readme/edit.jpg)
 
@@ -41,20 +41,20 @@ Every find is a row in **View**, as a table or with large image previews, and it
 
 **Images** adds pictures to the current observation from two sources:
 
-- **Live (microscope)** watches your microscope camera's capture folder during a session and brings new captures in as you work, tagged with the objective, contrast, mount, stain, condition and sample source you have selected. New captures stay unsaved, with an orange border, until you choose **Save to observation**. **Log only** records a session without a connected camera.
-- **Files and SD card** adds field and microscope photos from disk or a memory card, with crop, AI crop and rotate.
+- **Live (microscope)** watches your microscope camera's capture folder during a session and brings new captures in as you work, tagged with the objective, contrast, mount, stain, condition and sample source you have selected. JPEG captures are added directly. RAW captures wait in the strip with an orange border until you choose **Save to observation** or end the session. **Log only** records a session without a connected camera.
+- **Files and SD card** adds field and microscope photos from disk, or new photos from a memory card, with crop, rotate and (for field photos) AI crop.
 
 ![Images mode with a live microscope capture](docs/images/readme/images.jpg)
 
 ### Measure
 
-In **Measure** you measure spores and other structures on calibrated microscope images, with rectangles, lines or multi-line paths. Each measurement can be fine-tuned in the preview on the right. Objective, contrast, mount, stain, condition and sample source are kept for every microscope image.
+In **Measure** you measure spores and other structures on calibrated microscope images, with rectangles, lines or multi-line paths. Rectangles and lines can be fine-tuned in the preview on the right. Objective, contrast, mount, stain, condition and sample source are kept for every microscope image.
 
 ![Measure mode with spore measurements](docs/images/readme/measure.jpg)
 
 ### Analysis
 
-**Analysis** plots length, width and Q (L/W) for the observation, with histograms and a confidence ellipse, and compares them with reference values from the literature or your own reference library. Plots, statistics and an image gallery can be exported.
+**Analysis** plots length, width and Q (L/W) for the observation, with histograms and a data ellipse, and compares them with reference values from the literature or your own reference library. Plots, statistics and an image gallery can be exported.
 
 ![Analysis mode comparing measurements with reference data](docs/images/readme/analysis.jpg)
 
@@ -64,7 +64,7 @@ In **Measure** you measure spores and other structures on calibrated microscope 
 
 ### Camera import
 
-**Camera import** works across all observations. It matches field photos to observations, and microscope photos to Live Lab sessions, by their timestamps. If a camera clock is off, photograph the time code Sporely shows and choose that photo to correct it.
+**Camera import** works across all observations. It scans a folder and matches each photo by its timestamp, to an observation's time or to a Live Lab session. If a camera clock is off, photograph the time code Sporely shows and choose that photo to correct it.
 
 ### Calibration
 
@@ -147,7 +147,7 @@ On macOS, when you start the app from VS Code or with `python main.py`, the menu
 2. Choose field and microscope photos, from files or an SD card. You can select several at once.
 3. Mark each photo as **Field** or **Microscope**, and for microscope images choose the objective, contrast, mount, stain and condition.
 4. Click **Save new observation**. It is saved as a draft and opens in **Edit**.
-5. Search for the species, or use **Guess** to get AI suggestions. Changes save as you go.
+5. Search for the species and pick it from the results, or use **Guess** and choose a suggestion. Changes save as you go.
 
 ### Measure and analyze
 
