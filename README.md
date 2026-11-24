@@ -23,39 +23,48 @@ Publishing and place names follow the services that make most sense locally:
 
 The screenshots below are from the author's own observations from the 2026 season.
 
-### Observations
+The window has one mode bar: **View**, **Edit**, **Images**, **Measure** and **Analysis**, with **Camera import** on the right. In Images, Measure and Analysis the observation list folds into a thin rail on the left; click it to open the list as a drawer and switch observations without leaving the page.
 
-Every find is a row in the **Observations** tab, with its field and microscope images in the gallery below. From here you create, edit, publish and sync observations, and open the species plate.
+### View
 
-![Observations tab](docs/images/readme/observations.jpg)
+Every find is a row in **View**, as a table or with large image previews, and its field and microscope images run along the strip below. From here you create, publish and sync observations and open the species plate.
 
-### Observation details
+![View mode with the observation table](docs/images/readme/view.jpg)
 
-The observation dialog holds the date, coordinates, place name and comments, who can see the find in Sporely Cloud, and the species. Search for a scientific or common name in one field, or ask Artsorakel or iNaturalist to suggest the species from your photos. Habitat (NiN2 biotope), substrate and host (Grows on) have their own tabs.
+### Edit
 
-![Observation details dialog](docs/images/readme/observation-details.jpg)
+**Edit** opens the selected observation in the main window, and changes save as you go. It holds the species, date, coordinates, place name and comments. Search for a scientific or common name in one field, or ask Artsorakel or iNaturalist to suggest the species from your photos. Habitat (NiN2 biotope), substrate and host (Grows on) have their own tabs. **Status and publishing** takes the observation from draft to finished to published, and sets who can see it in Sporely Cloud and how precisely its location is shown.
+
+![Edit mode for an observation](docs/images/readme/edit.jpg)
+
+### Images
+
+**Images** adds pictures to the current observation from two sources:
+
+- **Live (microscope)** watches your microscope camera's capture folder during a session and brings new captures in as you work, tagged with the objective, contrast, mount, stain, condition and sample source you have selected. New captures stay unsaved, with an orange border, until you choose **Save to observation**. **Log only** records a session without a connected camera.
+- **Files and SD card** adds field and microscope photos from disk or a memory card, with crop, AI crop and rotate.
+
+![Images mode with a live microscope capture](docs/images/readme/images.jpg)
 
 ### Measure
 
-In the **Measure** tab you measure spores and other structures on calibrated microscope images, with rectangles, lines or multi-line paths. Each measurement can be fine-tuned in the preview on the right. Objective, contrast, mount, stain, condition and sample source are kept for every microscope image.
+In **Measure** you measure spores and other structures on calibrated microscope images, with rectangles, lines or multi-line paths. Each measurement can be fine-tuned in the preview on the right. Objective, contrast, mount, stain, condition and sample source are kept for every microscope image.
 
-![Measure tab with spore measurements](docs/images/readme/measure.jpg)
+![Measure mode with spore measurements](docs/images/readme/measure.jpg)
 
 ### Analysis
 
-The **Analysis** tab plots length, width and Q (L/W) for the observation, with histograms and a confidence ellipse, and compares them with reference values from the literature or your own reference library. Plots, statistics and an image gallery can be exported.
+**Analysis** plots length, width and Q (L/W) for the observation, with histograms and a confidence ellipse, and compares them with reference values from the literature or your own reference library. Plots, statistics and an image gallery can be exported.
 
-![Analysis tab comparing measurements with reference data](docs/images/readme/analysis.jpg)
+![Analysis mode comparing measurements with reference data](docs/images/readme/analysis.jpg)
 
 ### Species plate
 
-**Plate** builds a presentation plate from one observation: field photos in the background, microscope images as insets with their magnification and preparation, and the spore statistics as a caption. The plate at the top of this page was made this way. Layouts can be saved and reused.
+**Plate** in View builds a presentation plate from one observation: field photos in the background, microscope images as insets with their magnification and preparation, and the spore statistics as a caption. The plate at the top of this page was made this way. Layouts can be saved and reused.
 
-### Live Lab and Camera import
+### Camera import
 
-**Live Lab** watches your microscope camera's capture folder and imports new images into the current observation as you work, tagged with the objective, contrast, mount and stain you have selected. **Camera import** matches field and microscope photos taken earlier to the right observations by their timestamps, optionally using a Sync Shot QR code to correct a camera clock.
-
-![Live Lab tab](docs/images/readme/live-lab.jpg)
+**Camera import** works across all observations. It matches field photos to observations, and microscope photos to Live Lab sessions, by their timestamps. If a camera clock is off, photograph the time code Sporely shows and choose that photo to correct it.
 
 ### Calibration
 
@@ -134,17 +143,17 @@ On macOS, when you start the app from VS Code or with `python main.py`, the menu
 
 ### Create your first observation
 
-1. In the Observations tab, click **New** (or press N).
-2. Add field and microscope images. You can select several at once.
-3. For microscope images, choose the objective, contrast, mount, stain and condition. Ctrl+click several images in the gallery to set them all at once.
-4. Search for the species, or use **Guess** to get AI suggestions.
-5. Save the observation.
+1. In **View**, click **New** (or press N). Sporely opens **Images › Files and SD card** for the new observation.
+2. Choose field and microscope photos, from files or an SD card. You can select several at once.
+3. Mark each photo as **Field** or **Microscope**, and for microscope images choose the objective, contrast, mount, stain and condition.
+4. Click **Save new observation**. It is saved as a draft and opens in **Edit**.
+5. Search for the species, or use **Guess** to get AI suggestions. Changes save as you go.
 
 ### Measure and analyze
 
 - In **Measure**, choose a category (Spores, Basidia, Cheilocystidia …) and draw rectangles for length and width, or lines for length only.
 - In **Analysis**, look at the distributions and add reference values to compare with.
-- Click **Plate** in the Observations tab to build a species plate.
+- Click **Plate** in View to build a species plate.
 
 ### Species plate layouts
 
