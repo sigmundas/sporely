@@ -1,6 +1,8 @@
-# tax-2026.10.31-01 — exact-name association candidate
+# tax-2026.10.31-01 — exact-name association release
 
-Candidate only: not approved, promoted, imported or bundled.
+Approved, promoted and imported into production on 2026-11-04
+(`import-execution.md`), and bundled since desktop 0.9.30. This README is kept
+as the reproduction record of the candidate build.
 
 Derived from the frozen `tax-2026.10.23-11` SQLite (sha256 `2a81f684…`) by
 `scripts/name_associations.py` under `policies/name_association_policy.json`.

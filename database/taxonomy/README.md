@@ -168,6 +168,8 @@ older names. Inputs are the base release gz (pinned sha256) and that build's
 `norm/` directory; two builds are byte-identical. Reverse an association by
 adding an `exclusions` entry and rebuilding; preview the affected
 observations with `scripts/association_reversal_audit.py` (read-only).
+The first such release, `tax-2026.10.31-01`, was imported into production on
+2026-11-04 and is bundled since desktop 0.9.30.
 Command and evidence: `evidence/name-associations/tax-2026.10.31-01/`. Such a
 release is frozen with `freeze_release.py --derivation-dir` (below).
 
