@@ -7717,24 +7717,37 @@ class MainWindow(GeometryMixin, QMainWindow):
             else:
                 self._gallery_pan_recently_dragged = False
 
-    def _set_gallery_strip_height(self, force: bool = False):
-        if not hasattr(self, "gallery_splitter"):
-            return
+    def _gallery_strip_target_height(self) -> int:
+        """Height of the Analysis gallery pane that shows whole thumbnails:
+        the tallest tile, the horizontal scrollbar, frame and margins."""
         gallery_widget = self.gallery_splitter.widget(1)
         rendered_height = max(
             self._gallery_tile_metrics()["image_height"],
             int(getattr(self, "_gallery_render_max_height", 0)),
         )
         target_height = rendered_height + 8
-        if hasattr(self, "gallery_scroll") and self.gallery_scroll is not None:
-            target_height += int(self.gallery_scroll.frameWidth()) * 2
+        scroll = getattr(self, "gallery_scroll", None)
+        if scroll is not None:
+            target_height += int(scroll.frameWidth()) * 2
+            # Always reserve the scrollbar: it appears as soon as the tiles
+            # overflow, and must not cover their lower edge.
+            target_height += int(scroll.horizontalScrollBar().sizeHint().height())
         if gallery_widget and gallery_widget.layout() is not None:
             layout = gallery_widget.layout()
             target_height += layout.contentsMargins().top() + layout.contentsMargins().bottom()
             target_height += layout.spacing()
+        return max(GALLERY_MIN_HEIGHT, target_height)
+
+    def _set_gallery_strip_height(self, force: bool = False):
+        if not hasattr(self, "gallery_splitter"):
+            return
+        gallery_widget = self.gallery_splitter.widget(1)
+        target_height = self._gallery_strip_target_height()
         if gallery_widget:
             gallery_widget.setMaximumHeight(16777215)
-            gallery_widget.setMinimumHeight(GALLERY_MIN_HEIGHT)
+            # The plot gives way, not the thumbnails: the splitter cannot
+            # squeeze the strip below a whole tile (it can still collapse it).
+            gallery_widget.setMinimumHeight(target_height)
         if not force and bool(getattr(self, "_gallery_splitter_user_resized", False)):
             return
         sizes = self.gallery_splitter.sizes()

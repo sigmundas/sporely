@@ -137,6 +137,7 @@ MEASURE_TAB_IDS = {
 }
 ANALYSIS_TAB_IDS = {
     "analysis.tab", "analysis.tab-dark", "analysis.tab-small",
+    "analysis.gallery-squeezed", "analysis.gallery-squeezed-dark", "analysis.gallery-squeezed-small",
     "analysis.reference-drawer", "analysis.reference-drawer-dark", "analysis.reference-drawer-de",
     "analysis.reference-drawer-community", "analysis.reference-drawer-my-observations",
     "analysis.reference-drawer-bars", "analysis.reference-drawer-bars-dark",

@@ -482,3 +482,83 @@ def test_export_gallery_composite_delegates_to_export_gallery_module(
     window.export_gallery_composite()
 
     assert calls == [window]
+
+
+@pytest.fixture
+def isolated_profile(tmp_path, monkeypatch, qtbot):
+    from tools.review_ui.live_lab_harness import FakeRawpy, isolation_patches, prepare_profile
+
+    rawpy = FakeRawpy()
+    for owner, attribute, value in isolation_patches(tmp_path, rawpy):
+        monkeypatch.setattr(owner, attribute, value)
+    # Keep the user's real window geometry (QSettings) out of the test.
+    monkeypatch.setattr(main_window.MainWindow, "_restore_geometry", lambda self: None)
+    monkeypatch.setattr(main_window.MainWindow, "_save_geometry", lambda self: None)
+    return prepare_profile(tmp_path, rawpy)
+
+
+def _seed_measured_observation(profile, count: int = 24) -> int:
+    from PySide6.QtCore import QPointF
+
+    from database.models import ImageDB, MeasurementDB
+    from tools.review_ui.live_lab_harness import create_observation
+
+    observation_id = create_observation(profile, "gallery-strip", genus="Cortinarius", species="limonius")
+    image_id = int(ImageDB.add_image(
+        observation_id, str(profile.jpeg("A0001.JPG", seed=5)), "microscope", scale=0.1, objective_name="100X",
+    ))
+    for index in range(count):
+        x, y = 40 + (index % 8) * 50, 40 + (index // 8) * 60
+        points = [QPointF(x, y), QPointF(x + 28, y), QPointF(x + 14, y - 8), QPointF(x + 14, y + 8)]
+        MeasurementDB.add_measurement(
+            image_id, 9.5 + (index % 5) * 0.2, 5.0 + (index % 3) * 0.2, measurement_type="Spores", points=points,
+        )
+    return observation_id
+
+
+@pytest.mark.parametrize("size", [(1500, 950), (1100, 720)])
+def test_analysis_gallery_strip_keeps_whole_thumbnails_from_saved_small_layout(qtbot, isolated_profile, size):
+    """A gallery splitter saved at the old 100 px floor, restored when the
+    observation opens, cannot squeeze the Analysis strip below a whole
+    thumbnail: the plot gives up the height instead. The README screenshot
+    showed half-tiles above the hint bar."""
+    import json
+
+    from database.models import SettingsDB
+
+    observation_id = _seed_measured_observation(isolated_profile)
+    SettingsDB.set_setting(
+        f"gallery_settings_{observation_id}",
+        json.dumps({"orient": True, "gallery_splitter_sizes": [800, main_window.GALLERY_MIN_HEIGHT]}),
+    )
+
+    window = main_window.MainWindow()
+    qtbot.addWidget(window)
+    window.resize(*size)
+    with qtbot.waitExposed(window):
+        window.show()
+    window.on_observation_selected(observation_id, "Cortinarius limonius", switch_tab=False)
+    window.tab_widget.setCurrentWidget(window.analysis_tab)
+    qtbot.waitUntil(lambda: len(window._gallery_thumbnail_frames) == 24, timeout=10000)
+    qtbot.wait(50)
+
+    splitter = window.gallery_splitter
+    gallery_pane = splitter.widget(1)
+    scroll = window.gallery_scroll
+    # The saved layout was restored as a user resize, not reset to the default.
+    assert window._gallery_splitter_user_resized
+    assert scroll.horizontalScrollBar().isVisible()  # 24 tiles overflow the strip
+
+    def tiles_fit() -> bool:
+        tallest = max(frame.height() for frame in window._gallery_thumbnail_frames.values())
+        return tallest > main_window.GALLERY_MIN_HEIGHT and scroll.viewport().height() >= tallest
+
+    assert splitter.sizes()[1] >= gallery_pane.minimumHeight()
+    assert tiles_fit(), (splitter.sizes(), scroll.viewport().height())
+
+    # Dragging the handle part-way into the strip stops at a whole tile
+    # (the strip may still collapse to 0 when dragged past half its minimum).
+    splitter.moveSplitter(splitter.handle(1).y() + 30, 1)
+    qtbot.wait(50)
+    assert splitter.sizes()[1] >= gallery_pane.minimumHeight()
+    assert tiles_fit(), (splitter.sizes(), scroll.viewport().height())

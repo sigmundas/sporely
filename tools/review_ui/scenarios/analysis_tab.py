@@ -86,6 +86,17 @@ def _analysis_tab(context: ReviewContext, *, size: tuple[int, int] = (1500, 950)
     return window
 
 
+def _squeeze_gallery(window) -> None:
+    """A gallery strip saved at the old 100 px floor, restored as a user resize."""
+    from ui.splitter_state import GALLERY_MIN_HEIGHT
+
+    splitter = window.gallery_splitter
+    total = sum(splitter.sizes())
+    splitter.setSizes([total - GALLERY_MIN_HEIGHT, GALLERY_MIN_HEIGHT])
+    window._gallery_splitter_user_resized = True
+    window._set_gallery_strip_height()
+
+
 COMMUNITY_RESULTS = [
     {
         "_kind": "observation", "observation_id": 4242, "genus": "Cortinarius", "species": "limonius",
@@ -472,3 +483,16 @@ def register_analysis_tab_scenarios(registry: ScenarioRegistry) -> None:
             locale="nb_NO",
         )
     )
+    for suffix, theme, size in (("", "light", (1500, 950)), ("-dark", "dark", (1500, 950)), ("-small", "light", (1100, 720))):
+        registry.register(
+            ReviewScenario(
+                id=f"analysis.gallery-squeezed{suffix}",
+                group="analysis",
+                title=f"Analysis tab, gallery strip dragged small (nb, {theme}, {size[0]}x{size[1]})",
+                description="The gallery splitter restored at the old 100 px floor: the plot gives way, the thumbnails stay whole above the hint bar.",
+                build=lambda context, size=size: _analysis_tab(context, size=size, after=_squeeze_gallery),
+                viewport=size,
+                locale="nb_NO",
+                theme=theme,
+            )
+        )
