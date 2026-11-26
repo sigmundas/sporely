@@ -21,9 +21,13 @@ repository Git restriction.
 
 ## Workflow
 
-- The top-level session implements. Use subagents only for parallel read-only
-  scouting, or for an independent review when Codex is unavailable. Never
-  delegate concurrent implementation writes.
+- The top-level session owns the work and may delegate implementation to
+  subagents. Give each writing subagent its own worktree and a set of files no
+  other writer touches, and check its diff, tests and CI yourself before
+  reporting. Subagents also do parallel read-only scouting, and independent
+  review when Codex is unavailable.
+- In an Agent Sparring managed run the stage session implements; do not
+  delegate implementation writes there.
 - At each stopping point (the end of a stage or step, before reporting), run
   a Codex review (`/codex:review`; `/codex:challenge` for risky
   changes such as migrations, deletion or sync identity). Verify each finding
@@ -101,8 +105,8 @@ manual-test status, and deferred work.
 
 ## Git policy
 
-Commit each completed step and push it to the current branch. Do not open pull
-requests unless the user asks, or unless the work spans several worktrees. Never
+Commit each completed step and push it to the current branch. Open a pull
+request when the work is ready for CI and review. Never
 merge into or push to `main`; the user does that. Agents may create branches and
 merge `main` into the working branch when `main` has changed. Keep history
 understandable.
