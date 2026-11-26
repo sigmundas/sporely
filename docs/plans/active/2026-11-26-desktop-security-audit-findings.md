@@ -313,7 +313,7 @@ Files: `ui/main_window.py`, `ui/image_import_dialog.py`,
   builds a `QNetworkRequest` from the profile's `avatar_url` and reads the
   whole reply. The value comes from the user's own profile row.
 - Fix: fetch only `https` URLs on the Supabase storage host, which is where
-  the desktop uploads avatars (`upload_avatar` in `utils/cloud_sync.py`).
+  the desktop uploads avatars (`upload_profile_avatar` in `utils/cloud_sync.py`).
   Check whether the web app stores avatars on another Sporely host before
   narrowing the list. Cap the reply size; apply the same check to redirects.
 - Test: a fake network manager; other hosts and oversized replies are refused.
