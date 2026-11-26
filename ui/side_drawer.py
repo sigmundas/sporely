@@ -11,7 +11,7 @@ spans the host's full height.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QEasingCurve, QEvent, QPoint, QPropertyAnimation, Qt, Signal
+from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPoint, QPropertyAnimation, Qt, Signal
 from PySide6.QtWidgets import QApplication
 from PySide6.QtWidgets import (
     QFrame,
@@ -184,6 +184,12 @@ class SideDrawer(QFrame):
         return isinstance(obj, QWidget) and obj.window() is self.window()
 
     def eventFilter(self, obj, event) -> bool:  # noqa: N802 - Qt override
+        if not isinstance(obj, QObject):
+            # While open with ``escape_anywhere`` this is an application-wide
+            # filter: it sees every receiver, and PySide can hand it a stale
+            # wrapper of another type for an object Qt has just destroyed;
+            # the base class raises on that.
+            return False
         kind = event.type()
         if self._escape_anywhere and kind in (QEvent.ShortcutOverride, QEvent.KeyPress):
             if kind == QEvent.ShortcutOverride and self._open and self._escape_in_my_window(obj, event):
