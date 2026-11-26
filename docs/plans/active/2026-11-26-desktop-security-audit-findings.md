@@ -28,18 +28,16 @@ including GPS, from a sample JPEG (Pillow 12.3.0).
 ## How to work on these
 
 - Read `AGENTS.md` first. Its rules win over this file.
-- By default the top-level session implements and subagents never write code.
-  The packages below are file-disjoint so that the `/security-fix-packages`
-  skill can run one subagent per package, each in its own worktree, but only
-  after the owner says in the conversation that subagent implementation and
-  pull requests are allowed for this run. Without that, work through the
-  packages one at a time in the top-level session.
+- The packages below are file-disjoint so that each can go to its own
+  subagent in its own worktree, as `AGENTS.md` allows (for example through
+  the `/security-fix-packages` skill). They can equally be worked one at a
+  time in the top-level session.
 - A package may edit only the files listed for it, plus new test files and new
   modules it creates. It must not edit `tests/conftest.py` or another
   package's files. If a fix needs a file owned by another package, stop and
   report.
-- Branch from `origin/main`, one commit per finding, push the branch. Never
-  merge into or push to `main`.
+- Branch from `origin/main`, one commit per finding, push the branch and open
+  a pull request. Never merge into or push to `main`.
 - For every finding, write the regression test first and show that it fails on
   the unfixed code.
 - Tests: `/Users/sigmundas/Documents/Code/sporely/sporely-py/.venv/bin/pytest <files>`
