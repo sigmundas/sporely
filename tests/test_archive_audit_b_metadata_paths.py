@@ -152,3 +152,26 @@ def test_portable_export_skips_metadata_paths_outside_library(installation, tmp_
         statuses["portable/assets/calibrations/records/10/metadata-0-selected_path.txt"]
         == "missing_at_source"
     )
+
+
+def test_metadata_path_spelled_with_other_case_stays_inside_library(installation, tmp_path):
+    images_dir = tmp_path / "Library-Images"
+    images_dir.mkdir()
+    sidecar = images_dir / "cal.xmp"
+    sidecar.write_bytes(b"in-library-sidecar")
+    other_spelling = tmp_path / "library-images" / "cal.xmp"
+    if not other_spelling.exists():
+        pytest.skip("case-sensitive file system")
+    schema.save_app_settings({"images_dir": str(images_dir)})
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        connection.execute(
+            "INSERT INTO calibrations (id, calibration_uuid, objective_key, calibration_date, "
+            "microns_per_pixel, measurements_json) VALUES (10, 'cal-x', '100X', '2026-08-01', 0.1, ?)",
+            (json.dumps({"images": [{"companion_paths": [str(other_spelling)]}]}),),
+        )
+    destination = tmp_path / "backup.sporely"
+
+    create_full_backup(destination, app_version="test", qsettings_values={})
+
+    members = _archive_bytes(destination)
+    assert members["assets/calibrations/records/10/metadata-0-companion_0.xmp"] == b"in-library-sidecar"

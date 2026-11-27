@@ -221,6 +221,25 @@ def _path_key(path: Path) -> str:
     return os.path.normcase(str(path.resolve(strict=False)))
 
 
+def _file_identity(path: Path) -> tuple[int, int] | None:
+    try:
+        stat_result = path.stat()
+    except OSError:
+        return None
+    if not stat_result.st_ino:
+        return None
+    return (stat_result.st_dev, stat_result.st_ino)
+
+
+def _same_file(first: Path, second: Path) -> bool:
+    if os.path.normcase(str(first)) == os.path.normcase(str(second)):
+        return True
+    try:
+        return os.path.samefile(first, second)
+    except OSError:
+        return False
+
+
 # Image formats Sporely itself imports (RAW formats are excluded separately).
 _METADATA_IMAGE_SUFFIXES = frozenset({
     ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp", ".heic", ".heif",
@@ -245,16 +264,35 @@ class _MetadataPathPolicy:
 
     roots: tuple[Path, ...]
     trusted: frozenset[str]
+    # (st_dev, st_ino) of existing path-column files: names the same file
+    # under another spelling (case-insensitive volumes).
+    trusted_files: frozenset[tuple[int, int]] = frozenset()
+
+    def _inside_root(self, resolved: Path) -> bool:
+        if any(resolved.is_relative_to(root) for root in self.roots):
+            return True
+        existing_roots = [root for root in self.roots if root.is_dir()]
+        if not existing_roots:
+            return False
+        for parent in resolved.parents:
+            if not parent.is_dir():
+                continue
+            if any(_same_file(parent, root) for root in existing_roots):
+                return True
+        return False
 
     def allows(self, source: Path, row_paths: Iterable[Path] = ()) -> bool:
         resolved = source.resolve(strict=False)
-        if any(resolved.is_relative_to(root) for root in self.roots):
+        if self._inside_root(resolved):
             return True
         if os.path.normcase(str(resolved)) in self.trusted:
             return True
-        parent = os.path.normcase(str(resolved.parent))
+        identity = _file_identity(resolved)
+        if identity is not None and identity in self.trusted_files:
+            return True
+        parent = resolved.parent
         if any(
-            os.path.normcase(str(row_path.resolve(strict=False).parent)) == parent
+            _same_file(row_path.resolve(strict=False).parent, parent)
             for row_path in row_paths
         ):
             return True
@@ -289,6 +327,7 @@ def _metadata_path_policy(
     # unset, in ``<database folder>/originals``.
     roots.append(Path(originals_dir).expanduser() if originals_dir else settings_source.parent / "originals")
     trusted: set[str] = set()
+    trusted_files: set[tuple[int, int]] = set()
     with closing(sqlite3.connect(database_path)) as connection:
         for query in (
             "SELECT filepath, original_filepath FROM images",
@@ -300,9 +339,13 @@ def _metadata_path_policy(
                     source = _resolve_row_path(value, images_dir)
                     if source is not None:
                         trusted.add(_path_key(source))
+                        identity = _file_identity(source)
+                        if identity is not None:
+                            trusted_files.add(identity)
     return _MetadataPathPolicy(
         tuple(root.resolve(strict=False) for root in roots if str(root).strip()),
         frozenset(trusted),
+        frozenset(trusted_files),
     )
 
 
