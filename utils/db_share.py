@@ -998,6 +998,16 @@ def import_database_bundle(
                 old_obs_id = data.get("observation_id")
                 if include_observations and old_obs_id in obs_map:
                     data["observation_id"] = obs_map[old_obs_id]
+                elif include_observations and old_obs_id is not None:
+                    # The parent is not in the bundle: keeping the source id
+                    # would attach the image to whichever local observation
+                    # has that number. Its measurements and annotations are
+                    # skipped below because the image does not map.
+                    warnings.append(
+                        "Skipped image for missing observation "
+                        f"{old_obs_id!r}: {data.get('filepath')}"
+                    )
+                    continue
                 elif not include_observations:
                     data["observation_id"] = None
                 if not include_calibrations:
@@ -1053,6 +1063,9 @@ def import_database_bundle(
                 if old_image_id in img_map:
                     data["image_id"] = img_map[old_image_id]
                 else:
+                    warnings.append(
+                        f"Skipped measurement {old_id!r} for missing image {old_image_id!r}."
+                    )
                     continue
                 _fork_bundle_row(
                     data, measurement_table_columns, _BUNDLE_MEASUREMENT_CLEARED_FIELDS
