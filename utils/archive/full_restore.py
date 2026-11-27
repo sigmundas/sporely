@@ -131,13 +131,15 @@ def _schema_objects(path: Path) -> dict[tuple[str, str], str | None]:
         }
 
 
-def _require_known_schema_objects(main_database: Path, reference_database: Path) -> None:
-    """Reject staged triggers and views the app itself would not have created.
+_SchemaObjects = dict[tuple[str, str], "str | None"]
 
-    Runs before and after the staged databases are migrated. Each trigger and view must
-    match, by name and SQL, the one in a freshly initialised database of the
-    installed schema, or the one already installed in the live database (a
-    library created by an older version can keep an older definition).
+
+def _allowed_schema_objects() -> tuple[tuple[_SchemaObjects, _SchemaObjects], tuple[_SchemaObjects, _SchemaObjects]]:
+    """Triggers and views a restore may carry, for the main and reference DBs.
+
+    Each is the definition in a freshly initialised database of the installed
+    schema, or the one already installed in the live database (a library
+    created by an older version can keep an older definition).
     """
     from database import schema
 
@@ -150,20 +152,37 @@ def _require_known_schema_objects(main_database: Path, reference_database: Path)
                 reference_path=fresh_reference,
                 run_model_backfills=False,
             )
-            pairs = []
-            for candidate, fresh, live in (
-                (main_database, fresh_main, Path(schema.get_database_path())),
-                (reference_database, fresh_reference, Path(schema.get_reference_database_path())),
+            allowed = []
+            for fresh, live in (
+                (fresh_main, Path(schema.get_database_path())),
+                (fresh_reference, Path(schema.get_reference_database_path())),
             ):
-                pairs.append((
-                    candidate,
-                    _schema_objects(candidate),
+                allowed.append((
                     _schema_objects(fresh),
                     _schema_objects(live) if live.is_file() else {},
                 ))
         except sqlite3.Error as exc:
             raise ArchiveValidationError("database schema object check failed") from exc
-    for candidate, staged, fresh_objects, live_objects in pairs:
+    return allowed[0], allowed[1]
+
+
+def _require_known_schema_objects(
+    main_database: Path,
+    reference_database: Path,
+    allowed: tuple[tuple[_SchemaObjects, _SchemaObjects], tuple[_SchemaObjects, _SchemaObjects]] | None = None,
+) -> None:
+    """Reject staged triggers and views the app itself would not have created.
+
+    Runs before and after the staged databases are migrated; see
+    ``_allowed_schema_objects`` for what is accepted.
+    """
+    if allowed is None:
+        allowed = _allowed_schema_objects()
+    for candidate, (fresh_objects, live_objects) in zip((main_database, reference_database), allowed):
+        try:
+            staged = _schema_objects(candidate)
+        except sqlite3.Error as exc:
+            raise ArchiveValidationError("database schema object check failed") from exc
         for key in sorted(staged):
             sql = staged[key]
             if key in fresh_objects and sql == fresh_objects[key]:
@@ -603,11 +622,12 @@ def prepare_full_restore(
         ref_db = extracted / "databases/reference_values.db"
         # Checked before the writable migration too, so foreign triggers
         # never fire during it, and again on the migrated result.
-        _require_known_schema_objects(main_db, ref_db)
+        allowed_schema_objects = _allowed_schema_objects()
+        _require_known_schema_objects(main_db, ref_db, allowed_schema_objects)
         _migrate_staged_databases(main_db, ref_db)
         _require_tables(main_db, set(MAIN_DATABASE_TABLES))
         _require_tables(ref_db, set(REFERENCE_DATABASE_TABLES))
-        _require_known_schema_objects(main_db, ref_db)
+        _require_known_schema_objects(main_db, ref_db, allowed_schema_objects)
         _require_current_columns(main_db, Path(schema.get_database_path()), set(MAIN_DATABASE_TABLES))
         _require_current_columns(ref_db, Path(schema.get_reference_database_path()), set(REFERENCE_DATABASE_TABLES))
         merged_settings = _merge_app_settings(extracted, schema.get_app_settings())
