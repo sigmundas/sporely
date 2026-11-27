@@ -6025,7 +6025,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             req.setRawHeader(b"Authorization", f"Bearer {token}".encode())
 
         reply = self._avatar_network.get(req)
-        reply.setReadBufferSize(MAX_AVATAR_BYTES + 1)
         reply.finished.connect(lambda: self._handle_avatar_reply(reply, user_id))
 
     def _handle_avatar_reply(self, reply, user_id: str):
