@@ -76,3 +76,11 @@ def test_apply_requires_the_service_key(tiny_db, monkeypatch):
     with pytest.raises(SystemExit):
         imp.run(apply=True, session=session)
     assert session.calls == []
+
+
+def test_abbreviated_flag_does_not_enable_writes(tiny_db, monkeypatch):
+    seen = []
+    monkeypatch.setattr(imp, "run", lambda apply=False, session=None: seen.append(apply))
+    with pytest.raises(SystemExit):
+        imp.main(["--a"])
+    assert seen == []

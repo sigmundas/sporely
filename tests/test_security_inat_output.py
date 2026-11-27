@@ -47,3 +47,25 @@ def test_authorize_does_not_print_the_authorization_url(monkeypatch, capsys, tmp
     assert "inaturalist.org/oauth/authorize" not in text
     assert "code_challenge" not in text
     assert "state=" not in text
+
+
+def test_authorize_fails_fast_when_no_browser_can_be_opened(monkeypatch, tmp_path):
+    import pytest
+
+    client = inat_oauth.INatOAuthClient(
+        client_id="dummy-client-id",
+        redirect_uri="http://127.0.0.1:8765/callback",
+        token_file=tmp_path / "tokens.json",
+    )
+
+    class FakeServer:
+        def __init__(self, redirect_uri):
+            pass
+
+        def wait_for_callback(self, **kwargs):
+            raise AssertionError("must not wait when no browser opened")
+
+    monkeypatch.setattr(inat_oauth, "LoopbackCallbackServer", FakeServer)
+    monkeypatch.setattr(inat_oauth.webbrowser, "open", lambda url, new=0: False)
+    with pytest.raises(RuntimeError, match="browser"):
+        client.authorize(open_browser=True)

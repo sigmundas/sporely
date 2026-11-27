@@ -19,7 +19,7 @@ _SYNC_SHOT_VERSION = "v1"
 # Largest pixel count (width x height) of any array held while decoding. A QR
 # code stays readable well below full camera resolution, and every candidate
 # is built, tried and released one at a time.
-MAX_DECODE_PIXELS = 4_000_000
+MAX_DECODE_PIXELS = 16_000_000
 
 
 def _local_naive_datetime(value: datetime) -> datetime:
@@ -108,11 +108,13 @@ def _load_decode_image(filepath: str | Path) -> np.ndarray:
         except ImportError:
             pass
     with Image.open(path) as image:
-        try:
-            # JPEG decoders can decode at reduced size, avoiding the full-size bitmap.
-            image.draft("RGB", (4096, 4096))
-        except Exception:
-            pass
+        if image.width * image.height > MAX_DECODE_PIXELS:
+            try:
+                # JPEG decoders can decode at reduced size, avoiding the full-size bitmap.
+                scale = (MAX_DECODE_PIXELS / (image.width * image.height)) ** 0.5
+                image.draft("RGB", (int(image.width * scale), int(image.height * scale)))
+            except Exception:
+                pass
         normalized = ImageOps.exif_transpose(image).convert("RGB")
         pixels = normalized.width * normalized.height
         if pixels > MAX_DECODE_PIXELS:

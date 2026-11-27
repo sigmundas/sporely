@@ -188,7 +188,8 @@ class INatOAuthClient:
         callback_server = LoopbackCallbackServer(self.redirect_uri)
         if open_browser:
             print("Opening browser for iNaturalist login. (If it does not open automatically, ensure xdg-utils is installed on Linux.)")
-            webbrowser.open(url, new=2)
+            if not webbrowser.open(url, new=2):
+                raise RuntimeError("Could not open a web browser for iNaturalist login.")
         callback = callback_server.wait_for_callback(
             timeout=timeout, tick_callback=tick_callback, expected_state=state
         )

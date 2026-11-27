@@ -21,7 +21,11 @@ import sqlite3
 import requests
 from pathlib import Path
 
-from utils.r2_storage import load_admin_env_file
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from utils.r2_storage import load_admin_env_file  # noqa: E402
 
 SUPABASE_URL = 'https://zkpjklzfwzefhjluvhfw.supabase.co'
 load_admin_env_file()
@@ -138,7 +142,7 @@ def run(apply: bool = False, session=None) -> None:
     print('Import complete.')
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(allow_abbrev=False, description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--apply', action='store_true',
                         help='Write to the Supabase project. Without it the script only prints counts.')
     args = parser.parse_args(argv)
