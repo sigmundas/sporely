@@ -847,6 +847,23 @@ def _unsafe_objective_key_map(
     return key_map
 
 
+def _bundle_row_dict(row: sqlite3.Row) -> dict:
+    """A bundle row keyed by lower-case column name.
+
+    SQLite matches column names case-insensitively, so a crafted bundle
+    column such as ``Observation_Id`` would slip past the importer's checks
+    on ``observation_id`` and still land in that destination column. Every
+    destination column name is lower case.
+    """
+    data: dict = {}
+    for key in row.keys():
+        canonical = str(key).lower()
+        if canonical in data:
+            raise ValueError(f"Bundle row has duplicate column {key!r}.")
+        data[canonical] = row[key]
+    return data
+
+
 def _table_column_names(cursor: sqlite3.Cursor, table: str) -> set[str]:
     try:
         cursor.execute(f"PRAGMA table_info({table})")
@@ -993,7 +1010,7 @@ def import_database_bundle(
             observation_table_columns = _table_column_names(dest_cur, "observations")
             src_cur.execute("SELECT * FROM observations ORDER BY id")
             for row in src_cur.fetchall():
-                data = dict(row)
+                data = _bundle_row_dict(row)
                 data.pop("id", None)
                 _fork_bundle_row(
                     data, observation_table_columns, _BUNDLE_OBSERVATION_CLEARED_FIELDS
@@ -1031,7 +1048,7 @@ def import_database_bundle(
                 for row in src_cur.execute(
                     "SELECT * FROM observation_reference_uses ORDER BY id"
                 ).fetchall():
-                    data = dict(row)
+                    data = _bundle_row_dict(row)
                     use_id = data.get("id")
                     src_observation_id = data.get("observation_id")
                     if src_observation_id in obs_map:
@@ -1080,7 +1097,7 @@ def import_database_bundle(
         if (include_images or include_measurements) and src_cur is not None:
             src_cur.execute("SELECT * FROM images ORDER BY id")
             for row in src_cur.fetchall():
-                data = dict(row)
+                data = _bundle_row_dict(row)
                 old_image_id = data.pop("id", None)
                 old_obs_id = data.get("observation_id")
                 if include_observations and old_obs_id in obs_map:
@@ -1144,7 +1161,7 @@ def import_database_bundle(
             measurement_table_columns = _table_column_names(dest_cur, "spore_measurements")
             src_cur.execute("SELECT * FROM spore_measurements ORDER BY id")
             for row in src_cur.fetchall():
-                data = dict(row)
+                data = _bundle_row_dict(row)
                 old_id = data.pop("id", None)
                 old_image_id = data.get("image_id")
                 if old_image_id in img_map:
@@ -1168,7 +1185,7 @@ def import_database_bundle(
 
             src_cur.execute("SELECT * FROM spore_annotations ORDER BY id")
             for row in src_cur.fetchall():
-                data = dict(row)
+                data = _bundle_row_dict(row)
                 data.pop("id", None)
                 old_image_id = data.get("image_id")
                 old_meas_id = data.get("measurement_id")
@@ -1191,7 +1208,7 @@ def import_database_bundle(
         if include_calibrations and src_cur is not None:
             src_cur.execute("SELECT * FROM calibrations ORDER BY id")
             for row in src_cur.fetchall():
-                data = dict(row)
+                data = _bundle_row_dict(row)
                 old_calibration_id = data.pop("id", None)
                 objective_key = str(data.get("objective_key") or "").strip()
                 if objective_key in objective_key_map:
@@ -1283,7 +1300,7 @@ def import_database_bundle(
                     pass
                 else:
                     for row in src_cur.fetchall():
-                        data = dict(row)
+                        data = _bundle_row_dict(row)
                         old_asset_id = data.pop("id", None)
                         source_calibration_id = data.get("calibration_id")
                         try:

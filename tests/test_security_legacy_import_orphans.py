@@ -99,3 +99,57 @@ def test_orphaned_bundle_image_does_not_attach_to_local_observation(
     if include_measurements:
         assert lengths == [10.0]
         assert annotations == 1
+
+
+def test_mixed_case_bundle_columns_cannot_bypass_the_import_rules(tmp_path, profile):
+    """SQLite column names are case-insensitive; the importer's checks must be too."""
+    local_id = models.ObservationDB.create_observation(
+        date="2026-04-01", genus="Localgenus", species="testa"
+    )
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    source_db = tmp_path / "bundle-src" / "mushrooms.db"
+    source_db.parent.mkdir()
+    with sqlite3.connect(source_db) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE observations (
+                id INTEGER PRIMARY KEY, date TEXT NOT NULL, genus TEXT, Folder_Path TEXT
+            );
+            CREATE TABLE images (
+                id INTEGER PRIMARY KEY, Observation_Id INTEGER, filepath TEXT, image_type TEXT
+            );
+            """
+        )
+        conn.execute(
+            "INSERT INTO observations (id, date, genus, Folder_Path) VALUES (?, '2026-05-01', 'Bundlegenus', ?)",
+            (local_id + 50, str(outside)),
+        )
+        conn.execute(
+            "INSERT INTO images (id, Observation_Id, filepath, image_type) "
+            "VALUES (31, ?, 'orphan/IMG_ORPHAN.jpg', 'microscope')",
+            (local_id,),
+        )
+    bundle = tmp_path / f"bundle-{uuid.uuid4().hex[:8]}.zip"
+    with zipfile.ZipFile(bundle, "w") as zf:
+        zf.write(source_db, arcname="mushrooms.db")
+        zf.writestr("images/orphan/IMG_ORPHAN.jpg", b"jpeg from the bundle")
+
+    db_share.import_database_bundle(
+        str(bundle),
+        include_observations=True,
+        include_images=True,
+        include_measurements=False,
+        include_calibrations=False,
+        include_reference_values=False,
+    )
+
+    with sqlite3.connect(schema.get_database_path()) as conn:
+        local_images = conn.execute(
+            "SELECT filepath FROM images WHERE observation_id = ?", (local_id,)
+        ).fetchall()
+        folders = [row[0] for row in conn.execute(
+            "SELECT folder_path FROM observations WHERE genus = 'Bundlegenus'"
+        )]
+    assert local_images == []
+    assert folders == [None]
