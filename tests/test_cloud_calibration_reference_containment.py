@@ -2,9 +2,9 @@
 
 Calibration metadata (``image_filepath`` and ``measurements_json.images[].path``)
 can arrive from a cloud pull or a bundle import. A push must never open or
-upload a file it names outside the managed images folder or the configured
-originals folder. These tests run the real resolver and selector; the
-recorders below only observe calls and pass them through.
+upload a file it names outside the managed images folder; such a path must
+not even be probed on the filesystem. These tests run the real resolver and
+selector; the recorders below only observe calls and pass them through.
 """
 
 import json
@@ -64,12 +64,23 @@ def library(monkeypatch, tmp_path):
 
     monkeypatch.setattr(Image, "open", recording_open)
 
+    touched: list[str] = []
+    for name in ("exists", "is_file", "resolve", "stat", "open"):
+        real = getattr(Path, name)
+
+        def recording(self, *args, _real=real, **kwargs):
+            touched.append(os.path.normpath(os.path.abspath(os.fspath(self))))
+            return _real(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, name, recording)
+
     return {
         "images_dir": images_dir,
         "originals_dir": originals_dir,
         "outside_dir": outside_dir,
         "probed": probed,
         "opened": opened,
+        "touched": touched,
     }
 
 
@@ -213,11 +224,44 @@ def test_relative_in_library_path_is_selected(library, path_text):
     assert os.path.realpath(str(selected)) == os.path.realpath(str(inside))
 
 
-def test_configured_originals_folder_is_accepted(library):
-    inside = _write_image(library["originals_dir"] / "observation_1" / "scale.jpg")
-    calibration = _calibration(measurements_json={"images": [{"path": str(inside)}]})
+def test_database_carried_originals_folder_is_not_a_source(library):
+    """originals_dir lives in the database; a copied database could widen it."""
+    outside = _write_image(library["originals_dir"] / "observation_1" / "scale.jpg")
+    calibration = _calibration(measurements_json={"images": [{"path": str(outside)}]})
+
+    assert cloud_sync._select_representative_calibration_image_path(calibration) is None
+    _assert_sentinel_untouched(library, outside)
+
+
+def test_out_of_library_path_is_refused_without_any_filesystem_access(library):
+    """No exists/stat/resolve/open on the untrusted path (a UNC share would be contacted)."""
+    sentinel = _write_image(library["outside_dir"] / "sentinel.jpg")
+    traversal = str(library["images_dir"] / ".." / ".." / "outside" / "sentinel.jpg")
+    calibration = _calibration(
+        image_filepath=str(sentinel),
+        measurements_json={"images": [{"path": traversal}, {"path": "../../outside/sentinel.jpg"}]},
+    )
+    library["touched"].clear()
+
+    assert cloud_sync._select_representative_calibration_image_path(calibration) is None
+
+    real = os.path.normpath(str(sentinel))
+    assert real not in library["touched"]
+    assert not any(t.startswith(os.path.normpath(str(library["outside_dir"]))) for t in library["touched"])
+
+
+def test_legacy_app_data_path_maps_to_the_managed_copy(monkeypatch, library, tmp_path):
+    legacy_root = tmp_path / "legacy-appdata"
+    old_copy = _write_image(legacy_root / "images" / "calibrations" / "100X" / "cal.jpg")
+    managed = _write_image(library["images_dir"] / "calibrations" / "100X" / "cal.jpg")
+    import app_identity
+
+    monkeypatch.setattr(app_identity, "legacy_app_data_dir", lambda: legacy_root)
+    monkeypatch.setattr(cloud_sync, "app_data_dir", lambda: library["images_dir"].parent)
+    calibration = _calibration(measurements_json={"images": [{"path": str(old_copy)}]})
 
     selected = cloud_sync._select_representative_calibration_image_path(calibration)
 
     assert selected is not None
-    assert os.path.realpath(str(selected)) == os.path.realpath(str(inside))
+    assert os.path.realpath(str(selected)) == os.path.realpath(str(managed))
+    _assert_sentinel_untouched(library, old_copy)

@@ -41,7 +41,6 @@ from database.schema import (
     APP_SETTINGS_LOCK,
     get_app_settings,
     get_connection,
-    get_database_path,
     get_images_dir,
     save_app_settings,
     update_app_settings,
@@ -1181,60 +1180,80 @@ def _remap_known_local_calibration_path(path: Path) -> Path:
 
 
 def _calibration_reference_allowed_roots() -> list[Path]:
-    """Folders a calibration reference image may be read from for upload.
+    """Folder a calibration reference image may be read from for upload.
 
-    Calibration images are saved under the managed images folder
-    (``get_calibrations_dir()``); originals live in the configured originals
-    folder. Anything else named by pulled or imported metadata is not read.
+    The calibration dialog saves every calibration image under the managed
+    images folder (``get_calibrations_dir()``), which comes from the
+    machine-local profile settings. Anything else named by pulled or imported
+    metadata is not read (F04c). The originals folder is deliberately not a
+    source: calibration images are never stored there, and its setting lives
+    in the database, which a copied or restored database can carry.
     """
-    raw_roots: list[Path] = []
     try:
-        raw_roots.append(Path(get_images_dir()))
+        return [Path(get_images_dir()).expanduser()]
     except Exception:
-        pass
-    try:
-        configured = str(SettingsDB.get_setting('originals_dir') or '').strip()
-    except Exception:
-        configured = ''
-    if configured:
-        raw_roots.append(Path(configured).expanduser())
-    try:
-        raw_roots.append(Path(get_database_path()).parent / 'originals')
-    except Exception:
-        pass
+        return []
 
-    roots: list[Path] = []
-    for root in raw_roots:
-        try:
-            resolved = root.resolve(strict=False)
-        except Exception:
-            continue
-        if resolved not in roots:
-            roots.append(resolved)
-    return roots
+
+def _lexical_path_key(path: Path | str) -> str:
+    """Absolute, normalized, case-normalized path text without filesystem I/O."""
+    return os.path.normcase(os.path.normpath(os.path.abspath(os.fspath(path))))
+
+
+def _lexically_within(candidate: Path | str, root: Path | str) -> bool:
+    try:
+        cand_key = _lexical_path_key(candidate)
+        root_key = _lexical_path_key(root)
+        return os.path.commonpath([cand_key, root_key]) == root_key
+    except (ValueError, TypeError, OSError):
+        # Different drives, mixed absolute/relative, or an unusable path.
+        return False
 
 
 def _calibration_reference_path_in_library(candidate: Path, roots: list[Path]) -> bool:
-    """True when ``candidate`` (symlinks resolved) lies inside one of ``roots``."""
+    """True when ``candidate`` lies inside one of ``roots``.
+
+    The lexical check runs first, so a path outside the library (another
+    drive, a UNC share, ``..`` traversal) is refused without touching the
+    filesystem. Only then are symlinks resolved and containment checked
+    again against the resolved roots.
+    """
+    if not any(_lexically_within(candidate, root) for root in roots):
+        return False
     try:
         resolved = candidate.resolve(strict=False)
     except Exception:
         return False
     for root in roots:
         try:
-            resolved.relative_to(root)
-        except ValueError:
+            resolved_root = root.resolve(strict=False)
+        except Exception:
             continue
-        return True
+        if _lexically_within(resolved, resolved_root):
+            return True
     return False
+
+
+def _legacy_calibration_candidate(raw_path: Path) -> Path | None:
+    """Map a legacy MycoLog app-data path to the current app-data folder, lexically."""
+    try:
+        from app_identity import legacy_app_data_dir
+
+        legacy_root = legacy_app_data_dir()
+        if not _lexically_within(raw_path, legacy_root):
+            return None
+        rel = os.path.relpath(_lexical_path_key(raw_path), _lexical_path_key(legacy_root))
+        return Path(app_data_dir()) / rel
+    except Exception:
+        return None
 
 
 def _resolve_local_calibration_asset_path(path_value: str | None) -> Path | None:
     """Resolve a calibration image path for upload, confined to the library.
 
     The path comes from calibration metadata, which a cloud pull or a bundle
-    import can supply, so only files inside the managed images folder or the
-    originals folder are accepted (F04c); anything else counts as missing.
+    import can supply, so only files inside the managed images folder are
+    accepted (F04c); anything else counts as missing and is never probed.
     """
     text = str(path_value or '').strip()
     if not text:
@@ -1247,9 +1266,9 @@ def _resolve_local_calibration_asset_path(path_value: str | None) -> Path | None
     candidates: list[Path] = []
     if raw_path.is_absolute():
         candidates.append(raw_path)
-        remapped = _remap_known_local_calibration_path(raw_path)
-        if remapped != raw_path:
-            candidates.append(remapped)
+        legacy_candidate = _legacy_calibration_candidate(raw_path)
+        if legacy_candidate is not None:
+            candidates.append(legacy_candidate)
     else:
         images_dir = get_images_dir()
         if raw_path.parts and raw_path.parts[0] == images_dir.name:
