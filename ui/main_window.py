@@ -587,6 +587,7 @@ class AnalysisGalleryTile(QWidget):
         self._reposition_overlay_buttons()
         super().resizeEvent(event)
 from app_identity import APP_NAME, APP_REPOSITORY_URL, app_data_dir
+from utils.safe_links import safe_release_link
 from config import (
     RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG,
     RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW,
@@ -6101,7 +6102,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 return
             
             title = title_elem.text.strip()
-            url = link_elem.get('href', '').strip()
+            url = safe_release_link(link_elem.get('href', ''))
             
             # Extract version from title (e.g., "v0.2.2" -> "0.2.2")
             version = title.lower().replace("release", "").strip().lstrip("v").strip()
