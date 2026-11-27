@@ -34,7 +34,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import requests
 from PIL import Image, ImageOps, features
@@ -149,6 +149,19 @@ def _supabase_object_headers(api_key: str, access_token: str) -> dict[str, str]:
     }
 
 
+def _without_foreign_credentials(url: str, headers: dict[str, Any]) -> dict[str, Any]:
+    """Make sure a session's default Supabase credentials never reach a non-Supabase host.
+
+    A per-request header value of None removes the session default in ``requests``.
+    """
+    if urlsplit(str(url or "")).hostname == urlsplit(SUPABASE_URL).hostname:
+        return headers
+    merged = dict(headers)
+    for name in ("apikey", "Authorization"):
+        merged.setdefault(name, None)
+    return merged
+
+
 def _probe_url(url: str, session: requests.Session, headers: dict[str, str] | None = None) -> dict[str, Any]:
     result = {
         "status": "unknown",
@@ -165,12 +178,15 @@ def _probe_url(url: str, session: requests.Session, headers: dict[str, str] | No
             url,
             timeout=MEDIA_PROBE_TIMEOUT,
             allow_redirects=True,
-            headers={
-                "Range": "bytes=0-0",
-                "Cache-Control": "no-cache, no-store, max-age=0",
-                "Pragma": "no-cache",
-                **dict(headers or {}),
-            },
+            headers=_without_foreign_credentials(
+                url,
+                {
+                    "Range": "bytes=0-0",
+                    "Cache-Control": "no-cache, no-store, max-age=0",
+                    "Pragma": "no-cache",
+                    **dict(headers or {}),
+                },
+            ),
             stream=True,
         )
     except requests.Timeout as exc:
@@ -243,10 +259,13 @@ def _download_r2_object(url: str, session: requests.Session) -> tuple[bytes, str
         url,
         timeout=120,
         allow_redirects=True,
-        headers={
-            "Cache-Control": "no-cache, no-store, max-age=0",
-            "Pragma": "no-cache",
-        },
+        headers=_without_foreign_credentials(
+            url,
+            {
+                "Cache-Control": "no-cache, no-store, max-age=0",
+                "Pragma": "no-cache",
+            },
+        ),
     )
     if not response.ok:
         raise RuntimeError(f"R2 media download failed: {response.status_code} {response.text}".strip())
@@ -710,7 +729,9 @@ def run_audit(
     elif supabase_api_key is None:
         supabase_api_key = getattr(client, "supabase_api_key", SUPABASE_KEY)
     assert supabase_api_key is not None
-    probe_session = probe_session or getattr(client, "_s", None) or requests.Session()
+    # Public media probes use a fresh session without the client's default
+    # Supabase credentials; Supabase URLs get their headers per request.
+    probe_session = probe_session or requests.Session()
 
     filters, scope = _resolve_row_scope(args, client, admin_mode=bool(args.admin_service_role))
     cloud_rows = _fetch_cloud_rows(client, filters, args.limit)
