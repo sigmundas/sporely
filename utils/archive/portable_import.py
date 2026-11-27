@@ -33,7 +33,7 @@ from utils.archive.checksums import sha256_file
 from utils.archive.manifest import ArchiveManifest
 from utils.archive.paths import safe_staging_destination, validate_zip_entries
 from utils.archive.validation import ArchiveValidationError, validate_portable_observations
-from utils.objective_keys import is_safe_objective_key
+from utils.objective_keys import aliases_existing_key, is_safe_objective_key
 from utils.raw_detection import is_raw_image_path
 
 
@@ -2042,16 +2042,30 @@ def _merged_objectives_payload(
             )
             if str(row[0]).strip()
         }
+        # Calibration rows name objective keys (images may hold display
+        # names, which can contain "/"), whether or not a profile is bundled.
+        calibration_keys = {
+            str(row[0])
+            for row in connection.execute(
+                "SELECT DISTINCT objective_key FROM calibrations WHERE objective_key IS NOT NULL"
+            )
+        }
     selected = {
         key: value for key, value in incoming.items()
         if key in used or (isinstance(value, dict) and str(value.get("name") or "") in used)
     }
-    unsafe = sorted(key for key in selected if not is_safe_objective_key(key))
+    claimed: set[str] = set(current)
+    unsafe = []
+    for key in sorted(set(selected) | calibration_keys):
+        if not is_safe_objective_key(key) or aliases_existing_key(key, claimed):
+            unsafe.append(key)
+        else:
+            claimed.add(key)
     if unsafe:
         # An objective key names a folder under the calibrations folder;
         # deleting the objective would remove whatever folder it names.
         raise PortableImportError(
-            "objective profile keys must be plain names: "
+            "objective keys must be plain folder names unlike existing ones: "
             + ", ".join(repr(key) for key in unsafe)
         )
     merged = dict(current)

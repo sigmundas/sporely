@@ -199,3 +199,98 @@ def test_saving_calibration_image_never_writes_outside_calibrations(tmp_path, pr
     assert saved is not None
     calibrations_root = schema.get_calibrations_dir().resolve()
     assert calibrations_root in Path(saved).resolve().parents
+
+
+@pytest.mark.parametrize(
+    "key, safe",
+    [
+        ("micro_40X", True),
+        ("100X", True),
+        ("x.y", True),
+        ("micro_Plan_achro.", True),
+        (".. ", False),
+        ("...", False),
+        ("CON", False),
+        ("nul.txt", False),
+        ("C:x", False),
+        ("../x", False),
+        ("", False),
+    ],
+)
+def test_objective_key_validator(key, safe):
+    from utils.objective_keys import is_safe_objective_key
+
+    assert is_safe_objective_key(key) is safe
+
+
+def test_import_remaps_key_that_aliases_an_existing_key(tmp_path, monkeypatch, profile):
+    """On a case-insensitive file system two keys differing in case share a folder."""
+    own = schema.get_calibrations_dir() / "micro_40X"
+    own.mkdir(parents=True)
+    (own / "cal.jpg").write_bytes(b"own calibration")
+    schema.save_objectives({"micro_40X": {"name": "Own 40X", "magnification": 40.0}})
+    source_db = _source_db(tmp_path, monkeypatch)
+    _insert_calibration(source_db, "MICRO_40x")
+    bundle = _write_bundle(
+        tmp_path,
+        source_db,
+        {"objectives.json": json.dumps({"MICRO_40x": {"name": "Imported 40X"}}).encode()},
+    )
+
+    _import(bundle, include_observations=False, include_images=False)
+    _import(bundle, include_observations=False, include_images=False)
+
+    imported = schema.load_objectives()
+    assert "MICRO_40x" not in imported
+    assert sum(1 for value in imported.values() if value.get("name") == "Imported 40X") == 1
+    for key, value in imported.items():
+        if value.get("name") == "Imported 40X":
+            models.CalibrationDB.delete_calibrations_for_objective(key)
+    assert (own / "cal.jpg").read_bytes() == b"own calibration"
+
+
+def _staged_objective_db(tmp_path: Path, calibration_keys, image_names=()) -> Path:
+    staged = tmp_path / "staged.db"
+    with sqlite3.connect(staged) as conn:
+        conn.execute("CREATE TABLE images (objective_name TEXT)")
+        conn.execute("CREATE TABLE calibrations (objective_key TEXT)")
+        conn.executemany("INSERT INTO calibrations VALUES (?)", [(k,) for k in calibration_keys])
+        conn.executemany("INSERT INTO images VALUES (?)", [(n,) for n in image_names])
+    return staged
+
+
+def test_portable_import_refuses_unsafe_calibration_key_without_profile(tmp_path):
+    from utils.archive import portable_import
+
+    # Display names in images.objective_name may hold "/" and stay allowed.
+    staged = _staged_objective_db(tmp_path, ["../victim"], ["100X/1.25 Plan achro"])
+    incoming = tmp_path / "objectives.json"
+    incoming.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(portable_import.PortableImportError):
+        portable_import._merged_objectives_payload(staged, incoming, tmp_path / "dest.json")
+
+
+def test_portable_import_allows_display_names_with_slashes(tmp_path):
+    from utils.archive import portable_import
+
+    staged = _staged_objective_db(tmp_path, ["micro_40X"], ["100X/1.25 Plan achro"])
+    incoming = tmp_path / "objectives.json"
+    incoming.write_text(json.dumps({"micro_40X": {"name": "Own"}}), encoding="utf-8")
+
+    payload = portable_import._merged_objectives_payload(staged, incoming, tmp_path / "dest.json")
+
+    assert payload is not None and b"micro_40X" in payload
+
+
+def test_portable_import_refuses_key_aliasing_an_existing_key(tmp_path):
+    from utils.archive import portable_import
+
+    staged = _staged_objective_db(tmp_path, ["MICRO_40x"])
+    incoming = tmp_path / "objectives.json"
+    incoming.write_text(json.dumps({"MICRO_40x": {"name": "Imported"}}), encoding="utf-8")
+    destination = tmp_path / "dest.json"
+    destination.write_text(json.dumps({"micro_40X": {"name": "Own"}}), encoding="utf-8")
+
+    with pytest.raises(portable_import.PortableImportError):
+        portable_import._merged_objectives_payload(staged, incoming, destination)

@@ -44,7 +44,11 @@ from references.measurement_content_gates import (
     enhanced_bundle_export_enabled,
 )
 from utils.heic_converter import build_local_image_provenance
-from utils.objective_keys import fresh_objective_key, is_safe_objective_key
+from utils.objective_keys import (
+    aliases_existing_key,
+    fresh_objective_key,
+    is_safe_objective_key,
+)
 
 
 _REFERENCE_LIBRARY_TABLES: tuple[str, ...] = (
@@ -810,7 +814,10 @@ _BUNDLE_MEASUREMENT_CLEARED_FIELDS = ("cloud_id",)
 
 
 def _unsafe_objective_key_map(
-    src_cur: sqlite3.Cursor | None, objectives_path: Path, warnings: list[str]
+    src_cur: sqlite3.Cursor | None,
+    objectives_path: Path,
+    warnings: list[str],
+    existing_keys=(),
 ) -> dict[str, str]:
     """Fresh local keys for bundled objective keys that are not plain names.
 
@@ -837,13 +844,18 @@ def _unsafe_objective_key_map(
                 str(row[0]).strip() for row in src_cur.fetchall()
                 if row[0] is not None and str(row[0]).strip()
             )
+    # A key that differs from another only in letter case, or in trailing
+    # dots or spaces, names the same folder on macOS and Windows.
+    accepted: set[str] = {str(key) for key in existing_keys}
     key_map: dict[str, str] = {}
     for key in sorted(keys):
-        if not is_safe_objective_key(key):
-            key_map[key] = fresh_objective_key()
+        if not is_safe_objective_key(key) or aliases_existing_key(key, accepted):
+            key_map[key] = fresh_objective_key(key)
             warnings.append(
                 f"Replaced unsafe bundled objective key {key!r} with {key_map[key]!r}."
             )
+        else:
+            accepted.add(key)
     return key_map
 
 
@@ -927,8 +939,20 @@ def import_database_bundle(
         dest_conn.row_factory = sqlite3.Row
         dest_cur = dest_conn.cursor()
 
+        existing_objective_keys: set[str] = set()
+        if include_calibrations:
+            existing_objective_keys.update(str(key) for key in load_objectives())
+            try:
+                existing_objective_keys.update(
+                    str(row[0]) for row in dest_cur.execute(
+                        "SELECT DISTINCT objective_key FROM calibrations "
+                        "WHERE objective_key IS NOT NULL"
+                    ).fetchall()
+                )
+            except sqlite3.OperationalError:
+                pass
         objective_key_map = _unsafe_objective_key_map(
-            src_cur, temp_dir / "objectives.json", warnings
+            src_cur, temp_dir / "objectives.json", warnings, existing_objective_keys
         )
 
         obs_map: dict[int, int] = {}
