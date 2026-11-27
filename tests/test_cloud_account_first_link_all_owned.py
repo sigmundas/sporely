@@ -30,7 +30,8 @@ def _client(user_id):
         self.queries.append(path)
         owner = re.search(r"user_id=eq\.([^&]+)", path).group(1)
         ids = re.search(r"id=in\.\(([^)]*)\)", path).group(1).split(",")
-        return [{"id": int(i)} for i in ids if CLOUD_OWNERS.get(i) == owner]
+        # Postgres compares the bigint id, so "0101" matches row 101.
+        return [{"id": int(i)} for i in ids if CLOUD_OWNERS.get(str(int(i))) == owner]
 
     client._get = MethodType(fake_get, client)
     return client
@@ -78,6 +79,21 @@ def test_single_owner_database_still_binds(local_db):
 
     assert cloud_sync.ensure_database_linked_to_cloud_user(client) == ACCOUNT_A
     assert local_db.settings["linked_cloud_user_id"] == ACCOUNT_A
+
+
+@pytest.mark.parametrize("bad_id", ["x)or(1", "12a", "²"])
+def test_malformed_sampled_id_fails_closed_even_beside_an_owned_row(local_db, bad_id):
+    local_db.add("101", bad_id)
+
+    with pytest.raises(cloud_sync.AccountMismatchError):
+        cloud_sync.ensure_database_linked_to_cloud_user(_client(ACCOUNT_A))
+    assert "linked_cloud_user_id" not in local_db.settings
+
+
+def test_zero_padded_local_id_matches_the_canonical_cloud_id(local_db):
+    local_db.add("0101", "102")
+
+    assert cloud_sync.ensure_database_linked_to_cloud_user(_client(ACCOUNT_A)) == ACCOUNT_A
 
 
 def test_foreign_only_database_is_still_refused(local_db):

@@ -2197,16 +2197,26 @@ def _verify_unlinked_database_owner(client: "SporelyCloudClient") -> None:
     database can arrive unlinked while still holding another account's
     cloud ids. Only a database with no synced observations (new, or reset
     through Reset Cloud Sync) may bind to any account; otherwise the account
-    must own every sampled observation, so a database holding rows of two
-    accounts binds to neither (F10).
+    must own every observation in the sample (up to
+    ``_FIRST_LINK_OWNERSHIP_SAMPLE``, most recently synced first), so a
+    database whose sample holds rows of two accounts binds to neither (F10).
+    A sampled cloud id that is not a valid observation id fails closed.
     """
     local_ids = _local_synced_observation_cloud_ids()
     if not local_ids:
         return
-    owned = {str(value).strip() for value in client.list_owned_observation_ids(local_ids) or ()}
-    # list_owned_observation_ids only queries numeric ids; compare the same set.
-    checkable = {value for value in (str(v).strip() for v in local_ids) if value.isdigit()}
-    if not owned or not checkable or not checkable <= owned:
+    sampled: set[int] = set()
+    for value in local_ids:
+        text = str(value or '').strip()
+        if not (text.isascii() and text.isdigit()):
+            raise AccountMismatchError(ACCOUNT_MISMATCH_MESSAGE)
+        sampled.add(int(text))
+    owned: set[int] = set()
+    for value in client.list_owned_observation_ids(local_ids) or ():
+        text = str(value or '').strip()
+        if text.isascii() and text.isdigit():
+            owned.add(int(text))
+    if not sampled <= owned:
         raise AccountMismatchError(ACCOUNT_MISMATCH_MESSAGE)
 
 
