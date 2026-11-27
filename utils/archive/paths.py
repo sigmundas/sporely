@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import stat
 from pathlib import Path, PurePosixPath
-from zipfile import ZipInfo
+from zipfile import ZipFile, ZipInfo
 
 
 class UnsafeArchivePathError(ValueError):
@@ -92,3 +92,37 @@ def validate_zip_entries(infos: list[ZipInfo] | tuple[ZipInfo, ...]) -> tuple[st
         folded.add(folded_name)
         names.append(name)
     return tuple(names)
+
+
+# Control documents (manifest, settings and objectives JSON) are parsed whole,
+# so they get their own caps far below the per-member asset limit. A manifest
+# lists every archived file, so a large library needs more room than the
+# small settings documents do.
+MAX_MANIFEST_BYTES = 64 * 1024 * 1024
+MAX_CONTROL_DOCUMENT_BYTES = 16 * 1024 * 1024
+
+
+def read_control_member(archive: ZipFile, name: str, limit: int | None = None) -> bytes:
+    """Read a small ZIP control document, refusing one above *limit* bytes.
+
+    The declared size is checked before any byte is read, and the read is
+    bounded so that a wrong declared size cannot bypass the cap.
+    """
+    if limit is None:
+        limit = MAX_MANIFEST_BYTES if name == "manifest.json" else MAX_CONTROL_DOCUMENT_BYTES
+    info = archive.getinfo(name)
+    if info.file_size > limit:
+        raise UnsafeArchivePathError(f"archive control document is too large: {name}")
+    chunks: list[bytes] = []
+    remaining = limit + 1
+    with archive.open(info, "r") as source:
+        while remaining > 0:
+            chunk = source.read(min(remaining, 1024 * 1024))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+    data = b"".join(chunks)
+    if len(data) > limit:
+        raise UnsafeArchivePathError(f"archive control document is too large: {name}")
+    return data
