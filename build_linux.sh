@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.lock
 runtime_assets="$(python tools/runtime_assets.py pyinstaller-add-data --separator ':')"
 
 pyinstaller \

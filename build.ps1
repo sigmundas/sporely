@@ -1,7 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-python -m pip install --upgrade pip --disable-pip-version-check
-python -m pip install -r requirements.txt --disable-pip-version-check
+python -m pip install --require-hashes -r requirements.lock --disable-pip-version-check
 $runtimeAssets = python tools/runtime_assets.py pyinstaller-add-data --separator ";"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
