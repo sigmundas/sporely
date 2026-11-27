@@ -15,6 +15,7 @@ from utils.archive.manifest import ArchiveManifest, ManifestError
 from utils.archive.paths import (
     UnsafeArchivePathError,
     read_control_member,
+    require_control_member,
     safe_staging_destination,
     validate_zip_entries,
 )
@@ -64,6 +65,12 @@ def validate_full_backup(path: str | Path) -> ArchiveManifest:
                 raise ArchiveValidationError(
                     f"required archive members missing: {', '.join(sorted(missing_required))}"
                 )
+            for control_name in (
+                "data/app_settings.json", "data/qsettings.json",
+                "data/objectives.json", "data/last_objective.json",
+            ):
+                if control_name in info_by_name:
+                    require_control_member(info_by_name[control_name])
             for name, entry in included.items():
                 digest = hashlib.sha256()
                 size = 0
@@ -146,6 +153,9 @@ def validate_portable_observations(path: str | Path) -> ArchiveManifest:
                     f"required archive members missing: {', '.join(sorted(missing))}"
                 )
             info_by_name = {info.filename: info for info in infos}
+            for control_name in ("portable/objectives.json",):
+                if control_name in info_by_name:
+                    require_control_member(info_by_name[control_name])
             for name, entry in included.items():
                 digest = hashlib.sha256()
                 size = 0

@@ -92,9 +92,26 @@ def test_validation_rejects_oversized_settings_document_unread(
 
     with pytest.raises(ArchiveValidationError, match="too large"):
         validate_full_backup(archive)
-    # The checksum pass streams every member once; the size cap must stop the
-    # second, whole-document read of the settings JSON.
-    assert opened_members.count("data/app_settings.json") == 1
+    # Refused by its declared size before the checksum pass decompresses it.
+    assert opened_members.count("data/app_settings.json") == 0
+
+
+def test_control_document_with_unbounded_codec_is_rejected_unread(tmp_path, opened_members):
+    archive = tmp_path / "lzma.sporely"
+    with ZipFile(archive, "w", compression=zipfile.ZIP_LZMA) as target:
+        target.writestr("manifest.json", json.dumps({"format_version": 1, "mode": "full_backup"}))
+
+    with pytest.raises(ArchiveRoutingError, match="compression"):
+        classify_archive(archive)
+    with pytest.raises(ArchiveValidationError, match="compression"):
+        validate_full_backup(archive)
+    assert "manifest.json" not in opened_members
+
+
+def test_large_library_settings_fit_the_control_cap():
+    # About 20 MB of Species Plate settings for a 17 000-observation library
+    # (Codex review) must stay below the cap.
+    assert paths.MAX_CONTROL_DOCUMENT_BYTES >= 32 * 1024 * 1024
 
 
 def test_bounded_read_ignores_a_wrong_declared_size():
@@ -105,7 +122,7 @@ def test_bounded_read_ignores_a_wrong_declared_size():
             self.served = 0
 
         def getinfo(self, name):
-            return SimpleNamespace(filename=name, file_size=1)
+            return SimpleNamespace(filename=name, file_size=1, compress_type=zipfile.ZIP_STORED)
 
         def open(self, info, mode="r"):
             archive = self

@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import stat
 from pathlib import Path, PurePosixPath
-from zipfile import ZipFile, ZipInfo
+from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 
 
 class UnsafeArchivePathError(ValueError):
@@ -96,10 +96,25 @@ def validate_zip_entries(infos: list[ZipInfo] | tuple[ZipInfo, ...]) -> tuple[st
 
 # Control documents (manifest, settings and objectives JSON) are parsed whole,
 # so they get their own caps far below the per-member asset limit. A manifest
-# lists every archived file, so a large library needs more room than the
-# small settings documents do.
+# lists every archived file, and the QSettings snapshot carries every
+# observation's Species Plate settings, so both grow with a large library.
 MAX_MANIFEST_BYTES = 64 * 1024 * 1024
-MAX_CONTROL_DOCUMENT_BYTES = 16 * 1024 * 1024
+MAX_CONTROL_DOCUMENT_BYTES = 64 * 1024 * 1024
+# Sporely writes its archives with deflate; other codecs decompress without an
+# output bound inside zipfile, so control documents must not use them.
+_CONTROL_COMPRESSION = frozenset({ZIP_STORED, ZIP_DEFLATED})
+
+
+def require_control_member(info: ZipInfo, limit: int | None = None) -> None:
+    """Refuse a control document by its declared size and codec, unread."""
+    if limit is None:
+        limit = MAX_MANIFEST_BYTES if info.filename == "manifest.json" else MAX_CONTROL_DOCUMENT_BYTES
+    if info.file_size > limit:
+        raise UnsafeArchivePathError(f"archive control document is too large: {info.filename}")
+    if info.compress_type not in _CONTROL_COMPRESSION:
+        raise UnsafeArchivePathError(
+            f"archive control document uses an unsupported compression: {info.filename}"
+        )
 
 
 def read_control_member(archive: ZipFile, name: str, limit: int | None = None) -> bytes:
@@ -111,8 +126,7 @@ def read_control_member(archive: ZipFile, name: str, limit: int | None = None) -
     if limit is None:
         limit = MAX_MANIFEST_BYTES if name == "manifest.json" else MAX_CONTROL_DOCUMENT_BYTES
     info = archive.getinfo(name)
-    if info.file_size > limit:
-        raise UnsafeArchivePathError(f"archive control document is too large: {name}")
+    require_control_member(info, limit)
     chunks: list[bytes] = []
     remaining = limit + 1
     with archive.open(info, "r") as source:
