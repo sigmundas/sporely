@@ -149,3 +149,40 @@ def test_rename_still_moves_managed_folder(profile):
     assert (Path(new_folder) / "IMG_1.jpg").exists()
     assert not old_folder.exists()
     assert _folder_path(observation_id) == new_folder
+
+
+def test_rename_does_not_move_a_folder_shared_with_another_observation(profile):
+    shared = profile / "Shared" / "folder"
+    shared.mkdir(parents=True)
+    (shared / "IMG_A.jpg").write_bytes(b"a")
+    (shared / "IMG_B.jpg").write_bytes(b"b")
+    first = _local_observation()
+    second = _local_observation()
+    with sqlite3.connect(schema.get_database_path()) as conn:
+        conn.execute("UPDATE observations SET folder_path = NULL WHERE id IN (?, ?)", (first, second))
+        conn.execute(
+            "INSERT INTO images (observation_id, filepath, image_type) VALUES (?, ?, 'field'), (?, ?, 'field')",
+            (first, str(shared / "IMG_A.jpg"), second, str(shared / "IMG_B.jpg")),
+        )
+
+    models.ObservationDB.update_observation(first, genus="Genusb")
+
+    with sqlite3.connect(schema.get_database_path()) as conn:
+        (second_path,) = conn.execute(
+            "SELECT filepath FROM images WHERE observation_id = ?", (second,)
+        ).fetchone()
+    assert Path(second_path).is_file()
+
+
+def test_rename_never_builds_a_folder_outside_images_from_a_crafted_date(profile):
+    observation_id = _local_observation()
+    with sqlite3.connect(schema.get_database_path()) as conn:
+        conn.execute(
+            "UPDATE observations SET folder_path = NULL, date = ? WHERE id = ?",
+            ("2026-05-01/../../../../escape", observation_id),
+        )
+
+    models.ObservationDB.update_observation(observation_id, genus="Genusb")
+
+    folder = _folder_path(observation_id)
+    assert folder is None or profile.resolve() in Path(folder).resolve().parents

@@ -458,6 +458,39 @@ def _observation_folder_move_is_managed(source: str, destination: str) -> bool:
         return False
 
 
+def _folder_used_by_other_observation(cursor, observation_id: int, folder: str) -> bool:
+    """True when another observation's folder or image files lie in ``folder``."""
+    prefixes = {str(Path(folder)).rstrip("/\\")}
+    try:
+        prefixes.add(str(Path(folder).resolve()).rstrip("/\\"))
+    except Exception:
+        pass
+    for prefix in prefixes:
+        if not prefix:
+            continue
+        for separator in ("/", "\\"):
+            start = prefix + separator
+            row = cursor.execute(
+                """
+                SELECT 1 FROM images
+                WHERE observation_id IS NOT ?
+                  AND (substr(filepath, 1, length(?)) = ?
+                       OR substr(COALESCE(original_filepath, ''), 1, length(?)) = ?)
+                LIMIT 1
+                """,
+                (observation_id, start, start, start, start),
+            ).fetchone()
+            if row:
+                return True
+        row = cursor.execute(
+            "SELECT 1 FROM observations WHERE id != ? AND folder_path = ? LIMIT 1",
+            (observation_id, prefix),
+        ).fetchone()
+        if row:
+            return True
+    return False
+
+
 def _objective_calibrations_dir(
     objective_key: str | None, root: Path | None = None
 ) -> Path | None:
@@ -1766,7 +1799,11 @@ class ObservationDB:
     ) -> Path:
         genus_folder = sanitize_folder_name(genus) if genus else "unknown"
         species_name = sanitize_folder_name(species) if species else "sp"
-        date_part = date.replace(':', '-') if date else datetime.now().strftime('%Y-%m-%d %H-%M')
+        # The date can come from an imported bundle: keep it one folder name.
+        date_part = (
+            date.replace(':', '-').replace('/', '-').replace('\\', '-')
+            if date else datetime.now().strftime('%Y-%m-%d %H-%M')
+        )
         folder_name = f"{species_name} - {date_part}"
         return _images_dir() / genus_folder / folder_name
 
@@ -2131,6 +2168,10 @@ class ObservationDB:
                     )
                 )
 
+            if new_folder_path and not _path_strictly_under_root(Path(new_folder_path), _images_dir()):
+                print(f"Warning: Not using observation folder outside the images folder: {new_folder_path}")
+                new_folder_path = None
+
             # Rename folder if it exists (or infer it from image paths)
             inferred_folder = None
             if not old_folder_path or not Path(old_folder_path).exists():
@@ -2141,11 +2182,15 @@ class ObservationDB:
                 new_folder_path
                 and folder_to_move
                 and folder_to_move != new_folder_path
-                and not _observation_folder_move_is_managed(folder_to_move, new_folder_path)
+                and (
+                    not _observation_folder_move_is_managed(folder_to_move, new_folder_path)
+                    or _folder_used_by_other_observation(cursor, observation_id, folder_to_move)
+                )
             ):
                 # The stored or inferred folder is not one Sporely manages
-                # (for example a path from an imported bundle): never move it.
-                print(f"Warning: Not moving folder outside the images folder: {folder_to_move}")
+                # (for example a path from an imported bundle), or it also
+                # holds another observation's files: never move it.
+                print(f"Warning: Not moving observation folder: {folder_to_move}")
                 new_folder_path = old_folder_path
             elif new_folder_path and folder_to_move and folder_to_move != new_folder_path:
                 try:
