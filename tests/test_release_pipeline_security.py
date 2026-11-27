@@ -138,3 +138,12 @@ def test_release_publishes_and_checks_sha256sums():
     jobs = _load(RELEASE)["jobs"]
     verify = "\n".join(str(s.get("run", "")) for s in jobs["verify-draft"]["steps"])
     assert "SHA256SUMS" in verify
+
+
+def test_release_checkouts_do_not_persist_the_token():
+    count = 0
+    for job_name, step in _steps(_load(RELEASE)):
+        if str(step.get("uses", "")).startswith("actions/checkout@"):
+            count += 1
+            assert step.get("with", {}).get("persist-credentials") is False, job_name
+    assert count == 4

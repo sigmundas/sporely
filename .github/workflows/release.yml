@@ -31,6 +31,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Validate release tag and application version
         id: version
@@ -74,6 +76,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -85,6 +89,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --require-hashes -r requirements.lock --quiet --disable-pip-version-check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python tools/make_ico.py
 
       - name: Build with PyInstaller
@@ -116,6 +121,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -196,6 +203,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -315,5 +324,8 @@ jobs:
           mkdir verify
           cd verify
           for name in "${names[@]}"; do gh release download "$RELEASE_TAG" --pattern "$name" --clobber; done
-          [ "$(wc -l < SHA256SUMS)" -eq 4 ] || { echo "::error::SHA256SUMS must list exactly four installers"; exit 1; }
+          # Exactly the four installers, each once (duplicate lines could hide unchecked files).
+          listed=$(awk '{print $2}' SHA256SUMS | sed 's/^\*//' | sort)
+          expected=$(printf '%s\n' "${names[@]:0:4}" | sort)
+          [ "$listed" = "$expected" ] || { echo "::error::SHA256SUMS must list each of the four installers exactly once"; exit 1; }
           sha256sum -c SHA256SUMS
