@@ -133,10 +133,11 @@ def test_backup_archive_carries_no_pending_delete(installation, tmp_path):
 
 
 def test_lookalike_keys_retained_by_restore_are_not_delete_intents(installation):
-    # ``_`` is a LIKE wildcard: this key is kept by a restore (exact
-    # ``sporely_cloud_`` state) but must not be read as a delete intent.
+    # ``_`` is a LIKE wildcard: an older desktop's reader would take this key
+    # for an intent, so backups and restores drop it, and this reader ignores it.
     lookalike = "sporely_cloud_observationXdelete_pending_cloud-victim"
-    assert database_setting_policy(lookalike) is SettingPolicy.EXACT
+    assert database_setting_policy(lookalike) is SettingPolicy.EXCLUDE
+    assert database_setting_policy("sporely_cloud_snapshot_obs_abc") is SettingPolicy.EXACT
     with sqlite3.connect(schema.get_database_path()) as connection:
         connection.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (lookalike, ACCOUNT))
     gc.collect()

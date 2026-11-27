@@ -277,6 +277,13 @@ _DB_EXACT_KEYS = {
 # must not replay deletes against the cloud. Checked before the broader
 # ``sporely_cloud_`` exact prefix.
 _DB_EXCLUDED_PREFIXES = ("sporely_cloud_observation_delete_pending_",)
+# Older desktops select intents with SQL ``LIKE`` (``_`` matches any
+# character, case-insensitively), so every key such a reader would take for an
+# intent is excluded too.
+_DB_EXCLUDED_LIKE_PATTERN = re.compile(
+    "".join("." if char == "_" else re.escape(char) for char in _DB_EXCLUDED_PREFIXES[0]),
+    re.DOTALL,
+)
 _DB_EXACT_PREFIXES = (
     "artsobs_", "sporely_cloud_", "profile_", "last_used_", "gallery_settings_",
     "live_lab_", "observations_", "measure_view_", "measure_image_view_settings_",
@@ -304,7 +311,7 @@ def database_setting_policy(key: str) -> SettingPolicy:
         return SettingPolicy.MACHINE_SPECIFIC
     if normalized in _DB_REGENERABLE_KEYS or normalized.endswith(_DB_REGENERABLE_SUFFIXES):
         return SettingPolicy.REGENERABLE
-    if normalized.startswith(_DB_EXCLUDED_PREFIXES):
+    if normalized.startswith(_DB_EXCLUDED_PREFIXES) or _DB_EXCLUDED_LIKE_PATTERN.match(normalized):
         return SettingPolicy.EXCLUDE
     if normalized in _DB_EXACT_KEYS or normalized.startswith(_DB_EXACT_PREFIXES):
         return SettingPolicy.EXACT
