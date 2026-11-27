@@ -79,9 +79,12 @@ def pending_observation_deletes() -> dict[str, str]:
         ).fetchall()
     finally:
         connection.close()
+    # ``LIKE`` treats ``_`` as a wildcard (and ignores case), so keep only keys
+    # that literally carry the prefix: the same predicate a restore uses.
     return {
         str(key)[len(PENDING_OBSERVATION_DELETE_PREFIX):]: str(value or '').strip()
         for key, value in rows
+        if str(key).startswith(PENDING_OBSERVATION_DELETE_PREFIX)
     }
 
 

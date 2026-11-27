@@ -7,6 +7,7 @@ from __future__ import annotations
 import gc
 import sqlite3
 from pathlib import Path
+from zipfile import ZipFile
 
 import pytest
 
@@ -110,4 +111,38 @@ def test_interrupted_delete_of_this_installation_is_still_retried(installation):
 
     assert client.deleted == ["cloud-same-owner"]
     assert summary["completed"] == ["cloud-same-owner"]
+    assert pending_observation_deletes() == {}
+
+
+def test_backup_archive_carries_no_pending_delete(installation, tmp_path):
+    mark_observation_delete_pending("cloud-same-owner", ACCOUNT)
+    archive = tmp_path / "with-intent.sporely"
+    create_full_backup(archive, app_version="test", qsettings_values={})
+
+    staged = tmp_path / "archived.db"
+    with ZipFile(archive) as source:
+        staged.write_bytes(source.read("databases/mushrooms.db"))
+    connection = sqlite3.connect(staged)
+    try:
+        keys = [row[0] for row in connection.execute("SELECT key FROM settings")]
+    finally:
+        connection.close()
+    assert not [key for key in keys if key.startswith(PENDING_OBSERVATION_DELETE_PREFIX)]
+    # The source installation keeps its own intent.
+    assert pending_observation_deletes() == {"cloud-same-owner": ACCOUNT}
+
+
+def test_lookalike_keys_retained_by_restore_are_not_delete_intents(installation):
+    # ``_`` is a LIKE wildcard: this key is kept by a restore (exact
+    # ``sporely_cloud_`` state) but must not be read as a delete intent.
+    lookalike = "sporely_cloud_observationXdelete_pending_cloud-victim"
+    assert database_setting_policy(lookalike) is SettingPolicy.EXACT
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        connection.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (lookalike, ACCOUNT))
+    gc.collect()
+    client = RecordingClient(ACCOUNT)
+
+    retry_pending_observation_deletes(client)
+
+    assert client.deleted == []
     assert pending_observation_deletes() == {}

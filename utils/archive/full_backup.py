@@ -113,7 +113,13 @@ def _sanitize_staged_settings(database_path: Path) -> None:
         with sqlite3.connect(database_path) as connection:
             connection.execute("PRAGMA secure_delete=ON")
             keys = [str(row[0]) for row in connection.execute("SELECT key FROM settings")]
-            secret_keys = [key for key in keys if database_setting_policy(key) is SettingPolicy.SECRET]
+            # Secrets never leave the installation, and excluded state (pending
+            # cloud delete intents) never crosses a restore, even into an older
+            # desktop that would keep it.
+            secret_keys = [
+                key for key in keys
+                if database_setting_policy(key) in {SettingPolicy.SECRET, SettingPolicy.EXCLUDE}
+            ]
             connection.executemany("DELETE FROM settings WHERE key = ?", ((key,) for key in secret_keys))
             connection.commit()
             connection.execute("VACUUM")

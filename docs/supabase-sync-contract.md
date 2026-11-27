@@ -1132,9 +1132,11 @@ The gallery checkbox and context-menu command share this lifecycle:
   equals the signed-in account. An intent without an owner is never sent.
 - An intent whose observation is linked to a local row again is void and is
   dropped without a cloud write.
-- A delete intent never crosses a full restore: the restore drops every
-  pending-delete record, so a restored backup (stale or from elsewhere)
-  cannot replay cloud deletes. (Desktop, security audit F06, 2026-11-27.)
+- A delete intent never crosses a full restore: a backup does not carry
+  pending-delete records and a restore drops any it finds, so a restored
+  backup (stale or from elsewhere) cannot replay cloud deletes. Only keys that
+  literally start with the prefix are delete intents. (Desktop, security
+  audit F06, 2026-11-27.)
 
 ### Remote deletion discovered on desktop
 
