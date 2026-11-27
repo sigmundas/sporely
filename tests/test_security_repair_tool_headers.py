@@ -77,3 +77,30 @@ def test_r2_requests_strip_credentials_from_a_session_that_carries_them(monkeypa
         names = {k.lower() for k in req.headers}
         assert "apikey" not in names
         assert "authorization" not in names
+
+
+def test_supabase_credentials_are_dropped_when_a_redirect_leaves_the_supabase_host(monkeypatch):
+    sent = []
+    supabase_url = repair._storage_object_url("u/2/a.webp", backend="supabase")
+
+    def fake_send(self, request, **kwargs):
+        sent.append(request)
+        if request.url == supabase_url:
+            resp = _fake_response(request, status=302, body=b"")
+            resp.headers["Location"] = "https://other.invalid/object"
+            return resp
+        return _fake_response(request, status=206, body=b"x")
+
+    monkeypatch.setattr(HTTPAdapter, "send", fake_send)
+    session = repair.credential_safe_session()
+    repair._probe_url(
+        supabase_url,
+        session,
+        headers=repair._supabase_object_headers(DUMMY_KEY, DUMMY_KEY),
+    )
+    foreign = [r for r in sent if "other.invalid" in r.url]
+    assert foreign, "expected the redirect to be followed"
+    for req in foreign:
+        names = {k.lower() for k in req.headers}
+        assert "apikey" not in names
+        assert "authorization" not in names
