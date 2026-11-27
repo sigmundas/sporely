@@ -189,7 +189,9 @@ class INatOAuthClient:
         if open_browser:
             print(f"Opening browser for iNaturalist login: {url}\n(If browser doesn't open automatically, ensure xdg-utils is installed on Linux)")
             webbrowser.open(url, new=2)
-        callback = callback_server.wait_for_callback(timeout=timeout, tick_callback=tick_callback)
+        callback = callback_server.wait_for_callback(
+            timeout=timeout, tick_callback=tick_callback, expected_state=state
+        )
         if callback.error:
             desc = callback.error_description or callback.error
             raise RuntimeError(f"Authorization failed: {desc}")
