@@ -105,3 +105,17 @@ def test_successful_download_replaces_file_atomically(monkeypatch, tmp_path, whi
     assert client.download_to_file("user/obs/photo.jpg", dest) == dest
     assert dest.read_bytes() == b"new-complete-bytes"
     assert [p.name for p in tmp_path.iterdir()] == ["out.jpg"]
+
+
+@pytest.mark.parametrize("which", ["r2", "worker"])
+def test_replacement_keeps_the_existing_files_permissions(monkeypatch, tmp_path, which):
+    import os
+    import stat
+
+    monkeypatch.setattr("requests.Session.request", lambda self, *a, **kw: GoodResponse())
+    client = _clients()[which]
+    dest = tmp_path / "out.jpg"
+    dest.write_bytes(b"old")
+    os.chmod(dest, 0o600)
+    client.download_to_file("user/obs/photo.jpg", dest)
+    assert stat.S_IMODE(os.stat(dest).st_mode) == 0o600

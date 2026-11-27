@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import logging
 import os
+import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Callable, Iterable, Mapping
@@ -16,6 +17,7 @@ from xml.sax.saxutils import escape as xml_escape
 import warnings
 
 import requests
+import urllib3
 
 from utils.cloud_sync_impl.fault_injection import fault_upload_body
 from utils.sync_client_identity import (
@@ -186,11 +188,22 @@ def media_worker_base_url() -> str:
     value = str(os.environ.get(SPORELY_MEDIA_WORKER_URL_ENV_VAR) or "").strip().rstrip("/")
     if not value:
         return MEDIA_WORKER_DEFAULT_URL
+    scheme, host = "", ""
     try:
         parsed = urlparse(value)
+        transport_host = (urllib3.util.parse_url(value).host or "").lower().strip("[]")
         scheme = (parsed.scheme or "").lower()
         host = (parsed.hostname or "").lower()
-    except ValueError:
+        # urlparse and the transport (urllib3) must agree on the destination, and
+        # ambiguous authorities (backslashes, userinfo, whitespace) are refused.
+        if (
+            host != transport_host
+            or "\\" in value
+            or parsed.username is not None
+            or any(ch.isspace() for ch in value)
+        ):
+            scheme, host = "", ""
+    except (ValueError, urllib3.exceptions.LocationParseError):
         scheme, host = "", ""
     if scheme == "https" and host:
         return value
@@ -231,6 +244,11 @@ def _stream_response_to_file(response, destination: Path, *, label: str) -> Path
                 if written > limit:
                     raise RuntimeError(f"{label}: response exceeded the {limit} byte limit")
                 handle.write(chunk)
+        try:
+            # Keep the permissions of a file being replaced (for example 0600).
+            shutil.copymode(destination, temp_path)
+        except OSError:
+            pass
         os.replace(temp_path, destination)
     except BaseException:
         try:
