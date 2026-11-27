@@ -28,6 +28,8 @@ from utils.sync_client_identity import (
 R2_BUCKET_NAME = "sporely-media"
 R2_PUBLIC_BASE_URL = "https://media.sporely.no"
 MEDIA_WORKER_DEFAULT_URL = "https://upload.sporely.no"
+# Ceiling for a single media download; protects disk and memory from a runaway response.
+MAX_MEDIA_DOWNLOAD_BYTES = 512 * 1024 * 1024
 R2_REGION = "auto"
 R2_SERVICE = "s3"
 R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE = "Cloud media storage is not configured for direct desktop R2 access"
@@ -183,6 +185,51 @@ def direct_r2_runtime_available() -> bool:
 def media_worker_base_url() -> str:
     value = str(os.environ.get(SPORELY_MEDIA_WORKER_URL_ENV_VAR) or "").strip().rstrip("/")
     return value or MEDIA_WORKER_DEFAULT_URL
+
+
+def _stream_response_to_file(response, destination: Path, *, label: str) -> Path:
+    """Write a streamed response next to ``destination`` and move it into place.
+
+    The final path only ever holds a complete file: a failure, or a body larger
+    than ``MAX_MEDIA_DOWNLOAD_BYTES``, removes the temporary file and leaves any
+    existing destination untouched.
+    """
+    limit = int(MAX_MEDIA_DOWNLOAD_BYTES)
+    try:
+        declared = int(str((getattr(response, "headers", None) or {}).get("content-length") or "").strip() or 0)
+    except (TypeError, ValueError):
+        declared = 0
+    if declared > limit:
+        close = getattr(response, "close", None)
+        if callable(close):
+            close()
+        raise RuntimeError(f"{label}: response is larger than the {limit} byte limit")
+    temp_path = destination.with_name(f".{destination.name}.{os.getpid()}.{os.urandom(4).hex()}.part")
+    written = 0
+    try:
+        with temp_path.open("wb") as handle:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if not chunk:
+                    continue
+                written += len(chunk)
+                if written > limit:
+                    raise RuntimeError(f"{label}: response exceeded the {limit} byte limit")
+                handle.write(chunk)
+        os.replace(temp_path, destination)
+    except BaseException:
+        try:
+            temp_path.unlink()
+        except OSError:
+            pass
+        raise
+    finally:
+        close = getattr(response, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+    return destination
 
 
 def _first_text(*values: object, default: str = "") -> str:
@@ -370,11 +417,7 @@ class CloudflareR2Client:
         destination.parent.mkdir(parents=True, exist_ok=True)
         response = self._request("GET", key=normalized, stream=True, timeout=timeout)
         self._raise_for_status(response, "R2 download failed")
-        with destination.open("wb") as handle:
-            for chunk in response.iter_content(chunk_size=1024 * 1024):
-                if chunk:
-                    handle.write(chunk)
-        return destination
+        return _stream_response_to_file(response, destination, label="R2 download")
 
     def delete_objects(self, keys: Iterable[str]) -> None:
         cleaned = []
@@ -803,11 +846,7 @@ class CloudflareMediaWorkerClient:
         content_type = str(response.headers.get("content-type") or "").strip().lower()
         if content_type and not content_type.startswith("image/") and content_type != "application/octet-stream":
             raise RuntimeError(f"Worker download returned non-image content ({content_type})")
-        with destination.open("wb") as handle:
-            for chunk in response.iter_content(chunk_size=1024 * 1024):
-                if chunk:
-                    handle.write(chunk)
-        return destination
+        return _stream_response_to_file(response, destination, label="Worker download")
 
     def delete_object(self, key: str, *, timeout: int = 120, ignore_missing: bool = True) -> dict | None:
         normalized = normalize_media_key(key)
