@@ -18,8 +18,10 @@ retryable.
   client completed earlier in the sync (the pull may use a listing read
   before the push).
 
-The record holds the owning account's id; a delete is retried only for that
-account.
+The record holds the owning account's id; a delete is retried only when that
+id is non-empty and equals the signed-in account. A record without an owner
+is never sent. A full restore drops every record (``utils/archive/inventory``
+classifies the prefix as excluded): a delete intent does not cross a restore.
 """
 
 from __future__ import annotations
@@ -77,9 +79,12 @@ def pending_observation_deletes() -> dict[str, str]:
         ).fetchall()
     finally:
         connection.close()
+    # ``LIKE`` treats ``_`` as a wildcard (and ignores case), so keep only keys
+    # that literally carry the prefix: the same predicate a restore uses.
     return {
         str(key)[len(PENDING_OBSERVATION_DELETE_PREFIX):]: str(value or '').strip()
         for key, value in rows
+        if str(key).startswith(PENDING_OBSERVATION_DELETE_PREFIX)
     }
 
 
@@ -117,7 +122,9 @@ def retry_pending_observation_deletes(client) -> dict:
     void: list[str] = []
     errors: list[str] = []
     for cloud_id, owner in sorted(pending_observation_deletes().items()):
-        if owner and owner != user_id:
+        if not owner or not user_id or owner != user_id:
+            # Only the account that recorded the intent may finish it, and an
+            # intent without a recorded owner is never sent.
             continue
         if _locally_linked(cloud_id):
             # The local row exists again (the local delete did not complete):

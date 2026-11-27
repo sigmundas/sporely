@@ -12,7 +12,14 @@ from pathlib import Path
 from zipfile import BadZipFile, ZipFile
 
 from utils.archive.manifest import ArchiveManifest, ManifestError
-from utils.archive.paths import UnsafeArchivePathError, safe_staging_destination, validate_zip_entries
+from utils.archive.paths import (
+    UnsafeArchivePathError,
+    read_control_member,
+    require_bounded_compression,
+    require_control_member,
+    safe_staging_destination,
+    validate_zip_entries,
+)
 from utils.archive.inventory import SettingPolicy, app_setting_policy, qsettings_policy
 
 
@@ -40,9 +47,11 @@ def validate_full_backup(path: str | Path) -> ArchiveManifest:
         with ZipFile(archive_path, "r") as archive:
             infos = archive.infolist()
             names = validate_zip_entries(infos)
+            for info in infos:
+                require_bounded_compression(info)
             if not names or names[0] != "manifest.json":
                 raise ArchiveValidationError("manifest.json must be the first ZIP member")
-            manifest = ArchiveManifest.from_json(archive.read("manifest.json"))
+            manifest = ArchiveManifest.from_json(read_control_member(archive, "manifest.json"))
             if manifest.mode != "full_backup":
                 raise ArchiveValidationError("archive is not a full backup")
             included = {entry.path: entry for entry in manifest.files if entry.status == "included"}
@@ -59,6 +68,12 @@ def validate_full_backup(path: str | Path) -> ArchiveManifest:
                 raise ArchiveValidationError(
                     f"required archive members missing: {', '.join(sorted(missing_required))}"
                 )
+            for control_name in (
+                "data/app_settings.json", "data/qsettings.json",
+                "data/objectives.json", "data/last_objective.json",
+            ):
+                if control_name in info_by_name:
+                    require_control_member(info_by_name[control_name])
             for name, entry in included.items():
                 digest = hashlib.sha256()
                 size = 0
@@ -70,8 +85,8 @@ def validate_full_backup(path: str | Path) -> ArchiveManifest:
                     raise ArchiveValidationError(f"size or checksum mismatch: {name}")
 
             try:
-                app_payload = json.loads(archive.read("data/app_settings.json"))
-                qsettings_payload = json.loads(archive.read("data/qsettings.json"))
+                app_payload = json.loads(read_control_member(archive, "data/app_settings.json"))
+                qsettings_payload = json.loads(read_control_member(archive, "data/qsettings.json"))
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                 raise ArchiveValidationError("invalid settings JSON") from exc
             if not isinstance(app_payload, dict) or app_payload.get("format_version") != 1 or not isinstance(app_payload.get("settings"), dict):
@@ -95,7 +110,7 @@ def validate_full_backup(path: str | Path) -> ArchiveManifest:
             for name in ("data/objectives.json", "data/last_objective.json"):
                 if name in included:
                     try:
-                        json.loads(archive.read(name))
+                        json.loads(read_control_member(archive, name))
                     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                         raise ArchiveValidationError(f"invalid JSON payload: {name}") from exc
 
@@ -123,9 +138,11 @@ def validate_portable_observations(path: str | Path) -> ArchiveManifest:
         with ZipFile(archive_path, "r") as archive:
             infos = archive.infolist()
             names = validate_zip_entries(infos)
+            for info in infos:
+                require_bounded_compression(info)
             if not names or names[0] != "manifest.json":
                 raise ArchiveValidationError("manifest.json must be the first ZIP member")
-            manifest = ArchiveManifest.from_json(archive.read("manifest.json"))
+            manifest = ArchiveManifest.from_json(read_control_member(archive, "manifest.json"))
             if manifest.mode != "portable_observations" or manifest.identity_policy != "portable":
                 raise ArchiveValidationError("archive is not a portable observation export")
             included = {entry.path: entry for entry in manifest.files if entry.status == "included"}
@@ -141,6 +158,9 @@ def validate_portable_observations(path: str | Path) -> ArchiveManifest:
                     f"required archive members missing: {', '.join(sorted(missing))}"
                 )
             info_by_name = {info.filename: info for info in infos}
+            for control_name in ("portable/objectives.json",):
+                if control_name in info_by_name:
+                    require_control_member(info_by_name[control_name])
             for name, entry in included.items():
                 digest = hashlib.sha256()
                 size = 0
@@ -151,7 +171,7 @@ def validate_portable_observations(path: str | Path) -> ArchiveManifest:
                 if size != entry.size or digest.hexdigest() != entry.sha256:
                     raise ArchiveValidationError(f"size or checksum mismatch: {name}")
             try:
-                objectives = json.loads(archive.read("portable/objectives.json"))
+                objectives = json.loads(read_control_member(archive, "portable/objectives.json"))
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                 raise ArchiveValidationError("invalid portable objectives JSON") from exc
             if not isinstance(objectives, dict):

@@ -11,7 +11,8 @@ import shutil
 import sqlite3
 import tempfile
 import uuid
-from dataclasses import dataclass
+from contextlib import closing
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable
@@ -112,7 +113,13 @@ def _sanitize_staged_settings(database_path: Path) -> None:
         with sqlite3.connect(database_path) as connection:
             connection.execute("PRAGMA secure_delete=ON")
             keys = [str(row[0]) for row in connection.execute("SELECT key FROM settings")]
-            secret_keys = [key for key in keys if database_setting_policy(key) is SettingPolicy.SECRET]
+            # Secrets never leave the installation, and excluded state (pending
+            # cloud delete intents) never crosses a restore, even into an older
+            # desktop that would keep it.
+            secret_keys = [
+                key for key in keys
+                if database_setting_policy(key) in {SettingPolicy.SECRET, SettingPolicy.EXCLUDE}
+            ]
             connection.executemany("DELETE FROM settings WHERE key = ?", ((key,) for key in secret_keys))
             connection.commit()
             connection.execute("VACUUM")
@@ -210,6 +217,155 @@ def _candidate(path: Path, archive_path: str, *, excluded: bool = False) -> _Sta
     return _StagedFile(archive_path, path, "included")
 
 
+def _path_key(path: Path) -> str:
+    return os.path.normcase(str(path.resolve(strict=False)))
+
+
+def _file_identity(path: Path) -> tuple[int, int] | None:
+    try:
+        stat_result = path.stat()
+    except OSError:
+        return None
+    if not stat_result.st_ino:
+        return None
+    return (stat_result.st_dev, stat_result.st_ino)
+
+
+# Image formats Sporely itself imports (RAW formats are excluded separately).
+_METADATA_IMAGE_SUFFIXES = frozenset({
+    ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp", ".heic", ".heif",
+})
+
+
+@dataclass(frozen=True)
+class _MetadataPathPolicy:
+    """Which files a path named only in metadata JSON may pull into an archive.
+
+    Path columns (``images.filepath``, ``calibrations.image_filepath``,
+    ``calibration_assets.local_path`` ...) are the library's own record of its
+    files. Metadata JSON is descriptive and can arrive through an import or a
+    cloud pull, so a path found only there is followed only when it resolves
+    inside the managed images folder or the originals folder, names a file a
+    path column already references, or sits beside a file its own row's path
+    columns reference (companion files of a calibration source). Elsewhere only
+    an image file is followed: legitimate calibration metadata also names the
+    source photo the user picked from a camera folder (and older calibrations
+    kept only that reference), but never another kind of file.
+    """
+
+    roots: tuple[Path, ...]
+    trusted: frozenset[str]
+    # (st_dev, st_ino) of existing path-column files: names the same file
+    # under another spelling (case-insensitive volumes).
+    trusted_files: frozenset[tuple[int, int]] = frozenset()
+    _identity_cache: dict = field(default_factory=dict, compare=False, repr=False)
+
+    def _identity(self, path: Path) -> tuple[int, int] | None:
+        if path not in self._identity_cache:
+            self._identity_cache[path] = _file_identity(path)
+        return self._identity_cache[path]
+
+    def _inside_root(self, resolved: Path) -> bool:
+        if any(resolved.is_relative_to(root) for root in self.roots):
+            return True
+        root_identities = {
+            identity for root in self.roots if (identity := self._identity(root)) is not None
+        }
+        if not root_identities:
+            return False
+        return any(self._identity(parent) in root_identities for parent in resolved.parents)
+
+    def allows(self, source: Path, row_paths: Iterable[Path] = ()) -> bool:
+        resolved = source.resolve(strict=False)
+        if any(resolved.is_relative_to(root) for root in self.roots):
+            return True
+        if os.path.normcase(str(resolved)) in self.trusted:
+            return True
+        # Judge the file that would actually be read, not the link name.
+        if resolved.suffix.lower() in _METADATA_IMAGE_SUFFIXES:
+            return True
+        parent = resolved.parent
+        row_parents = [row_path.resolve(strict=False).parent for row_path in row_paths]
+        if any(os.path.normcase(str(row_parent)) == os.path.normcase(str(parent)) for row_parent in row_parents):
+            return True
+        # Slower identity checks for other spellings of the same file or folder.
+        identity = _file_identity(resolved)
+        if identity is not None and identity in self.trusted_files:
+            return True
+        parent_identity = self._identity(parent)
+        if parent_identity is not None and any(
+            self._identity(row_parent) == parent_identity for row_parent in row_parents
+        ):
+            return True
+        return self._inside_root(resolved)
+
+
+def _metadata_path_policy(
+    database_path: Path,
+    images_dir: Path,
+    *,
+    settings_database: Path | None = None,
+) -> _MetadataPathPolicy:
+    """Build the metadata path policy from ``database_path``'s path columns.
+
+    ``settings_database`` supplies the configured originals folder when the
+    staged database no longer holds its settings (portable exports).
+    """
+    settings_source = settings_database or database_path
+    originals_dir: str = ""
+    try:
+        with closing(sqlite3.connect(f"{settings_source.resolve().as_uri()}?mode=ro", uri=True)) as connection:
+            row = connection.execute(
+                "SELECT value FROM settings WHERE key='originals_dir'"
+            ).fetchone()
+    except sqlite3.Error:
+        row = None
+    if row is not None and row[0] is not None:
+        originals_dir = str(row[0]).strip()
+    roots = [images_dir]
+    # database.models stores global originals in ``originals_dir`` or, when
+    # unset, in ``<database folder>/originals``.
+    roots.append(Path(originals_dir).expanduser() if originals_dir else settings_source.parent / "originals")
+    trusted: set[str] = set()
+    trusted_files: set[tuple[int, int]] = set()
+    with closing(sqlite3.connect(database_path)) as connection:
+        for query in (
+            "SELECT filepath, original_filepath FROM images",
+            "SELECT image_filepath, NULL FROM calibrations",
+            "SELECT local_path, original_path FROM calibration_assets",
+        ):
+            for row in connection.execute(query):
+                for value in row:
+                    source = _resolve_row_path(value, images_dir)
+                    if source is not None:
+                        trusted.add(_path_key(source))
+                        identity = _file_identity(source)
+                        if identity is not None:
+                            trusted_files.add(identity)
+    return _MetadataPathPolicy(
+        tuple(root.resolve(strict=False) for root in roots if str(root).strip()),
+        frozenset(trusted),
+        frozenset(trusted_files),
+    )
+
+
+def _metadata_candidate(
+    source: Path,
+    archive_path: str,
+    *,
+    excluded: bool,
+    policy: _MetadataPathPolicy,
+    row_paths: Iterable[Path] = (),
+) -> _StagedFile:
+    """Like ``_candidate`` for a path named only in metadata JSON."""
+    if excluded or is_raw_image_path(source):
+        return _candidate(source, archive_path, excluded=True)
+    if not policy.allows(source, row_paths):
+        canonical_archive_path(archive_path)
+        return _StagedFile(archive_path, None, "missing_at_source", _path_key(source))
+    return _candidate(source, archive_path)
+
+
 def _json_image_entries(value: object) -> Iterable[tuple[str, str, object, bool]]:
     if not value:
         return ()
@@ -238,7 +394,13 @@ def _json_image_entries(value: object) -> Iterable[tuple[str, str, object, bool]
     return found
 
 
-def _collect_database_assets(database_path: Path, images_dir: Path) -> list[_StagedFile]:
+def _collect_database_assets(
+    database_path: Path,
+    images_dir: Path,
+    policy: _MetadataPathPolicy | None = None,
+) -> list[_StagedFile]:
+    if policy is None:
+        policy = _metadata_path_policy(database_path, images_dir)
     candidates: list[_StagedFile] = []
     with sqlite3.connect(database_path) as connection:
         connection.row_factory = sqlite3.Row
@@ -273,14 +435,17 @@ def _collect_database_assets(database_path: Path, images_dir: Path) -> list[_Sta
                     destination,
                     excluded=is_raw_image_path(source),
                 ))
+            record_paths = [source] if source is not None else []
             for index, label, value, excluded in _json_image_entries(row["measurements_json"]):
                 source = _resolve_row_path(value, images_dir)
                 if source is not None:
                     destination = f"assets/calibrations/records/{row['id']}/metadata-{index}-{label}{_suffix(source)}"
-                    candidates.append(_candidate(
+                    candidates.append(_metadata_candidate(
                         source,
                         destination,
-                        excluded=excluded or is_raw_image_path(source),
+                        excluded=excluded,
+                        policy=policy,
+                        row_paths=record_paths,
                     ))
 
         for row in connection.execute(
@@ -291,9 +456,11 @@ def _collect_database_assets(database_path: Path, images_dir: Path) -> list[_Sta
                 str(row["source_role"] or "").lower() == "cloud_recovery_cache"
                 or str(row["file_purpose"] or "").lower() == "cache"
             )
+            asset_paths: list[Path] = []
             for field, label in (("local_path", "local"), ("original_path", "original")):
                 source = _resolve_row_path(row[field], images_dir)
                 if source is not None:
+                    asset_paths.append(source)
                     destination = f"assets/calibrations/assets/{identity}/{label}{_suffix(source)}"
                     candidates.append(_candidate(
                         source,
@@ -310,19 +477,23 @@ def _collect_database_assets(database_path: Path, images_dir: Path) -> list[_Sta
                     source = _resolve_row_path(loaded.get(label), images_dir)
                     if source is not None:
                         destination = f"assets/calibrations/assets/{identity}/metadata-{label}{_suffix(source)}"
-                        candidates.append(_candidate(
+                        candidates.append(_metadata_candidate(
                             source,
                             destination,
-                            excluded=excluded or is_raw_image_path(source),
+                            excluded=excluded,
+                            policy=policy,
+                            row_paths=asset_paths,
                         ))
                 for index, value in enumerate(loaded.get("companion_paths") or []):
                     source = _resolve_row_path(value, images_dir)
                     if source is not None:
                         destination = f"assets/calibrations/assets/{identity}/metadata-companion-{index}{_suffix(source)}"
-                        candidates.append(_candidate(
+                        candidates.append(_metadata_candidate(
                             source,
                             destination,
-                            excluded=excluded or is_raw_image_path(source),
+                            excluded=excluded,
+                            policy=policy,
+                            row_paths=asset_paths,
                         ))
     return candidates
 
@@ -416,7 +587,14 @@ def create_full_backup(
                 (Path(get_last_objective_path()), "data/last_objective.json"),
             ):
                 files.append(_candidate(source, archive_path))
-            files.extend(_collect_database_assets(staged_main, Path(get_images_dir())))
+            images_dir = Path(get_images_dir())
+            files.extend(_collect_database_assets(
+                staged_main,
+                images_dir,
+                _metadata_path_policy(
+                    staged_main, images_dir, settings_database=Path(get_database_path()),
+                ),
+            ))
             files.extend(_collect_plate_layouts(Path(get_database_path())))
             files.extend(_excluded_policy_entries())
 

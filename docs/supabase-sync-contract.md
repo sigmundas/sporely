@@ -1120,6 +1120,24 @@ The gallery checkbox and context-menu command share this lifecycle:
 - after successful remote deletion, the checkbox remains unchecked and the synced tombstone yields `DELETED` with no cloud badge;
 - recheck after `DELETED` preserves the historical tombstone, detaches the old identity, and explicitly restores exactly that image as a new cloud row.
 
+### Delete observation everywhere (desktop pending-delete intent)
+
+- Before deleting a cloud-linked observation locally, the desktop records the
+  intent `sporely_cloud_observation_delete_pending_<cloud id>` in its database
+  settings, valued with the owning cloud account id. The cloud delete follows
+  the local delete; a failed or interrupted cloud delete is finished by the
+  next write-enabled sync, and pull does not re-import the observation
+  meanwhile.
+- A pending delete is sent only when its recorded owner is non-empty and
+  equals the signed-in account. An intent without an owner is never sent.
+- An intent whose observation is linked to a local row again is void and is
+  dropped without a cloud write.
+- A delete intent never crosses a full restore: a backup does not carry
+  pending-delete records and a restore drops any it finds, so a restored
+  backup (stale or from elsewhere) cannot replay cloud deletes. Only keys that
+  literally start with the prefix are delete intents. (Desktop, security
+  audit F06, 2026-11-27.)
+
 ### Remote deletion discovered on desktop
 
 - Record it locally without erasing the local original.

@@ -10,7 +10,7 @@ import sqlite3
 from zipfile import BadZipFile, ZipFile
 
 from utils.archive.manifest import ArchiveManifest, ManifestError
-from utils.archive.paths import UnsafeArchivePathError, validate_zip_entries
+from utils.archive.paths import UnsafeArchivePathError, read_control_member, validate_zip_entries
 from utils.archive.validation import ArchiveValidationError, verify_sqlite_integrity
 
 
@@ -44,7 +44,7 @@ def classify_archive(path: str | Path) -> ArchiveRoute:
                     raise ArchiveRoutingError(
                         "current Sporely archives must begin with manifest.json"
                     )
-                manifest = ArchiveManifest.from_json(archive.read("manifest.json"))
+                manifest = ArchiveManifest.from_json(read_control_member(archive, "manifest.json"))
                 return (
                     ArchiveRoute.FULL_BACKUP
                     if manifest.mode == "full_backup"

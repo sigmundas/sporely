@@ -121,6 +121,80 @@ def _require_current_columns(
         raise ArchiveValidationError("database schema compatibility check failed") from exc
 
 
+def _schema_objects(path: Path) -> dict[tuple[str, str], str | None]:
+    with _read_only(path) as connection:
+        return {
+            (str(row[0]), str(row[1])): row[2]
+            for row in connection.execute(
+                "SELECT type, name, sql FROM sqlite_master WHERE type IN ('trigger', 'view')"
+            )
+        }
+
+
+_SchemaObjects = dict[tuple[str, str], "str | None"]
+
+
+def _allowed_schema_objects() -> tuple[tuple[_SchemaObjects, _SchemaObjects], tuple[_SchemaObjects, _SchemaObjects]]:
+    """Triggers and views a restore may carry, for the main and reference DBs.
+
+    Each is the definition in a freshly initialised database of the installed
+    schema, or the one already installed in the live database (a library
+    created by an older version can keep an older definition).
+    """
+    from database import schema
+
+    with tempfile.TemporaryDirectory(prefix="sporely-restore-schema-") as temporary:
+        fresh_main = Path(temporary) / "mushrooms.db"
+        fresh_reference = Path(temporary) / "reference_values.db"
+        try:
+            schema.init_database(
+                db_path=fresh_main,
+                reference_path=fresh_reference,
+                run_model_backfills=False,
+            )
+            allowed = []
+            for fresh, live in (
+                (fresh_main, Path(schema.get_database_path())),
+                (fresh_reference, Path(schema.get_reference_database_path())),
+            ):
+                allowed.append((
+                    _schema_objects(fresh),
+                    _schema_objects(live) if live.is_file() else {},
+                ))
+        except sqlite3.Error as exc:
+            raise ArchiveValidationError("database schema object check failed") from exc
+    return allowed[0], allowed[1]
+
+
+def _require_known_schema_objects(
+    main_database: Path,
+    reference_database: Path,
+    allowed: tuple[tuple[_SchemaObjects, _SchemaObjects], tuple[_SchemaObjects, _SchemaObjects]] | None = None,
+) -> None:
+    """Reject staged triggers and views the app itself would not have created.
+
+    Runs before and after the staged databases are migrated; see
+    ``_allowed_schema_objects`` for what is accepted.
+    """
+    if allowed is None:
+        allowed = _allowed_schema_objects()
+    for candidate, (fresh_objects, live_objects) in zip((main_database, reference_database), allowed):
+        try:
+            staged = _schema_objects(candidate)
+        except sqlite3.Error as exc:
+            raise ArchiveValidationError("database schema object check failed") from exc
+        for key in sorted(staged):
+            sql = staged[key]
+            if key in fresh_objects and sql == fresh_objects[key]:
+                continue
+            if key in live_objects and sql == live_objects[key]:
+                continue
+            kind, name = key
+            raise ArchiveValidationError(
+                f"unexpected or altered {kind} in {candidate.name}: {name}"
+            )
+
+
 def _migrate_staged_databases(main_database: Path, reference_database: Path) -> None:
     """Apply supported production additive migrations only to staged copies."""
     from database import schema
@@ -546,9 +620,14 @@ def prepare_full_restore(
         _extract_verified(source, extracted, manifest)
         main_db = extracted / "databases/mushrooms.db"
         ref_db = extracted / "databases/reference_values.db"
+        # Checked before the writable migration too, so foreign triggers
+        # never fire during it, and again on the migrated result.
+        allowed_schema_objects = _allowed_schema_objects()
+        _require_known_schema_objects(main_db, ref_db, allowed_schema_objects)
         _migrate_staged_databases(main_db, ref_db)
         _require_tables(main_db, set(MAIN_DATABASE_TABLES))
         _require_tables(ref_db, set(REFERENCE_DATABASE_TABLES))
+        _require_known_schema_objects(main_db, ref_db, allowed_schema_objects)
         _require_current_columns(main_db, Path(schema.get_database_path()), set(MAIN_DATABASE_TABLES))
         _require_current_columns(ref_db, Path(schema.get_reference_database_path()), set(REFERENCE_DATABASE_TABLES))
         merged_settings = _merge_app_settings(extracted, schema.get_app_settings())
