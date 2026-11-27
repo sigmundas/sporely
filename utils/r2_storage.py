@@ -184,7 +184,23 @@ def direct_r2_runtime_available() -> bool:
 
 def media_worker_base_url() -> str:
     value = str(os.environ.get(SPORELY_MEDIA_WORKER_URL_ENV_VAR) or "").strip().rstrip("/")
-    return value or MEDIA_WORKER_DEFAULT_URL
+    if not value:
+        return MEDIA_WORKER_DEFAULT_URL
+    try:
+        parsed = urlparse(value)
+        scheme = (parsed.scheme or "").lower()
+        host = (parsed.hostname or "").lower()
+    except ValueError:
+        scheme, host = "", ""
+    if scheme == "https" and host:
+        return value
+    if scheme == "http" and host in {"localhost", "127.0.0.1", "::1"}:
+        return value
+    logging.getLogger(__name__).warning(
+        "Ignoring %s: only https URLs (or http on a loopback host) are accepted; using the default Worker URL.",
+        SPORELY_MEDIA_WORKER_URL_ENV_VAR,
+    )
+    return MEDIA_WORKER_DEFAULT_URL
 
 
 def _stream_response_to_file(response, destination: Path, *, label: str) -> Path:
