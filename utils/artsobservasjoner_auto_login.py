@@ -535,7 +535,7 @@ class ArtsObservasjonerAuth:
 
     def _migrate_legacy_cookies(self) -> None:
         self.cookies_file.parent.mkdir(parents=True, exist_ok=True)
-        legacy_file = Path.home() / ".myco_log" / "artsobservasjoner_cookies.json"
+        legacy_file = self._legacy_cookie_file()
 
         for source in (legacy_file, self.cookies_file):
             cookies = self._load_json_cookies(source)
@@ -559,6 +559,17 @@ class ArtsObservasjonerAuth:
                 mobile_path = self._cookies_path("mobile")
                 if not mobile_path.exists():
                     self._write_json_cookies(mobile_path, cookies)
+
+            # Migrate once: the source must not be able to resurrect cookies
+            # after the user logs out.
+            try:
+                source.unlink()
+            except OSError:
+                pass
+
+    @staticmethod
+    def _legacy_cookie_file() -> Path:
+        return Path.home() / ".myco_log" / "artsobservasjoner_cookies.json"
 
     def load_cookies(self, target: str = "mobile") -> Optional[Dict[str, str]]:
         """Load cached cookies if they exist"""
@@ -586,7 +597,9 @@ class ArtsObservasjonerAuth:
         if target:
             paths = [self._cookies_path(target)]
         else:
-            paths = [self._cookies_path("mobile"), self._cookies_path("web"), self.cookies_file]
+            paths = [self._cookies_path("mobile"), self._cookies_path("web")]
+        # Logout also removes the legacy sources so they cannot be re-imported.
+        paths += [self.cookies_file, self._legacy_cookie_file()]
         for path in paths:
             try:
                 if path.exists():
