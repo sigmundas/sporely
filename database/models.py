@@ -458,7 +458,9 @@ def _observation_folder_move_is_managed(source: str, destination: str) -> bool:
         return False
 
 
-def _objective_calibrations_dir(objective_key: str | None) -> Path | None:
+def _objective_calibrations_dir(
+    objective_key: str | None, root: Path | None = None
+) -> Path | None:
     """The calibrations sub-folder for ``objective_key``, or None if unsafe.
 
     Objective keys can come from imported bundles, archives or the cloud, so a
@@ -468,11 +470,14 @@ def _objective_calibrations_dir(objective_key: str | None) -> Path | None:
     """
     if not is_safe_objective_key(objective_key):
         return None
-    root = get_calibrations_dir()
+    root = get_calibrations_dir() if root is None else Path(root)
     cal_dir = root / str(objective_key)
     if not _path_strictly_under_root(cal_dir, root):
         return None
     return cal_dir
+
+
+objective_calibrations_dir = _objective_calibrations_dir
 
 
 def _remove_file_under_root(path_value: str | None, root: Path) -> str | None:

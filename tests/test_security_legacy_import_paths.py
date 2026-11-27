@@ -178,3 +178,24 @@ def test_portable_import_refuses_unsafe_objective_key(tmp_path):
 
     with pytest.raises(portable_import.PortableImportError):
         portable_import._merged_objectives_payload(staged, incoming, tmp_path / "dest.json")
+
+
+@pytest.mark.parametrize("key_kind", ["absolute", "traversal"])
+def test_saving_calibration_image_never_writes_outside_calibrations(tmp_path, profile, key_kind):
+    from types import SimpleNamespace
+
+    from ui.calibration_dialog import CalibrationDialog
+
+    outside = tmp_path / "elsewhere"
+    bad_key = str(outside) if key_kind == "absolute" else "../../../elsewhere"
+    photo = tmp_path / "photo.jpg"
+    photo.write_bytes(b"jpeg")
+
+    saved = CalibrationDialog._save_calibration_image(
+        SimpleNamespace(current_objective_key=bad_key), str(photo)
+    )
+
+    assert not outside.exists()
+    assert saved is not None
+    calibrations_root = schema.get_calibrations_dir().resolve()
+    assert calibrations_root in Path(saved).resolve().parents
