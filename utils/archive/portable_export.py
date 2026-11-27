@@ -18,7 +18,10 @@ from utils.archive.full_backup import (
     BackupResult,
     _StagedFile,
     _candidate,
+    _MetadataPathPolicy,
     _json_image_entries,
+    _metadata_candidate,
+    _metadata_path_policy,
     _report_progress,
     _require_destination_space,
     _resolve_row_path,
@@ -306,7 +309,13 @@ def _filtered_objectives(database_path: Path, objectives_path: Path) -> bytes:
     return _stable_json_bytes({key: loaded[key] for key in sorted(keys)})
 
 
-def _collect_assets(database_path: Path, images_dir: Path) -> list[_StagedFile]:
+def _collect_assets(
+    database_path: Path,
+    images_dir: Path,
+    policy: _MetadataPathPolicy | None = None,
+) -> list[_StagedFile]:
+    if policy is None:
+        policy = _metadata_path_policy(database_path, images_dir)
     candidates: list[_StagedFile] = []
     with sqlite3.connect(database_path) as connection:
         connection.row_factory = sqlite3.Row
@@ -370,13 +379,16 @@ def _collect_assets(database_path: Path, images_dir: Path) -> list[_StagedFile]:
                         or is_raw_image_path(source)
                     ),
                 ))
+            record_paths = [source] if source is not None else []
             for index, label, value, excluded in _json_image_entries(row["measurements_json"]):
                 source = _resolve_row_path(value, images_dir)
                 if source is not None:
-                    candidates.append(_candidate(
+                    candidates.append(_metadata_candidate(
                         source,
                         f"portable/assets/calibrations/records/{row['id']}/metadata-{index}-{label}{_suffix(source)}",
-                        excluded=excluded or is_raw_image_path(source),
+                        excluded=excluded,
+                        policy=policy,
+                        row_paths=record_paths,
                     ))
         for row in connection.execute(
             "SELECT id, local_path, original_path, source_role, file_purpose, metadata_json "
@@ -386,9 +398,11 @@ def _collect_assets(database_path: Path, images_dir: Path) -> list[_StagedFile]:
                 str(row["source_role"] or "").lower() == "cloud_recovery_cache"
                 or str(row["file_purpose"] or "").lower() == "cache"
             )
+            asset_paths: list[Path] = []
             for field, label in (("local_path", "local"), ("original_path", "original")):
                 source = _resolve_row_path(row[field], images_dir)
                 if source is not None:
+                    asset_paths.append(source)
                     candidates.append(_candidate(
                         source,
                         f"portable/assets/calibrations/assets/{row['id']}/{label}{_suffix(source)}",
@@ -402,18 +416,22 @@ def _collect_assets(database_path: Path, images_dir: Path) -> list[_StagedFile]:
                 for label in ("source_path", "working_path", "original_path", "local_path"):
                     source = _resolve_row_path(metadata.get(label), images_dir)
                     if source is not None:
-                        candidates.append(_candidate(
+                        candidates.append(_metadata_candidate(
                             source,
                             f"portable/assets/calibrations/assets/{row['id']}/metadata-{label}{_suffix(source)}",
-                            excluded=excluded or is_raw_image_path(source),
+                            excluded=excluded,
+                            policy=policy,
+                            row_paths=asset_paths,
                         ))
                 for index, value in enumerate(metadata.get("companion_paths") or []):
                     source = _resolve_row_path(value, images_dir)
                     if source is not None:
-                        candidates.append(_candidate(
+                        candidates.append(_metadata_candidate(
                             source,
                             f"portable/assets/calibrations/assets/{row['id']}/metadata-companion-{index}{_suffix(source)}",
-                            excluded=excluded or is_raw_image_path(source),
+                            excluded=excluded,
+                            policy=policy,
+                            row_paths=asset_paths,
                         ))
     return candidates
 
@@ -492,11 +510,18 @@ def export_observations(
             objectives.parent.mkdir(parents=True, exist_ok=True)
             objectives.write_bytes(_filtered_objectives(staged_main, Path(get_objectives_path())))
 
+            images_dir = Path(get_images_dir())
             files = [
                 _StagedFile("portable/mushrooms.db", staged_main, "included"),
                 _StagedFile("portable/reference_values.db", staged_reference, "included"),
                 _StagedFile("portable/objectives.json", objectives, "included"),
-                *_collect_assets(staged_main, Path(get_images_dir())),
+                *_collect_assets(
+                    staged_main,
+                    images_dir,
+                    _metadata_path_policy(
+                        staged_main, images_dir, settings_database=Path(get_database_path()),
+                    ),
+                ),
             ]
             seen: set[str] = set()
             for item in files:
