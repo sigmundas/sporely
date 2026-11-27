@@ -762,6 +762,11 @@ class EditObservationPage(QWidget):
     _INPUT_EVENTS = (QEvent.KeyPress, QEvent.MouseButtonPress, QEvent.Wheel)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 - Qt API
+        if not isinstance(watched, QObject):
+            # An application-wide filter sees every receiver, and PySide can
+            # hand it a stale wrapper of another type for an object Qt has
+            # just destroyed; the base class raises on that.
+            return False
         editor = self._editor
         if (
             editor is not None
