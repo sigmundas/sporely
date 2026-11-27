@@ -84,7 +84,7 @@ class LoopbackCallbackServer:
         self._bind_host = _bind_host_for(host)
 
     def wait_for_callback(
-        self, timeout: int = 180, tick_callback=None
+        self, timeout: int = 180, tick_callback=None, expected_state: str | None = None
     ) -> OAuthCallbackPayload:
         """Block until an OAuth callback arrives or *timeout* seconds elapse.
 
@@ -95,14 +95,27 @@ class LoopbackCallbackServer:
         *tick_callback* is called after each server poll cycle when provided.
         An InterruptedError raised by tick_callback propagates immediately.
 
+        When *expected_state* is given, callbacks that do not carry exactly
+        that ``state`` are answered with a 400 and ignored; the wait goes on
+        until a matching callback arrives or the timeout elapses. Without it,
+        the first request on the callback path ends the wait (the caller then
+        validates the state itself).
+
         Raises RuntimeError if the port cannot be bound.
         Raises TimeoutError on timeout.
         """
         payload = OAuthCallbackPayload()
         callback_event = threading.Event()
         callback_path = self.callback_path
+        deadline = time.time() + max(1, int(timeout))
 
         class _Handler(BaseHTTPRequestHandler):
+            def setup(self):
+                # Bound every read by the remaining wait so an idle or slow
+                # connection cannot stall the single-threaded listener.
+                self.timeout = max(0.1, min(5.0, deadline - time.time()))
+                super().setup()
+
             def log_message(self, format, *args):  # noqa: A003
                 return  # suppress all HTTP logging (includes auth codes in query strings)
 
@@ -120,6 +133,9 @@ class LoopbackCallbackServer:
                     self._send(404, _HTML_NOT_FOUND)
                     return
                 query = parse_qs(parsed.query)
+                if expected_state is not None and (query.get("state") or [None])[0] != expected_state:
+                    self._send(400, _HTML_ERROR)
+                    return
                 payload.code = (query.get("code") or [None])[0]
                 payload.state = (query.get("state") or [None])[0]
                 payload.error = (query.get("error") or [None])[0]
@@ -141,7 +157,6 @@ class LoopbackCallbackServer:
 
         try:
             server.timeout = 0.05
-            deadline = time.time() + max(1, int(timeout))
             while time.time() < deadline and not callback_event.is_set():
                 server.handle_request()
                 if tick_callback is not None:

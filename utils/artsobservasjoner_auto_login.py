@@ -6,6 +6,7 @@ from pathlib import Path
 import requests
 from typing import Dict, Optional, Callable
 from app_identity import app_data_dir
+from utils.allowlisted_session import AllowListedSession
 from utils.private_files import write_private_json
 
 _ARTSOBS_WEB_USERNAME_KEY = "artsobs_web_username"
@@ -239,9 +240,10 @@ class ArtsObservasjonerWebLogin:
     """Handles programmatic login to www.artsobservasjoner.no."""
 
     BASE_URL = "https://www.artsobservasjoner.no"
+    ALLOWED_HOSTS = ("www.artsobservasjoner.no",)
 
     def __init__(self):
-        self.session = requests.Session()
+        self.session = AllowListedSession(self.ALLOWED_HOSTS)
         self.session.headers.update(
             {
                 "User-Agent": (
@@ -402,9 +404,11 @@ class ArtsObservasjonerMobileBffLogin:
 
     MOBILE_BASE = "https://mobil.artsobservasjoner.no"
     LOGIN_URL = f"{MOBILE_BASE}/bff/login?returnUrl=%2Fmy-page"
+    # Own host and the SLU identity provider named in utils/artportalen_auth.py.
+    ALLOWED_HOSTS = ("mobil.artsobservasjoner.no", "useradmin-auth.slu.se")
 
     def __init__(self):
-        self.session = requests.Session()
+        self.session = AllowListedSession(self.ALLOWED_HOSTS)
         self.session.headers.update(
             {
                 "User-Agent": (
@@ -486,6 +490,7 @@ class ArtsObservasjonerAuth:
         Args:
             cookies_file: Where to cache cookies (default: ~/.myco_log/artsobservasjoner_cookies.json)
         """
+        self._uses_default_path = cookies_file is None
         if cookies_file is None:
             cookies_file = app_data_dir() / "artsobservasjoner_cookies.json"
         self.cookies_file = Path(cookies_file)
@@ -531,9 +536,17 @@ class ArtsObservasjonerAuth:
 
     def _migrate_legacy_cookies(self) -> None:
         self.cookies_file.parent.mkdir(parents=True, exist_ok=True)
-        legacy_file = Path.home() / ".myco_log" / "artsobservasjoner_cookies.json"
+        # Migrate once: a marker stops later constructions from re-importing old
+        # cookie files after the user has logged out.
+        marker = self.cookies_file.with_name(f"{self.cookies_file.stem}.legacy_migrated")
+        if marker.exists():
+            return
+        sources = [self.cookies_file]
+        if self._uses_default_path:
+            # The global ~/.myco_log file belongs to the default profile only.
+            sources.insert(0, self._legacy_cookie_file())
 
-        for source in (legacy_file, self.cookies_file):
+        for source in sources:
             cookies = self._load_json_cookies(source)
             if not cookies:
                 continue
@@ -555,6 +568,15 @@ class ArtsObservasjonerAuth:
                 mobile_path = self._cookies_path("mobile")
                 if not mobile_path.exists():
                     self._write_json_cookies(mobile_path, cookies)
+
+        try:
+            marker.touch()
+        except OSError:
+            pass
+
+    @staticmethod
+    def _legacy_cookie_file() -> Path:
+        return Path.home() / ".myco_log" / "artsobservasjoner_cookies.json"
 
     def load_cookies(self, target: str = "mobile") -> Optional[Dict[str, str]]:
         """Load cached cookies if they exist"""
@@ -582,7 +604,11 @@ class ArtsObservasjonerAuth:
         if target:
             paths = [self._cookies_path(target)]
         else:
-            paths = [self._cookies_path("mobile"), self._cookies_path("web"), self.cookies_file]
+            paths = [self._cookies_path("mobile"), self._cookies_path("web")]
+        # Logout also removes the legacy sources so they cannot be loaded again.
+        paths.append(self.cookies_file)
+        if self._uses_default_path:
+            paths.append(self._legacy_cookie_file())
         for path in paths:
             try:
                 if path.exists():

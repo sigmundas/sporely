@@ -9,6 +9,7 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 from app_identity import APP_NAME, app_data_dir
+from utils.allowlisted_session import AllowListedSession
 from utils.private_files import write_private_json
 
 _ARTPORTALEN_USERNAME_KEY = "artportalen_username"
@@ -413,9 +414,12 @@ class ArtportalenLogin:
     START_URL = f"{BASE_URL}/"
     REPORT_URL = f"{BASE_URL}/SubmitSighting/Report"
     MY_PAGES_URL = f"{BASE_URL}/MinaSidor"
+    # Own host and SLU's identity provider; credentials and callback fields are
+    # only ever sent to https URLs on these hosts (checked on every redirect hop).
+    ALLOWED_HOSTS = ("www.artportalen.se", "useradmin-auth.slu.se")
 
     def __init__(self):
-        self.session = requests.Session()
+        self.session = AllowListedSession(self.ALLOWED_HOSTS)
         self.session.headers.update(
             {
                 "User-Agent": (

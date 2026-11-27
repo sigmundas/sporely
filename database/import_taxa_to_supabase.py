@@ -4,22 +4,28 @@ One-time import of taxa from vernacular_multilanguage.sqlite3
 into the Supabase taxa / taxa_vernacular tables.
 
 Usage:
-    python database/import_taxa_to_supabase.py
+    python database/import_taxa_to_supabase.py            # dry run: prints counts, sends nothing
+    python database/import_taxa_to_supabase.py --apply    # writes to the Supabase project below
 
-Requires the SUPABASE_SERVICE_ROLE_KEY environment variable:
+Writing requires the SUPABASE_SERVICE_ROLE_KEY environment variable:
     export SUPABASE_SERVICE_ROLE_KEY=eyJ...   (from Supabase → Settings → API → service_role)
 Or put the secret in sporely-admin.env for local admin/developer use.
 
 Run supabase_taxa_schema.sql in the Supabase SQL editor first.
 """
 
+import argparse
 import os
 import sys
 import sqlite3
 import requests
 from pathlib import Path
 
-from utils.r2_storage import load_admin_env_file
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from utils.r2_storage import load_admin_env_file  # noqa: E402
 
 SUPABASE_URL = 'https://zkpjklzfwzefhjluvhfw.supabase.co'
 load_admin_env_file()
@@ -27,28 +33,40 @@ SERVICE_KEY  = os.environ.get('SUPABASE_SERVICE_ROLE_KEY', '')
 DB_PATH      = Path(__file__).resolve().with_name('reference_data') / 'generated' / 'vernacular_multilanguage.sqlite3'
 BATCH        = 500
 
-if not SERVICE_KEY:
-    sys.exit('Set SUPABASE_SERVICE_ROLE_KEY environment variable first.\n'
-             'Get it from Supabase → Settings → API → service_role (secret).')
+def _headers() -> dict:
+    return {
+        'apikey':        SERVICE_KEY,
+        'Authorization': f'Bearer {SERVICE_KEY}',
+        'Content-Type':  'application/json',
+        'Prefer':        'resolution=merge-duplicates',
+    }
 
-headers = {
-    'apikey':        SERVICE_KEY,
-    'Authorization': f'Bearer {SERVICE_KEY}',
-    'Content-Type':  'application/json',
-    'Prefer':        'resolution=merge-duplicates',
-}
-
-def post_batch(table: str, rows: list[dict]) -> None:
+def post_batch(table: str, rows: list[dict], session=None) -> None:
     url = f'{SUPABASE_URL}/rest/v1/{table}'
-    r = requests.post(url, headers=headers, json=rows, timeout=60)
+    poster = session if session is not None else requests
+    r = poster.post(url, headers=_headers(), json=rows, timeout=60)
     if r.status_code not in (200, 201):
         print(f'  ERROR {r.status_code}: {r.text[:300]}')
 
-def run() -> None:
+def run(apply: bool = False, session=None) -> None:
+    """Dry run by default; only ``apply=True`` sends anything to Supabase."""
     if not DB_PATH.exists():
         sys.exit(f'Database not found: {DB_PATH}')
 
     conn = sqlite3.connect(DB_PATH)
+    taxa_count = conn.execute('SELECT COUNT(*) FROM taxon_min').fetchone()[0]
+    vernacular_count = conn.execute('SELECT COUNT(*) FROM vernacular_min').fetchone()[0]
+    if not apply:
+        conn.close()
+        print(f'Dry run: {taxa_count} taxa and {vernacular_count} vernacular names '
+              f'would be upserted into {SUPABASE_URL}.')
+        print('Nothing was sent. Re-run with --apply to write.')
+        return
+    if not SERVICE_KEY:
+        conn.close()
+        sys.exit('Set SUPABASE_SERVICE_ROLE_KEY environment variable first.\n'
+                 'Get it from Supabase → Settings → API → service_role (secret).')
+    print(f'APPLY: writing {taxa_count} taxa and {vernacular_count} vernacular names to {SUPABASE_URL}')
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
@@ -87,12 +105,12 @@ def run() -> None:
             'artportalen_taxon_id': row['artportalen_taxon_id'],
         })
         if len(batch) >= BATCH:
-            post_batch('taxa', batch)
+            post_batch('taxa', batch, session)
             total += len(batch)
             print(f'  {total} rows', end='\r')
             batch = []
     if batch:
-        post_batch('taxa', batch)
+        post_batch('taxa', batch, session)
         total += len(batch)
     print(f'  Done — {total} taxa')
 
@@ -111,17 +129,25 @@ def run() -> None:
             'is_preferred':   bool(row['is_preferred_name']),
         })
         if len(batch) >= BATCH:
-            post_batch('taxa_vernacular', batch)
+            post_batch('taxa_vernacular', batch, session)
             total += len(batch)
             print(f'  {total} rows', end='\r')
             batch = []
     if batch:
-        post_batch('taxa_vernacular', batch)
+        post_batch('taxa_vernacular', batch, session)
         total += len(batch)
     print(f'  Done — {total} vernacular names')
 
     conn.close()
     print('Import complete.')
 
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(allow_abbrev=False, description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--apply', action='store_true',
+                        help='Write to the Supabase project. Without it the script only prints counts.')
+    args = parser.parse_args(argv)
+    run(apply=args.apply)
+    return 0
+
 if __name__ == '__main__':
-    run()
+    raise SystemExit(main())

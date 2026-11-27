@@ -34,7 +34,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import requests
 from PIL import Image, ImageOps, features
@@ -69,6 +69,26 @@ REPORT_FIELDS = [
 ]
 
 
+class _CredentialSafeSession(requests.Session):
+    """Session that drops Supabase credential headers when a redirect leaves the original host.
+
+    ``requests`` already strips ``Authorization`` on a host change but keeps custom
+    headers such as ``apikey`` (the service-role key in admin mode).
+    """
+
+    def rebuild_auth(self, prepared_request, response):
+        super().rebuild_auth(prepared_request, response)
+        old_host = urlsplit(str(response.request.url or "")).hostname
+        new_host = urlsplit(str(prepared_request.url or "")).hostname
+        if old_host != new_host:
+            for name in ("apikey", "Authorization"):
+                prepared_request.headers.pop(name, None)
+
+
+def credential_safe_session() -> requests.Session:
+    return _CredentialSafeSession()
+
+
 class AdminServiceRoleClient:
     """Minimal Supabase REST client for explicit admin/service-role repair use."""
 
@@ -79,7 +99,7 @@ class AdminServiceRoleClient:
         self.access_token = token
         self.user_id = "service-role"
         self.supabase_api_key = token
-        self._s = requests.Session()
+        self._s = credential_safe_session()
         self._s.headers.update(
             {
                 "apikey": token,
@@ -149,6 +169,19 @@ def _supabase_object_headers(api_key: str, access_token: str) -> dict[str, str]:
     }
 
 
+def _without_foreign_credentials(url: str, headers: dict[str, Any]) -> dict[str, Any]:
+    """Make sure a session's default Supabase credentials never reach a non-Supabase host.
+
+    A per-request header value of None removes the session default in ``requests``.
+    """
+    if urlsplit(str(url or "")).hostname == urlsplit(SUPABASE_URL).hostname:
+        return headers
+    merged = dict(headers)
+    for name in ("apikey", "Authorization"):
+        merged.setdefault(name, None)
+    return merged
+
+
 def _probe_url(url: str, session: requests.Session, headers: dict[str, str] | None = None) -> dict[str, Any]:
     result = {
         "status": "unknown",
@@ -165,12 +198,15 @@ def _probe_url(url: str, session: requests.Session, headers: dict[str, str] | No
             url,
             timeout=MEDIA_PROBE_TIMEOUT,
             allow_redirects=True,
-            headers={
-                "Range": "bytes=0-0",
-                "Cache-Control": "no-cache, no-store, max-age=0",
-                "Pragma": "no-cache",
-                **dict(headers or {}),
-            },
+            headers=_without_foreign_credentials(
+                url,
+                {
+                    "Range": "bytes=0-0",
+                    "Cache-Control": "no-cache, no-store, max-age=0",
+                    "Pragma": "no-cache",
+                    **dict(headers or {}),
+                },
+            ),
             stream=True,
         )
     except requests.Timeout as exc:
@@ -243,10 +279,13 @@ def _download_r2_object(url: str, session: requests.Session) -> tuple[bytes, str
         url,
         timeout=120,
         allow_redirects=True,
-        headers={
-            "Cache-Control": "no-cache, no-store, max-age=0",
-            "Pragma": "no-cache",
-        },
+        headers=_without_foreign_credentials(
+            url,
+            {
+                "Cache-Control": "no-cache, no-store, max-age=0",
+                "Pragma": "no-cache",
+            },
+        ),
     )
     if not response.ok:
         raise RuntimeError(f"R2 media download failed: {response.status_code} {response.text}".strip())
@@ -710,7 +749,9 @@ def run_audit(
     elif supabase_api_key is None:
         supabase_api_key = getattr(client, "supabase_api_key", SUPABASE_KEY)
     assert supabase_api_key is not None
-    probe_session = probe_session or getattr(client, "_s", None) or requests.Session()
+    # Public media probes use a fresh session without the client's default
+    # Supabase credentials; Supabase URLs get their headers per request.
+    probe_session = probe_session or credential_safe_session()
 
     filters, scope = _resolve_row_scope(args, client, admin_mode=bool(args.admin_service_role))
     cloud_rows = _fetch_cloud_rows(client, filters, args.limit)
