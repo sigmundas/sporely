@@ -121,6 +121,61 @@ def _require_current_columns(
         raise ArchiveValidationError("database schema compatibility check failed") from exc
 
 
+def _schema_objects(path: Path) -> dict[tuple[str, str], str | None]:
+    with _read_only(path) as connection:
+        return {
+            (str(row[0]), str(row[1])): row[2]
+            for row in connection.execute(
+                "SELECT type, name, sql FROM sqlite_master WHERE type IN ('trigger', 'view')"
+            )
+        }
+
+
+def _require_known_schema_objects(main_database: Path, reference_database: Path) -> None:
+    """Reject staged triggers and views the app itself would not have created.
+
+    Runs after the staged databases are migrated. Each trigger and view must
+    match, by name and SQL, the one in a freshly initialised database of the
+    installed schema, or the one already installed in the live database (a
+    library created by an older version can keep an older definition).
+    """
+    from database import schema
+
+    with tempfile.TemporaryDirectory(prefix="sporely-restore-schema-") as temporary:
+        fresh_main = Path(temporary) / "mushrooms.db"
+        fresh_reference = Path(temporary) / "reference_values.db"
+        try:
+            schema.init_database(
+                db_path=fresh_main,
+                reference_path=fresh_reference,
+                run_model_backfills=False,
+            )
+            pairs = []
+            for candidate, fresh, live in (
+                (main_database, fresh_main, Path(schema.get_database_path())),
+                (reference_database, fresh_reference, Path(schema.get_reference_database_path())),
+            ):
+                pairs.append((
+                    candidate,
+                    _schema_objects(candidate),
+                    _schema_objects(fresh),
+                    _schema_objects(live) if live.is_file() else {},
+                ))
+        except sqlite3.Error as exc:
+            raise ArchiveValidationError("database schema object check failed") from exc
+    for candidate, staged, fresh_objects, live_objects in pairs:
+        for key in sorted(staged):
+            sql = staged[key]
+            if key in fresh_objects and sql == fresh_objects[key]:
+                continue
+            if key in live_objects and sql == live_objects[key]:
+                continue
+            kind, name = key
+            raise ArchiveValidationError(
+                f"unexpected or altered {kind} in {candidate.name}: {name}"
+            )
+
+
 def _migrate_staged_databases(main_database: Path, reference_database: Path) -> None:
     """Apply supported production additive migrations only to staged copies."""
     from database import schema
@@ -549,6 +604,7 @@ def prepare_full_restore(
         _migrate_staged_databases(main_db, ref_db)
         _require_tables(main_db, set(MAIN_DATABASE_TABLES))
         _require_tables(ref_db, set(REFERENCE_DATABASE_TABLES))
+        _require_known_schema_objects(main_db, ref_db)
         _require_current_columns(main_db, Path(schema.get_database_path()), set(MAIN_DATABASE_TABLES))
         _require_current_columns(ref_db, Path(schema.get_reference_database_path()), set(REFERENCE_DATABASE_TABLES))
         merged_settings = _merge_app_settings(extracted, schema.get_app_settings())
