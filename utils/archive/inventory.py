@@ -271,6 +271,12 @@ _DB_EXACT_KEYS = {
     # (stage 9g3b).
     "measure_scale_section_expanded", "edit_publish_service",
 }
+# Pending cloud observation deletes
+# (utils/cloud_sync_impl/observation_delete.py). A delete intent belongs to the
+# installation that recorded it and never crosses a restore: a restored backup
+# must not replay deletes against the cloud. Checked before the broader
+# ``sporely_cloud_`` exact prefix.
+_DB_EXCLUDED_PREFIXES = ("sporely_cloud_observation_delete_pending_",)
 _DB_EXACT_PREFIXES = (
     "artsobs_", "sporely_cloud_", "profile_", "last_used_", "gallery_settings_",
     "live_lab_", "observations_", "measure_view_", "measure_image_view_settings_",
@@ -298,6 +304,8 @@ def database_setting_policy(key: str) -> SettingPolicy:
         return SettingPolicy.MACHINE_SPECIFIC
     if normalized in _DB_REGENERABLE_KEYS or normalized.endswith(_DB_REGENERABLE_SUFFIXES):
         return SettingPolicy.REGENERABLE
+    if normalized.startswith(_DB_EXCLUDED_PREFIXES):
+        return SettingPolicy.EXCLUDE
     if normalized in _DB_EXACT_KEYS or normalized.startswith(_DB_EXACT_PREFIXES):
         return SettingPolicy.EXACT
     if _DB_EXACT_ID_KEY.fullmatch(normalized):
