@@ -6,6 +6,7 @@ from pathlib import Path
 import requests
 from typing import Dict, Optional, Callable
 from app_identity import app_data_dir
+from utils.allowlisted_session import AllowListedSession
 from utils.private_files import write_private_json
 
 _ARTSOBS_WEB_USERNAME_KEY = "artsobs_web_username"
@@ -239,9 +240,10 @@ class ArtsObservasjonerWebLogin:
     """Handles programmatic login to www.artsobservasjoner.no."""
 
     BASE_URL = "https://www.artsobservasjoner.no"
+    ALLOWED_HOSTS = ("www.artsobservasjoner.no",)
 
     def __init__(self):
-        self.session = requests.Session()
+        self.session = AllowListedSession(self.ALLOWED_HOSTS)
         self.session.headers.update(
             {
                 "User-Agent": (
@@ -402,9 +404,11 @@ class ArtsObservasjonerMobileBffLogin:
 
     MOBILE_BASE = "https://mobil.artsobservasjoner.no"
     LOGIN_URL = f"{MOBILE_BASE}/bff/login?returnUrl=%2Fmy-page"
+    # Own host and the SLU identity provider named in utils/artportalen_auth.py.
+    ALLOWED_HOSTS = ("mobil.artsobservasjoner.no", "useradmin-auth.slu.se")
 
     def __init__(self):
-        self.session = requests.Session()
+        self.session = AllowListedSession(self.ALLOWED_HOSTS)
         self.session.headers.update(
             {
                 "User-Agent": (
