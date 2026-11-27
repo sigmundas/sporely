@@ -271,4 +271,10 @@ def migrate_legacy_storage() -> Path:
     migrate_app_settings_file()
     migrate_database_paths()
     migrate_qsettings()
+    try:
+        from utils.private_files import tighten_app_data_permissions
+
+        tighten_app_data_permissions(data_dir)
+    except Exception:  # never stop startup over permissions
+        pass
     return data_dir

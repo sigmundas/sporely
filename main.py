@@ -330,6 +330,13 @@ def main():
         repair_legacy_location_precision()
     except Exception as exc:
         print(f"Location precision repair skipped: {exc}")
+    # First run creates the databases just now; owner-only again (F25).
+    try:
+        from utils.private_files import tighten_app_data_permissions
+
+        tighten_app_data_permissions(app_data_dir())
+    except Exception:
+        pass
 
     translator = QTranslator()
     app_settings = get_app_settings()
