@@ -269,10 +269,17 @@ def _collect_calibration_asset_paths(
             entry_path = _resolve_local_asset_path(entry.get("path"), images_dir)
             if entry_path and entry_path.exists() and entry_path.is_file():
                 assets[str(entry_path.resolve())] = entry_path
+        # The importer reads every path key of images[] and auto_images[];
+        # pack the ones inside the images folder so they survive a round trip.
+        for collection in ("images", "auto_images"):
+            entries = loaded.get(collection)
+            for entry in entries if isinstance(entries, list) else []:
+                if isinstance(entry, dict):
+                    _add_images_dir_files(assets, _metadata_path_values(entry), images_dir)
 
     try:
         asset_rows = src_conn.execute(
-            "SELECT local_path, original_path FROM calibration_assets ORDER BY id"
+            "SELECT local_path, original_path, metadata_json FROM calibration_assets ORDER BY id"
         ).fetchall()
     except sqlite3.OperationalError:
         asset_rows = []
@@ -281,7 +288,40 @@ def _collect_calibration_asset_paths(
             asset_path = _resolve_local_asset_path(path_value, images_dir)
             if asset_path and asset_path.exists() and asset_path.is_file():
                 assets[str(asset_path.resolve())] = asset_path
+        try:
+            metadata = json.loads(row["metadata_json"]) if row["metadata_json"] else None
+        except Exception:
+            metadata = None
+        if isinstance(metadata, dict):
+            _add_images_dir_files(
+                assets, _metadata_path_values(metadata, _ASSET_METADATA_PATH_KEYS), images_dir
+            )
     return sorted(assets.values(), key=lambda path: str(path))
+
+
+def _metadata_path_values(entry: dict, keys: tuple[str, ...] | None = None) -> list:
+    values = [entry.get(key) for key in (keys or _CALIBRATION_ENTRY_PATH_KEYS)]
+    companions = entry.get("companion_paths")
+    if isinstance(companions, list):
+        values.extend(companions)
+    return [value for value in values if value and isinstance(value, str)]
+
+
+def _add_images_dir_files(assets: dict[str, Path], values: list, images_dir: Path) -> None:
+    """Add each existing file among ``values`` that lies inside the images folder."""
+    try:
+        root = images_dir.resolve()
+    except (OSError, ValueError):
+        return
+    for value in values:
+        try:
+            path = _resolve_local_asset_path(value, images_dir)
+            if path is None or not path.is_file():
+                continue
+            if root in path.resolve().parents:
+                assets[str(path.resolve())] = path
+        except (OSError, ValueError):
+            continue
 
 
 def _restore_archive_asset(
@@ -309,14 +349,16 @@ def _restore_archive_asset(
         inside = src_path is not None and src_path.resolve(strict=False).is_relative_to(
             src_base_dir.resolve(strict=False)
         )
-    except OSError:
-        inside = False
+        is_file = inside and src_path.is_file()
+    except (OSError, ValueError):
+        # ValueError: an embedded NUL in a crafted path.
+        inside = is_file = False
     if not inside:
         # Keep no path that points outside the images folder: the row keeps
         # only the bare file name, like a row whose bundled file is missing.
         warnings.append(f"Skipped unsafe bundled {warning_label} path: {path_value}")
         return _missing_asset_placeholder(dest_base_dir, path_value)
-    if not src_path.is_file():
+    if not is_file:
         warnings.append(f"Missing bundled {warning_label}: {path_value}")
         return _missing_asset_placeholder(dest_base_dir, path_value)
     dest_path = dest_base_dir / rel
@@ -331,6 +373,9 @@ def _restore_archive_asset(
 _CALIBRATION_ENTRY_PATH_KEYS = (
     "source_path", "source_filepath", "original_path", "selected_path", "path", "working_path",
 )
+# Path keys of ``calibration_assets.metadata_json`` that backups and exports
+# read (``utils.archive.full_backup``), plus ``companion_paths``.
+_ASSET_METADATA_PATH_KEYS = ("source_path", "working_path", "original_path", "local_path")
 
 
 def _bundled_suffix_for_absolute_path(path_value: str, src_base_dir: Path) -> str:
@@ -350,8 +395,11 @@ def _bundled_suffix_for_absolute_path(path_value: str, src_base_dir: Path) -> st
         suffix = parts[start:]
         if any(part in {".", ".."} for part in suffix):
             continue
-        if (src_base_dir / Path(*suffix)).is_file():
-            return "/".join(suffix)
+        try:
+            if (src_base_dir / Path(*suffix)).is_file():
+                return "/".join(suffix)
+        except (OSError, ValueError):
+            return path_value
     return path_value
 
 
@@ -373,43 +421,62 @@ def _restore_calibration_metadata_paths(
         if not isinstance(entries, list):
             continue
         for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            for key in _CALIBRATION_ENTRY_PATH_KEYS:
-                value = entry.get(key)
-                if not value:
-                    continue
-                if not isinstance(value, str):
-                    entry.pop(key, None)
-                    continue
-                entry[key] = _restore_archive_asset(
-                    _bundled_suffix_for_absolute_path(value, src_base_dir),
+            if isinstance(entry, dict):
+                _restore_metadata_entry_paths(
+                    entry,
+                    _CALIBRATION_ENTRY_PATH_KEYS,
                     src_base_dir,
                     dest_base_dir,
-                    copy_file=True,
                     warnings=warnings,
-                    warning_label="calibration auxiliary image",
                     copied=copied,
                 )
-            companions = entry.get("companion_paths")
-            if companions is None:
-                continue
-            if not isinstance(companions, list):
-                entry.pop("companion_paths", None)
-                continue
-            entry["companion_paths"] = [
-                _restore_archive_asset(
-                    _bundled_suffix_for_absolute_path(companion, src_base_dir),
-                    src_base_dir,
-                    dest_base_dir,
-                    copy_file=True,
-                    warnings=warnings,
-                    warning_label="calibration companion file",
-                    copied=copied,
-                )
-                for companion in companions
-                if companion and isinstance(companion, str)
-            ]
+
+
+def _restore_metadata_entry_paths(
+    entry: dict,
+    keys: tuple[str, ...],
+    src_base_dir: Path,
+    dest_base_dir: Path,
+    *,
+    warnings: list[str],
+    copied: dict[Path, Path] | None,
+) -> None:
+    """Rebase ``entry[key]`` for each key, and ``entry["companion_paths"]``."""
+    for key in keys:
+        value = entry.get(key)
+        if not value:
+            continue
+        if not isinstance(value, str):
+            entry.pop(key, None)
+            continue
+        entry[key] = _restore_archive_asset(
+            _bundled_suffix_for_absolute_path(value, src_base_dir),
+            src_base_dir,
+            dest_base_dir,
+            copy_file=True,
+            warnings=warnings,
+            warning_label="calibration auxiliary image",
+            copied=copied,
+        )
+    companions = entry.get("companion_paths")
+    if companions is None:
+        return
+    if not isinstance(companions, list):
+        entry.pop("companion_paths", None)
+        return
+    entry["companion_paths"] = [
+        _restore_archive_asset(
+            _bundled_suffix_for_absolute_path(companion, src_base_dir),
+            src_base_dir,
+            dest_base_dir,
+            copy_file=True,
+            warnings=warnings,
+            warning_label="calibration companion file",
+            copied=copied,
+        )
+        for companion in companions
+        if companion and isinstance(companion, str)
+    ]
 
 
 def _missing_asset_placeholder(dest_base_dir: Path, path_value: str) -> str:
@@ -419,7 +486,9 @@ def _missing_asset_placeholder(dest_base_dir: Path, path_value: str) -> str:
     name for the owner, while a relative or bare name could resolve to an
     unrelated file already in the images folder.
     """
-    name = PureWindowsPath(str(path_value)).name
+    # A drive ("C:x") or NUL in the kept name could make the join on Windows
+    # leave the placeholder folder, or make later path calls raise.
+    name = PureWindowsPath(str(path_value)).name.replace(":", "_").replace("\x00", "_")
     if name in {"", ".", ".."}:
         name = "missing"
     return str(dest_base_dir / f".missing-import-{uuid.uuid4().hex}" / name)
@@ -1387,6 +1456,29 @@ def import_database_bundle(
                             warning_label="calibration asset original file",
                             copied=copied_assets,
                         )
+                        # Backups and exports read file paths from the asset
+                        # metadata too: rebase them like the row's own paths.
+                        asset_metadata = data.get("metadata_json")
+                        if asset_metadata:
+                            try:
+                                loaded_asset_metadata = json.loads(asset_metadata)
+                            except Exception:
+                                loaded_asset_metadata = None
+                            if isinstance(loaded_asset_metadata, dict):
+                                _restore_metadata_entry_paths(
+                                    loaded_asset_metadata,
+                                    _ASSET_METADATA_PATH_KEYS,
+                                    src_images_dir,
+                                    dest_images_dir,
+                                    warnings=warnings,
+                                    copied=copied_assets,
+                                )
+                                data["metadata_json"] = json.dumps(
+                                    loaded_asset_metadata, ensure_ascii=False
+                                )
+                            else:
+                                # Unreadable metadata cannot be checked.
+                                data["metadata_json"] = "{}"
                         asset_uuid = str(data.get("asset_uuid") or "").strip()
                         if not asset_uuid:
                             asset_uuid = str(uuid.uuid4())

@@ -163,3 +163,146 @@ def test_imported_calibration_metadata_keeps_bundled_files(tmp_path, monkeypatch
         restored = Path(value)
         assert restored.is_file() and restored.read_bytes() == name.encode()
         assert profile.resolve() in restored.resolve().parents
+
+
+def _init_source(tmp_path: Path, monkeypatch) -> Path:
+    source_db = tmp_path / "bundle-src" / "mushrooms.db"
+    source_db.parent.mkdir()
+    with monkeypatch.context() as ctx:
+        ctx.setattr(schema, "get_database_path", lambda: source_db)
+        schema.init_database()
+    return source_db
+
+
+def _import_calibrations(bundle: Path) -> dict:
+    return db_share.import_database_bundle(
+        str(bundle),
+        include_observations=False,
+        include_images=False,
+        include_measurements=False,
+        include_calibrations=True,
+        include_reference_values=False,
+    )
+
+
+def test_imported_calibration_asset_metadata_names_no_outside_file(tmp_path, monkeypatch, profile):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "secret.jpg"
+    sentinel.write_bytes(b"a file on the importing computer")
+    source_db = _init_source(tmp_path, monkeypatch)
+    calibration_uuid = str(uuid.uuid4())
+    metadata = {
+        "source_path": str(sentinel),
+        "working_path": str(sentinel),
+        "original_path": "../../outside/secret.jpg",
+        "local_path": str(sentinel),
+        "companion_paths": [str(sentinel)],
+        "note": "kept",
+    }
+    with sqlite3.connect(source_db) as conn:
+        cursor = conn.execute(
+            "INSERT INTO calibrations (calibration_uuid, objective_key, calibration_date, "
+            "microns_per_pixel) VALUES (?, 'micro_40X', '2026-05-01 10:00:00', 0.03)",
+            (calibration_uuid,),
+        )
+        conn.execute(
+            "INSERT INTO calibration_assets (asset_uuid, calibration_id, calibration_uuid, role, "
+            "metadata_json) VALUES (?, ?, ?, 'source_photo', ?)",
+            (str(uuid.uuid4()), cursor.lastrowid, calibration_uuid, json.dumps(metadata)),
+        )
+    bundle = tmp_path / f"bundle-{uuid.uuid4().hex[:8]}.zip"
+    with zipfile.ZipFile(bundle, "w") as zf:
+        zf.write(source_db, arcname="mushrooms.db")
+
+    _import_calibrations(bundle)
+
+    with sqlite3.connect(schema.get_database_path()) as conn:
+        (stored,) = conn.execute("SELECT metadata_json FROM calibration_assets").fetchone()
+    loaded = json.loads(stored)
+    assert loaded["note"] == "kept"
+    assert not any("outside" in value for value in _strings(loaded))
+    for value in _strings({k: v for k, v in loaded.items() if k != "note"}):
+        assert profile.resolve() in Path(value).resolve().parents
+
+
+def test_metadata_path_with_nul_does_not_abort_the_import(tmp_path, monkeypatch, profile):
+    source_db = _init_source(tmp_path, monkeypatch)
+    payload = {"images": [{"path": "calibrations/a\x00b.jpg"}], "auto_images": []}
+    with sqlite3.connect(source_db) as conn:
+        conn.execute(
+            "INSERT INTO calibrations (calibration_uuid, objective_key, calibration_date, "
+            "microns_per_pixel, measurements_json) VALUES (?, 'micro_40X', "
+            "'2026-05-01 10:00:00', 0.03, ?)",
+            (str(uuid.uuid4()), json.dumps(payload)),
+        )
+    bundle = tmp_path / f"bundle-{uuid.uuid4().hex[:8]}.zip"
+    with zipfile.ZipFile(bundle, "w") as zf:
+        zf.write(source_db, arcname="mushrooms.db")
+
+    result = _import_calibrations(bundle)
+
+    assert result["calibrations"] == 1
+
+
+def test_missing_asset_placeholder_keeps_no_drive_from_the_name(tmp_path):
+    from pathlib import PureWindowsPath
+
+    placeholder = Path(db_share._missing_asset_placeholder(tmp_path, "folder/C:evil.jpg"))
+
+    assert placeholder.parent.parent == tmp_path
+    assert placeholder.parent.name.startswith(".missing-import-")
+    assert not PureWindowsPath(placeholder.name).drive
+
+
+def test_legacy_export_packs_every_calibration_metadata_file(tmp_path, monkeypatch, profile):
+    """A same-machine export and import keeps auto_images and companion files."""
+    exporter = tmp_path / "exporter"
+    exporter.mkdir()
+    exporter_db = exporter / "mushrooms.db"
+    with monkeypatch.context() as ctx:
+        ctx.setattr(schema, "get_database_path", lambda: exporter_db)
+        # The exporter reads these through names it imported from schema.
+        ctx.setattr(db_share, "get_database_path", lambda: exporter_db)
+        ctx.setattr(db_share, "get_images_dir", lambda: exporter / "images")
+        ctx.setattr(db_share, "get_objectives_path", lambda: exporter / "objectives.json")
+        ctx.setattr(
+            db_share, "get_reference_database_path", lambda: exporter / "reference_values.db"
+        )
+        schema.init_database()
+        cal_dir = schema.get_images_dir() / "calibrations" / "micro_40X"
+        cal_dir.mkdir(parents=True)
+        (cal_dir / "auto.jpg").write_bytes(b"auto")
+        (cal_dir / "side.xmp").write_bytes(b"xmp")
+        payload = {
+            "images": [],
+            "auto_images": [{
+                "working_path": str(cal_dir / "auto.jpg"),
+                "companion_paths": [str(cal_dir / "side.xmp")],
+            }],
+        }
+        with sqlite3.connect(exporter_db) as conn:
+            conn.execute(
+                "INSERT INTO calibrations (calibration_uuid, objective_key, calibration_date, "
+                "microns_per_pixel, measurements_json) VALUES (?, 'micro_40X', "
+                "'2026-05-01 10:00:00', 0.03, ?)",
+                (str(uuid.uuid4()), json.dumps(payload)),
+            )
+        bundle = tmp_path / "export.zip"
+        db_share.export_database_bundle(
+            str(bundle),
+            include_observations=False,
+            include_images=False,
+            include_measurements=False,
+            include_calibrations=True,
+            include_reference_values=False,
+        )
+
+    _import_calibrations(bundle)
+
+    with sqlite3.connect(schema.get_database_path()) as conn:
+        (stored,) = conn.execute("SELECT measurements_json FROM calibrations").fetchone()
+    auto_entry = json.loads(stored)["auto_images"][0]
+    assert Path(auto_entry["working_path"]).read_bytes() == b"auto"
+    assert Path(auto_entry["companion_paths"][0]).read_bytes() == b"xmp"
+    assert profile.resolve() in Path(auto_entry["working_path"]).resolve().parents
