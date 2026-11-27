@@ -587,6 +587,7 @@ class AnalysisGalleryTile(QWidget):
         self._reposition_overlay_buttons()
         super().resizeEvent(event)
 from app_identity import APP_NAME, APP_REPOSITORY_URL, app_data_dir
+from utils.mo_keys import credentials as mo_credentials, set_key as set_mo_key
 from utils.safe_links import MAX_AVATAR_BYTES, safe_avatar_url, safe_release_link
 from config import (
     RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG,
@@ -2782,18 +2783,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         return self.tr(label) if label else ""
 
     def _mushroomobserver_credentials(self) -> tuple[str, str]:
-        app_key = (SettingsDB.get_setting(self.SETTING_MO_APP_API_KEY, "") or "").strip()
-        if not app_key:
-            app_key = (os.getenv("MO_APP_API_KEY", "") or "").strip()
-        if not app_key:
-            app_key = (os.getenv("MUSHROOMOBSERVER_APP_API_KEY", "") or "").strip()
-
-        user_key = (SettingsDB.get_setting(self.SETTING_MO_USER_API_KEY, "") or "").strip()
-        if not user_key:
-            user_key = (os.getenv("MO_USER_API_KEY", "") or "").strip()
-        if not user_key:
-            user_key = (os.getenv("MUSHROOMOBSERVER_USER_API_KEY", "") or "").strip()
-        return app_key, user_key
+        return mo_credentials()
 
     def _prompt_mushroomobserver_login(self, require_app_key: bool = False) -> bool:
         dialog = QDialog(self)
@@ -2871,9 +2861,13 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         if dialog.exec() != QDialog.Accepted:
             return False
 
-        if app_key_edit is not None:
-            SettingsDB.set_setting(self.SETTING_MO_APP_API_KEY, app_key_edit.text().strip())
-        SettingsDB.set_setting(self.SETTING_MO_USER_API_KEY, user_key_edit.text().strip())
+        try:
+            if app_key_edit is not None:
+                set_mo_key(self.SETTING_MO_APP_API_KEY, app_key_edit.text().strip())
+            set_mo_key(self.SETTING_MO_USER_API_KEY, user_key_edit.text().strip())
+        except RuntimeError as exc:
+            QMessageBox.warning(self, self.tr("Mushroom Observer login"), str(exc))
+            return False
         return True
 
     def _refresh_cloud_sync_ui(self) -> None:
@@ -4181,7 +4175,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             return
         if selected_uploader and selected_uploader.key == "mo":
             try:
-                SettingsDB.set_setting(self.SETTING_MO_USER_API_KEY, "")
+                set_mo_key(self.SETTING_MO_USER_API_KEY, "")
             except Exception as exc:
                 self._show_logout_failed(selected_uploader, exc)
                 return
