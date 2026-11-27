@@ -20,12 +20,18 @@ LOGOUT_URL = f"{cloud_sync.SUPABASE_URL}/auth/v1/logout?scope=local"
 REFRESH_URL = f"{cloud_sync.SUPABASE_URL}/auth/v1/token?grant_type=refresh_token"
 
 
-def _jwt(*, sub=USER_ID, exp_offset=3600) -> str:
+SESSION_ID = "00000000-0000-4000-8000-0000000000c1"
+
+
+def _jwt(*, sub=USER_ID, exp_offset=3600, session_id=SESSION_ID) -> str:
     def enc(obj):
         raw = json.dumps(obj, separators=(",", ":")).encode()
         return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
-    return f"{enc({'alg': 'HS256', 'typ': 'JWT'})}.{enc({'sub': sub, 'exp': int(time.time()) + exp_offset})}.sig"
+    claims = {"sub": sub, "exp": int(time.time()) + exp_offset}
+    if session_id:
+        claims["session_id"] = session_id
+    return f"{enc({'alg': 'HS256', 'typ': 'JWT'})}.{enc(claims)}.sig"
 
 
 class _Resp:
@@ -132,10 +138,75 @@ def test_sign_out_clears_local_state_when_revocation_is_rejected(monkeypatch, st
 
 def test_sign_out_treats_already_ended_session_as_revoked(monkeypatch, store):
     _seed(store, access=_jwt())
-    _recorder(monkeypatch, lambda m, u, k: _Resp(404, text='{"code":"session_not_found"}'))
+    _recorder(monkeypatch, lambda m, u, k: _Resp(403, {"code": 403, "error_code": "session_not_found"}))
 
     result = cloud_sync.sign_out_cloud_session()
 
+    assert result.revoked is True
+    _assert_cleared(store)
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        _Resp(302, None, text="session_not_found"),
+        _Resp(500, None, text="<html>session_not_found</html>"),
+        _Resp(403, ["session_not_found"]),
+    ],
+    ids=["redirect", "unstructured-500", "non-dict-body"],
+)
+def test_sign_out_does_not_count_unstructured_responses_as_revoked(monkeypatch, store, response):
+    _seed(store, access=_jwt())
+    calls = _recorder(monkeypatch, lambda m, u, k: response)
+
+    result = cloud_sync.sign_out_cloud_session()
+
+    assert calls[0]["allow_redirects"] is False
+    assert result.revoked is False
+    _assert_cleared(store)
+
+
+def test_sign_out_never_sends_a_token_without_session_id(monkeypatch, store):
+    """Supabase falls back to a global sign-out for such a token."""
+    _seed(store, access=_jwt(session_id=None), refresh=None)
+    calls = _recorder(monkeypatch, lambda m, u, k: _Resp(204))
+
+    result = cloud_sync.sign_out_cloud_session()
+
+    assert calls == []
+    assert result.revoked is False
+    assert result.status == "failed"
+    _assert_cleared(store)
+
+
+def test_sign_out_uses_a_still_valid_token_close_to_expiry(monkeypatch, store):
+    access = _jwt(exp_offset=60)
+    _seed(store, access=access)
+    calls = _recorder(monkeypatch, lambda m, u, k: _Resp(204))
+
+    result = cloud_sync.sign_out_cloud_session()
+
+    assert [c["url"] for c in calls] == [LOGOUT_URL]
+    assert calls[0]["headers"]["Authorization"] == f"Bearer {access}"
+    assert result.revoked is True
+
+
+def test_sign_out_renews_once_after_a_401_and_retries(monkeypatch, store):
+    _seed(store, access=_jwt(), refresh="refresh-old")
+    fresh = _jwt(exp_offset=7200)
+    logout_statuses = iter([401, 204])
+
+    def responder(method, url, kwargs):
+        if url == REFRESH_URL:
+            return _Resp(200, {"access_token": fresh, "refresh_token": "refresh-new", "user": {"id": USER_ID}})
+        return _Resp(next(logout_statuses), {"code": 401, "error_code": "bad_jwt"})
+
+    calls = _recorder(monkeypatch, responder)
+
+    result = cloud_sync.sign_out_cloud_session()
+
+    assert [c["url"] for c in calls] == [LOGOUT_URL, REFRESH_URL, LOGOUT_URL]
+    assert calls[2]["headers"]["Authorization"] == f"Bearer {fresh}"
     assert result.revoked is True
     _assert_cleared(store)
 

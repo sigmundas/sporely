@@ -6483,20 +6483,68 @@ class CloudSignOutResult:
         return self.status == 'revoked'
 
 
-def _cloud_logout_session_already_ended(response) -> bool:
+def _decode_jwt_session_id(access_token: str | None) -> str:
+    token = str(access_token or '').strip()
+    parts = token.split('.')
+    if len(parts) < 2:
+        return ''
+    payload = parts[1]
+    padding = '=' * (-len(payload) % 4)
     try:
-        text = str(getattr(response, 'text', '') or '').lower()
+        data = json.loads(base64.urlsafe_b64decode((payload + padding).encode('ascii')).decode('utf-8'))
+    except Exception:
+        return ''
+    value = data.get('session_id') if isinstance(data, dict) else None
+    return str(value or '').strip()
+
+
+def _cloud_logout_session_already_ended(response) -> bool:
+    """True for Supabase's structured ``session_not_found`` refusal."""
+    status = int(getattr(response, 'status_code', 0) or 0)
+    if status not in {403, 404}:
+        return False
+    try:
+        body = response.json()
     except Exception:
         return False
-    return 'session_not_found' in text
+    if not isinstance(body, dict):
+        return False
+    return 'session_not_found' in {
+        str(body.get('error_code') or '').strip(),
+        str(body.get('code') or '').strip(),
+    }
+
+
+def _send_cloud_logout(access_token: str):
+    return _request_with_transient_retry(
+        requests.request,
+        'POST',
+        f'{SUPABASE_URL}/auth/v1/logout?scope=local',
+        headers={
+            'apikey': SUPABASE_KEY,
+            'Authorization': f'Bearer {access_token}',
+            'Content-Type': 'application/json',
+        },
+        timeout=_SUPABASE_AUTH_TIMEOUT,
+        allow_redirects=False,
+    )
+
+
+def _renew_access_token_for_sign_out(refresh_token: str) -> str:
+    """Exchange the stored refresh token for an access token, without saving it."""
+    with _CLOUD_REFRESH_LOCK:  # never spend the refresh token beside a loader
+        return str(SporelyCloudClient.refresh_login(refresh_token).access_token or '').strip()
 
 
 def sign_out_cloud_session() -> CloudSignOutResult:
     """Explicit sign-out: revoke the stored session at Supabase, then clear it.
 
     Password sessions are revoked with ``POST /auth/v1/logout?scope=local``,
-    which ends only this device's session. An expired access token is first
-    exchanged with the stored refresh token so the logout can authenticate.
+    which ends only this device's session. The stored access token is used
+    while it is unexpired; a missing or expired token, or one Supabase
+    rejects with 401, is renewed once with the stored refresh token and the
+    logout retried. A token without a ``session_id`` claim is never sent,
+    because Supabase then signs out every session of the account.
     Local credentials (``SporelyCloudClient.clear_credentials``) are cleared
     whatever the outcome; the result says whether the revocation landed.
 
@@ -6505,51 +6553,55 @@ def sign_out_cloud_session() -> CloudSignOutResult:
     status = 'failed'
     message = ''
     try:
-        with _CLOUD_REFRESH_LOCK:
-            settings = get_app_settings()
-            access, _user_id, refresh = _read_current_cloud_session_settings()
-            auth_method = str(settings.get('cloud_auth_method') or '').strip()
-            if not access and not refresh:
-                status = 'no_session'
-            elif auth_method == 'oauth':
-                status = 'not_supported'
-                message = 'Sporely Cloud has no supported call to end this sign-in session remotely.'
-            elif (not access or _jwt_expires_soon(access)) and refresh:
+        settings = get_app_settings()  # one snapshot for the method and the tokens
+        access = str(settings.get('cloud_access_token') or '').strip() or None
+        refresh = str(settings.get('cloud_refresh_token') or '').strip() or None
+        auth_method = str(settings.get('cloud_auth_method') or '').strip()
+        if not access and not refresh:
+            status = 'no_session'
+        elif auth_method == 'oauth':
+            status = 'not_supported'
+            message = 'Sporely Cloud has no supported call to end this sign-in session remotely.'
+        else:
+            renewed = False
+            if (not access or _jwt_expires_soon(access, leeway_seconds=0)) and refresh:
+                renewed = True
                 try:
-                    access = SporelyCloudClient.refresh_login(refresh).access_token
+                    access = _renew_access_token_for_sign_out(refresh)
                 except Exception as exc:
                     access = None
                     message = f'Could not renew the session to end it ({type(exc).__name__}).'
-        if status not in {'no_session', 'not_supported'}:
-            if not access:
-                status = 'failed'
-                message = message or 'No usable session token to end the session with.'
-            else:
+            while True:
+                if not access:
+                    status = 'failed'
+                    message = message or 'No usable session token to end the session with.'
+                    break
+                if not _decode_jwt_session_id(access):
+                    status = 'failed'
+                    message = 'The stored session token has no session id; it was not ended remotely.'
+                    break
                 try:
-                    response = _request_with_transient_retry(
-                        requests.request,
-                        'POST',
-                        f'{SUPABASE_URL}/auth/v1/logout?scope=local',
-                        headers={
-                            'apikey': SUPABASE_KEY,
-                            'Authorization': f'Bearer {access}',
-                            'Content-Type': 'application/json',
-                        },
-                        timeout=_SUPABASE_AUTH_TIMEOUT,
-                    )
+                    response = _send_cloud_logout(access)
                 except Exception as exc:
                     status = 'failed'
                     message = f'Could not reach Sporely Cloud to end the session ({type(exc).__name__}).'
-                else:
-                    if getattr(response, 'ok', False) or _cloud_logout_session_already_ended(response):
-                        status = 'revoked'
-                        message = ''
-                    else:
-                        status = 'failed'
-                        message = (
-                            'Sporely Cloud did not confirm the sign-out '
-                            f'(HTTP {getattr(response, "status_code", "?")}).'
-                        )
+                    break
+                code = int(getattr(response, 'status_code', 0) or 0)
+                if code in {200, 204} or _cloud_logout_session_already_ended(response):
+                    status = 'revoked'
+                    message = ''
+                    break
+                if code == 401 and refresh and not renewed:
+                    renewed = True
+                    try:
+                        access = _renew_access_token_for_sign_out(refresh)
+                    except Exception as exc:
+                        access = None
+                        message = f'Could not renew the session to end it ({type(exc).__name__}).'
+                    continue
+                status = 'failed'
+                message = f'Sporely Cloud did not confirm the sign-out (HTTP {code or "?"}).'
+                break
     finally:
         SporelyCloudClient.clear_credentials()
     return CloudSignOutResult(status=status, message=message)
