@@ -3,7 +3,7 @@ set -euo pipefail
 
 build_version="${SPORELY_BUILD_VERSION:-$(python tools/release_version.py app-version --app-file main.py)}"
 
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.lock
 runtime_assets="$(python tools/runtime_assets.py pyinstaller-add-data --separator ':')"
 
 pyinstaller \

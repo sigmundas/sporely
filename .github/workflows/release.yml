@@ -14,8 +14,10 @@ on:
         description: "Release tag, e.g. v0.9.29 (created when the draft is published)"
         required: true
 
+# Read-only by default; only the jobs that create the draft, upload assets or
+# read the draft back (drafts are visible to write access only) get write.
 permissions:
-  contents: write
+  contents: read
 
 env:
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
@@ -28,7 +30,9 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Validate release tag and application version
         id: version
@@ -41,6 +45,8 @@ jobs:
 
   create-draft:
     needs: validate-version
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - name: Create the draft release (or reuse an existing draft)
@@ -63,14 +69,18 @@ jobs:
 
   build-windows:
     needs: [validate-version, create-draft]
+    permissions:
+      contents: write
     runs-on: windows-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: "pip"
@@ -78,7 +88,8 @@ jobs:
       - name: Generate app icon
         shell: pwsh
         run: |
-          python -m pip install pillow --quiet --disable-pip-version-check
+          python -m pip install --require-hashes -r requirements.lock --quiet --disable-pip-version-check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python tools/make_ico.py
 
       - name: Build with PyInstaller
@@ -103,21 +114,25 @@ jobs:
 
   build-linux:
     needs: [validate-version, create-draft]
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: "pip"
 
       - name: Generate icons
         run: |
-          pip install pillow --quiet --disable-pip-version-check
+          python -m pip install --require-hashes -r requirements.lock --quiet --disable-pip-version-check
           python tools/make_ico.py
 
       - name: Build with PyInstaller
@@ -172,6 +187,8 @@ jobs:
 
   build-macos:
     needs: [validate-version, create-draft]
+    permissions:
+      contents: write
     # Use a matrix to build for both Intel (x86_64) and Apple Silicon (arm64)
     strategy:
       matrix:
@@ -185,17 +202,19 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: "pip"
 
       - name: Generate icons
         run: |
-          pip install pillow --quiet --disable-pip-version-check
+          python -m pip install --require-hashes -r requirements.lock --quiet --disable-pip-version-check
           # Icon generation is architecture-independent
           python tools/make_ico.py
           ICONSET=assets/icons/Sporely.iconset
@@ -257,11 +276,35 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$RELEASE_TAG" "${{ steps.dmg.outputs.name }}" --clobber
 
-  verify-draft:
+  checksums:
     needs: [validate-version, build-windows, build-linux, build-macos]
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
-      - name: The release is still a draft with all four installers
+      - name: Publish SHA256SUMS for the installers in the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.validate-version.outputs.version }}
+        run: |
+          mkdir installers
+          cd installers
+          for name in "Sporely-$VERSION-windows-setup.exe" "sporely_${VERSION}_amd64.deb" \
+                      "Sporely-$RELEASE_TAG-macos-intel.dmg" "Sporely-$RELEASE_TAG-macos-apple-silicon.dmg"; do
+            gh release download "$RELEASE_TAG" --pattern "$name" --clobber
+            [ -s "$name" ] || { echo "::error::missing or empty asset $name"; exit 1; }
+          done
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+          gh release upload "$RELEASE_TAG" SHA256SUMS --clobber
+
+  verify-draft:
+    needs: [validate-version, checksums]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: The release is still a draft with all four installers and matching checksums
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.validate-version.outputs.version }}
@@ -270,9 +313,19 @@ jobs:
           jq -e '.isDraft == true' release.json
           jq -e --arg sha "$GITHUB_SHA" '.targetCommitish == $sha' release.json \
             || { echo "::error::draft targets $(jq -r .targetCommitish release.json), not $GITHUB_SHA"; exit 1; }
-          for name in "Sporely-$VERSION-windows-setup.exe" "sporely_${VERSION}_amd64.deb" \
-                      "Sporely-$RELEASE_TAG-macos-intel.dmg" "Sporely-$RELEASE_TAG-macos-apple-silicon.dmg"; do
+          names=("Sporely-$VERSION-windows-setup.exe" "sporely_${VERSION}_amd64.deb" \
+                 "Sporely-$RELEASE_TAG-macos-intel.dmg" "Sporely-$RELEASE_TAG-macos-apple-silicon.dmg" SHA256SUMS)
+          for name in "${names[@]}"; do
             jq -e --arg n "$name" 'any(.assets[]; .name == $n and .size > 0)' release.json >/dev/null \
               || { echo "::error::missing asset $name"; exit 1; }
           done
           jq -r '.assets[] | "\(.name) \(.size)"' release.json
+          # SHA256SUMS must match the content of the installers in the draft.
+          mkdir verify
+          cd verify
+          for name in "${names[@]}"; do gh release download "$RELEASE_TAG" --pattern "$name" --clobber; done
+          # Exactly the four installers, each once (duplicate lines could hide unchecked files).
+          listed=$(awk '{print $2}' SHA256SUMS | sed 's/^\*//' | sort)
+          expected=$(printf '%s\n' "${names[@]:0:4}" | sort)
+          [ "$listed" = "$expected" ] || { echo "::error::SHA256SUMS must list each of the four installers exactly once"; exit 1; }
+          sha256sum -c SHA256SUMS
