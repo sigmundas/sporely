@@ -5,6 +5,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from contextlib import ExitStack
 import hashlib
+import html
 from pathlib import Path
 from typing import Optional
 import math
@@ -91,6 +92,7 @@ from database.schema import (
 from database.models import SettingsDB, ImageDB, MeasurementDB, CalibrationDB
 from database.database_tags import DatabaseTerms
 from utils.artsdatabanken_link import concept_link_from_name_id
+from utils.safe_links import ARTSDATABANKEN_FALLBACK_URL, safe_ai_link
 from utils.cloud_sync import _cloud_identification_prediction_taxon
 from utils.cloud_sync_impl.reconciliation.location_provenance import coordinates_match
 from utils.image_companion_grouping import normalize_raw_companion_source_preference
@@ -3127,18 +3129,18 @@ class ImageImportDialog(GeometryMixin, QDialog):
         if isinstance(pred, dict):
             for key in ("infoURL", "infoUrl", "info_url"):
                 value = pred.get(key)
-                if isinstance(value, str) and value.startswith("http"):
-                    return value
+                if safe_ai_link(value):
+                    return safe_ai_link(value)
         if not isinstance(taxon, dict):
             return None
         for key in ("infoURL", "infoUrl", "info_url"):
             value = taxon.get(key)
-            if isinstance(value, str) and value.startswith("http"):
-                return value
+            if safe_ai_link(value):
+                return safe_ai_link(value)
         for key in ("url", "link", "href", "uri"):
             value = taxon.get(key)
-            if isinstance(value, str) and value.startswith("http"):
-                return value
+            if safe_ai_link(value):
+                return safe_ai_link(value)
         taxon_id = (
             taxon.get("taxonId")
             or taxon.get("taxon_id")
@@ -3146,15 +3148,16 @@ class ImageImportDialog(GeometryMixin, QDialog):
             or taxon.get("id")
         )
         if taxon_id:
-            link = concept_link_from_name_id(taxon_id)
+            link = safe_ai_link(concept_link_from_name_id(taxon_id))
             if link:
                 return link
-        return "https://artsdatabanken.no"
+        return ARTSDATABANKEN_FALLBACK_URL
 
     def _build_adb_link_widget(self, url: str | None) -> QLabel | None:
+        url = safe_ai_link(url)
         if not url:
             return None
-        label = QLabel(f'<a href="{url}">AdB</a>')
+        label = QLabel(f'<a href="{html.escape(url, quote=True)}">AdB</a>')
         label.setTextFormat(Qt.RichText)
         label.setTextInteractionFlags(Qt.TextBrowserInteraction)
         label.setOpenExternalLinks(True)

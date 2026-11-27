@@ -113,6 +113,8 @@ from utils.cloud_sync_impl.reconciliation.location_provenance import (
 )
 import utils.ai_image_prep as ai_image_prep
 from utils.artsdatabanken_link import concept_link_from_name_id
+from utils.private_temp import private_temp_dir
+from utils.safe_links import safe_ai_link
 from utils.taxon_identity import IDENTITY_COLUMNS, TaxonIdentity, proven_sporely_taxon_id
 import re
 import requests
@@ -2249,7 +2251,7 @@ class ObservationDetailsDialog(QDialog):
                 or ""
             ).strip()
             if taxon_id:
-                return f"https://www.inaturalist.org/taxa/{taxon_id}"
+                return safe_ai_link(f"https://www.inaturalist.org/taxa/{taxon_id}")
             return None
 
         for obj in (pred_obj, taxon_obj):
@@ -2266,8 +2268,8 @@ class ObservationDetailsDialog(QDialog):
                 "info_url",
             ):
                 value = obj.get(key)
-                if isinstance(value, str) and value.strip().startswith("http"):
-                    return value.strip()
+                if safe_ai_link(value):
+                    return safe_ai_link(value)
 
         taxon_id = str(
             taxon_obj.get("taxonId")
@@ -2279,7 +2281,7 @@ class ObservationDetailsDialog(QDialog):
             or ""
         ).strip()
         if taxon_id and taxon_id.isdigit():
-            return concept_link_from_name_id(taxon_id)
+            return safe_ai_link(concept_link_from_name_id(taxon_id))
         return None
 
     def _ai_prediction_links(self, pred: dict, taxon: dict, source: str = "arts") -> list[tuple[str, str]]:
@@ -2335,7 +2337,7 @@ class ObservationDetailsDialog(QDialog):
         if column != link_column:
             return
         item = table.item(row, column)
-        url = str(item.data(Qt.UserRole) or "").strip() if item else ""
+        url = safe_ai_link(str(item.data(Qt.UserRole) or "")) if item else None
         if url:
             QDesktopServices.openUrl(QUrl(url))
 
@@ -4978,8 +4980,7 @@ class ObservationDetailsDialog(QDialog):
         if image.isNull():
             return None
 
-        preview_dir = Path(tempfile.gettempdir()) / "sporely_dialog_previews"
-        preview_dir.mkdir(parents=True, exist_ok=True)
+        preview_dir = private_temp_dir("dialog_previews")
         preview_name = f"{source_file.stem}_{abs(hash(source)) & 0xffffffff:08x}.jpg"
         preview_path = preview_dir / preview_name
         if not image.save(str(preview_path), "JPEG", 88):

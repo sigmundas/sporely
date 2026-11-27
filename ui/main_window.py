@@ -587,6 +587,8 @@ class AnalysisGalleryTile(QWidget):
         self._reposition_overlay_buttons()
         super().resizeEvent(event)
 from app_identity import APP_NAME, APP_REPOSITORY_URL, app_data_dir
+from utils.mo_keys import credentials as mo_credentials, set_key as set_mo_key
+from utils.safe_links import MAX_AVATAR_BYTES, safe_avatar_url, safe_release_link
 from config import (
     RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG,
     RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW,
@@ -1980,22 +1982,50 @@ class SettingsHubDialog(QDialog):
         if cached_url == url and isinstance(cached_pixmap, QPixmap) and not cached_pixmap.isNull():
             self._apply_profile_avatar(cached_pixmap)
             return
+        # The URL comes from the profile row: fetch only Supabase storage URLs.
+        if not safe_avatar_url(url):
+            return
         if not hasattr(self, "_profile_avatar_network"):
             self._profile_avatar_network = QNetworkAccessManager(self)
         self._profile_avatar_pending_url = url
-        request = QNetworkRequest(QUrl(url))
+        self._request_profile_avatar(url, url, 0)
+
+    def _request_profile_avatar(self, fetch_url: str, avatar_url: str, hops: int) -> None:
+        request = QNetworkRequest(QUrl(fetch_url))
         request.setAttribute(QNetworkRequest.Attribute.Http2AllowedAttribute, False)
+        # Redirects are checked here, not followed blindly by Qt.
+        request.setAttribute(
+            QNetworkRequest.Attribute.RedirectPolicyAttribute,
+            QNetworkRequest.RedirectPolicy.ManualRedirectPolicy,
+        )
         request.setRawHeader(b"User-Agent", b"Sporely/1.0 (Desktop)")
         request.setRawHeader(b"Accept", b"image/webp,image/apng,image/*,*/*;q=0.8")
         reply = self._profile_avatar_network.get(request)
-        reply.finished.connect(lambda: self._handle_profile_avatar_reply(reply, url))
+        reply.setReadBufferSize(MAX_AVATAR_BYTES + 1)  # bounds what Qt buffers
 
-    def _handle_profile_avatar_reply(self, reply, avatar_url: str) -> None:
+        def _limit(received, _total, reply=reply):
+            if received > MAX_AVATAR_BYTES:
+                reply.abort()
+
+        reply.downloadProgress.connect(_limit)
+        reply.finished.connect(lambda: self._handle_profile_avatar_reply(reply, avatar_url, hops))
+
+    def _handle_profile_avatar_reply(self, reply, avatar_url: str, hops: int = 0) -> None:
+        followed = False
         try:
             from PySide6.QtNetwork import QNetworkReply
 
             if reply.error() == QNetworkReply.NoError and str(getattr(self, "_profile_avatar_url", "") or "").strip() == str(avatar_url or "").strip():
+                target = reply.attribute(QNetworkRequest.Attribute.RedirectionTargetAttribute)
+                if target is not None and not target.isEmpty():
+                    next_url = safe_avatar_url(reply.url().resolved(target).toString())
+                    if next_url and hops < 3:
+                        followed = True
+                        self._request_profile_avatar(next_url, avatar_url, hops + 1)
+                    return
                 data = reply.readAll()
+                if len(data) > MAX_AVATAR_BYTES:
+                    return
                 pixmap = QPixmap()
                 if pixmap.loadFromData(data):
                     self._profile_avatar_loaded_url = str(avatar_url or "").strip()
@@ -2005,7 +2035,7 @@ class SettingsHubDialog(QDialog):
         except Exception:
             pass
         finally:
-            if str(getattr(self, "_profile_avatar_pending_url", "") or "").strip() == str(avatar_url or "").strip():
+            if not followed and str(getattr(self, "_profile_avatar_pending_url", "") or "").strip() == str(avatar_url or "").strip():
                 self._profile_avatar_pending_url = ""
             reply.deleteLater()
 
@@ -2754,18 +2784,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         return self.tr(label) if label else ""
 
     def _mushroomobserver_credentials(self) -> tuple[str, str]:
-        app_key = (SettingsDB.get_setting(self.SETTING_MO_APP_API_KEY, "") or "").strip()
-        if not app_key:
-            app_key = (os.getenv("MO_APP_API_KEY", "") or "").strip()
-        if not app_key:
-            app_key = (os.getenv("MUSHROOMOBSERVER_APP_API_KEY", "") or "").strip()
-
-        user_key = (SettingsDB.get_setting(self.SETTING_MO_USER_API_KEY, "") or "").strip()
-        if not user_key:
-            user_key = (os.getenv("MO_USER_API_KEY", "") or "").strip()
-        if not user_key:
-            user_key = (os.getenv("MUSHROOMOBSERVER_USER_API_KEY", "") or "").strip()
-        return app_key, user_key
+        return mo_credentials()
 
     def _prompt_mushroomobserver_login(self, require_app_key: bool = False) -> bool:
         dialog = QDialog(self)
@@ -2843,9 +2862,13 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         if dialog.exec() != QDialog.Accepted:
             return False
 
-        if app_key_edit is not None:
-            SettingsDB.set_setting(self.SETTING_MO_APP_API_KEY, app_key_edit.text().strip())
-        SettingsDB.set_setting(self.SETTING_MO_USER_API_KEY, user_key_edit.text().strip())
+        try:
+            if app_key_edit is not None:
+                set_mo_key(self.SETTING_MO_APP_API_KEY, app_key_edit.text().strip())
+            set_mo_key(self.SETTING_MO_USER_API_KEY, user_key_edit.text().strip())
+        except RuntimeError as exc:
+            QMessageBox.warning(self, self.tr("Mushroom Observer login"), str(exc))
+            return False
         return True
 
     def _refresh_cloud_sync_ui(self) -> None:
@@ -4153,7 +4176,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             return
         if selected_uploader and selected_uploader.key == "mo":
             try:
-                SettingsDB.set_setting(self.SETTING_MO_USER_API_KEY, "")
+                set_mo_key(self.SETTING_MO_USER_API_KEY, "")
             except Exception as exc:
                 self._show_logout_failed(selected_uploader, exc)
                 return
@@ -6018,6 +6041,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                 and self._corner_cloud_user_id(settings) == user_id
             ):
                 data = reply.readAll()
+                if len(data) > MAX_AVATAR_BYTES:
+                    return
                 pixmap = QPixmap()
                 if pixmap.loadFromData(data):
                     self._avatar_pixmap_cached = pixmap
@@ -6101,7 +6126,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 return
             
             title = title_elem.text.strip()
-            url = link_elem.get('href', '').strip()
+            url = safe_release_link(link_elem.get('href', ''))
             
             # Extract version from title (e.g., "v0.2.2" -> "0.2.2")
             version = title.lower().replace("release", "").strip().lstrip("v").strip()

@@ -1,6 +1,7 @@
 """Live microscopy session tab."""
 from __future__ import annotations
 
+import os
 import time
 from datetime import datetime
 import tempfile
@@ -68,6 +69,7 @@ from database.schema import (
     objective_display_name,
     resolve_objective_key,
 )
+from utils.private_temp import private_temp_dir
 from utils.image_utils import cleanup_import_temp_file
 from utils.image_companion_grouping import (
     companion_group_key,
@@ -1975,8 +1977,7 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             source_text = str(source or "").strip()
             if source_text and Path(source_text).exists():
                 try:
-                    output_dir = Path(tempfile.gettempdir()) / "sporely" / "calibration_from_livelab"
-                    output_dir.mkdir(parents=True, exist_ok=True)
+                    output_dir = private_temp_dir("calibration_from_livelab")
                     from utils.raw_render import render_raw_image
                     make, model, capture_dt = self._pending_raw_source_exif(pending)
                     rendered = render_raw_image(
@@ -2225,7 +2226,7 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         candidates: list[str] = []
         try:
             for child in source.parent.iterdir():
-                if not child.is_file():
+                if child.is_symlink() or not child.is_file():
                     continue
                 if child.stem.casefold() != source.stem.casefold():
                     continue
@@ -2358,8 +2359,8 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             return False
         if source in self._seen_source_paths:
             return False
-        if not Path(source).exists():
-            return False
+        if os.path.islink(source) or not Path(source).exists():
+            return False  # links may point outside the watched folder
         group_key = companion_group_key(source)
         pending_raw_exists = getattr(self, "_pending_raw_capture_exists", None)
         if callable(pending_raw_exists) and pending_raw_exists(source, group_key=group_key):
@@ -3422,7 +3423,7 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         queued = 0
         for child in children:
             try:
-                if not child.is_file():
+                if child.is_symlink() or not child.is_file():
                     continue
             except Exception:
                 continue
@@ -3627,6 +3628,8 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         observation_id = int(observation_id or self._session_observation_id or 0)
         if observation_id <= 0:
             return False
+        if os.path.islink(str(source_path or "")):
+            return False  # re-checked before copying: never ingest through a link
 
         output_dir = get_images_dir() / "imports"
         output_dir.mkdir(parents=True, exist_ok=True)

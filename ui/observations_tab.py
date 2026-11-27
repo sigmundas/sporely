@@ -122,6 +122,7 @@ from database.schema import (
     resolve_objective_key,
     update_app_settings,
 )
+from utils.mo_keys import credentials as mo_credentials
 from utils.thumbnail_generator import get_thumbnail_path, generate_all_sizes
 from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
 from utils.exif_reader import get_image_metadata
@@ -5449,16 +5450,7 @@ class ObservationsTab(QWidget):
                 return False
 
         if key == "mo":
-            app_key = (SettingsDB.get_setting(self.SETTING_MO_APP_API_KEY, "") or "").strip() or (
-                os.getenv("MO_APP_API_KEY", "") or ""
-            ).strip() or (
-                os.getenv("MUSHROOMOBSERVER_APP_API_KEY", "") or ""
-            ).strip()
-            user_key = (SettingsDB.get_setting(self.SETTING_MO_USER_API_KEY, "") or "").strip() or (
-                os.getenv("MO_USER_API_KEY", "") or ""
-            ).strip() or (
-                os.getenv("MUSHROOMOBSERVER_USER_API_KEY", "") or ""
-            ).strip()
+            app_key, user_key = mo_credentials()
             return bool(app_key and user_key)
 
         return True
@@ -5539,16 +5531,7 @@ class ObservationsTab(QWidget):
                 return False
 
         if key == "mo":
-            app_key = (SettingsDB.get_setting(self.SETTING_MO_APP_API_KEY, "") or "").strip() or (
-                os.getenv("MO_APP_API_KEY", "") or ""
-            ).strip() or (
-                os.getenv("MUSHROOMOBSERVER_APP_API_KEY", "") or ""
-            ).strip()
-            user_key = (SettingsDB.get_setting(self.SETTING_MO_USER_API_KEY, "") or "").strip() or (
-                os.getenv("MO_USER_API_KEY", "") or ""
-            ).strip() or (
-                os.getenv("MUSHROOMOBSERVER_USER_API_KEY", "") or ""
-            ).strip()
+            app_key, user_key = mo_credentials()
             return bool(app_key and user_key)
 
         return False
@@ -11631,16 +11614,7 @@ class ObservationsTab(QWidget):
                 # does not pay for it.
                 taxon_id = self._resolve_inaturalist_taxon_id(obs)
         elif uploader.key == "mo":
-            app_key = (SettingsDB.get_setting(self.SETTING_MO_APP_API_KEY, "") or "").strip() or (
-                os.getenv("MO_APP_API_KEY", "") or ""
-            ).strip() or (
-                os.getenv("MUSHROOMOBSERVER_APP_API_KEY", "") or ""
-            ).strip()
-            user_key = (SettingsDB.get_setting(self.SETTING_MO_USER_API_KEY, "") or "").strip() or (
-                os.getenv("MO_USER_API_KEY", "") or ""
-            ).strip() or (
-                os.getenv("MUSHROOMOBSERVER_USER_API_KEY", "") or ""
-            ).strip()
+            app_key, user_key = mo_credentials()
             if not app_key or not user_key:
                 return _fail(
                     self.tr(

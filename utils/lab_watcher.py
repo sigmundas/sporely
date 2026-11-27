@@ -64,6 +64,8 @@ class NewImageHandler(FileSystemEventHandler):
         ext = Path(path).suffix.lower()
         if ext not in self.valid_extensions:
             return
+        if os.path.islink(path):
+            return  # a link may point at a file outside the watched folder
 
         normalized_path = self._normalize_path(path)
         if not normalized_path:
@@ -130,7 +132,7 @@ def _list_file_names(directory: str) -> set[str] | None:
     """The names of the files in ``directory``; None when it cannot be read."""
     try:
         with os.scandir(directory) as entries:
-            return {entry.name for entry in entries if entry.is_file()}
+            return {entry.name for entry in entries if entry.is_file(follow_symlinks=False)}
     except OSError:
         return None
 
