@@ -41,6 +41,7 @@ from database.schema import (
     APP_SETTINGS_LOCK,
     get_app_settings,
     get_connection,
+    get_database_path,
     get_images_dir,
     save_app_settings,
     update_app_settings,
@@ -1179,7 +1180,62 @@ def _remap_known_local_calibration_path(path: Path) -> Path:
     return current_root / rel
 
 
+def _calibration_reference_allowed_roots() -> list[Path]:
+    """Folders a calibration reference image may be read from for upload.
+
+    Calibration images are saved under the managed images folder
+    (``get_calibrations_dir()``); originals live in the configured originals
+    folder. Anything else named by pulled or imported metadata is not read.
+    """
+    raw_roots: list[Path] = []
+    try:
+        raw_roots.append(Path(get_images_dir()))
+    except Exception:
+        pass
+    try:
+        configured = str(SettingsDB.get_setting('originals_dir') or '').strip()
+    except Exception:
+        configured = ''
+    if configured:
+        raw_roots.append(Path(configured).expanduser())
+    try:
+        raw_roots.append(Path(get_database_path()).parent / 'originals')
+    except Exception:
+        pass
+
+    roots: list[Path] = []
+    for root in raw_roots:
+        try:
+            resolved = root.resolve(strict=False)
+        except Exception:
+            continue
+        if resolved not in roots:
+            roots.append(resolved)
+    return roots
+
+
+def _calibration_reference_path_in_library(candidate: Path, roots: list[Path]) -> bool:
+    """True when ``candidate`` (symlinks resolved) lies inside one of ``roots``."""
+    try:
+        resolved = candidate.resolve(strict=False)
+    except Exception:
+        return False
+    for root in roots:
+        try:
+            resolved.relative_to(root)
+        except ValueError:
+            continue
+        return True
+    return False
+
+
 def _resolve_local_calibration_asset_path(path_value: str | None) -> Path | None:
+    """Resolve a calibration image path for upload, confined to the library.
+
+    The path comes from calibration metadata, which a cloud pull or a bundle
+    import can supply, so only files inside the managed images folder or the
+    originals folder are accepted (F04c); anything else counts as missing.
+    """
     text = str(path_value or '').strip()
     if not text:
         return None
@@ -1201,12 +1257,17 @@ def _resolve_local_calibration_asset_path(path_value: str | None) -> Path | None
         candidates.append(images_dir / raw_path)
         candidates.append(raw_path)
 
+    roots = _calibration_reference_allowed_roots()
+    if not roots:
+        return None
     seen: set[str] = set()
     for candidate in candidates:
         key = str(candidate)
         if key in seen:
             continue
         seen.add(key)
+        if not _calibration_reference_path_in_library(candidate, roots):
+            continue
         if _is_readable_local_file(candidate):
             return candidate
     return None
