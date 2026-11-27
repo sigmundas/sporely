@@ -1179,7 +1179,82 @@ def _remap_known_local_calibration_path(path: Path) -> Path:
     return current_root / rel
 
 
+def _calibration_reference_allowed_roots() -> list[Path]:
+    """Folder a calibration reference image may be read from for upload.
+
+    The calibration dialog saves every calibration image under the managed
+    images folder (``get_calibrations_dir()``), which comes from the
+    machine-local profile settings. Anything else named by pulled or imported
+    metadata is not read (F04c). The originals folder is deliberately not a
+    source: calibration images are never stored there, and its setting lives
+    in the database, which a copied or restored database can carry.
+    """
+    try:
+        return [Path(get_images_dir()).expanduser()]
+    except Exception:
+        return []
+
+
+def _lexical_path_key(path: Path | str) -> str:
+    """Absolute, normalized, case-normalized path text without filesystem I/O."""
+    return os.path.normcase(os.path.normpath(os.path.abspath(os.fspath(path))))
+
+
+def _lexically_within(candidate: Path | str, root: Path | str) -> bool:
+    try:
+        cand_key = _lexical_path_key(candidate)
+        root_key = _lexical_path_key(root)
+        return os.path.commonpath([cand_key, root_key]) == root_key
+    except (ValueError, TypeError, OSError):
+        # Different drives, mixed absolute/relative, or an unusable path.
+        return False
+
+
+def _calibration_reference_path_in_library(candidate: Path, roots: list[Path]) -> bool:
+    """True when ``candidate`` lies inside one of ``roots``.
+
+    The lexical check runs first, so a path outside the library (another
+    drive, a UNC share, ``..`` traversal) is refused without touching the
+    filesystem. Only then are symlinks resolved and containment checked
+    again against the resolved roots.
+    """
+    if not any(_lexically_within(candidate, root) for root in roots):
+        return False
+    try:
+        resolved = candidate.resolve(strict=False)
+    except Exception:
+        return False
+    for root in roots:
+        try:
+            resolved_root = root.resolve(strict=False)
+        except Exception:
+            continue
+        if _lexically_within(resolved, resolved_root):
+            return True
+    return False
+
+
+def _legacy_calibration_candidate(raw_path: Path) -> Path | None:
+    """Map a legacy MycoLog app-data path to the current app-data folder, lexically."""
+    try:
+        from app_identity import legacy_app_data_dir
+
+        legacy_root = legacy_app_data_dir()
+        if not _lexically_within(raw_path, legacy_root):
+            return None
+        rel = os.path.relpath(_lexical_path_key(raw_path), _lexical_path_key(legacy_root))
+        return Path(app_data_dir()) / rel
+    except Exception:
+        return None
+
+
 def _resolve_local_calibration_asset_path(path_value: str | None) -> Path | None:
+    """Resolve a calibration image path for upload, confined to the library.
+
+    The path comes from calibration metadata, which a cloud pull or a bundle
+    import can supply, so only files inside the managed images folder are
+    accepted (F04c); anything else counts as missing and is never probed.
+    """
     text = str(path_value or '').strip()
     if not text:
         return None
@@ -1191,9 +1266,9 @@ def _resolve_local_calibration_asset_path(path_value: str | None) -> Path | None
     candidates: list[Path] = []
     if raw_path.is_absolute():
         candidates.append(raw_path)
-        remapped = _remap_known_local_calibration_path(raw_path)
-        if remapped != raw_path:
-            candidates.append(remapped)
+        legacy_candidate = _legacy_calibration_candidate(raw_path)
+        if legacy_candidate is not None:
+            candidates.append(legacy_candidate)
     else:
         images_dir = get_images_dir()
         if raw_path.parts and raw_path.parts[0] == images_dir.name:
@@ -1201,12 +1276,17 @@ def _resolve_local_calibration_asset_path(path_value: str | None) -> Path | None
         candidates.append(images_dir / raw_path)
         candidates.append(raw_path)
 
+    roots = _calibration_reference_allowed_roots()
+    if not roots:
+        return None
     seen: set[str] = set()
     for candidate in candidates:
         key = str(candidate)
         if key in seen:
             continue
         seen.add(key)
+        if not _calibration_reference_path_in_library(candidate, roots):
+            continue
         if _is_readable_local_file(candidate):
             return candidate
     return None
@@ -2116,12 +2196,27 @@ def _verify_unlinked_database_owner(client: "SporelyCloudClient") -> None:
     The link lives in per-profile app settings, so a copied or restored
     database can arrive unlinked while still holding another account's
     cloud ids. Only a database with no synced observations (new, or reset
-    through Reset Cloud Sync) may bind to any account.
+    through Reset Cloud Sync) may bind to any account; otherwise the account
+    must own every observation in the sample (up to
+    ``_FIRST_LINK_OWNERSHIP_SAMPLE``, most recently synced first), so a
+    database whose sample holds rows of two accounts binds to neither (F10).
+    A sampled cloud id that is not a valid observation id fails closed.
     """
     local_ids = _local_synced_observation_cloud_ids()
     if not local_ids:
         return
-    if not client.list_owned_observation_ids(local_ids):
+    sampled: set[int] = set()
+    for value in local_ids:
+        text = str(value or '').strip()
+        if not (text.isascii() and text.isdigit()):
+            raise AccountMismatchError(ACCOUNT_MISMATCH_MESSAGE)
+        sampled.add(int(text))
+    owned: set[int] = set()
+    for value in client.list_owned_observation_ids(local_ids) or ():
+        text = str(value or '').strip()
+        if text.isascii() and text.isdigit():
+            owned.add(int(text))
+    if not sampled <= owned:
         raise AccountMismatchError(ACCOUNT_MISMATCH_MESSAGE)
 
 
@@ -6374,6 +6469,152 @@ def clear_saved_cloud_password() -> list[str]:
 def has_saved_cloud_password() -> bool:
     email, password, _ = load_saved_cloud_password()
     return bool(email and password)
+
+
+@dataclass(frozen=True)
+class CloudSignOutResult:
+    """Outcome of :func:`sign_out_cloud_session`.
+
+    ``status`` is one of:
+    - ``'revoked'``: Supabase ended the session (or it had already ended);
+    - ``'no_session'``: nothing was stored, nothing was sent;
+    - ``'not_supported'``: an OAuth-server session, for which Supabase
+      documents no per-session revocation call; the refresh token stays
+      valid at Supabase until it expires or the grant is revoked;
+    - ``'failed'``: the revocation could not be sent or was refused.
+    Local credentials are cleared in every case.
+    """
+
+    status: str
+    message: str = ''
+
+    @property
+    def revoked(self) -> bool:
+        return self.status == 'revoked'
+
+
+def _decode_jwt_session_id(access_token: str | None) -> str:
+    token = str(access_token or '').strip()
+    parts = token.split('.')
+    if len(parts) < 2:
+        return ''
+    payload = parts[1]
+    padding = '=' * (-len(payload) % 4)
+    try:
+        data = json.loads(base64.urlsafe_b64decode((payload + padding).encode('ascii')).decode('utf-8'))
+    except Exception:
+        return ''
+    value = data.get('session_id') if isinstance(data, dict) else None
+    return str(value or '').strip()
+
+
+def _cloud_logout_session_already_ended(response) -> bool:
+    """True for Supabase's structured ``session_not_found`` refusal."""
+    status = int(getattr(response, 'status_code', 0) or 0)
+    if status not in {403, 404}:
+        return False
+    try:
+        body = response.json()
+    except Exception:
+        return False
+    if not isinstance(body, dict):
+        return False
+    return 'session_not_found' in {
+        str(body.get('error_code') or '').strip(),
+        str(body.get('code') or '').strip(),
+    }
+
+
+def _send_cloud_logout(access_token: str):
+    return _request_with_transient_retry(
+        requests.request,
+        'POST',
+        f'{SUPABASE_URL}/auth/v1/logout?scope=local',
+        headers={
+            'apikey': SUPABASE_KEY,
+            'Authorization': f'Bearer {access_token}',
+            'Content-Type': 'application/json',
+        },
+        timeout=_SUPABASE_AUTH_TIMEOUT,
+        allow_redirects=False,
+    )
+
+
+def _renew_access_token_for_sign_out(refresh_token: str) -> str:
+    """Exchange the stored refresh token for an access token, without saving it."""
+    with _CLOUD_REFRESH_LOCK:  # never spend the refresh token beside a loader
+        return str(SporelyCloudClient.refresh_login(refresh_token).access_token or '').strip()
+
+
+def sign_out_cloud_session() -> CloudSignOutResult:
+    """Explicit sign-out: revoke the stored session at Supabase, then clear it.
+
+    Password sessions are revoked with ``POST /auth/v1/logout?scope=local``,
+    which ends only this device's session. The stored access token is used
+    while it is unexpired; a missing or expired token, or one Supabase
+    rejects with 401, is renewed once with the stored refresh token and the
+    logout retried. A token without a ``session_id`` claim is never sent,
+    because Supabase then signs out every session of the account.
+    Local credentials (``SporelyCloudClient.clear_credentials``) are cleared
+    whatever the outcome; the result says whether the revocation landed.
+
+    ``clear_credentials`` itself stays local-only for the account-reset path.
+    """
+    status = 'failed'
+    message = ''
+    try:
+        settings = get_app_settings()  # one snapshot for the method and the tokens
+        access = str(settings.get('cloud_access_token') or '').strip() or None
+        refresh = str(settings.get('cloud_refresh_token') or '').strip() or None
+        auth_method = str(settings.get('cloud_auth_method') or '').strip()
+        if not access and not refresh:
+            status = 'no_session'
+        elif auth_method == 'oauth':
+            status = 'not_supported'
+            message = 'Sporely Cloud has no supported call to end this sign-in session remotely.'
+        else:
+            renewed = False
+            if (not access or _jwt_expires_soon(access, leeway_seconds=0)) and refresh:
+                renewed = True
+                try:
+                    access = _renew_access_token_for_sign_out(refresh)
+                except Exception as exc:
+                    access = None
+                    message = f'Could not renew the session to end it ({type(exc).__name__}).'
+            while True:
+                if not access:
+                    status = 'failed'
+                    message = message or 'No usable session token to end the session with.'
+                    break
+                if not _decode_jwt_session_id(access):
+                    status = 'failed'
+                    message = 'The stored session token has no session id; it was not ended remotely.'
+                    break
+                try:
+                    response = _send_cloud_logout(access)
+                except Exception as exc:
+                    status = 'failed'
+                    message = f'Could not reach Sporely Cloud to end the session ({type(exc).__name__}).'
+                    break
+                code = int(getattr(response, 'status_code', 0) or 0)
+                if code in {200, 204} or _cloud_logout_session_already_ended(response):
+                    status = 'revoked'
+                    message = ''
+                    break
+                if code == 401 and refresh and not renewed:
+                    renewed = True
+                    try:
+                        access = _renew_access_token_for_sign_out(refresh)
+                    except Exception as exc:
+                        access = None
+                        message = f'Could not renew the session to end it ({type(exc).__name__}).'
+                    continue
+                status = 'failed'
+                message = f'Sporely Cloud did not confirm the sign-out (HTTP {code or "?"}).'
+                break
+    finally:
+        SporelyCloudClient.clear_credentials()
+    return CloudSignOutResult(status=status, message=message)
 
 
 class SporelyCloudClient(

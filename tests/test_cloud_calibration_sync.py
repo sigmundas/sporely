@@ -64,6 +64,12 @@ def _patch_app_data_dir(monkeypatch, tmp_path):
     return app_root
 
 
+def _patch_images_dir(monkeypatch, images_dir: Path) -> Path:
+    """Treat ``images_dir`` as the managed images folder (F04c containment)."""
+    monkeypatch.setattr(cloud_sync, "get_images_dir", lambda: images_dir)
+    return images_dir
+
+
 def _fetch_rows(db_path):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -296,7 +302,8 @@ def test_push_calibration_metadata_normalizes_string_false_to_inactive(monkeypat
     assert posted_payloads[0][1]["is_active"] is False
 
 
-def test_select_representative_calibration_image_prefers_readable_image_filepath(tmp_path):
+def test_select_representative_calibration_image_prefers_readable_image_filepath(monkeypatch, tmp_path):
+    _patch_images_dir(monkeypatch, tmp_path)
     preferred = _write_test_image(tmp_path / "preferred.jpg", size=(1024, 768))
     fallback = _write_test_image(tmp_path / "fallback.jpg", size=(800, 600))
 
@@ -310,7 +317,8 @@ def test_select_representative_calibration_image_prefers_readable_image_filepath
     assert selected == preferred
 
 
-def test_select_representative_calibration_image_falls_back_to_measurements_json(tmp_path):
+def test_select_representative_calibration_image_falls_back_to_measurements_json(monkeypatch, tmp_path):
+    _patch_images_dir(monkeypatch, tmp_path)
     fallback = _write_test_image(tmp_path / "fallback.jpg", size=(640, 480))
     calibration = {
         "image_filepath": str(tmp_path / "missing.jpg"),
@@ -330,6 +338,7 @@ def test_select_representative_calibration_image_falls_back_to_measurements_json
 
 
 def test_push_calibration_reference_image_uploads_derivative_and_patches_relative_key(monkeypatch, tmp_path):
+    _patch_images_dir(monkeypatch, tmp_path)
     source = _write_test_image(tmp_path / "source.jpg", size=(3200, 2400))
     calibration_uuid = str(uuid.uuid4())
     calibration = {
@@ -390,6 +399,7 @@ def test_push_calibration_reference_image_uses_worker_when_direct_r2_config_is_m
     monkeypatch,
     tmp_path,
 ):
+    _patch_images_dir(monkeypatch, tmp_path)
     source = _write_test_image(tmp_path / "source.jpg", size=(3200, 2400))
     calibration_uuid = str(uuid.uuid4())
     calibration = {
@@ -440,6 +450,7 @@ def test_push_calibration_reference_image_returns_warning_when_worker_upload_fai
     monkeypatch,
     tmp_path,
 ):
+    _patch_images_dir(monkeypatch, tmp_path)
     source = _write_test_image(tmp_path / "source.jpg", size=(1600, 1200))
     calibration = {
         "calibration_uuid": str(uuid.uuid4()),
@@ -574,6 +585,7 @@ def test_push_calibration_reference_image_respects_existing_cloud_image_storage_
 
 
 def test_push_calibration_reference_image_logs_slow_upload(monkeypatch, tmp_path, capsys):
+    _patch_images_dir(monkeypatch, tmp_path)
     source = _write_test_image(tmp_path / "source.jpg", size=(1600, 1200))
     calibration_uuid = str(uuid.uuid4())
     calibration = {
