@@ -587,7 +587,7 @@ class AnalysisGalleryTile(QWidget):
         self._reposition_overlay_buttons()
         super().resizeEvent(event)
 from app_identity import APP_NAME, APP_REPOSITORY_URL, app_data_dir
-from utils.safe_links import safe_release_link
+from utils.safe_links import MAX_AVATAR_BYTES, safe_avatar_url, safe_release_link
 from config import (
     RAW_COMPANION_SOURCE_PREFERENCE_CAMERA_JPEG,
     RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW,
@@ -1981,22 +1981,49 @@ class SettingsHubDialog(QDialog):
         if cached_url == url and isinstance(cached_pixmap, QPixmap) and not cached_pixmap.isNull():
             self._apply_profile_avatar(cached_pixmap)
             return
+        # The URL comes from the profile row: fetch only Supabase storage URLs.
+        if not safe_avatar_url(url):
+            return
         if not hasattr(self, "_profile_avatar_network"):
             self._profile_avatar_network = QNetworkAccessManager(self)
         self._profile_avatar_pending_url = url
-        request = QNetworkRequest(QUrl(url))
+        self._request_profile_avatar(url, url, 0)
+
+    def _request_profile_avatar(self, fetch_url: str, avatar_url: str, hops: int) -> None:
+        request = QNetworkRequest(QUrl(fetch_url))
         request.setAttribute(QNetworkRequest.Attribute.Http2AllowedAttribute, False)
+        # Redirects are checked here, not followed blindly by Qt.
+        request.setAttribute(
+            QNetworkRequest.Attribute.RedirectPolicyAttribute,
+            QNetworkRequest.RedirectPolicy.ManualRedirectPolicy,
+        )
         request.setRawHeader(b"User-Agent", b"Sporely/1.0 (Desktop)")
         request.setRawHeader(b"Accept", b"image/webp,image/apng,image/*,*/*;q=0.8")
         reply = self._profile_avatar_network.get(request)
-        reply.finished.connect(lambda: self._handle_profile_avatar_reply(reply, url))
 
-    def _handle_profile_avatar_reply(self, reply, avatar_url: str) -> None:
+        def _limit(received, _total, reply=reply):
+            if received > MAX_AVATAR_BYTES:
+                reply.abort()
+
+        reply.downloadProgress.connect(_limit)
+        reply.finished.connect(lambda: self._handle_profile_avatar_reply(reply, avatar_url, hops))
+
+    def _handle_profile_avatar_reply(self, reply, avatar_url: str, hops: int = 0) -> None:
+        followed = False
         try:
             from PySide6.QtNetwork import QNetworkReply
 
             if reply.error() == QNetworkReply.NoError and str(getattr(self, "_profile_avatar_url", "") or "").strip() == str(avatar_url or "").strip():
+                target = reply.attribute(QNetworkRequest.Attribute.RedirectionTargetAttribute)
+                if target is not None and not target.isEmpty():
+                    next_url = safe_avatar_url(reply.url().resolved(target).toString())
+                    if next_url and hops < 3:
+                        followed = True
+                        self._request_profile_avatar(next_url, avatar_url, hops + 1)
+                    return
                 data = reply.readAll()
+                if len(data) > MAX_AVATAR_BYTES:
+                    return
                 pixmap = QPixmap()
                 if pixmap.loadFromData(data):
                     self._profile_avatar_loaded_url = str(avatar_url or "").strip()
@@ -2006,7 +2033,7 @@ class SettingsHubDialog(QDialog):
         except Exception:
             pass
         finally:
-            if str(getattr(self, "_profile_avatar_pending_url", "") or "").strip() == str(avatar_url or "").strip():
+            if not followed and str(getattr(self, "_profile_avatar_pending_url", "") or "").strip() == str(avatar_url or "").strip():
                 self._profile_avatar_pending_url = ""
             reply.deleteLater()
 

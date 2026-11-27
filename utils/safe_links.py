@@ -56,3 +56,21 @@ def safe_release_link(url, fallback: str | None = None) -> str:
     repo = urlsplit(APP_REPOSITORY_URL)
     checked = _checked(url, {(repo.hostname or "").lower()}, f"{repo.path}/releases")
     return checked or default
+
+
+MAX_AVATAR_BYTES = 5 * 1024 * 1024
+
+
+def safe_avatar_url(url) -> str | None:
+    """Return ``url`` if it is an https storage URL on the Supabase host.
+
+    Avatars are uploaded by the desktop (``upload_profile_avatar``) and by the
+    web app (``getPublicUrl`` on the ``avatars`` bucket); both land on the
+    Supabase project host under ``/storage/v1/``.
+    """
+    from utils.cloud_sync import SUPABASE_URL
+
+    host = (urlsplit(SUPABASE_URL).hostname or "").lower()
+    if not host:
+        return None
+    return _checked(url, {host}, "/storage/v1")
