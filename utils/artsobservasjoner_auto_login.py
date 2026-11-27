@@ -490,6 +490,7 @@ class ArtsObservasjonerAuth:
         Args:
             cookies_file: Where to cache cookies (default: ~/.myco_log/artsobservasjoner_cookies.json)
         """
+        self._uses_default_path = cookies_file is None
         if cookies_file is None:
             cookies_file = app_data_dir() / "artsobservasjoner_cookies.json"
         self.cookies_file = Path(cookies_file)
@@ -535,9 +536,17 @@ class ArtsObservasjonerAuth:
 
     def _migrate_legacy_cookies(self) -> None:
         self.cookies_file.parent.mkdir(parents=True, exist_ok=True)
-        legacy_file = self._legacy_cookie_file()
+        # Migrate once: a marker stops later constructions from re-importing old
+        # cookie files after the user has logged out.
+        marker = self.cookies_file.with_name(f"{self.cookies_file.stem}.legacy_migrated")
+        if marker.exists():
+            return
+        sources = [self.cookies_file]
+        if self._uses_default_path:
+            # The global ~/.myco_log file belongs to the default profile only.
+            sources.insert(0, self._legacy_cookie_file())
 
-        for source in (legacy_file, self.cookies_file):
+        for source in sources:
             cookies = self._load_json_cookies(source)
             if not cookies:
                 continue
@@ -560,12 +569,10 @@ class ArtsObservasjonerAuth:
                 if not mobile_path.exists():
                     self._write_json_cookies(mobile_path, cookies)
 
-            # Migrate once: the source must not be able to resurrect cookies
-            # after the user logs out.
-            try:
-                source.unlink()
-            except OSError:
-                pass
+        try:
+            marker.touch()
+        except OSError:
+            pass
 
     @staticmethod
     def _legacy_cookie_file() -> Path:
@@ -598,8 +605,10 @@ class ArtsObservasjonerAuth:
             paths = [self._cookies_path(target)]
         else:
             paths = [self._cookies_path("mobile"), self._cookies_path("web")]
-        # Logout also removes the legacy sources so they cannot be re-imported.
-        paths += [self.cookies_file, self._legacy_cookie_file()]
+        # Logout also removes the legacy sources so they cannot be loaded again.
+        paths.append(self.cookies_file)
+        if self._uses_default_path:
+            paths.append(self._legacy_cookie_file())
         for path in paths:
             try:
                 if path.exists():
