@@ -44,6 +44,7 @@ from references.measurement_content_gates import (
     enhanced_bundle_export_enabled,
 )
 from utils.heic_converter import build_local_image_provenance
+from utils.objective_keys import fresh_objective_key, is_safe_objective_key
 
 
 _REFERENCE_LIBRARY_TABLES: tuple[str, ...] = (
@@ -718,6 +719,44 @@ _BUNDLE_IMAGE_CLEARED_FIELDS = ("cloud_id", "synced_at")
 _BUNDLE_MEASUREMENT_CLEARED_FIELDS = ("cloud_id",)
 
 
+def _unsafe_objective_key_map(
+    src_cur: sqlite3.Cursor | None, objectives_path: Path, warnings: list[str]
+) -> dict[str, str]:
+    """Fresh local keys for bundled objective keys that are not plain names.
+
+    An objective key names a folder under the calibrations folder, so a key
+    that is an absolute path or holds ``..`` or a separator could later make
+    deleting the objective remove an unrelated folder. Such keys, from
+    ``objectives.json`` or ``calibrations.objective_key``, get a fresh key.
+    """
+    keys: set[str] = set()
+    if objectives_path.exists():
+        try:
+            bundled = json.loads(objectives_path.read_text(encoding="utf-8"))
+        except Exception:
+            bundled = None
+        if isinstance(bundled, dict):
+            keys.update(str(key) for key in bundled)
+    if src_cur is not None:
+        try:
+            src_cur.execute("SELECT DISTINCT objective_key FROM calibrations")
+        except sqlite3.OperationalError:
+            pass
+        else:
+            keys.update(
+                str(row[0]).strip() for row in src_cur.fetchall()
+                if row[0] is not None and str(row[0]).strip()
+            )
+    key_map: dict[str, str] = {}
+    for key in sorted(keys):
+        if not is_safe_objective_key(key):
+            key_map[key] = fresh_objective_key()
+            warnings.append(
+                f"Replaced unsafe bundled objective key {key!r} with {key_map[key]!r}."
+            )
+    return key_map
+
+
 def _table_column_names(cursor: sqlite3.Cursor, table: str) -> set[str]:
     try:
         cursor.execute(f"PRAGMA table_info({table})")
@@ -780,6 +819,10 @@ def import_database_bundle(
         dest_conn = get_connection()
         dest_conn.row_factory = sqlite3.Row
         dest_cur = dest_conn.cursor()
+
+        objective_key_map = _unsafe_objective_key_map(
+            src_cur, temp_dir / "objectives.json", warnings
+        )
 
         obs_map: dict[int, int] = {}
         img_map: dict[int, int] = {}
@@ -956,6 +999,8 @@ def import_database_bundle(
                     data["observation_id"] = None
                 if not include_calibrations:
                     data["calibration_id"] = None
+                if data.get("objective_name") in objective_key_map:
+                    data["objective_name"] = objective_key_map[data["objective_name"]]
 
                 restored_path = _restore_archive_asset(
                     data.get("filepath"),
@@ -1046,6 +1091,9 @@ def import_database_bundle(
                 data = dict(row)
                 old_calibration_id = data.pop("id", None)
                 objective_key = str(data.get("objective_key") or "").strip()
+                if objective_key in objective_key_map:
+                    objective_key = objective_key_map[objective_key]
+                    data["objective_key"] = objective_key
                 calibration_uuid = None
                 if "calibration_uuid" in calibration_table_columns:
                     calibration_uuid = str(data.get("calibration_uuid") or "").strip()
@@ -1235,7 +1283,8 @@ def import_database_bundle(
                     for key, value in bundled_objectives.items():
                         if not isinstance(value, dict):
                             continue
-                        merged_objectives[str(key)] = dict(value)
+                        key = objective_key_map.get(str(key), str(key))
+                        merged_objectives[key] = dict(value)
                     imported_objectives = len(
                         {
                             str(key)

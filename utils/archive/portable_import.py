@@ -33,6 +33,7 @@ from utils.archive.checksums import sha256_file
 from utils.archive.manifest import ArchiveManifest
 from utils.archive.paths import safe_staging_destination, validate_zip_entries
 from utils.archive.validation import ArchiveValidationError, validate_portable_observations
+from utils.objective_keys import is_safe_objective_key
 from utils.raw_detection import is_raw_image_path
 
 
@@ -2045,6 +2046,14 @@ def _merged_objectives_payload(
         key: value for key, value in incoming.items()
         if key in used or (isinstance(value, dict) and str(value.get("name") or "") in used)
     }
+    unsafe = sorted(key for key in selected if not is_safe_objective_key(key))
+    if unsafe:
+        # An objective key names a folder under the calibrations folder;
+        # deleting the objective would remove whatever folder it names.
+        raise PortableImportError(
+            "objective profile keys must be plain names: "
+            + ", ".join(repr(key) for key in unsafe)
+        )
     merged = dict(current)
     for key, value in selected.items():
         if key in merged and _normalized_value(merged[key]) != _normalized_value(value):

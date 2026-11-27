@@ -35,6 +35,7 @@ from utils.publish_targets import (
 )
 from database.reverse_location_lookup import normalize_country_code
 from utils.taxon_identity import STATE_NONE, STATE_SPORELY, TaxonIdentity
+from utils.objective_keys import is_safe_objective_key
 from utils.cloud_sync_impl.reconciliation.location_provenance import (
     coordinates_match,
     provenance_text,
@@ -427,6 +428,32 @@ def _path_under_root(path: Path, root: Path) -> bool:
         return True
     except Exception:
         return False
+
+
+def _path_strictly_under_root(path: Path, root: Path) -> bool:
+    """True when ``path`` resolves inside ``root`` and is not ``root`` itself."""
+    try:
+        resolved_root = root.resolve()
+        return resolved_root in path.resolve().parents
+    except Exception:
+        return False
+
+
+def _objective_calibrations_dir(objective_key: str | None) -> Path | None:
+    """The calibrations sub-folder for ``objective_key``, or None if unsafe.
+
+    Objective keys can come from imported bundles, archives or the cloud, so a
+    key that is not a single path component (absolute, ``..``, separators), or
+    whose folder resolves outside the calibrations folder (for example via a
+    symlink), names no folder that may be removed.
+    """
+    if not is_safe_objective_key(objective_key):
+        return None
+    root = get_calibrations_dir()
+    cal_dir = root / str(objective_key)
+    if not _path_strictly_under_root(cal_dir, root):
+        return None
+    return cal_dir
 
 
 def _remove_file_under_root(path_value: str | None, root: Path) -> str | None:
@@ -5916,9 +5943,9 @@ class CalibrationDB:
                 objective_key = row["objective_key"]
             except Exception:
                 objective_key = None
-        if objective_key:
+        cal_dir = _objective_calibrations_dir(objective_key) if objective_key else None
+        if cal_dir is not None:
             try:
-                cal_dir = get_calibrations_dir() / objective_key
                 if cal_dir.exists() and not any(cal_dir.iterdir()):
                     cal_dir.rmdir()
             except Exception:
@@ -5946,12 +5973,15 @@ class CalibrationDB:
                     cal_id = None
             if cal_id:
                 failed_paths.extend(CalibrationDB.delete_calibration(cal_id))
-        try:
-            cal_dir = get_calibrations_dir() / objective_key
-            if cal_dir.exists():
-                shutil.rmtree(cal_dir)
-        except Exception:
-            failed_paths.append(str(cal_dir))
+        # The key may come from an imported bundle or archive: remove only a
+        # folder strictly inside the calibrations folder.
+        cal_dir = _objective_calibrations_dir(objective_key)
+        if cal_dir is not None:
+            try:
+                if cal_dir.exists():
+                    shutil.rmtree(cal_dir)
+            except Exception:
+                failed_paths.append(str(cal_dir))
         return failed_paths
 
     @staticmethod
