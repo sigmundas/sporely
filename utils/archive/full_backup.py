@@ -12,7 +12,7 @@ import sqlite3
 import tempfile
 import uuid
 from contextlib import closing
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable
@@ -231,15 +231,6 @@ def _file_identity(path: Path) -> tuple[int, int] | None:
     return (stat_result.st_dev, stat_result.st_ino)
 
 
-def _same_file(first: Path, second: Path) -> bool:
-    if os.path.normcase(str(first)) == os.path.normcase(str(second)):
-        return True
-    try:
-        return os.path.samefile(first, second)
-    except OSError:
-        return False
-
-
 # Image formats Sporely itself imports (RAW formats are excluded separately).
 _METADATA_IMAGE_SUFFIXES = frozenset({
     ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp", ".heic", ".heif",
@@ -267,37 +258,46 @@ class _MetadataPathPolicy:
     # (st_dev, st_ino) of existing path-column files: names the same file
     # under another spelling (case-insensitive volumes).
     trusted_files: frozenset[tuple[int, int]] = frozenset()
+    _identity_cache: dict = field(default_factory=dict, compare=False, repr=False)
+
+    def _identity(self, path: Path) -> tuple[int, int] | None:
+        if path not in self._identity_cache:
+            self._identity_cache[path] = _file_identity(path)
+        return self._identity_cache[path]
 
     def _inside_root(self, resolved: Path) -> bool:
         if any(resolved.is_relative_to(root) for root in self.roots):
             return True
-        existing_roots = [root for root in self.roots if root.is_dir()]
-        if not existing_roots:
+        root_identities = {
+            identity for root in self.roots if (identity := self._identity(root)) is not None
+        }
+        if not root_identities:
             return False
-        for parent in resolved.parents:
-            if not parent.is_dir():
-                continue
-            if any(_same_file(parent, root) for root in existing_roots):
-                return True
-        return False
+        return any(self._identity(parent) in root_identities for parent in resolved.parents)
 
     def allows(self, source: Path, row_paths: Iterable[Path] = ()) -> bool:
         resolved = source.resolve(strict=False)
-        if self._inside_root(resolved):
+        if any(resolved.is_relative_to(root) for root in self.roots):
             return True
         if os.path.normcase(str(resolved)) in self.trusted:
             return True
+        # Judge the file that would actually be read, not the link name.
+        if resolved.suffix.lower() in _METADATA_IMAGE_SUFFIXES:
+            return True
+        parent = resolved.parent
+        row_parents = [row_path.resolve(strict=False).parent for row_path in row_paths]
+        if any(os.path.normcase(str(row_parent)) == os.path.normcase(str(parent)) for row_parent in row_parents):
+            return True
+        # Slower identity checks for other spellings of the same file or folder.
         identity = _file_identity(resolved)
         if identity is not None and identity in self.trusted_files:
             return True
-        parent = resolved.parent
-        if any(
-            _same_file(row_path.resolve(strict=False).parent, parent)
-            for row_path in row_paths
+        parent_identity = self._identity(parent)
+        if parent_identity is not None and any(
+            self._identity(row_parent) == parent_identity for row_parent in row_parents
         ):
             return True
-        # Judge the file that would actually be read, not the link name.
-        return resolved.suffix.lower() in _METADATA_IMAGE_SUFFIXES
+        return self._inside_root(resolved)
 
 
 def _metadata_path_policy(
