@@ -322,13 +322,6 @@ def main():
     # Initialize database (after splash is visible)
     print("Initializing database...")
     init_database()
-    # First run creates the databases just now; owner-only again (F25).
-    try:
-        from utils.private_files import tighten_app_data_permissions
-
-        tighten_app_data_permissions(app_data_dir())
-    except Exception:
-        pass
     # Before any observation dialog can open: restore hidden/region precision
     # an older build stored as 'exact' (once per database; cheap afterwards).
     try:
@@ -337,6 +330,13 @@ def main():
         repair_legacy_location_precision()
     except Exception as exc:
         print(f"Location precision repair skipped: {exc}")
+    # First run creates the databases just now; owner-only again (F25).
+    try:
+        from utils.private_files import tighten_app_data_permissions
+
+        tighten_app_data_permissions(app_data_dir())
+    except Exception:
+        pass
 
     translator = QTranslator()
     app_settings = get_app_settings()
