@@ -321,6 +321,93 @@ def _restore_archive_asset(
     return str(dest_path)
 
 
+# Keys of a calibration's ``measurements_json`` ``images[]``/``auto_images[]``
+# entries that later code reads as file paths (the same list as
+# ``utils.archive.full_backup._json_image_entries``), plus ``companion_paths``.
+_CALIBRATION_ENTRY_PATH_KEYS = (
+    "source_path", "source_filepath", "original_path", "selected_path", "path", "working_path",
+)
+
+
+def _bundled_suffix_for_absolute_path(path_value: str, src_base_dir: Path) -> str:
+    """The bundle-relative path an exported absolute metadata path was packed at.
+
+    The legacy export relativizes only ``images[].path`` but packs files that
+    live under its images folder at their path relative to it, so an absolute
+    ``source_path`` such as ``.../images/calibrations/<key>/a.jpg`` is in the
+    bundle as ``calibrations/<key>/a.jpg``. Return the longest such suffix
+    that names a bundled file, or ``path_value`` unchanged.
+    """
+    text = str(path_value)
+    if not (PureWindowsPath(text).is_absolute() or Path(text).is_absolute()):
+        return path_value
+    parts = [part for part in PureWindowsPath(text).parts[1:] if part not in {"", "/", "\\"}]
+    for start in range(len(parts) - 1):
+        suffix = parts[start:]
+        if any(part in {".", ".."} for part in suffix):
+            continue
+        if (src_base_dir / Path(*suffix)).is_file():
+            return "/".join(suffix)
+    return path_value
+
+
+def _restore_calibration_metadata_paths(
+    loaded: dict,
+    src_base_dir: Path,
+    dest_base_dir: Path,
+    *,
+    warnings: list[str],
+    copied: dict[Path, Path] | None,
+) -> None:
+    """Rebase every path a bundled calibration's metadata names into the bundle.
+
+    A path that is not a bundled file becomes an unused placeholder inside
+    the images folder, never a path to a file on the importing computer.
+    """
+    for collection in ("images", "auto_images"):
+        entries = loaded.get(collection)
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            for key in _CALIBRATION_ENTRY_PATH_KEYS:
+                value = entry.get(key)
+                if not value:
+                    continue
+                if not isinstance(value, str):
+                    entry.pop(key, None)
+                    continue
+                entry[key] = _restore_archive_asset(
+                    _bundled_suffix_for_absolute_path(value, src_base_dir),
+                    src_base_dir,
+                    dest_base_dir,
+                    copy_file=True,
+                    warnings=warnings,
+                    warning_label="calibration auxiliary image",
+                    copied=copied,
+                )
+            companions = entry.get("companion_paths")
+            if companions is None:
+                continue
+            if not isinstance(companions, list):
+                entry.pop("companion_paths", None)
+                continue
+            entry["companion_paths"] = [
+                _restore_archive_asset(
+                    _bundled_suffix_for_absolute_path(companion, src_base_dir),
+                    src_base_dir,
+                    dest_base_dir,
+                    copy_file=True,
+                    warnings=warnings,
+                    warning_label="calibration companion file",
+                    copied=copied,
+                )
+                for companion in companions
+                if companion and isinstance(companion, str)
+            ]
+
+
 def _missing_asset_placeholder(dest_base_dir: Path, path_value: str) -> str:
     """An absolute path inside the images folder that no file will ever have.
 
@@ -1154,21 +1241,13 @@ def import_database_bundle(
                     except Exception:
                         loaded = None
                     if isinstance(loaded, dict):
-                        for entry in loaded.get("images", []):
-                            if isinstance(entry, dict) and entry.get("path"):
-                                restored_entry = _restore_archive_asset(
-                                    entry.get("path"),
-                                    src_images_dir,
-                                    dest_images_dir,
-                                    copy_file=True,
-                                    warnings=warnings,
-                                    warning_label="calibration auxiliary image",
-                                    copied=copied_assets,
-                                )
-                                if restored_entry is not None:
-                                    entry["path"] = restored_entry
-                                else:
-                                    entry.pop("path", None)
+                        _restore_calibration_metadata_paths(
+                            loaded,
+                            src_images_dir,
+                            dest_images_dir,
+                            warnings=warnings,
+                            copied=copied_assets,
+                        )
                         data["measurements_json"] = json.dumps(loaded, ensure_ascii=False)
 
                 if objective_key and objective_key not in fallback_objectives:
