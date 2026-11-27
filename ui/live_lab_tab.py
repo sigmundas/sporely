@@ -68,6 +68,7 @@ from database.schema import (
     objective_display_name,
     resolve_objective_key,
 )
+from utils.private_temp import private_temp_dir
 from utils.image_utils import cleanup_import_temp_file
 from utils.image_companion_grouping import (
     companion_group_key,
@@ -1975,8 +1976,7 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             source_text = str(source or "").strip()
             if source_text and Path(source_text).exists():
                 try:
-                    output_dir = Path(tempfile.gettempdir()) / "sporely" / "calibration_from_livelab"
-                    output_dir.mkdir(parents=True, exist_ok=True)
+                    output_dir = private_temp_dir("calibration_from_livelab")
                     from utils.raw_render import render_raw_image
                     make, model, capture_dt = self._pending_raw_source_exif(pending)
                     rendered = render_raw_image(
