@@ -108,6 +108,28 @@ def test_control_document_with_unbounded_codec_is_rejected_unread(tmp_path, open
     assert "manifest.json" not in opened_members
 
 
+def test_any_member_with_unbounded_codec_is_rejected_unread(monkeypatch, tmp_path, opened_members):
+    root = tmp_path / "installation"
+    root.mkdir()
+    monkeypatch.setattr(schema, "_app_dir", root)
+    monkeypatch.setattr(schema, "DATABASE_PATH", root / "mushrooms.db")
+    monkeypatch.setattr(schema, "REFERENCE_DATABASE_PATH", root / "reference_values.db")
+    monkeypatch.setattr(schema, "SETTINGS_PATH", root / "app_settings.json")
+    schema.init_database()
+    archive = tmp_path / "backup.sporely"
+    create_full_backup(archive, app_version="test", qsettings_values={})
+    repacked = tmp_path / "repacked.sporely"
+    with ZipFile(archive) as source, ZipFile(repacked, "w", compression=zipfile.ZIP_DEFLATED) as target:
+        for info in source.infolist():
+            codec = zipfile.ZIP_BZIP2 if info.filename == "databases/mushrooms.db" else zipfile.ZIP_DEFLATED
+            target.writestr(info.filename, source.read(info.filename), compress_type=codec)
+    opened_members.clear()
+
+    with pytest.raises(ArchiveValidationError, match="compression"):
+        validate_full_backup(repacked)
+    assert opened_members == []
+
+
 def test_large_library_settings_fit_the_control_cap():
     # About 20 MB of Species Plate settings for a 17 000-observation library
     # (Codex review) must stay below the cap.

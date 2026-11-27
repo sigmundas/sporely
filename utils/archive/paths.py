@@ -100,9 +100,18 @@ def validate_zip_entries(infos: list[ZipInfo] | tuple[ZipInfo, ...]) -> tuple[st
 # observation's Species Plate settings, so both grow with a large library.
 MAX_MANIFEST_BYTES = 64 * 1024 * 1024
 MAX_CONTROL_DOCUMENT_BYTES = 64 * 1024 * 1024
-# Sporely writes its archives with deflate; other codecs decompress without an
-# output bound inside zipfile, so control documents must not use them.
-_CONTROL_COMPRESSION = frozenset({ZIP_STORED, ZIP_DEFLATED})
+# Sporely writes its archives with deflate; other codecs (bzip2, LZMA)
+# decompress without an output bound inside zipfile, so members of current
+# Sporely archives must not use them.
+_BOUNDED_COMPRESSION = frozenset({ZIP_STORED, ZIP_DEFLATED})
+
+
+def require_bounded_compression(info: ZipInfo) -> None:
+    """Refuse a member whose codec zipfile decompresses without a bound."""
+    if info.compress_type not in _BOUNDED_COMPRESSION:
+        raise UnsafeArchivePathError(
+            f"archive member uses an unsupported compression: {info.filename}"
+        )
 
 
 def require_control_member(info: ZipInfo, limit: int | None = None) -> None:
@@ -111,10 +120,7 @@ def require_control_member(info: ZipInfo, limit: int | None = None) -> None:
         limit = MAX_MANIFEST_BYTES if info.filename == "manifest.json" else MAX_CONTROL_DOCUMENT_BYTES
     if info.file_size > limit:
         raise UnsafeArchivePathError(f"archive control document is too large: {info.filename}")
-    if info.compress_type not in _CONTROL_COMPRESSION:
-        raise UnsafeArchivePathError(
-            f"archive control document uses an unsupported compression: {info.filename}"
-        )
+    require_bounded_compression(info)
 
 
 def read_control_member(archive: ZipFile, name: str, limit: int | None = None) -> bytes:

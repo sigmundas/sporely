@@ -15,6 +15,7 @@ from utils.archive.manifest import ArchiveManifest, ManifestError
 from utils.archive.paths import (
     UnsafeArchivePathError,
     read_control_member,
+    require_bounded_compression,
     require_control_member,
     safe_staging_destination,
     validate_zip_entries,
@@ -46,6 +47,8 @@ def validate_full_backup(path: str | Path) -> ArchiveManifest:
         with ZipFile(archive_path, "r") as archive:
             infos = archive.infolist()
             names = validate_zip_entries(infos)
+            for info in infos:
+                require_bounded_compression(info)
             if not names or names[0] != "manifest.json":
                 raise ArchiveValidationError("manifest.json must be the first ZIP member")
             manifest = ArchiveManifest.from_json(read_control_member(archive, "manifest.json"))
@@ -135,6 +138,8 @@ def validate_portable_observations(path: str | Path) -> ArchiveManifest:
         with ZipFile(archive_path, "r") as archive:
             infos = archive.infolist()
             names = validate_zip_entries(infos)
+            for info in infos:
+                require_bounded_compression(info)
             if not names or names[0] != "manifest.json":
                 raise ArchiveValidationError("manifest.json must be the first ZIP member")
             manifest = ArchiveManifest.from_json(read_control_member(archive, "manifest.json"))
