@@ -86,7 +86,24 @@ def _prune_main_database(database_path: Path, observation_ids: set[int]) -> None
         connection.execute(
             f"DELETE FROM observations WHERE id NOT IN ({placeholders})", ordered_ids
         )
-        connection.execute("DELETE FROM images WHERE observation_id NOT IN (SELECT id FROM observations)")
+        # ``images.observation_id`` is nullable and ``NULL NOT IN (...)`` is
+        # not true, so parentless images must be removed explicitly.
+        connection.execute(
+            "DELETE FROM images WHERE observation_id IS NULL "
+            "OR observation_id NOT IN (SELECT id FROM observations)"
+        )
+        stray_image = connection.execute(
+            f"""
+            SELECT id FROM images
+            WHERE observation_id IS NULL OR observation_id NOT IN ({placeholders})
+            LIMIT 1
+            """,
+            ordered_ids,
+        ).fetchone()
+        if stray_image is not None:
+            raise PortableExportError(
+                f"image {stray_image[0]} is outside the selected observations"
+            )
         connection.execute("DELETE FROM spore_measurements WHERE image_id NOT IN (SELECT id FROM images)")
         connection.execute("DELETE FROM spore_annotations WHERE image_id NOT IN (SELECT id FROM images)")
         dangling_annotation = connection.execute(
