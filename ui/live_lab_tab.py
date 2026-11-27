@@ -1,6 +1,7 @@
 """Live microscopy session tab."""
 from __future__ import annotations
 
+import os
 import time
 from datetime import datetime
 import tempfile
@@ -2358,8 +2359,8 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
             return False
         if source in self._seen_source_paths:
             return False
-        if not Path(source).exists():
-            return False
+        if os.path.islink(source) or not Path(source).exists():
+            return False  # links may point outside the watched folder
         group_key = companion_group_key(source)
         pending_raw_exists = getattr(self, "_pending_raw_capture_exists", None)
         if callable(pending_raw_exists) and pending_raw_exists(source, group_key=group_key):
@@ -3422,7 +3423,7 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         queued = 0
         for child in children:
             try:
-                if not child.is_file():
+                if child.is_symlink() or not child.is_file():
                     continue
             except Exception:
                 continue
