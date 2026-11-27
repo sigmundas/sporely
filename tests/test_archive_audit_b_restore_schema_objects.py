@@ -142,3 +142,26 @@ def test_unmodified_backup_still_restores(installation, tmp_path):
     with sqlite3.connect(schema.get_database_path()) as connection:
         genera = [row[0] for row in connection.execute("SELECT genus FROM observations")]
     assert genera == ["Archived"]
+
+
+def test_foreign_trigger_is_rejected_before_the_writable_migration(
+    installation, tmp_path, monkeypatch
+):
+    from utils.archive import full_restore
+
+    archive = _make_backup(tmp_path)
+    broken = _tampered(
+        archive, tmp_path, "databases/mushrooms.db",
+        "CREATE TRIGGER audit_extra_trigger AFTER UPDATE ON observations "
+        "BEGIN SELECT 1; END;",
+    )
+    migrations: list[Path] = []
+    original = full_restore._migrate_staged_databases
+    monkeypatch.setattr(
+        full_restore, "_migrate_staged_databases",
+        lambda main, reference: (migrations.append(main), original(main, reference)),
+    )
+
+    with pytest.raises(FullRestoreError, match="trigger"):
+        _restore(broken, tmp_path)
+    assert migrations == []

@@ -134,7 +134,7 @@ def _schema_objects(path: Path) -> dict[tuple[str, str], str | None]:
 def _require_known_schema_objects(main_database: Path, reference_database: Path) -> None:
     """Reject staged triggers and views the app itself would not have created.
 
-    Runs after the staged databases are migrated. Each trigger and view must
+    Runs before and after the staged databases are migrated. Each trigger and view must
     match, by name and SQL, the one in a freshly initialised database of the
     installed schema, or the one already installed in the live database (a
     library created by an older version can keep an older definition).
@@ -601,6 +601,9 @@ def prepare_full_restore(
         _extract_verified(source, extracted, manifest)
         main_db = extracted / "databases/mushrooms.db"
         ref_db = extracted / "databases/reference_values.db"
+        # Checked before the writable migration too, so foreign triggers
+        # never fire during it, and again on the migrated result.
+        _require_known_schema_objects(main_db, ref_db)
         _migrate_staged_databases(main_db, ref_db)
         _require_tables(main_db, set(MAIN_DATABASE_TABLES))
         _require_tables(ref_db, set(REFERENCE_DATABASE_TABLES))
