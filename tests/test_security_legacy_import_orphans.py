@@ -153,3 +153,45 @@ def test_mixed_case_bundle_columns_cannot_bypass_the_import_rules(tmp_path, prof
         )]
     assert local_images == []
     assert folders == [None]
+
+
+def test_bundle_with_only_orphaned_images_imports_without_error(tmp_path, monkeypatch, profile):
+    local_id = models.ObservationDB.create_observation(
+        date="2026-04-01", genus="Localgenus", species="testa"
+    )
+    source_db = tmp_path / "bundle-src" / "mushrooms.db"
+    source_db.parent.mkdir()
+    with monkeypatch.context() as ctx:
+        ctx.setattr(schema, "get_database_path", lambda: source_db)
+        schema.init_database()
+    with sqlite3.connect(source_db) as conn:
+        conn.execute(
+            "INSERT INTO observations (id, date, genus, species) "
+            "VALUES (?, '2026-05-01', 'Bundlegenus', 'testa')",
+            (local_id + 50,),
+        )
+        conn.execute(
+            "INSERT INTO images (id, observation_id, filepath, image_type) "
+            "VALUES (31, ?, 'orphan/IMG_ORPHAN.jpg', 'microscope')",
+            (local_id,),
+        )
+        conn.execute(
+            "INSERT INTO spore_measurements (id, image_id, length_um, width_um) VALUES (42, 31, 11.0, 6.0)"
+        )
+    bundle = tmp_path / f"bundle-{uuid.uuid4().hex[:8]}.zip"
+    with zipfile.ZipFile(bundle, "w") as zf:
+        zf.write(source_db, arcname="mushrooms.db")
+
+    result = db_share.import_database_bundle(
+        str(bundle),
+        include_observations=True,
+        include_images=True,
+        include_measurements=True,
+        include_calibrations=False,
+        include_reference_values=False,
+    )
+
+    assert result["observations"] == 1
+    with sqlite3.connect(schema.get_database_path()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM images").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM spore_measurements").fetchone()[0] == 0

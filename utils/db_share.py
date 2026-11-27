@@ -1026,6 +1026,7 @@ def import_database_bundle(
 
         obs_map: dict[int, int] = {}
         img_map: dict[int, int] = {}
+        skipped_orphan_images = 0
         meas_map: dict[int, int] = {}
         imported_calibrations = 0
         imported_refs = 0
@@ -1204,6 +1205,7 @@ def import_database_bundle(
                         "Skipped image for missing observation "
                         f"{old_obs_id!r}: {data.get('filepath')}"
                     )
+                    skipped_orphan_images += 1
                     continue
                 elif not include_observations:
                     data["observation_id"] = None
@@ -1249,7 +1251,9 @@ def import_database_bundle(
                 img_map[old_image_id] = dest_cur.lastrowid
 
         if include_measurements and src_cur is not None:
-            if not img_map:
+            # A bundle whose images were all skipped as orphans still imports
+            # its observations; their measurements are skipped with them.
+            if not img_map and not skipped_orphan_images:
                 raise ValueError("Cannot import measurements without images.")
             measurement_table_columns = _table_column_names(dest_cur, "spore_measurements")
             src_cur.execute("SELECT * FROM spore_measurements ORDER BY id")
