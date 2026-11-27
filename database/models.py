@@ -439,6 +439,25 @@ def _path_strictly_under_root(path: Path, root: Path) -> bool:
         return False
 
 
+def _observation_folder_move_is_managed(source: str, destination: str) -> bool:
+    """True when an observation folder rename stays inside the images folder.
+
+    Both folders must resolve strictly inside the images folder, and the
+    destination must not lie inside the source (that would move a folder,
+    such as a genus folder, into itself).
+    """
+    root = _images_dir()
+    if not (
+        _path_strictly_under_root(Path(source), root)
+        and _path_strictly_under_root(Path(destination), root)
+    ):
+        return False
+    try:
+        return not _path_under_root(Path(destination), Path(source))
+    except Exception:
+        return False
+
+
 def _objective_calibrations_dir(objective_key: str | None) -> Path | None:
     """The calibrations sub-folder for ``objective_key``, or None if unsafe.
 
@@ -2113,7 +2132,17 @@ class ObservationDB:
                 inferred_folder = ObservationDB._infer_image_folder(cursor, observation_id)
             folder_to_move = old_folder_path if old_folder_path and Path(old_folder_path).exists() else inferred_folder
 
-            if new_folder_path and folder_to_move and folder_to_move != new_folder_path:
+            if (
+                new_folder_path
+                and folder_to_move
+                and folder_to_move != new_folder_path
+                and not _observation_folder_move_is_managed(folder_to_move, new_folder_path)
+            ):
+                # The stored or inferred folder is not one Sporely manages
+                # (for example a path from an imported bundle): never move it.
+                print(f"Warning: Not moving folder outside the images folder: {folder_to_move}")
+                new_folder_path = old_folder_path
+            elif new_folder_path and folder_to_move and folder_to_move != new_folder_path:
                 try:
                     ObservationDB._move_observation_folder(cursor, observation_id, folder_to_move, new_folder_path)
                 except Exception as e:

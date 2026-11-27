@@ -714,6 +714,9 @@ def export_database_bundle(
 _BUNDLE_OBSERVATION_CLEARED_FIELDS = (
     "cloud_id", "synced_at", "sync_error_code", "sync_error_message",
     "sync_blocked_reason", "sync_blocked_at", "mosaic_signature", "region_id",
+    # A bundle's folder names a folder on the exporting computer; on this one
+    # it could name any folder, which a later taxon edit would move.
+    "folder_path",
 )
 _BUNDLE_IMAGE_CLEARED_FIELDS = ("cloud_id", "synced_at")
 _BUNDLE_MEASUREMENT_CLEARED_FIELDS = ("cloud_id",)
