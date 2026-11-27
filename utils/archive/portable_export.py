@@ -68,7 +68,19 @@ def _placeholders(values: set[object]) -> str:
     return ",".join("?" for _value in values)
 
 
-def _prune_main_database(database_path: Path, observation_ids: set[int]) -> None:
+def _prune_main_database(
+    database_path: Path,
+    observation_ids: set[int],
+    *,
+    drop_parentless_images: bool = False,
+) -> None:
+    """Prune a staged main database to the selected observations' closure.
+
+    ``drop_parentless_images`` is set by the exporter, so an archive never
+    carries images of no observation. Portable import reuses this pruner on an
+    archive's own database and compares counts, so it keeps the earlier
+    behaviour and an older archive stays readable.
+    """
     ordered_ids = tuple(sorted(observation_ids))
     placeholders = _placeholders(observation_ids)
     with sqlite3.connect(database_path) as connection:
@@ -91,21 +103,26 @@ def _prune_main_database(database_path: Path, observation_ids: set[int]) -> None
         )
         # ``images.observation_id`` is nullable and ``NULL NOT IN (...)`` is
         # not true, so parentless images must be removed explicitly.
-        connection.execute(
-            "DELETE FROM images WHERE observation_id IS NULL "
-            "OR observation_id NOT IN (SELECT id FROM observations)"
-        )
-        stray_image = connection.execute(
-            f"""
-            SELECT id FROM images
-            WHERE observation_id IS NULL OR observation_id NOT IN ({placeholders})
-            LIMIT 1
-            """,
-            ordered_ids,
-        ).fetchone()
-        if stray_image is not None:
-            raise PortableExportError(
-                f"image {stray_image[0]} is outside the selected observations"
+        if drop_parentless_images:
+            connection.execute(
+                "DELETE FROM images WHERE observation_id IS NULL "
+                "OR observation_id NOT IN (SELECT id FROM observations)"
+            )
+            stray_image = connection.execute(
+                f"""
+                SELECT id FROM images
+                WHERE observation_id IS NULL OR observation_id NOT IN ({placeholders})
+                LIMIT 1
+                """,
+                ordered_ids,
+            ).fetchone()
+            if stray_image is not None:
+                raise PortableExportError(
+                    f"image {stray_image[0]} is outside the selected observations"
+                )
+        else:
+            connection.execute(
+                "DELETE FROM images WHERE observation_id NOT IN (SELECT id FROM observations)"
             )
         connection.execute("DELETE FROM spore_measurements WHERE image_id NOT IN (SELECT id FROM images)")
         connection.execute("DELETE FROM spore_annotations WHERE image_id NOT IN (SELECT id FROM images)")
@@ -495,7 +512,7 @@ def export_observations(
             staged_main = staging / "portable/mushrooms.db"
             staged_reference = staging / "portable/reference_values.db"
             _snapshot_database(Path(get_database_path()), staged_main)
-            _prune_main_database(staged_main, normalized_ids)
+            _prune_main_database(staged_main, normalized_ids, drop_parentless_images=True)
             verify_sqlite_integrity(staged_main)
             _snapshot_database(Path(get_reference_database_path()), staged_reference)
             _prune_reference_database(staged_main, staged_reference)
