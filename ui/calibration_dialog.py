@@ -35,7 +35,9 @@ from database.schema import (
     get_calibrations_dir, get_images_dir, get_app_settings, update_app_settings,
     format_objective_display, objective_display_name, objective_sort_value,
 )
-from database.models import CalibrationAssetDB, CalibrationDB, ObservationDB, SettingsDB
+from database.models import (
+    CalibrationAssetDB, CalibrationDB, ObservationDB, SettingsDB, objective_calibrations_dir,
+)
 import utils.slide_calibration as slide_calibration
 import utils.cloud_sync as cloud_sync
 from utils.exif_reader import get_exif_data, get_image_datetime, get_camera_model
@@ -6111,8 +6113,13 @@ class CalibrationDialog(GeometryMixin, QDialog):
         if not source_path or not self.current_objective_key:
             return None
 
-        # Create directory
-        cal_dir = get_calibrations_dir() / self.current_objective_key
+        # Create directory. A key that is not one plain folder name (for
+        # example from an older import) saves into the calibrations folder.
+        calibrations_root = get_calibrations_dir()
+        cal_dir = (
+            objective_calibrations_dir(self.current_objective_key, calibrations_root)
+            or calibrations_root
+        )
         cal_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate filename

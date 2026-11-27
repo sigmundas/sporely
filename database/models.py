@@ -35,6 +35,7 @@ from utils.publish_targets import (
 )
 from database.reverse_location_lookup import normalize_country_code
 from utils.taxon_identity import STATE_NONE, STATE_SPORELY, TaxonIdentity
+from utils.objective_keys import is_safe_objective_key
 from utils.cloud_sync_impl.reconciliation.location_provenance import (
     coordinates_match,
     provenance_text,
@@ -427,6 +428,89 @@ def _path_under_root(path: Path, root: Path) -> bool:
         return True
     except Exception:
         return False
+
+
+def _path_strictly_under_root(path: Path, root: Path) -> bool:
+    """True when ``path`` resolves inside ``root`` and is not ``root`` itself."""
+    try:
+        resolved_root = root.resolve()
+        return resolved_root in path.resolve().parents
+    except Exception:
+        return False
+
+
+def _observation_folder_move_is_managed(source: str, destination: str) -> bool:
+    """True when an observation folder rename stays inside the images folder.
+
+    Both folders must resolve strictly inside the images folder, and the
+    destination must not lie inside the source (that would move a folder,
+    such as a genus folder, into itself).
+    """
+    root = _images_dir()
+    if not (
+        _path_strictly_under_root(Path(source), root)
+        and _path_strictly_under_root(Path(destination), root)
+    ):
+        return False
+    try:
+        return not _path_under_root(Path(destination), Path(source))
+    except Exception:
+        return False
+
+
+def _folder_used_by_other_observation(cursor, observation_id: int, folder: str) -> bool:
+    """True when another observation's folder or image files lie in ``folder``."""
+    prefixes = {str(Path(folder)).rstrip("/\\")}
+    try:
+        prefixes.add(str(Path(folder).resolve()).rstrip("/\\"))
+    except Exception:
+        pass
+    for prefix in prefixes:
+        if not prefix:
+            continue
+        for separator in ("/", "\\"):
+            start = prefix + separator
+            row = cursor.execute(
+                """
+                SELECT 1 FROM images
+                WHERE observation_id IS NOT ?
+                  AND (substr(filepath, 1, length(?)) = ?
+                       OR substr(COALESCE(original_filepath, ''), 1, length(?)) = ?)
+                LIMIT 1
+                """,
+                (observation_id, start, start, start, start),
+            ).fetchone()
+            if row:
+                return True
+        row = cursor.execute(
+            "SELECT 1 FROM observations WHERE id != ? AND folder_path = ? LIMIT 1",
+            (observation_id, prefix),
+        ).fetchone()
+        if row:
+            return True
+    return False
+
+
+def _objective_calibrations_dir(
+    objective_key: str | None, root: Path | None = None
+) -> Path | None:
+    """The calibrations sub-folder for ``objective_key``, or None if unsafe.
+
+    Objective keys can come from imported bundles, archives or the cloud, so a
+    key that is not a single path component (absolute, ``..``, separators), or
+    whose folder resolves outside the calibrations folder (for example via a
+    symlink), names no folder that may be removed.
+    """
+    if not is_safe_objective_key(objective_key):
+        return None
+    root = get_calibrations_dir() if root is None else Path(root)
+    cal_dir = root / str(objective_key)
+    if not _path_strictly_under_root(cal_dir, root):
+        return None
+    return cal_dir
+
+
+objective_calibrations_dir = _objective_calibrations_dir
 
 
 def _remove_file_under_root(path_value: str | None, root: Path) -> str | None:
@@ -1715,7 +1799,11 @@ class ObservationDB:
     ) -> Path:
         genus_folder = sanitize_folder_name(genus) if genus else "unknown"
         species_name = sanitize_folder_name(species) if species else "sp"
-        date_part = date.replace(':', '-') if date else datetime.now().strftime('%Y-%m-%d %H-%M')
+        # The date can come from an imported bundle: keep it one folder name.
+        date_part = (
+            date.replace(':', '-').replace('/', '-').replace('\\', '-')
+            if date else datetime.now().strftime('%Y-%m-%d %H-%M')
+        )
         folder_name = f"{species_name} - {date_part}"
         return _images_dir() / genus_folder / folder_name
 
@@ -2080,13 +2168,31 @@ class ObservationDB:
                     )
                 )
 
+            if new_folder_path and not _path_strictly_under_root(Path(new_folder_path), _images_dir()):
+                print(f"Warning: Not using observation folder outside the images folder: {new_folder_path}")
+                new_folder_path = None
+
             # Rename folder if it exists (or infer it from image paths)
             inferred_folder = None
             if not old_folder_path or not Path(old_folder_path).exists():
                 inferred_folder = ObservationDB._infer_image_folder(cursor, observation_id)
             folder_to_move = old_folder_path if old_folder_path and Path(old_folder_path).exists() else inferred_folder
 
-            if new_folder_path and folder_to_move and folder_to_move != new_folder_path:
+            if (
+                new_folder_path
+                and folder_to_move
+                and folder_to_move != new_folder_path
+                and (
+                    not _observation_folder_move_is_managed(folder_to_move, new_folder_path)
+                    or _folder_used_by_other_observation(cursor, observation_id, folder_to_move)
+                )
+            ):
+                # The stored or inferred folder is not one Sporely manages
+                # (for example a path from an imported bundle), or it also
+                # holds another observation's files: never move it.
+                print(f"Warning: Not moving observation folder: {folder_to_move}")
+                new_folder_path = old_folder_path
+            elif new_folder_path and folder_to_move and folder_to_move != new_folder_path:
                 try:
                     ObservationDB._move_observation_folder(cursor, observation_id, folder_to_move, new_folder_path)
                 except Exception as e:
@@ -5916,9 +6022,9 @@ class CalibrationDB:
                 objective_key = row["objective_key"]
             except Exception:
                 objective_key = None
-        if objective_key:
+        cal_dir = _objective_calibrations_dir(objective_key) if objective_key else None
+        if cal_dir is not None:
             try:
-                cal_dir = get_calibrations_dir() / objective_key
                 if cal_dir.exists() and not any(cal_dir.iterdir()):
                     cal_dir.rmdir()
             except Exception:
@@ -5946,12 +6052,15 @@ class CalibrationDB:
                     cal_id = None
             if cal_id:
                 failed_paths.extend(CalibrationDB.delete_calibration(cal_id))
-        try:
-            cal_dir = get_calibrations_dir() / objective_key
-            if cal_dir.exists():
-                shutil.rmtree(cal_dir)
-        except Exception:
-            failed_paths.append(str(cal_dir))
+        # The key may come from an imported bundle or archive: remove only a
+        # folder strictly inside the calibrations folder.
+        cal_dir = _objective_calibrations_dir(objective_key)
+        if cal_dir is not None:
+            try:
+                if cal_dir.exists():
+                    shutil.rmtree(cal_dir)
+            except Exception:
+                failed_paths.append(str(cal_dir))
         return failed_paths
 
     @staticmethod

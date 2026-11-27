@@ -44,6 +44,11 @@ from references.measurement_content_gates import (
     enhanced_bundle_export_enabled,
 )
 from utils.heic_converter import build_local_image_provenance
+from utils.objective_keys import (
+    aliases_existing_key,
+    fresh_objective_key,
+    is_safe_objective_key,
+)
 
 
 _REFERENCE_LIBRARY_TABLES: tuple[str, ...] = (
@@ -264,10 +269,17 @@ def _collect_calibration_asset_paths(
             entry_path = _resolve_local_asset_path(entry.get("path"), images_dir)
             if entry_path and entry_path.exists() and entry_path.is_file():
                 assets[str(entry_path.resolve())] = entry_path
+        # The importer reads every path key of images[] and auto_images[];
+        # pack the ones inside the images folder so they survive a round trip.
+        for collection in ("images", "auto_images"):
+            entries = loaded.get(collection)
+            for entry in entries if isinstance(entries, list) else []:
+                if isinstance(entry, dict):
+                    _add_images_dir_files(assets, _metadata_path_values(entry), images_dir)
 
     try:
         asset_rows = src_conn.execute(
-            "SELECT local_path, original_path FROM calibration_assets ORDER BY id"
+            "SELECT local_path, original_path, metadata_json FROM calibration_assets ORDER BY id"
         ).fetchall()
     except sqlite3.OperationalError:
         asset_rows = []
@@ -276,7 +288,40 @@ def _collect_calibration_asset_paths(
             asset_path = _resolve_local_asset_path(path_value, images_dir)
             if asset_path and asset_path.exists() and asset_path.is_file():
                 assets[str(asset_path.resolve())] = asset_path
+        try:
+            metadata = json.loads(row["metadata_json"]) if row["metadata_json"] else None
+        except Exception:
+            metadata = None
+        if isinstance(metadata, dict):
+            _add_images_dir_files(
+                assets, _metadata_path_values(metadata, _ASSET_METADATA_PATH_KEYS), images_dir
+            )
     return sorted(assets.values(), key=lambda path: str(path))
+
+
+def _metadata_path_values(entry: dict, keys: tuple[str, ...] | None = None) -> list:
+    values = [entry.get(key) for key in (keys or _CALIBRATION_ENTRY_PATH_KEYS)]
+    companions = entry.get("companion_paths")
+    if isinstance(companions, list):
+        values.extend(companions)
+    return [value for value in values if value and isinstance(value, str)]
+
+
+def _add_images_dir_files(assets: dict[str, Path], values: list, images_dir: Path) -> None:
+    """Add each existing file among ``values`` that lies inside the images folder."""
+    try:
+        root = images_dir.resolve()
+    except (OSError, ValueError):
+        return
+    for value in values:
+        try:
+            path = _resolve_local_asset_path(value, images_dir)
+            if path is None or not path.is_file():
+                continue
+            if root in path.resolve().parents:
+                assets[str(path.resolve())] = path
+        except (OSError, ValueError):
+            continue
 
 
 def _restore_archive_asset(
@@ -304,20 +349,134 @@ def _restore_archive_asset(
         inside = src_path is not None and src_path.resolve(strict=False).is_relative_to(
             src_base_dir.resolve(strict=False)
         )
-    except OSError:
-        inside = False
+        is_file = inside and src_path.is_file()
+    except (OSError, ValueError):
+        # ValueError: an embedded NUL in a crafted path.
+        inside = is_file = False
     if not inside:
         # Keep no path that points outside the images folder: the row keeps
         # only the bare file name, like a row whose bundled file is missing.
         warnings.append(f"Skipped unsafe bundled {warning_label} path: {path_value}")
         return _missing_asset_placeholder(dest_base_dir, path_value)
-    if not src_path.is_file():
+    if not is_file:
         warnings.append(f"Missing bundled {warning_label}: {path_value}")
         return _missing_asset_placeholder(dest_base_dir, path_value)
     dest_path = dest_base_dir / rel
     if copy_file:
         dest_path = _copy_without_overwrite(src_path, dest_path, copied)
     return str(dest_path)
+
+
+# Keys of a calibration's ``measurements_json`` ``images[]``/``auto_images[]``
+# entries that later code reads as file paths (the same list as
+# ``utils.archive.full_backup._json_image_entries``), plus ``companion_paths``.
+_CALIBRATION_ENTRY_PATH_KEYS = (
+    "source_path", "source_filepath", "original_path", "selected_path", "path", "working_path",
+)
+# Path keys of ``calibration_assets.metadata_json`` that backups and exports
+# read (``utils.archive.full_backup``), plus ``companion_paths``.
+_ASSET_METADATA_PATH_KEYS = ("source_path", "working_path", "original_path", "local_path")
+
+
+def _bundled_suffix_for_absolute_path(path_value: str, src_base_dir: Path) -> str:
+    """The bundle-relative path an exported absolute metadata path was packed at.
+
+    The legacy export relativizes only ``images[].path`` but packs files that
+    live under its images folder at their path relative to it, so an absolute
+    ``source_path`` such as ``.../images/calibrations/<key>/a.jpg`` is in the
+    bundle as ``calibrations/<key>/a.jpg``. Return the longest such suffix
+    that names a bundled file, or ``path_value`` unchanged.
+    """
+    text = str(path_value)
+    if not (PureWindowsPath(text).is_absolute() or Path(text).is_absolute()):
+        return path_value
+    parts = [part for part in PureWindowsPath(text).parts[1:] if part not in {"", "/", "\\"}]
+    for start in range(len(parts) - 1):
+        suffix = parts[start:]
+        if any(part in {".", ".."} for part in suffix):
+            continue
+        try:
+            if (src_base_dir / Path(*suffix)).is_file():
+                return "/".join(suffix)
+        except (OSError, ValueError):
+            return path_value
+    return path_value
+
+
+def _restore_calibration_metadata_paths(
+    loaded: dict,
+    src_base_dir: Path,
+    dest_base_dir: Path,
+    *,
+    warnings: list[str],
+    copied: dict[Path, Path] | None,
+) -> None:
+    """Rebase every path a bundled calibration's metadata names into the bundle.
+
+    A path that is not a bundled file becomes an unused placeholder inside
+    the images folder, never a path to a file on the importing computer.
+    """
+    for collection in ("images", "auto_images"):
+        entries = loaded.get(collection)
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if isinstance(entry, dict):
+                _restore_metadata_entry_paths(
+                    entry,
+                    _CALIBRATION_ENTRY_PATH_KEYS,
+                    src_base_dir,
+                    dest_base_dir,
+                    warnings=warnings,
+                    copied=copied,
+                )
+
+
+def _restore_metadata_entry_paths(
+    entry: dict,
+    keys: tuple[str, ...],
+    src_base_dir: Path,
+    dest_base_dir: Path,
+    *,
+    warnings: list[str],
+    copied: dict[Path, Path] | None,
+) -> None:
+    """Rebase ``entry[key]`` for each key, and ``entry["companion_paths"]``."""
+    for key in keys:
+        value = entry.get(key)
+        if not value:
+            continue
+        if not isinstance(value, str):
+            entry.pop(key, None)
+            continue
+        entry[key] = _restore_archive_asset(
+            _bundled_suffix_for_absolute_path(value, src_base_dir),
+            src_base_dir,
+            dest_base_dir,
+            copy_file=True,
+            warnings=warnings,
+            warning_label="calibration auxiliary image",
+            copied=copied,
+        )
+    companions = entry.get("companion_paths")
+    if companions is None:
+        return
+    if not isinstance(companions, list):
+        entry.pop("companion_paths", None)
+        return
+    entry["companion_paths"] = [
+        _restore_archive_asset(
+            _bundled_suffix_for_absolute_path(companion, src_base_dir),
+            src_base_dir,
+            dest_base_dir,
+            copy_file=True,
+            warnings=warnings,
+            warning_label="calibration companion file",
+            copied=copied,
+        )
+        for companion in companions
+        if companion and isinstance(companion, str)
+    ]
 
 
 def _missing_asset_placeholder(dest_base_dir: Path, path_value: str) -> str:
@@ -327,7 +486,9 @@ def _missing_asset_placeholder(dest_base_dir: Path, path_value: str) -> str:
     name for the owner, while a relative or bare name could resolve to an
     unrelated file already in the images folder.
     """
-    name = PureWindowsPath(str(path_value)).name
+    # A drive ("C:x") or NUL in the kept name could make the join on Windows
+    # leave the placeholder folder, or make later path calls raise.
+    name = PureWindowsPath(str(path_value)).name.replace(":", "_").replace("\x00", "_")
     if name in {"", ".", ".."}:
         name = "missing"
     return str(dest_base_dir / f".missing-import-{uuid.uuid4().hex}" / name)
@@ -713,9 +874,75 @@ def export_database_bundle(
 _BUNDLE_OBSERVATION_CLEARED_FIELDS = (
     "cloud_id", "synced_at", "sync_error_code", "sync_error_message",
     "sync_blocked_reason", "sync_blocked_at", "mosaic_signature", "region_id",
+    # A bundle's folder names a folder on the exporting computer; on this one
+    # it could name any folder, which a later taxon edit would move.
+    "folder_path",
 )
 _BUNDLE_IMAGE_CLEARED_FIELDS = ("cloud_id", "synced_at")
 _BUNDLE_MEASUREMENT_CLEARED_FIELDS = ("cloud_id",)
+
+
+def _unsafe_objective_key_map(
+    src_cur: sqlite3.Cursor | None,
+    objectives_path: Path,
+    warnings: list[str],
+    existing_keys=(),
+) -> dict[str, str]:
+    """Fresh local keys for bundled objective keys that are not plain names.
+
+    An objective key names a folder under the calibrations folder, so a key
+    that is an absolute path or holds ``..`` or a separator could later make
+    deleting the objective remove an unrelated folder. Such keys, from
+    ``objectives.json`` or ``calibrations.objective_key``, get a fresh key.
+    """
+    keys: set[str] = set()
+    if objectives_path.exists():
+        try:
+            bundled = json.loads(objectives_path.read_text(encoding="utf-8"))
+        except Exception:
+            bundled = None
+        if isinstance(bundled, dict):
+            keys.update(str(key) for key in bundled)
+    if src_cur is not None:
+        try:
+            src_cur.execute("SELECT DISTINCT objective_key FROM calibrations")
+        except sqlite3.OperationalError:
+            pass
+        else:
+            keys.update(
+                str(row[0]).strip() for row in src_cur.fetchall()
+                if row[0] is not None and str(row[0]).strip()
+            )
+    # A key that differs from another only in letter case, or in trailing
+    # dots or spaces, names the same folder on macOS and Windows.
+    accepted: set[str] = {str(key) for key in existing_keys}
+    key_map: dict[str, str] = {}
+    for key in sorted(keys):
+        if not is_safe_objective_key(key) or aliases_existing_key(key, accepted):
+            key_map[key] = fresh_objective_key(key)
+            warnings.append(
+                f"Replaced unsafe bundled objective key {key!r} with {key_map[key]!r}."
+            )
+        else:
+            accepted.add(key)
+    return key_map
+
+
+def _bundle_row_dict(row: sqlite3.Row) -> dict:
+    """A bundle row keyed by lower-case column name.
+
+    SQLite matches column names case-insensitively, so a crafted bundle
+    column such as ``Observation_Id`` would slip past the importer's checks
+    on ``observation_id`` and still land in that destination column. Every
+    destination column name is lower case.
+    """
+    data: dict = {}
+    for key in row.keys():
+        canonical = str(key).lower()
+        if canonical in data:
+            raise ValueError(f"Bundle row has duplicate column {key!r}.")
+        data[canonical] = row[key]
+    return data
 
 
 def _table_column_names(cursor: sqlite3.Cursor, table: str) -> set[str]:
@@ -781,8 +1008,25 @@ def import_database_bundle(
         dest_conn.row_factory = sqlite3.Row
         dest_cur = dest_conn.cursor()
 
+        existing_objective_keys: set[str] = set()
+        if include_calibrations:
+            existing_objective_keys.update(str(key) for key in load_objectives())
+            try:
+                existing_objective_keys.update(
+                    str(row[0]) for row in dest_cur.execute(
+                        "SELECT DISTINCT objective_key FROM calibrations "
+                        "WHERE objective_key IS NOT NULL"
+                    ).fetchall()
+                )
+            except sqlite3.OperationalError:
+                pass
+        objective_key_map = _unsafe_objective_key_map(
+            src_cur, temp_dir / "objectives.json", warnings, existing_objective_keys
+        )
+
         obs_map: dict[int, int] = {}
         img_map: dict[int, int] = {}
+        skipped_orphan_images = 0
         meas_map: dict[int, int] = {}
         imported_calibrations = 0
         imported_refs = 0
@@ -860,7 +1104,7 @@ def import_database_bundle(
             observation_table_columns = _table_column_names(dest_cur, "observations")
             src_cur.execute("SELECT * FROM observations ORDER BY id")
             for row in src_cur.fetchall():
-                data = dict(row)
+                data = _bundle_row_dict(row)
                 data.pop("id", None)
                 _fork_bundle_row(
                     data, observation_table_columns, _BUNDLE_OBSERVATION_CLEARED_FIELDS
@@ -898,7 +1142,7 @@ def import_database_bundle(
                 for row in src_cur.execute(
                     "SELECT * FROM observation_reference_uses ORDER BY id"
                 ).fetchall():
-                    data = dict(row)
+                    data = _bundle_row_dict(row)
                     use_id = data.get("id")
                     src_observation_id = data.get("observation_id")
                     if src_observation_id in obs_map:
@@ -947,15 +1191,28 @@ def import_database_bundle(
         if (include_images or include_measurements) and src_cur is not None:
             src_cur.execute("SELECT * FROM images ORDER BY id")
             for row in src_cur.fetchall():
-                data = dict(row)
+                data = _bundle_row_dict(row)
                 old_image_id = data.pop("id", None)
                 old_obs_id = data.get("observation_id")
                 if include_observations and old_obs_id in obs_map:
                     data["observation_id"] = obs_map[old_obs_id]
+                elif include_observations and old_obs_id is not None:
+                    # The parent is not in the bundle: keeping the source id
+                    # would attach the image to whichever local observation
+                    # has that number. Its measurements and annotations are
+                    # skipped below because the image does not map.
+                    warnings.append(
+                        "Skipped image for missing observation "
+                        f"{old_obs_id!r}: {data.get('filepath')}"
+                    )
+                    skipped_orphan_images += 1
+                    continue
                 elif not include_observations:
                     data["observation_id"] = None
                 if not include_calibrations:
                     data["calibration_id"] = None
+                if data.get("objective_name") in objective_key_map:
+                    data["objective_name"] = objective_key_map[data["objective_name"]]
 
                 restored_path = _restore_archive_asset(
                     data.get("filepath"),
@@ -994,17 +1251,22 @@ def import_database_bundle(
                 img_map[old_image_id] = dest_cur.lastrowid
 
         if include_measurements and src_cur is not None:
-            if not img_map:
+            # A bundle whose images were all skipped as orphans still imports
+            # its observations; their measurements are skipped with them.
+            if not img_map and not skipped_orphan_images:
                 raise ValueError("Cannot import measurements without images.")
             measurement_table_columns = _table_column_names(dest_cur, "spore_measurements")
             src_cur.execute("SELECT * FROM spore_measurements ORDER BY id")
             for row in src_cur.fetchall():
-                data = dict(row)
+                data = _bundle_row_dict(row)
                 old_id = data.pop("id", None)
                 old_image_id = data.get("image_id")
                 if old_image_id in img_map:
                     data["image_id"] = img_map[old_image_id]
                 else:
+                    warnings.append(
+                        f"Skipped measurement {old_id!r} for missing image {old_image_id!r}."
+                    )
                     continue
                 _fork_bundle_row(
                     data, measurement_table_columns, _BUNDLE_MEASUREMENT_CLEARED_FIELDS
@@ -1020,7 +1282,7 @@ def import_database_bundle(
 
             src_cur.execute("SELECT * FROM spore_annotations ORDER BY id")
             for row in src_cur.fetchall():
-                data = dict(row)
+                data = _bundle_row_dict(row)
                 data.pop("id", None)
                 old_image_id = data.get("image_id")
                 old_meas_id = data.get("measurement_id")
@@ -1043,9 +1305,12 @@ def import_database_bundle(
         if include_calibrations and src_cur is not None:
             src_cur.execute("SELECT * FROM calibrations ORDER BY id")
             for row in src_cur.fetchall():
-                data = dict(row)
+                data = _bundle_row_dict(row)
                 old_calibration_id = data.pop("id", None)
                 objective_key = str(data.get("objective_key") or "").strip()
+                if objective_key in objective_key_map:
+                    objective_key = objective_key_map[objective_key]
+                    data["objective_key"] = objective_key
                 calibration_uuid = None
                 if "calibration_uuid" in calibration_table_columns:
                     calibration_uuid = str(data.get("calibration_uuid") or "").strip()
@@ -1090,21 +1355,13 @@ def import_database_bundle(
                     except Exception:
                         loaded = None
                     if isinstance(loaded, dict):
-                        for entry in loaded.get("images", []):
-                            if isinstance(entry, dict) and entry.get("path"):
-                                restored_entry = _restore_archive_asset(
-                                    entry.get("path"),
-                                    src_images_dir,
-                                    dest_images_dir,
-                                    copy_file=True,
-                                    warnings=warnings,
-                                    warning_label="calibration auxiliary image",
-                                    copied=copied_assets,
-                                )
-                                if restored_entry is not None:
-                                    entry["path"] = restored_entry
-                                else:
-                                    entry.pop("path", None)
+                        _restore_calibration_metadata_paths(
+                            loaded,
+                            src_images_dir,
+                            dest_images_dir,
+                            warnings=warnings,
+                            copied=copied_assets,
+                        )
                         data["measurements_json"] = json.dumps(loaded, ensure_ascii=False)
 
                 if objective_key and objective_key not in fallback_objectives:
@@ -1140,7 +1397,7 @@ def import_database_bundle(
                     pass
                 else:
                     for row in src_cur.fetchall():
-                        data = dict(row)
+                        data = _bundle_row_dict(row)
                         old_asset_id = data.pop("id", None)
                         source_calibration_id = data.get("calibration_id")
                         try:
@@ -1203,6 +1460,29 @@ def import_database_bundle(
                             warning_label="calibration asset original file",
                             copied=copied_assets,
                         )
+                        # Backups and exports read file paths from the asset
+                        # metadata too: rebase them like the row's own paths.
+                        asset_metadata = data.get("metadata_json")
+                        if asset_metadata:
+                            try:
+                                loaded_asset_metadata = json.loads(asset_metadata)
+                            except Exception:
+                                loaded_asset_metadata = None
+                            if isinstance(loaded_asset_metadata, dict):
+                                _restore_metadata_entry_paths(
+                                    loaded_asset_metadata,
+                                    _ASSET_METADATA_PATH_KEYS,
+                                    src_images_dir,
+                                    dest_images_dir,
+                                    warnings=warnings,
+                                    copied=copied_assets,
+                                )
+                                data["metadata_json"] = json.dumps(
+                                    loaded_asset_metadata, ensure_ascii=False
+                                )
+                            else:
+                                # Unreadable metadata cannot be checked.
+                                data["metadata_json"] = "{}"
                         asset_uuid = str(data.get("asset_uuid") or "").strip()
                         if not asset_uuid:
                             asset_uuid = str(uuid.uuid4())
@@ -1235,7 +1515,8 @@ def import_database_bundle(
                     for key, value in bundled_objectives.items():
                         if not isinstance(value, dict):
                             continue
-                        merged_objectives[str(key)] = dict(value)
+                        key = objective_key_map.get(str(key), str(key))
+                        merged_objectives[key] = dict(value)
                     imported_objectives = len(
                         {
                             str(key)
