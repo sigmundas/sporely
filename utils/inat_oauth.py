@@ -187,7 +187,7 @@ class INatOAuthClient:
         url = self.build_authorization_url(state, code_challenge)
         callback_server = LoopbackCallbackServer(self.redirect_uri)
         if open_browser:
-            print(f"Opening browser for iNaturalist login: {url}\n(If browser doesn't open automatically, ensure xdg-utils is installed on Linux)")
+            print("Opening browser for iNaturalist login. (If it does not open automatically, ensure xdg-utils is installed on Linux.)")
             webbrowser.open(url, new=2)
         callback = callback_server.wait_for_callback(
             timeout=timeout, tick_callback=tick_callback, expected_state=state
@@ -287,7 +287,7 @@ def example_login_and_print_access_token() -> None:
     )
     client.authorize()
     token = client.get_valid_access_token()
-    print(token or "No access token")
+    print("Logged in to iNaturalist; token saved." if token else "No access token")
 
 
 if __name__ == "__main__":
