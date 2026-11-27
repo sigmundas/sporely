@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterator
 
 import numpy as np
 from PIL import Image, ImageOps
@@ -14,6 +15,11 @@ SYNC_SHOT_QR_VISIBLE_MS = SYNC_SHOT_QR_INTERVAL_MS - SYNC_SHOT_QR_BLANK_MS
 
 _SYNC_SHOT_PREFIX = "SPORELY_SYNC_SHOT"
 _SYNC_SHOT_VERSION = "v1"
+
+# Largest pixel count (width x height) of any array held while decoding. A QR
+# code stays readable well below full camera resolution, and every candidate
+# is built, tried and released one at a time.
+MAX_DECODE_PIXELS = 4_000_000
 
 
 def _local_naive_datetime(value: datetime) -> datetime:
@@ -102,19 +108,45 @@ def _load_decode_image(filepath: str | Path) -> np.ndarray:
         except ImportError:
             pass
     with Image.open(path) as image:
+        try:
+            # JPEG decoders can decode at reduced size, avoiding the full-size bitmap.
+            image.draft("RGB", (4096, 4096))
+        except Exception:
+            pass
         normalized = ImageOps.exif_transpose(image).convert("RGB")
+        pixels = normalized.width * normalized.height
+        if pixels > MAX_DECODE_PIXELS:
+            scale = (MAX_DECODE_PIXELS / pixels) ** 0.5
+            normalized = normalized.resize(
+                (max(1, int(normalized.width * scale)), max(1, int(normalized.height * scale))),
+                Image.Resampling.LANCZOS,
+            )
         return np.array(normalized)
 
 
-def _collect_candidate_arrays(rgb_image: np.ndarray) -> list[np.ndarray]:
+def _collect_candidate_arrays(rgb_image: np.ndarray) -> Iterator[np.ndarray]:
+    """Yield decode candidates lazily, one at a time, each within MAX_DECODE_PIXELS."""
     import cv2
 
     bgr_image = cv2.cvtColor(rgb_image, cv2.COLOR_RGB2BGR)
-    gray_image = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2GRAY)
-    scaled_gray = cv2.resize(gray_image, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+    yield bgr_image
+    del bgr_image
+    gray_image = cv2.cvtColor(rgb_image, cv2.COLOR_RGB2GRAY)
+    yield gray_image
+    height, width = gray_image.shape[:2]
+    upscale = min(2.0, (MAX_DECODE_PIXELS / max(1, height * width)) ** 0.5)
+    if upscale >= 1.2:
+        scaled_gray = cv2.resize(gray_image, None, fx=upscale, fy=upscale, interpolation=cv2.INTER_CUBIC)
+        yield scaled_gray
+    else:
+        scaled_gray = None
     _, threshold_gray = cv2.threshold(gray_image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    _, threshold_scaled = cv2.threshold(scaled_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    return [bgr_image, gray_image, scaled_gray, threshold_gray, threshold_scaled]
+    yield threshold_gray
+    del threshold_gray, gray_image
+    if scaled_gray is not None:
+        _, threshold_scaled = cv2.threshold(scaled_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        del scaled_gray
+        yield threshold_scaled
 
 
 def _decode_payloads_from_candidate(candidate: np.ndarray) -> list[str]:
