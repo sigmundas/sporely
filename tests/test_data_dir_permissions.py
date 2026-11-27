@@ -121,3 +121,33 @@ def test_migrate_legacy_storage_tightens_the_data_folder(tmp_path, monkeypatch):
     app_identity.migrate_legacy_storage()
     assert _mode(data) == 0o700
     assert _mode(data / "artsobservasjoner_cookies.json") == 0o600
+
+
+def test_files_are_tightened_even_when_folder_chmod_fails(tmp_path, monkeypatch):
+    data = _loose_profile(tmp_path)
+    real_fchmod = os.fchmod
+
+    def selective(fd, mode):
+        if mode == 0o700:
+            raise PermissionError("not the owner")
+        return real_fchmod(fd, mode)
+
+    monkeypatch.setattr(os, "fchmod", selective)
+    tighten_app_data_permissions(data)
+    assert _mode(data / "app_settings.json") == 0o600
+
+
+def test_stranded_temporary_copies_and_hard_links(tmp_path):
+    data = _loose_profile(tmp_path)
+    for name in (".app_settings.json.123.tmp", "inaturalist_tokens.json.tmp"):
+        (data / name).write_text("x")
+        os.chmod(data / name, 0o644)
+    shared = tmp_path / "shared.db"
+    shared.write_text("x")
+    os.chmod(shared, 0o644)
+    (data / "mushrooms.db").unlink()
+    os.link(shared, data / "mushrooms.db")
+    tighten_app_data_permissions(data)
+    assert _mode(data / ".app_settings.json.123.tmp") == 0o600
+    assert _mode(data / "inaturalist_tokens.json.tmp") == 0o600
+    assert _mode(shared) == 0o644

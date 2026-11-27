@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import stat
 import sys
 from pathlib import Path
@@ -49,8 +50,14 @@ def write_private_text(path: Path | str, text: str) -> None:
 
 
 def _is_private_target(name: str) -> bool:
-    """True for the settings file, cookie/token files and SQLite files."""
+    """True for the settings file, cookie/token files and SQLite files.
+
+    Also matches a leftover temporary copy (``x.tmp``, ``.x.<pid>.tmp``) that a
+    crashed write can strand with the default umask.
+    """
     lowered = name.lower()
+    if lowered.endswith(".tmp"):
+        lowered = re.sub(r"(\.\d+)?\.tmp$", "", lowered).lstrip(".")
     if lowered == _SETTINGS_NAME or lowered.endswith(_SECRET_NAME_SUFFIXES):
         return True
     for suffix in _DB_SIBLING_SUFFIXES:
@@ -60,22 +67,27 @@ def _is_private_target(name: str) -> bool:
     return lowered.endswith(_DB_SUFFIXES)
 
 
-def _chmod_no_follow(path: str, mode: int, *, directory: bool) -> None:
-    """chmod ``path`` without following a symlink at the final component."""
+def _chmod_no_follow(
+    name: str, mode: int, *, directory: bool, dir_fd: int | None = None
+) -> int:
+    """chmod ``name`` (relative to ``dir_fd``) without following a symlink."""
     flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
     if directory:
         flags |= getattr(os, "O_DIRECTORY", 0)
-    fd = os.open(path, flags)
+    fd = os.open(name, flags, dir_fd=dir_fd)
     try:
         info = os.fstat(fd)
         if directory != stat.S_ISDIR(info.st_mode):
-            return
-        if not directory and not stat.S_ISREG(info.st_mode):
-            return
+            return 0
+        # A file with other hard links shares its inode with something that
+        # may live outside the folder; leave it alone.
+        if not directory and (not stat.S_ISREG(info.st_mode) or info.st_nlink > 1):
+            return 0
         if stat.S_IMODE(info.st_mode) != mode:
             os.fchmod(fd, mode)
     finally:
         os.close(fd)
+    return 0
 
 
 def tighten_app_data_permissions(data_dir: Path | str) -> None:
@@ -85,27 +97,37 @@ def tighten_app_data_permissions(data_dir: Path | str) -> None:
     umask) stops being readable by other accounts. Only the top level of
     ``data_dir`` is touched: the settings file, ``*_cookies.json``,
     ``*_tokens.json`` and SQLite files with their ``-wal``/``-shm``/``-journal``
-    siblings. Symlinks are never followed, a database folder the user chose
-    elsewhere is not visited, and a failure is logged, never raised. No-op on
-    Windows, where the per-user profile ACL applies.
+    siblings. Symlinks are never followed (the folder is opened once and its
+    files are reached through that descriptor), a database folder the user
+    chose elsewhere is not visited, and a failure is logged, never raised.
+    No-op on Windows, where the per-user profile ACL applies.
     """
     if sys.platform == "win32":
         return
     root = str(data_dir)
+    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_DIRECTORY", 0)
     try:
-        _chmod_no_follow(root, PRIVATE_DIR_MODE, directory=True)
+        dir_fd = os.open(root, flags)
     except OSError as exc:
-        _log.warning("Could not restrict app data folder %s: %s", root, exc)
+        _log.warning("Could not open app data folder %s: %s", root, exc)
         return
     try:
-        with os.scandir(root) as entries:
-            names = [entry.name for entry in entries if _is_private_target(entry.name)]
-    except OSError as exc:
-        _log.warning("Could not list app data folder %s: %s", root, exc)
-        return
-    for name in names:
-        path = os.path.join(root, name)
         try:
-            _chmod_no_follow(path, PRIVATE_FILE_MODE, directory=False)
+            if stat.S_IMODE(os.fstat(dir_fd).st_mode) != PRIVATE_DIR_MODE:
+                os.fchmod(dir_fd, PRIVATE_DIR_MODE)
         except OSError as exc:
-            _log.warning("Could not restrict %s: %s", path, exc)
+            # Still tighten the files this account owns.
+            _log.warning("Could not restrict app data folder %s: %s", root, exc)
+        try:
+            with os.scandir(dir_fd) as entries:
+                names = [e.name for e in entries if _is_private_target(e.name)]
+        except OSError as exc:
+            _log.warning("Could not list app data folder %s: %s", root, exc)
+            return
+        for name in names:
+            try:
+                _chmod_no_follow(name, PRIVATE_FILE_MODE, directory=False, dir_fd=dir_fd)
+            except OSError as exc:
+                _log.warning("Could not restrict %s: %s", os.path.join(root, name), exc)
+    finally:
+        os.close(dir_fd)
