@@ -2177,12 +2177,17 @@ def _verify_unlinked_database_owner(client: "SporelyCloudClient") -> None:
     The link lives in per-profile app settings, so a copied or restored
     database can arrive unlinked while still holding another account's
     cloud ids. Only a database with no synced observations (new, or reset
-    through Reset Cloud Sync) may bind to any account.
+    through Reset Cloud Sync) may bind to any account; otherwise the account
+    must own every sampled observation, so a database holding rows of two
+    accounts binds to neither (F10).
     """
     local_ids = _local_synced_observation_cloud_ids()
     if not local_ids:
         return
-    if not client.list_owned_observation_ids(local_ids):
+    owned = {str(value).strip() for value in client.list_owned_observation_ids(local_ids) or ()}
+    # list_owned_observation_ids only queries numeric ids; compare the same set.
+    checkable = {value for value in (str(v).strip() for v in local_ids) if value.isdigit()}
+    if not owned or not checkable or not checkable <= owned:
         raise AccountMismatchError(ACCOUNT_MISMATCH_MESSAGE)
 
 
