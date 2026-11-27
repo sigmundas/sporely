@@ -813,8 +813,9 @@ A desktop profile stores the account its database syncs with as
 `linked_cloud_user_id` in the profile's app settings, not in the database. A
 linked database refuses every other account (`AccountMismatchError`). An
 unlinked database binds on its first sign-in or sync only when it holds no
-observations with a `cloud_id`, or when the signed-in account owns at least
-one of up to 50 of those observations, most recently synced first. Otherwise
+observations with a `cloud_id`, or when the signed-in account owns every one
+of up to 50 of those observations, most recently synced first; a sampled
+`cloud_id` that is not a valid observation id refuses the link. Otherwise
 the desktop refuses the account and saves no link; a refused sign-in also saves
 no credentials. A copied or
 restored database therefore cannot adopt whichever account a browser sign-in
