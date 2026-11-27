@@ -38,6 +38,13 @@ def _checked(url, hosts, path_prefix: str = "") -> str | None:
         return None
     if (parts.hostname or "").lower() not in hosts:
         return None
+    # Dot segments and encoded separators could climb out of the approved path
+    # once the server or Qt normalises the URL.
+    lowered = parts.path.lower()
+    if any(seg in (".", "..") for seg in parts.path.split("/")):
+        return None
+    if any(token in lowered for token in ("%2e", "%2f", "%5c", "%00")):
+        return None
     if path_prefix:
         path = parts.path
         if path != path_prefix and not path.startswith(path_prefix + "/"):

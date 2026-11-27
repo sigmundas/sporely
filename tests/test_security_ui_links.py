@@ -137,3 +137,25 @@ def test_update_feed_valid_href_kept():
     href = f"{APP_REPOSITORY_URL}/releases/tag/v9.9.9"
     shown, _ = _run_atom(href)
     assert shown == [href]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "https://github.com/sigmundas/sporely/releases/../../other/repo/releases/tag/v9",
+        "https://github.com/sigmundas/sporely/releases/%2e%2e/%2e%2e/other",
+        "https://github.com/sigmundas/sporely/releases/..%2fx",
+    ],
+)
+def test_update_feed_dot_segments_fall_back(bad):
+    shown, repo = _run_atom(bad)
+    assert shown == [f"{repo}/releases/latest"]
+
+
+def test_dot_segments_rejected_for_ai_and_avatar_links():
+    from utils.cloud_sync import SUPABASE_URL
+    from utils.safe_links import safe_ai_link, safe_avatar_url
+
+    assert safe_ai_link("https://artsdatabanken.no/arter/../x") is None
+    assert safe_avatar_url(f"{SUPABASE_URL}/storage/v1/../rest/v1/profiles") is None
+    assert safe_avatar_url(f"{SUPABASE_URL}/storage/v1/object/public/avatars/a/avatar.jpg")

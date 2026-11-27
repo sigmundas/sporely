@@ -75,3 +75,26 @@ def test_queue_rechecks_for_links_before_ingest(folders):
     stub = SimpleNamespace(_seen_source_paths=set())
     assert LiveLabTab._queue_companion_source(stub, str(watched / "link.jpg")) is False
     assert stub._seen_source_paths == set()
+
+
+def test_companion_discovery_ignores_linked_siblings(tmp_path):
+    from ui.live_lab_tab import LiveLabTab
+
+    watched = tmp_path / "w"
+    outside = tmp_path / "o"
+    watched.mkdir()
+    outside.mkdir()
+    (watched / "shot.jpg").write_bytes(b"jpeg")
+    (outside / "shot.png").write_bytes(b"png")
+    os.symlink(outside / "shot.png", watched / "shot.png")
+    stub = SimpleNamespace()
+    found = LiveLabTab._same_stem_companion_paths(stub, str(watched / "shot.jpg"))
+    assert [Path(p).name for p in found] == ["shot.jpg"]
+
+
+def test_ingest_refuses_a_link(folders):
+    from ui.live_lab_tab import LiveLabTab
+
+    watched, _ = folders
+    stub = SimpleNamespace(_session_observation_id=1)
+    assert LiveLabTab._ingest_detected_image(stub, str(watched / "link.jpg")) is False

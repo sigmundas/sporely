@@ -2001,6 +2001,7 @@ class SettingsHubDialog(QDialog):
         request.setRawHeader(b"User-Agent", b"Sporely/1.0 (Desktop)")
         request.setRawHeader(b"Accept", b"image/webp,image/apng,image/*,*/*;q=0.8")
         reply = self._profile_avatar_network.get(request)
+        reply.setReadBufferSize(MAX_AVATAR_BYTES + 1)  # bounds what Qt buffers
 
         def _limit(received, _total, reply=reply):
             if received > MAX_AVATAR_BYTES:
@@ -6024,6 +6025,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             req.setRawHeader(b"Authorization", f"Bearer {token}".encode())
 
         reply = self._avatar_network.get(req)
+        reply.setReadBufferSize(MAX_AVATAR_BYTES + 1)
         reply.finished.connect(lambda: self._handle_avatar_reply(reply, user_id))
 
     def _handle_avatar_reply(self, reply, user_id: str):
@@ -6040,6 +6042,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                 and self._corner_cloud_user_id(settings) == user_id
             ):
                 data = reply.readAll()
+                if len(data) > MAX_AVATAR_BYTES:
+                    return
                 pixmap = QPixmap()
                 if pixmap.loadFromData(data):
                     self._avatar_pixmap_cached = pixmap

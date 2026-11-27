@@ -124,3 +124,41 @@ def test_observations_tab_reads_the_keyring(fake_keyring):
     assert ObservationsTab._publish_target_has_saved_login(stub, "mo") is True
     fake_keyring.store.clear()
     assert ObservationsTab._publish_target_logged_in(stub, "mo") is False
+
+
+def test_keys_are_scoped_by_profile(monkeypatch, fake_keyring):
+    import app_identity
+
+    monkeypatch.setattr(app_identity, "runtime_profile_scope", lambda: "profile-a")
+    mo_keys.set_key(USER, "key-a")
+    monkeypatch.setattr(app_identity, "runtime_profile_scope", lambda: "profile-b")
+    assert mo_keys.get_key(USER) == ""
+    mo_keys.set_key(USER, "")  # sign-out in profile B must not touch profile A
+    monkeypatch.setattr(app_identity, "runtime_profile_scope", lambda: "profile-a")
+    assert mo_keys.get_key(USER) == "key-a"
+
+
+def test_save_keeps_database_value_when_keyring_silently_drops_it(monkeypatch):
+    class NullKeyring(FakeKeyring):
+        def set_password(self, service, account, value):
+            pass  # like keyring's null backend: accepts and forgets
+
+    monkeypatch.setattr(mo_keys, "_get_keyring_module", lambda: NullKeyring())
+    SettingsDB.set_setting(USER, "legacy-user")
+    with pytest.raises(RuntimeError):
+        mo_keys.set_key(USER, "new-user")
+    assert SettingsDB.get_setting(USER, "") == "legacy-user"
+
+
+def test_restored_legacy_value_is_blanked_when_keyring_has_the_key(fake_keyring):
+    mo_keys.set_key(USER, "from-keyring")
+    SettingsDB.set_setting(USER, "old-plaintext")
+    assert mo_keys.get_key(USER) == "from-keyring"
+    assert (SettingsDB.get_setting(USER, "") or "") == ""
+
+
+def test_logout_blanks_database_even_without_keyring(monkeypatch):
+    monkeypatch.setattr(mo_keys, "_get_keyring_module", lambda: None)
+    SettingsDB.set_setting(USER, "legacy-user")
+    mo_keys.set_key(USER, "")
+    assert (SettingsDB.get_setting(USER, "") or "") == ""

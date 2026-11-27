@@ -34,26 +34,40 @@ def _db_set(name: str, value: str) -> None:
     SettingsDB.set_setting(name, value)
 
 
+def _account(name: str) -> str:
+    """Keyring account for a setting name, scoped like the cloud account by profile."""
+    from app_identity import runtime_profile_scope
+
+    scope = runtime_profile_scope()
+    return f"{name}:{scope}" if scope else name
+
+
 def get_key(name: str) -> str:
     """Return the stored key; migrate a legacy database value into the keyring once."""
     keyring = _get_keyring_module()
-    if keyring is not None:
-        try:
-            value = (keyring.get_password(MO_KEYRING_SERVICE, name) or "").strip()
-        except Exception:
-            value = ""
-        if value:
-            return value
+    account = _account(name)
     try:
         legacy = _db_get(name)
     except Exception:
-        return ""
+        legacy = ""
+    if keyring is not None:
+        try:
+            value = (keyring.get_password(MO_KEYRING_SERVICE, account) or "").strip()
+        except Exception:
+            value = ""
+        if value:
+            if legacy:  # finish an interrupted migration or a restored old database
+                try:
+                    _db_set(name, "")
+                except Exception:
+                    pass
+            return value
     if not legacy:
         return ""
     if keyring is not None:
         try:
-            keyring.set_password(MO_KEYRING_SERVICE, name, legacy)
-            if (keyring.get_password(MO_KEYRING_SERVICE, name) or "").strip() == legacy:
+            keyring.set_password(MO_KEYRING_SERVICE, account, legacy)
+            if (keyring.get_password(MO_KEYRING_SERVICE, account) or "").strip() == legacy:
                 _db_set(name, "")
         except Exception:
             pass  # keep the database value rather than lose the key
@@ -61,22 +75,34 @@ def get_key(name: str) -> str:
 
 
 def set_key(name: str, value: str) -> None:
-    """Save ``value`` in the keyring (empty deletes it) and blank any database row."""
+    """Save ``value`` in the keyring (empty removes it) and blank any database row."""
     value = (value or "").strip()
     keyring = _get_keyring_module()
+    account = _account(name)
+    if not value:
+        _db_set(name, "")  # a signed-out key must not survive in the database
+        if keyring is None:
+            return
+        try:
+            keyring.delete_password(MO_KEYRING_SERVICE, account)
+        except Exception:
+            pass
+        try:
+            remaining = keyring.get_password(MO_KEYRING_SERVICE, account)
+        except Exception:
+            remaining = None
+        if remaining:
+            raise RuntimeError("Could not remove the key from secure storage.")
+        return
     if keyring is None:
         raise RuntimeError("Secure key storage is unavailable on this system.")
     try:
-        if value:
-            keyring.set_password(MO_KEYRING_SERVICE, name, value)
-        else:
-            try:
-                keyring.delete_password(MO_KEYRING_SERVICE, name)
-            except Exception as exc:
-                if exc.__class__.__name__ != "PasswordDeleteError":
-                    raise
+        keyring.set_password(MO_KEYRING_SERVICE, account, value)
+        stored = keyring.get_password(MO_KEYRING_SERVICE, account)
     except Exception as exc:
         raise RuntimeError(f"Could not securely save the key: {exc}") from exc
+    if (stored or "").strip() != value:
+        raise RuntimeError("Could not securely save the key: secure storage did not keep it.")
     _db_set(name, "")
 
 

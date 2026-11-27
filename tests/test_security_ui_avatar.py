@@ -39,6 +39,9 @@ class FakeReply(QObject):
     def readAll(self):
         return self._body
 
+    def setReadBufferSize(self, size):
+        self.buffer_limit = size
+
     def abort(self):
         self.aborted = True
 

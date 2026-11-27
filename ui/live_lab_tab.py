@@ -2226,7 +2226,7 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         candidates: list[str] = []
         try:
             for child in source.parent.iterdir():
-                if not child.is_file():
+                if child.is_symlink() or not child.is_file():
                     continue
                 if child.stem.casefold() != source.stem.casefold():
                     continue
@@ -3628,6 +3628,8 @@ class LiveLabTab(LiveLabPrepPanelMixin, LiveLabRawMixin, QWidget):
         observation_id = int(observation_id or self._session_observation_id or 0)
         if observation_id <= 0:
             return False
+        if os.path.islink(str(source_path or "")):
+            return False  # re-checked before copying: never ingest through a link
 
         output_dir = get_images_dir() / "imports"
         output_dir.mkdir(parents=True, exist_ok=True)
